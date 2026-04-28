@@ -346,8 +346,11 @@ Mapping в `Candle`:
 
 Правило нижней границы исторического окна:
 
-- `check_window.start_ms = ceil_to_grid(launch_time_ms, tf)`
-- Это исключает попытку запрашивать свечу, открывшуюся до фактического старта инструмента.
+- `candidate_from_ms = ceil_to_grid(launch_time_ms, tf)`
+- Это старт поиска первой доступной свечи и исключение попыток запрашивать свечу до фактического старта инструмента.
+- Для final completion check старт берётся от `effective_from_ms`, а не от `candidate_from_ms`:
+  - первая реально найденная свеча при пустой БД;
+  - `min_open_time_ms(symbol, tf)` при resume.
 
 ### 8.7 `store/db.py` (расширение контракта)
 
@@ -384,12 +387,13 @@ Mapping в `Candle`:
    - печатается понятная диагностика;
    - повреждённая существующая БД не чинится молча.
 5. Получение `launch_time_ms` через resolver.
-6. Определение стартовой точки:
+6. Определение стартовой точки текущего fetch-run:
    - если `max_open_time_ms` есть, старт = `max_open_time_ms + tf_ms(tf)`;
    - иначе старт = `ceil_to_grid(launch_time_ms, tf)`.
+   - `effective_from_ms` для отчёта и completion check берётся из минимальной свечи в БД по `symbol+tf` (или из первой реально полученной свечи, если до запуска БД была пустой).
 7. Расчёт верхней границы как последней закрытой свечи (`to_ms`).
 8. Цикл `fetch -> upsert` по временным окнам до `to_ms`, чанками не больше `BYBIT_KLINE_LIMIT` свечей.
-9. Naive completion check (раздел 9).
+9. Naive completion check (раздел 9) от `effective_from_ms`.
 10. Печать финального отчёта.
 
 ---
@@ -404,9 +408,9 @@ Phase 2 выполняет только naive completion check:
 - если нет — `status: incomplete`;
 - `repair`/`gap list`/`quarantine` не выполняются.
 
-Окно финального completion check всегда полное историческое, а не только окно текущего запуска:
+Окно финального completion check всегда строится от фактического начала ряда (`effective_from_ms`), а не от старта текущего fetch-run:
 
-- `check_window.start_ms = ceil_to_grid(launch_time_ms, tf)`
+- `check_window.start_ms = effective_from_ms`
 - `check_window.end_ms = to_ms + tf_ms(tf)`
 
 Формула:
@@ -422,11 +426,15 @@ Phase 2 выполняет только naive completion check:
 ## 10. Поведение при ошибках
 
 - Retry применяется только к транзиентным сетевым/API-ошибкам.
-- Если в ожидаемом окне fetcher вернул пустой список:
+- Leading empty chunks до первой найденной свечи допустимы и не считаются ошибкой.
+- Если после появления данных в ожидаемом окне fetcher вернул пустой список:
   - backfill останавливается;
   - выставляется `status: error`;
   - печатается диагностическое сообщение;
   - quarantine/repair не запускаются.
+- Если до `to_ms` не найдено ни одной свечи:
+  - backfill завершается с `status: error`;
+  - диагностика: `no candles found in expected range`.
 - Бесконечные циклы загрузки запрещены.
 
 ---
@@ -504,7 +512,7 @@ Phase 2 выполняет только naive completion check:
 4. Повторный запуск команды не создаёт дубликатов.
 5. Resume после частичной загрузки начинается с `max_open_time_ms + tf_ms(tf)`.
 6. Используется только naive completion check по `expected_count` и `actual_count`.
-7. Completion check считается по полному историческому окну: от `ceil_to_grid(launch_time_ms, tf)` до `to_ms + tf_ms(tf)`.
+7. Completion check считается по полному фактическому окну: от `effective_from_ms` до `to_ms + tf_ms(tf)`.
 8. При несовпадении counts после штатного завершения выставляется `status: incomplete`; repair/gap list/quarantine не запускаются.
 9. Пустой fetch chunk в ожидаемом окне завершает команду без бесконечного цикла, с диагностикой и `status: error`.
 10. `range_get` использует полуоткрытый интервал `[start_ms, end_ms)` и возвращает ASC.
