@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "data_engine"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+  "pydantic>=2",
+  "pydantic-settings",
+  "typer",
+]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[tool.setuptools]
+include-package-data = false
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["data_engine*"]
