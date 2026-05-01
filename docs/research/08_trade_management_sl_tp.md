@@ -681,3 +681,70 @@ take = countertrend_ema
 ```
 
 без переписывания entry components и без хардкода в runner.
+
+---
+
+## Stage 8 implementation summary
+
+### What changed
+
+- Added Trade Management layer for `ema_pullback` with explicit profiles:
+  - `none`
+  - `fixed_pct_sl_tp` (`sl_stop=0.03`, `tp_stop=0.06`)
+- Extended `StrategyConfig` with `trade_management_profile` (default: `none`).
+- Included `trade_management_profile` in deterministic `config_id` identity payload.
+- Wired `run.py` to resolve and apply trade-management profile into `vectorbt.Portfolio.from_signals(...)`.
+- Added manual variant:
+  - `ema_pullback_20_200_500_reclaim_fixed_sl_tp`
+- Kept existing Stage 7 variant and other manual variants unchanged.
+
+### Which files changed
+
+- `research/strategies/ema_pullback/config.py`
+- `research/strategies/ema_pullback/trade_management.py` (new)
+- `research/strategies/ema_pullback/run.py`
+- `research/strategies/ema_pullback/variants.py`
+- `tests/test_strategy_config_instance.py`
+- `tests/test_ema_pullback_manual_variants.py`
+- `tests/test_ema_pullback_trade_management.py` (new)
+
+### What behavior was preserved
+
+- Existing variants remain available (`baseline`, `conservative`, `aggressive`, Stage 7 reclaim).
+- Existing signal-based exit component flow remains active; SL/TP is additive via portfolio layer.
+- `db_path` still excluded from `config_id`.
+- Runner still prints comparison table and `status=ok`.
+- `research/ema_smoke.py` remains operational.
+
+### Tests and commands run
+
+Executed successfully:
+
+```text
+python -m pytest -q
+python research/strategies/ema_pullback/run.py
+python research/ema_smoke.py
+git diff --stat data_engine/
+git status -sb
+```
+
+Result:
+
+- `147 passed`
+- `run.py` completed with `status=ok` and 5 variants in comparison table
+- `ema_smoke.py` completed with `status=ok`
+
+### Backtest output summary (`run.py`)
+
+- New variant `ema_pullback_20_200_500_reclaim_fixed_sl_tp` is present in output.
+- Sample observed metrics for new variant:
+  - `trades=99`
+  - `sharpe=-0.013083`
+  - `profit_factor=0.940507`
+  - `max_drawdown=-0.478627`
+- This confirms Trade Management profile is actively affecting backtest behavior.
+
+### Confirmation on `data_engine/`
+
+- `git diff --stat data_engine/` returned empty output.
+- No changes were made in `data_engine/`.

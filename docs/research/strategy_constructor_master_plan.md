@@ -352,6 +352,19 @@ volatility context
 trend relations
 ```
 
+Trade Management использует prepared feature bindings/relations, чтобы рассчитывать правила фиксации прибыли и убытка:
+
+```text
+stop_loss
+take_profit
+time_stop
+later: trailing_stop / partial exits
+```
+
+`trade_management_profile` должен быть частью `StrategyConfig` и входить в `config_id`, потому что одинаковая entry-логика с разными правилами фиксации прибыли/убытка — это разные strategy instances.
+
+Component Grid начинается только после базового Trade Management, потому что массово тестировать входы без стабильной архитектуры stop/take даёт искажённые выводы.
+
 ---
 
 ### Step 9 — Component Grid
@@ -432,7 +445,7 @@ trade_count
 
 Roadmap note:
 
-Component Grid намеренно отложен на один шаг после Stage 7. Одного registry недостаточно для полезного grid; сначала добавляются реальные setup/trigger components и один manual component-based variant, затем выделяется отдельный слой Trade Management / SL-TP.
+FeaturesDev keeps indicator calculation out of components. Trade Management is inserted before Component Grid to keep SL/TP logic out of runner and entry components. Component Grid remains postponed until FeaturesDev, components, and basic Trade Management boundaries are stable.
 
 ---
 
