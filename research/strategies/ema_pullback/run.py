@@ -16,6 +16,7 @@ import argparse
 import math
 import sys
 from dataclasses import replace
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Sequence
 
@@ -39,6 +40,12 @@ from research.strategies.ema_pullback.instance import StrategyInstance
 from research.strategies.ema_pullback.risk import portfolio_risk_from_config
 from research.strategies.ema_pullback.signals import ema_crossover_signals
 from research.strategies.ema_pullback.trade_management import resolve_trade_management_profile
+from research.strategies.ema_pullback.results import (
+    build_research_run_payload,
+    build_run_id,
+    extract_trade_records,
+    write_research_results,
+)
 from research.strategies.ema_pullback.variants import build_manual_variants
 
 
@@ -250,8 +257,25 @@ def _load_candles_once(cfg: StrategyConfig) -> tuple[list[Any], Any]:
     return candles, candles_to_ohlcv_dataframe(candles)
 
 
-def _run_instance_on_ohlcv(instance: StrategyInstance, ohlcv: Any) -> dict[str, float | str]:
-    """Run one strategy instance over shared OHLCV and return key metrics."""
+def _comparison_row(variant_result: dict[str, Any]) -> dict[str, float | str]:
+    """Flatten variant artifact dict for the stdout comparison table."""
+
+    m = variant_result["metrics"]
+    p = variant_result["params"]
+    return {
+        "variant": variant_result["variant"],
+        "config_id": variant_result["config_id"],
+        "ema_fast": p["ema_fast"],
+        "ema_slow": p["ema_slow"],
+        "trades": m["trades"],
+        "sharpe": m["sharpe"],
+        "profit_factor": m["profit_factor"],
+        "max_drawdown": m["max_drawdown"],
+    }
+
+
+def _run_instance_on_ohlcv(instance: StrategyInstance, ohlcv: Any) -> dict[str, Any]:
+    """Run one strategy instance over shared OHLCV; return Stage 9 variant payload."""
 
     try:
         import vectorbt as vbt
@@ -314,15 +338,37 @@ def _run_instance_on_ohlcv(instance: StrategyInstance, ohlcv: Any) -> dict[str, 
     max_dd_f = float(max_dd) if hasattr(max_dd, "item") else float(max_dd)
     max_dd_f = ensure_finite_metric("max_drawdown", max_dd_f)
 
+    trade_records = extract_trade_records(pf, close)
+
     return {
         "variant": cfg.variant,
         "config_id": instance.config_id,
-        "ema_fast": cfg.ema_fast,
-        "ema_slow": cfg.ema_slow,
-        "trades": int(trades.count()),
-        "sharpe": sharpe,
-        "profit_factor": profit_factor,
-        "max_drawdown": max_dd_f,
+        "symbol": cfg.symbol.strip().upper(),
+        "timeframe": cfg.timeframe.strip(),
+        "feature_profile": cfg.feature_profile,
+        "components": {
+            "direction": cfg.direction_component,
+            "blockers": cfg.blockers_component,
+            "setup": cfg.setup_component,
+            "trigger": cfg.trigger_component,
+            "exits": cfg.exits_component,
+            "risk": cfg.risk_component,
+        },
+        "trade_management_profile": cfg.trade_management_profile,
+        "params": {
+            "ema_fast": cfg.ema_fast,
+            "ema_slow": cfg.ema_slow,
+            "init_cash": float(cfg.init_cash),
+            "fees": float(cfg.fees),
+            "slippage": float(cfg.slippage),
+        },
+        "metrics": {
+            "trades": int(trades.count()),
+            "sharpe": sharpe,
+            "profit_factor": profit_factor,
+            "max_drawdown": max_dd_f,
+        },
+        "trade_records": trade_records,
     }
 
 
@@ -367,13 +413,36 @@ def _print_comparison_table(rows: list[dict[str, float | str]]) -> None:
 def run_manual_variants(base_config: StrategyConfig) -> None:
     variants = build_manual_variants(base_config)
     candles, ohlcv = _load_candles_once(base_config)
-    metrics = [_run_instance_on_ohlcv(instance, ohlcv) for instance in variants]
+    variant_results = [_run_instance_on_ohlcv(instance, ohlcv) for instance in variants]
 
     print(
         f"family={base_config.family} symbol={base_config.symbol} "
         f"timeframe={base_config.timeframe} candles={len(candles)} variants={len(variants)}"
     )
-    _print_comparison_table(metrics)
+    _print_comparison_table([_comparison_row(v) for v in variant_results])
+
+    created_at = datetime.now(timezone.utc)
+    run_id = build_run_id(
+        created_at,
+        base_config.family,
+        base_config.symbol,
+        base_config.timeframe,
+    )
+    payload = build_research_run_payload(
+        run_id=run_id,
+        created_at=created_at,
+        family=base_config.family,
+        symbol=base_config.symbol,
+        timeframe=base_config.timeframe,
+        candles_count=len(candles),
+        data_range_from_ms=int(candles[0].open_time_ms),
+        data_range_to_ms=int(candles[-1].open_time_ms),
+        variants=variant_results,
+    )
+    latest_path, run_path = write_research_results(payload)
+    root = _ROOT
+    print(f"results_artifact={latest_path.relative_to(root).as_posix()}")
+    print(f"run_artifact={run_path.relative_to(root).as_posix()}")
     print("status=ok")
 
 

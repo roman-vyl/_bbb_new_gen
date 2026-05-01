@@ -367,7 +367,29 @@ Component Grid начинается только после базового Tra
 
 ---
 
-### Step 9 — Component Grid
+### Step 9 — Research Results Artifact / Experiment Report
+
+После первой реальной component-based стратегии и базового Trade Management нужно перестать опираться только на stdout-таблицу runner.
+
+Research runner формирует структурированный результат запуска:
+
+```text
+research/results/*.json
+```
+
+Минимальный смысл: `run.py` → structured experiment result artifact.
+
+Артефакт (минимум): `run_id`, `timestamp`, `family`, `symbol`, `timeframe`, `candles`, `variants`, `config_id`, `feature_profile`, component ids, `trade_management_profile`, `trades`, `sharpe`, `profit_factor`, `max_drawdown`, `total_return` (позже).
+
+Цель: результаты backtest воспроизводимы, сравнимы и пригодны для будущего dashboard/grid.
+
+Сюда не входят: база данных, frontend, optimizer, component grid. Это простой structured artifact для research runs. Stdout-таблица может остаться, но JSON/report artifact — стабильный источник для следующих этапов.
+
+---
+
+### Step 10 — Component Grid
+
+Component Grid запускается только после того, как появятся структурированные результаты research-прогонов: без стабильного хранения результатов массовый прогон вариантов превращается в шумный и плохо сопоставимый `stdout`.
 
 После появления нескольких реальных компонентов добавить ограниченный перебор комбинаций.
 
@@ -385,27 +407,11 @@ Grid должен:
 
 ---
 
-### Step 10 — Results & Debug Reports
+### Step 11 — Debug Reports / Diagnostics
 
-Сохранять результаты в `research/results/`.
+Расширение отчётности поверх базового structured artifact: debug counters, сделочная диагностика, причины входов/выходов.
 
-Минимальные поля:
-
-```text
-config_id
-family
-variant
-component names
-parameters
-return
-drawdown
-sharpe
-profit_factor
-trades
-win_rate
-```
-
-Debug counters:
+Примеры счётчиков:
 
 ```text
 direction_ok_count
@@ -417,7 +423,7 @@ trade_count
 
 ---
 
-### Step 11 — Validation
+### Step 12 — Validation
 
 Добавить защиту от самообмана:
 
@@ -445,7 +451,7 @@ trade_count
 
 Roadmap note:
 
-FeaturesDev keeps indicator calculation out of components. Trade Management is inserted before Component Grid to keep SL/TP logic out of runner and entry components. Component Grid remains postponed until FeaturesDev, components, and basic Trade Management boundaries are stable.
+FeaturesDev keeps indicator calculation out of components. Trade Management keeps SL/TP logic out of runner and entry components. Research Results Artifact is inserted before Component Grid so experiments have stable structured output. Component Grid remains postponed until FeaturesDev, components, Trade Management, and result artifacts are stable.
 
 ---
 
@@ -464,10 +470,10 @@ FeaturesDev keeps indicator calculation out of components. Trade Management is i
 6. featuresdev layer
 7. component registry
 8. first real component variant
-9. feature-based trade management / sl-tp
-10. component grid
-11. results table
-12. debug report
+9. trade management / SL-TP
+10. артефакт результатов research
+11. component grid
+12. debug report / diagnostics
 13. validation
 ```
 
