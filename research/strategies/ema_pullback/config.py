@@ -1,4 +1,8 @@
-"""Frozen run config for the ema_pullback family (Stage 1)."""
+"""Frozen run config for the ema_pullback family (Stage 2 pipeline).
+
+Portfolio knobs (init_cash, fees, slippage) are also surfaced via ``risk.py``
+for vectorbt; this dataclass remains the single source of truth.
+"""
 
 from __future__ import annotations
 

@@ -1,0 +1,232 @@
+# Research Stage 2 — Pipeline Decomposition (детальное ТЗ)
+
+> **Трек:** post-MVP research, Strategy Constructor — **шаг 2** из `docs/research/strategy_constructor_master_plan.md` (§5 «Step 2 — Pipeline Decomposition»).  
+> **Предпосылка:** Stage 1 реализован — каталог `research/strategies/ema_pullback/` с `config.py`, `features.py`, `signals.py`, `run.py`; логика EMA smoke перенесена в family pipeline.  
+> **Статус документа:** спецификация; реализация Stage 2 выполнена (см. §8 Implementation summary).
+
+---
+
+## 1. Цель этапа
+
+### 1.1 Прикладная цель
+
+Разложить текущую strategy family **`ema_pullback`** на **логические блоки pipeline**, соответствующие будущему Strategy Constructor (см. master plan §4 «Strategy Pipeline»), **без** введения registry, variants, component grid, optimizer или общего framework.
+
+После Stage 2 читатель кода должен видеть явные этапы:
+
+- **features** — признаки из OHLCV (как сейчас);
+- **direction** — разрешение направления (для baseline — long-only контур);
+- **blockers** — гейты «можно ли вообще рассматривать вход»;
+- **setup** — контекст перед триггером (если в Stage 1 не выделен — зафиксировать как явный слой-заглушку или эквивалент текущего контекста);
+- **trigger** — условие фактического входа (текущий EMA crossover);
+- **exit** — условие выхода (текущий reverse cross);
+- **risk** — параметры/хелперы для портфеля (init cash, fees, slippage и при необходимости placeholder под sizing), **без** live risk engine.
+
+### 1.2 Техническая цель
+
+- Сделать код family **читаемее** и **ближе** к будущему Strategy Constructor по структуре модулей.
+- Сохранить **поведение** текущей EMA baseline **максимально близким** к Stage 1: тот же конвейер «БД → свечи → фичи → сигналы → vectorbt → метрики», те же семантики кроссовера на первой строке и далее.
+
+### 1.3 Явно не цель этапа
+
+- **Не улучшать** торговую стратегию (нет новых фильтров, новых правил входа/выхода «для лучшей доходности»).
+- **Не** строить registry компонентов, component grid, optimizer, общий `research/common` framework.
+- **Не** менять `data_engine/`, **не** добавлять backend indicators, **не** добавлять live trading / execution engine.
+
+Stage 2 — это **refactor / decomposition**, а не развитие альфы.
+
+---
+
+## 2. Границы scope
+
+### 2.1 Разрешённые файлы и правки (Allowed)
+
+От корня репозитория:
+
+| Категория | Путь |
+|-----------|------|
+| Новые модули блоков | `research/strategies/ema_pullback/direction.py` |
+| | `research/strategies/ema_pullback/blockers.py` |
+| | `research/strategies/ema_pullback/setup.py` |
+| | `research/strategies/ema_pullback/triggers.py` |
+| | `research/strategies/ema_pullback/exits.py` |
+| | `research/strategies/ema_pullback/risk.py` |
+| Возможные правки существующих | `research/strategies/ema_pullback/features.py`, `signals.py`, `run.py`, `config.py` |
+| Тесты | новые/обновлённые тесты под блоки и композицию (например под `tests/`) |
+| Документация этапа | `docs/research/02_pipeline_decomposition.md` (в т.ч. секция implementation summary после работ) |
+
+Допускаются **точечные** правки `research/ema_smoke.py` / `research/ema_smoke_helpers.py` **только если** нужно сохранить семантическое выравнивание с family после декомпозиции (предпочтительно избегать дублирования логики).
+
+### 2.2 Запрещённый scope (Forbidden)
+
+В рамках реализации по этому ТЗ **запрещено**:
+
+| Запрет | Комментарий |
+|--------|-------------|
+| `registry.py` или любые `*_REGISTRY` | В т.ч. `DIRECTION_REGISTRY`, `BLOCKER_REGISTRY`, `EXIT_REGISTRY` и аналоги. |
+| `variants.py` | Несколько именованных variants, переключение variant через registry — out of scope. |
+| Component grid | Перебор комбинаций компонентов или параметров. |
+| Optimizer | Подбор параметров (optuna и т.д.). |
+| Общий framework в `research/common/` | Базовые классы «Component», универсальный runner вне family и т.п. |
+| Изменения в `data_engine/` | Пустой diff по этому дереву. |
+| Backend indicators | Новые индикаторы в движке данных. |
+| Live trading / execution engine | Нет реального исполнения ордеров, нет broker adapters. |
+
+---
+
+## 3. Контракты блоков (логические, без registry)
+
+Все функции остаются **чистыми** там, где это уже принято в Stage 1: без I/O и без `vectorbt` внутри блоков сигналов (кроме точки сборки портфеля в `run.py`).
+
+Имена функций и точные сигнатуры оставить на усмотрение реализации, но **роли и выходные смыслы** должны совпадать с нижеследующим.
+
+### 3.1 `direction.py`
+
+- **Назначение:** ответить, разрешён ли **long** и (на будущее) **short** в данной строке.
+- **Stage 2 baseline:** достаточно явного **`long_allowed`** (boolean Series, выровненный по индексу OHLCV/фич). **`short_allowed`** можно не использовать в портфеле, но контракт документирует направление: либо зарезервировать `short_allowed` как всегда `False` для baseline, либо вынести в комментарий/TODO без изменения торгового поведения (только long, как сейчас).
+- **Parity:** для EMA crossover baseline не должно появляться нового фильтра направления; `long_allowed` должен быть эквивалентен «всегда можно рассматривать long» (например все `True` после выравнивания с первой строкой), если отдельная directional-логика ещё не внедрена.
+
+### 3.2 `blockers.py`
+
+- **Назначение:** **`blockers_ok`** — boolean Series: если `False`, вход по триггеру **не** должен состояться (после композиции в `signals.py`).
+- **Stage 2:** допустим **`always_true`** blocker (все `True`) или **минимальный** blocker с той же семантикой (например константная серия), чтобы зафиксировать **точку расширения** без добавления новой торговой логики.
+- **Parity:** не вводить реальные блокирующие правила, которые меняют число сделок относительно Stage 1.
+
+### 3.3 `setup.py`
+
+- **Назначение:** **`setup_long`** — boolean Series: контекст «готовность к long-входу» до триггера.
+- **Stage 2:** если в Stage 1 отдельного setup не было, допустимо **`always_true`** при условии, что итоговый вход совпадает с Stage 1. Альтернатива — выразить то, что сейчас неявно считается контекстом, **эквивалентно** текущей формуле входа (но без «улучшений»).
+- **Parity:** итог после композиции не должен отличаться от «только триггер» baseline, кроме численных эффектов, перечисленных в §5.
+
+### 3.4 `triggers.py`
+
+- **Назначение:** содержит семантику **текущего** EMA crossover **входа** (bullish cross fast над slow с проверкой предыдущей строки, без сигнала на первой строке — как в Stage 1).
+- **Связь с legacy:** логика должна остаться согласованной с тем, что сейчас реализовано в family (ранее сосредоточено вокруг crossover-хелперов в `signals.py`).
+
+### 3.5 `exits.py`
+
+- **Назначение:** содержит семантику **текущего** выхода — **bearish** cross (reverse EMA cross), с той же дисциплиной «первая строка не срабатывает», что и для входа.
+- **Parity:** идентично Stage 1 по правилам кросса.
+
+### 3.6 `risk.py`
+
+- **Назначение:** централизовать **параметры и/или функции**, от которых зависят аргументы портфеля: как минимум **`init_cash`**, **`fees`**, **`slippage`** в духе текущего `EmaPullbackConfig` и вызова `vectorbt.Portfolio.from_signals`.
+- Допустим **минимальный placeholder** под future sizing (например `fixed_fraction` или комментарий/константа), **без** реализации live risk engine и без изменения фактического sizing, если в Stage 1 использовался дефолтный режим vectorbt от сигналов.
+
+### 3.7 `features.py`
+
+- Сохраняет роль Stage 1: EMA колонки и любые будущие признаки **только** из OHLCV.
+- Правки допустимы, если нужны для передачи данных в новые блоки (предпочтительно минимальные).
+
+### 3.8 `signals.py` — composer
+
+- **Назначение:** **композиция** булевых этапов **без** registry:
+  - **`final_entry`** = логическое И: `direction` (для long-контура — `long_allowed`) **&** `blockers_ok` **&** `setup_long` **&** `trigger_long` (или эквивалентное имя для сигнала входа).
+  - **`final_exit`** = сигнал выхода из `exits` (как в Stage 1 — одна серия на выход).
+- Явно задокументировать в модуле, что это **composer**, а не «ещё одна куча условий».
+- Запрещено: динамический выбор компонентов по строковому имени из registry.
+
+### 3.9 `run.py`
+
+- Остаётся entrypoint: загрузка свечей, вызов `features`, затем получение входа/выхода через **composer** (`signals.py`) и сборка портфеля с параметрами из **`risk` / `config`**.
+- Публичные контракты, которые использует `research/ema_smoke.py` (например `parse_args`, `config_from_args`, `run_with_config`), должны остаться **совместимыми** или расширяться только обратно-совместимо.
+
+### 3.10 `config.py`
+
+- При необходимости добавить поля/группировку под блоки **без** усложнения до полноценного Strategy Instance (это Step 3 master plan).
+- Сохранить читаемый «один источник правды» для прогона baseline.
+
+---
+
+## 4. Поток данных (ожидаемая сборка)
+
+Логическая цепочка после Stage 2:
+
+1. OHLCV DataFrame (как сейчас).
+2. `features` → DataFrame с колонками индикаторов.
+3. Из фич (и при необходимости из OHLCV) строятся Series для: direction, blockers, setup, trigger, exit.
+4. `signals` (composer) → `final_entry`, `final_exit`.
+5. `run` передаёт в vectorbt: close, `final_entry`, `final_exit`, freq, плюс init_cash/fees/slippage из risk/config.
+
+Никаких новых внешних источников данных.
+
+---
+
+## 5. Поведение и parity
+
+### 5.1 CLI и совместимость
+
+- **`python research/strategies/ema_pullback/run.py`** — как до Stage 2: успешный прогон печатает те же классы метрик и завершается **`status=ok`** при валидных данных.
+- **`python research/ema_smoke.py`** — остаётся совместимым (делегирование в family runner сохраняется).
+
+### 5.2 Метрики
+
+- **Цель:** **parity** с Stage 1 на одних и тех же данных и конфиге по умолчанию.
+- Допустимо **слегка** отличие численных метрик **только** если оно **объяснимо** (например порядок операций с boolean NA, явное `fillna` в одном месте vs другом) — в таком случае в implementation summary фиксируется причина; предпочтительно **устранить** такие отличия, если они не неизбежны.
+
+### 5.3 Инварианты Stage 1, которые нельзя ломать
+
+- Первая строка (после старта ряда): **нет** срабатывания кросса «на пустую историю» — тест «first row no signal» остаётся в силе для входа и выхода в смысле текущей семантики.
+- Использование тех же периодов EMA и того же способа расчёта EWM на `close`, что в Stage 1, если явно не зафиксирован багфикс (багфикс не входит в scope Stage 2).
+
+---
+
+## 6. Тестирование
+
+### 6.1 Unit tests (где осмысленно)
+
+- **direction:** что baseline даёт ожидаемый паттерн разрешения long (например все True на валидном диапазоне, согласованность длины индекса).
+- **blockers:** что `blockers_ok` не режет baseline (если задан always-true).
+- **setup:** аналогично, если setup — заглушка.
+- **triggers / exits:** кросс вверх/вниз на синтетических рядах EMA или мок-колонках; отсутствие сигнала на первой строке.
+- **risk:** что из конфига/risk-модуля корректно читаются значения, используемые портфелем (без запуска vectorbt в юнит-тесте — по желанию отдельный интеграционный тонкий тест).
+
+### 6.2 Композиция сигналов
+
+- Тест **final signal composition:** при заглушках direction/blockers/setup = «всё разрешено» `final_entry` / `final_exit` совпадают с прямым вызовом trigger/exit логики Stage 1 (или с эталонными Series).
+
+### 6.3 Регрессия семантики
+
+- **first row no signal** — отдельный явный тест.
+- **Legacy helpers:** если `ema_smoke_helpers` или аналоги содержат пересекающуюся логику, тест(ы) на **семантическое выравнивание** с блоками family (без дублирования больших кусков кода в тестах — использовать маленькие фикстуры).
+
+### 6.4 Границы проекта (boundary / guardrail test)
+
+- Тест или проверка в CI-скрипте (на усмотрение): подтверждение, что в изменениях **нет** появления запрещённых модулей/паттернов — например отсутствие файлов `registry.py`, `variants.py`, отсутствие строковых шаблонов `*_REGISTRY` в новом коде family, отсутствие дерева `research/common/` как framework.  
+  (Форма проверки — на реализации; суть: явно зафиксировать «мы не съехали в Step 5–6 master plan».)
+
+### 6.5 `data_engine/`
+
+- Diff по `data_engine/` должен оставаться **пустым**; тесты не должны требовать правок движка.
+
+---
+
+## 7. Критерии приёмки (Acceptance)
+
+1. **`pytest`** — зелёный на наборе тестов репозитория после изменений.
+2. **`python research/strategies/ema_pullback/run.py`** — завершается с **`status=ok`** на валидной БД (как в Phase 4 / Stage 1).
+3. **`python research/ema_smoke.py`** — **`status=ok`** и ожидаемый вывод метрик в том же духе, что Stage 1.
+4. **`data_engine/`** — нет изменений в git diff.
+5. Нет **registry / component grid / optimizer / общего framework** в объёме Forbidden (см. §2.2).
+6. Документ **`docs/research/02_pipeline_decomposition.md`** содержит заполненную краткую секцию **Implementation summary** после того, как реализация выполнена (см. §8).
+
+---
+
+## 8. Implementation summary
+
+**Статус:** done (Stage 2).
+
+- **Новые модули** в `research/strategies/ema_pullback/`: `direction.py` (`long_allowed_baseline`, `short_allowed_baseline` — long-only), `blockers.py` / `setup.py` (заглушки «всё True»), `triggers.py` / `exits.py` (бычий/медвежий EMA cross, первая строка без сигнала), `risk.py` (`PortfolioRiskParams`, `portfolio_risk_from_config` для `vectorbt.Portfolio.from_signals`). `features.py` без изменений логики.
+- **Composer** (`signals.py`): `compose_final_signals` собирает `final_entry = long_allowed & blockers_ok & setup_long & trigger_long`, `final_exit` = серия из `exits`. Публичный путь прогона: `ema_pullback_pipeline_signals` / `ema_crossover_signals`. `crossover_from_ema_columns` остаётся тонкой обёрткой над trigger+exit для legacy (`research/ema_smoke_helpers.py`).
+- **Parity со Stage 1:** при baseline-заглушках композиция булевых этапов эквивалентна «только кроссовер»; те же EWM на `close`, те же правила кросса. Численных расхождений отдельно не зафиксировано.
+- **Тесты:** `tests/test_ema_pullback_pipeline.py` (блоки, первая строка, совпадение pipeline с `crossover_from_ema_columns`, composer), `tests/test_research_stage2_boundaries.py` (нет `registry.py` / `variants.py`, нет `*_REGISTRY`, нет `research/common/`).
+- **Отложено:** `short_allowed_baseline` всегда `False` — контракт на будущее; sizing в `risk.py` только комментарий/placeholder, без изменения поведения vectorbt по умолчанию.
+
+---
+
+## 9. Примечания для исполнителя (Cursor / человек)
+
+- Держать дифф **узким**: только декомпозиция и перенос логики по файлам, без «улучшений» стратегии.
+- Имена файлов **`triggers.py` / `exits.py`** — как в задании пользователя (множественное число для triggers допустимо для единообразия с `exits.py`).
+- При коллизии с локальными конвенциями репозитория — следовать существующему стилю импортов, типизации и тестов из Stage 1.
+- Master plan дальше по шагам (config/instance, variants, registry) **не** реализовать в этом этапе.
