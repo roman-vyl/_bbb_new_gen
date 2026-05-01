@@ -3,6 +3,8 @@
 Stage 2 decomposes the EMA crossover into explicit blocks (direction, blockers,
 setup, triggers, exits, risk) composed in ``signals.py``. Trading semantics match
 Stage 1; ATR filters and richer directional logic are future work.
+Stage 3 adds StrategyConfig / StrategyInstance identity over the decomposed
+ema_pullback pipeline.
 
 Run from repo root (after ``pip install -e ".[research]"``):
 
@@ -41,7 +43,7 @@ from research.strategies.ema_pullback.signals import ema_crossover_signals
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(
-        description="EMA crossover backtest (ema_pullback family, Stage 2 pipeline)."
+        description="EMA crossover backtest (ema_pullback family, Stage 3 config/instance)."
     )
     p.add_argument("--symbol", default=DEFAULT_CONFIG.symbol, help="Symbol in DB")
     p.add_argument("--tf", default=DEFAULT_CONFIG.timeframe, help="Timeframe")
