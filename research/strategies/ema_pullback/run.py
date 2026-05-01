@@ -16,6 +16,7 @@ import math
 import sys
 from dataclasses import replace
 from pathlib import Path
+from typing import Sequence
 
 # Allow running this file without PYTHONPATH tricks.
 _ROOT = Path(__file__).resolve().parents[3]
@@ -30,14 +31,15 @@ from data_engine.store import Db
 from research.ema_smoke_helpers import candles_to_ohlcv_dataframe
 from research.strategies.ema_pullback.config import (
     DEFAULT_CONFIG,
-    EmaPullbackConfig,
+    StrategyConfig,
 )
 from research.strategies.ema_pullback.features import add_ema_columns
+from research.strategies.ema_pullback.instance import StrategyInstance
 from research.strategies.ema_pullback.risk import portfolio_risk_from_config
 from research.strategies.ema_pullback.signals import ema_crossover_signals
 
 
-def parse_args() -> argparse.Namespace:
+def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(
         description="EMA crossover backtest (ema_pullback family, Stage 2 pipeline)."
     )
@@ -49,15 +51,25 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Override SQLite path (default: Settings / DATA_ENGINE_DB_PATH)",
     )
-    return p.parse_args()
+    p.add_argument("--ema-fast", type=int, default=DEFAULT_CONFIG.ema_fast, help="Fast EMA period")
+    p.add_argument("--ema-slow", type=int, default=DEFAULT_CONFIG.ema_slow, help="Slow EMA period")
+    p.add_argument("--init-cash", type=float, default=DEFAULT_CONFIG.init_cash, help="Initial cash")
+    p.add_argument("--fees", type=float, default=DEFAULT_CONFIG.fees, help="Per-trade fee")
+    p.add_argument("--slippage", type=float, default=DEFAULT_CONFIG.slippage, help="Per-trade slippage")
+    return p.parse_args(argv)
 
 
-def config_from_args(args: argparse.Namespace) -> EmaPullbackConfig:
+def config_from_args(args: argparse.Namespace) -> StrategyConfig:
     return replace(
         DEFAULT_CONFIG,
         symbol=args.symbol.strip().upper(),
         timeframe=args.tf.strip(),
         db_path=args.db_path,
+        ema_fast=args.ema_fast,
+        ema_slow=args.ema_slow,
+        init_cash=args.init_cash,
+        fees=args.fees,
+        slippage=args.slippage,
     )
 
 
@@ -95,7 +107,7 @@ def pd_freq_alias(tf: str) -> str:
         raise ValueError(f"unsupported tf for freq: {tf}") from exc
 
 
-def run_with_config(cfg: EmaPullbackConfig) -> None:
+def run_with_config(cfg: StrategyConfig) -> None:
     try:
         import vectorbt as vbt
     except ImportError as exc:  # pragma: no cover - exercised when extra missing
@@ -103,6 +115,9 @@ def run_with_config(cfg: EmaPullbackConfig) -> None:
             "vectorbt (and research extras) are required. "
             'Install with: pip install -e ".[research]"'
         ) from exc
+
+    instance = StrategyInstance.from_config(cfg)
+    cfg = instance.config
 
     settings = Settings()
     if cfg.db_path is not None:
@@ -180,7 +195,8 @@ def run_with_config(cfg: EmaPullbackConfig) -> None:
 
     print(
         f"family={cfg.family} variant={cfg.variant} "
-        f"symbol={symbol} tf={tf} candles={len(candles)}"
+        f"config_id={instance.config_id} "
+        f"symbol={symbol} timeframe={tf} candles={len(candles)}"
     )
     print("vectorbt_portfolio.sharpe_ratio (freq-aware):", sharpe)
     print("vectorbt_portfolio.trades.profit_factor:", profit_factor)
