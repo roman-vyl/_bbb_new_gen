@@ -101,8 +101,38 @@ EMA_PULLBACK_20_200_500_FEATURE_PROFILE = FeatureProfile(
             source="close",
             params=(500,),
         ),
+        "atr_14": FeatureSeries(
+            series_id="atr_14",
+            indicator="prepared_distance",
+            timeframe="base_tf",
+            source="ohlc",
+            params=(14,),
+        ),
+        "atr_14_x1_5": FeatureSeries(
+            series_id="atr_14_x1_5",
+            indicator="prepared_distance",
+            timeframe="base_tf",
+            source="ohlc",
+            params=(),
+        ),
+        "atr_14_x4_0": FeatureSeries(
+            series_id="atr_14_x4_0",
+            indicator="prepared_distance",
+            timeframe="base_tf",
+            source="ohlc",
+            params=(),
+        ),
     },
-    bindings={},
+    bindings={
+        "trade_stop_distance": FeatureBinding(
+            role="trade_stop_distance",
+            series_id="atr_14_x1_5",
+        ),
+        "trade_take_distance": FeatureBinding(
+            role="trade_take_distance",
+            series_id="atr_14_x4_0",
+        ),
+    },
     relations={
         "intraday_trend": FeatureRelation(
             relation_id="intraday_trend",
@@ -149,6 +179,25 @@ def series_to_column(series: FeatureSeries) -> str:
     if series.indicator == "ema" and len(series.params) == 1:
         return f"ema_{series.params[0]}"
     return series.series_id
+
+
+def binding_to_column(profile: FeatureProfile, binding_role: str) -> str:
+    """Resolve a semantic binding role to the OHLCV DataFrame column name."""
+
+    try:
+        binding = profile.bindings[binding_role]
+    except KeyError as exc:
+        known = ", ".join(sorted(profile.bindings)) or "(none)"
+        raise KeyError(
+            f"feature profile {profile.profile_id!r} has no binding {binding_role!r}; known: {known}"
+        ) from exc
+    try:
+        series = profile.series[binding.series_id]
+    except KeyError as exc:
+        raise KeyError(
+            f"binding {binding_role!r} points to unknown series_id {binding.series_id!r}"
+        ) from exc
+    return series_to_column(series)
 
 
 def relation_columns(profile: FeatureProfile, relation_id: str) -> dict[str, str]:

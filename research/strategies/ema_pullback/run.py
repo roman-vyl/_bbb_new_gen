@@ -39,7 +39,10 @@ from research.strategies.ema_pullback.features import add_feature_columns
 from research.strategies.ema_pullback.instance import StrategyInstance
 from research.strategies.ema_pullback.risk import portfolio_risk_from_config
 from research.strategies.ema_pullback.signals import ema_crossover_signals
-from research.strategies.ema_pullback.trade_management import resolve_trade_management_profile
+from research.strategies.ema_pullback.trade_management import (
+    resolve_portfolio_kwargs_for_signals,
+    resolve_trade_management_profile,
+)
 from research.strategies.ema_pullback.results import (
     build_research_run_payload,
     build_run_id,
@@ -165,6 +168,12 @@ def run_with_config(cfg: StrategyConfig) -> None:
     freq = pandas_freq_alias(tf)
     risk = portfolio_risk_from_config(cfg)
     trade_mgmt = resolve_trade_management_profile(cfg.trade_management_profile)
+    tm_kwargs = resolve_portfolio_kwargs_for_signals(
+        trade_mgmt,
+        df=enriched,
+        close=close,
+        feature_profile_id=cfg.feature_profile,
+    )
     pf = vbt.Portfolio.from_signals(
         close,
         entries,
@@ -173,7 +182,7 @@ def run_with_config(cfg: StrategyConfig) -> None:
         init_cash=risk.init_cash,
         fees=risk.fees,
         slippage=risk.slippage,
-        **dict(trade_mgmt.portfolio_kwargs),
+        **tm_kwargs,
     )
 
     sharpe = ensure_finite_metric("sharpe_ratio", float(pf.sharpe_ratio()))
@@ -294,6 +303,12 @@ def _run_instance_on_ohlcv(instance: StrategyInstance, ohlcv: Any) -> dict[str, 
     freq = pandas_freq_alias(cfg.timeframe)
     risk = portfolio_risk_from_config(cfg)
     trade_mgmt = resolve_trade_management_profile(cfg.trade_management_profile)
+    tm_kwargs = resolve_portfolio_kwargs_for_signals(
+        trade_mgmt,
+        df=enriched,
+        close=close,
+        feature_profile_id=cfg.feature_profile,
+    )
     pf = vbt.Portfolio.from_signals(
         close,
         entries,
@@ -302,7 +317,7 @@ def _run_instance_on_ohlcv(instance: StrategyInstance, ohlcv: Any) -> dict[str, 
         init_cash=risk.init_cash,
         fees=risk.fees,
         slippage=risk.slippage,
-        **dict(trade_mgmt.portfolio_kwargs),
+        **tm_kwargs,
     )
 
     sharpe = ensure_finite_metric("sharpe_ratio", float(pf.sharpe_ratio()))

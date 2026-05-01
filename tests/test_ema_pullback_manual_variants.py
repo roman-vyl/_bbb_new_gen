@@ -8,7 +8,10 @@ from research.strategies.ema_pullback.components import (
     RECLAIM_ENTRY_ANCHOR_COMPONENT,
 )
 from research.strategies.ema_pullback.feature_profile import EMA_PULLBACK_20_200_500_PROFILE_ID
-from research.strategies.ema_pullback.trade_management import FIXED_PCT_SL_TP_PROFILE
+from research.strategies.ema_pullback.trade_management import (
+    FEATURE_DISTANCE_SL_TP_PROFILE,
+    FIXED_PCT_SL_TP_PROFILE,
+)
 from research.strategies.ema_pullback.variants import build_manual_variants
 
 
@@ -21,12 +24,13 @@ def test_manual_variants_match_expected_matrix() -> None:
         ("ema_pullback_aggressive", 10, 30),
         ("ema_pullback_20_200_500_reclaim", 20, 200),
         ("ema_pullback_20_200_500_reclaim_fixed_sl_tp", 20, 200),
+        ("ema_pullback_20_200_500_reclaim_feature_distance_sl_tp", 20, 200),
     ]
 
 
 def test_build_manual_variants_returns_at_least_three() -> None:
     variants = build_manual_variants()
-    assert len(variants) >= 5
+    assert len(variants) >= 6
 
 
 def test_manual_variants_have_unique_variant_names() -> None:
@@ -76,3 +80,17 @@ def test_stage8_fixed_sl_tp_variant_exists() -> None:
     assert stage8.config.setup_component == PULLBACK_TO_ENTRY_ANCHOR_COMPONENT
     assert stage8.config.trigger_component == RECLAIM_ENTRY_ANCHOR_COMPONENT
     assert stage8.config.trade_management_profile == FIXED_PCT_SL_TP_PROFILE
+
+
+def test_feature_distance_sl_tp_variant_exists() -> None:
+    variants = build_manual_variants()
+    v = next(
+        item
+        for item in variants
+        if item.config.variant == "ema_pullback_20_200_500_reclaim_feature_distance_sl_tp"
+    )
+    assert v.config.feature_profile == EMA_PULLBACK_20_200_500_PROFILE_ID
+    assert v.config.direction_component == INTRADAY_AND_SWING_TREND_LONG_COMPONENT
+    assert v.config.setup_component == PULLBACK_TO_ENTRY_ANCHOR_COMPONENT
+    assert v.config.trigger_component == RECLAIM_ENTRY_ANCHOR_COMPONENT
+    assert v.config.trade_management_profile == FEATURE_DISTANCE_SL_TP_PROFILE
