@@ -77,10 +77,6 @@ def test_cli_overrides_build_final_strategy_config() -> None:
             "4h",
             "--db-path",
             "custom.sqlite",
-            "--ema-fast",
-            "10",
-            "--ema-slow",
-            "40",
             "--init-cash",
             "1500",
             "--fees",
@@ -93,8 +89,8 @@ def test_cli_overrides_build_final_strategy_config() -> None:
     assert cfg.symbol == "ETHUSDT"
     assert cfg.timeframe == "4h"
     assert cfg.db_path == Path("custom.sqlite")
-    assert cfg.ema_fast == 10
-    assert cfg.ema_slow == 40
+    assert cfg.ema_fast == DEFAULT_CONFIG.ema_fast
+    assert cfg.ema_slow == DEFAULT_CONFIG.ema_slow
     assert cfg.init_cash == 1500.0
     assert cfg.fees == 0.001
     assert cfg.slippage == 0.0005

@@ -5,6 +5,16 @@ from __future__ import annotations
 from research.strategies.ema_pullback.variants import build_manual_variants
 
 
+def test_manual_variants_match_expected_matrix() -> None:
+    variants = build_manual_variants()
+    matrix = [(item.config.variant, item.config.ema_fast, item.config.ema_slow) for item in variants]
+    assert matrix == [
+        ("ema_pullback_baseline", 20, 50),
+        ("ema_pullback_conservative", 50, 200),
+        ("ema_pullback_aggressive", 10, 30),
+    ]
+
+
 def test_build_manual_variants_returns_at_least_three() -> None:
     variants = build_manual_variants()
     assert len(variants) >= 3

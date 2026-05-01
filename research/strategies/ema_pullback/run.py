@@ -1,10 +1,7 @@
-"""CLI: DB candles -> features -> pipeline stages -> composer -> vectorbt.
+"""CLI: DB candles -> shared pipeline -> manual variants -> vectorbt.
 
-Stage 2 decomposes the EMA crossover into explicit blocks (direction, blockers,
-setup, triggers, exits, risk) composed in ``signals.py``. Trading semantics match
-Stage 1; ATR filters and richer directional logic are future work.
-Stage 3 adds StrategyConfig / StrategyInstance identity over the decomposed
-ema_pullback pipeline.
+Stage 4 runs fixed manual variants for one ema_pullback family in a single pass
+over shared candles. EMA periods are defined in ``variants.py`` (not via CLI).
 
 Run from repo root (after ``pip install -e ".[research]"``):
 
@@ -44,7 +41,7 @@ from research.strategies.ema_pullback.variants import build_manual_variants
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(
-        description="EMA crossover backtest (ema_pullback family, Stage 3 config/instance)."
+        description="EMA pullback Stage 4 manual variants runner."
     )
     p.add_argument("--symbol", default=DEFAULT_CONFIG.symbol, help="Symbol in DB")
     p.add_argument("--tf", default=DEFAULT_CONFIG.timeframe, help="Timeframe")
@@ -54,8 +51,6 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         default=None,
         help="Override SQLite path (default: Settings / DATA_ENGINE_DB_PATH)",
     )
-    p.add_argument("--ema-fast", type=int, default=DEFAULT_CONFIG.ema_fast, help="Fast EMA period")
-    p.add_argument("--ema-slow", type=int, default=DEFAULT_CONFIG.ema_slow, help="Slow EMA period")
     p.add_argument("--init-cash", type=float, default=DEFAULT_CONFIG.init_cash, help="Initial cash")
     p.add_argument("--fees", type=float, default=DEFAULT_CONFIG.fees, help="Per-trade fee")
     p.add_argument("--slippage", type=float, default=DEFAULT_CONFIG.slippage, help="Per-trade slippage")
@@ -68,8 +63,6 @@ def config_from_args(args: argparse.Namespace) -> StrategyConfig:
         symbol=args.symbol.strip().upper(),
         timeframe=args.tf.strip(),
         db_path=args.db_path,
-        ema_fast=args.ema_fast,
-        ema_slow=args.ema_slow,
         init_cash=args.init_cash,
         fees=args.fees,
         slippage=args.slippage,
