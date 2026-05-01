@@ -1,7 +1,8 @@
-"""CLI: DB candles -> shared pipeline -> manual variants -> vectorbt.
+"""CLI: DB candles -> component-aware pipeline -> manual variants -> vectorbt.
 
-Stage 4 runs fixed manual variants for one ema_pullback family in a single pass
-over shared candles. EMA periods are defined in ``variants.py`` (not via CLI).
+Stage 5 runs fixed/manual variants for one ema_pullback family in a single pass
+over shared candles. EMA periods are defined in ``variants.py`` (not via CLI),
+while component ids come from ``StrategyConfig`` defaults/selection.
 
 Run from repo root (after ``pip install -e ".[research]"``):
 
@@ -41,7 +42,7 @@ from research.strategies.ema_pullback.variants import build_manual_variants
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(
-        description="EMA pullback Stage 4 manual variants runner."
+        description="EMA pullback Stage 5 component-aware manual variants runner."
     )
     p.add_argument("--symbol", default=DEFAULT_CONFIG.symbol, help="Symbol in DB")
     p.add_argument("--tf", default=DEFAULT_CONFIG.timeframe, help="Timeframe")
@@ -156,6 +157,12 @@ def run_with_config(cfg: StrategyConfig) -> None:
         enriched,
         ema_fast=cfg.ema_fast,
         ema_slow=cfg.ema_slow,
+        direction_component=cfg.direction_component,
+        blockers_component=cfg.blockers_component,
+        setup_component=cfg.setup_component,
+        trigger_component=cfg.trigger_component,
+        exits_component=cfg.exits_component,
+        risk_component=cfg.risk_component,
     )
 
     close = enriched["close"].astype(float)
@@ -258,6 +265,12 @@ def _run_instance_on_ohlcv(instance: StrategyInstance, ohlcv: Any) -> dict[str, 
         enriched,
         ema_fast=cfg.ema_fast,
         ema_slow=cfg.ema_slow,
+        direction_component=cfg.direction_component,
+        blockers_component=cfg.blockers_component,
+        setup_component=cfg.setup_component,
+        trigger_component=cfg.trigger_component,
+        exits_component=cfg.exits_component,
+        risk_component=cfg.risk_component,
     )
 
     close = enriched["close"].astype(float)

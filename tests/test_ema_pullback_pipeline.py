@@ -9,6 +9,7 @@ pytest.importorskip("pandas")
 import pandas as pd
 
 from research.strategies.ema_pullback.blockers import blockers_ok_baseline
+from research.strategies.ema_pullback.components import no_risk_filter
 from research.strategies.ema_pullback.config import DEFAULT_CONFIG
 from research.strategies.ema_pullback.direction import (
     long_allowed_baseline,
@@ -101,6 +102,17 @@ def test_ema_crossover_signals_uses_composer_path() -> None:
     assert b.equals(d)
 
 
+def test_ema_crossover_signals_rejects_unknown_trigger_component_id() -> None:
+    df = add_ema_columns(_minimal_ohlcv(40), ema_fast=5, ema_slow=8)
+    with pytest.raises(ValueError, match="unknown component_id"):
+        ema_crossover_signals(
+            df,
+            ema_fast=5,
+            ema_slow=8,
+            trigger_component="missing_trigger",
+        )
+
+
 def test_compose_final_signals_with_all_true_matches_trigger() -> None:
     df = add_ema_columns(_minimal_ohlcv(70), ema_fast=6, ema_slow=9)
     trig = ema_bullish_cross_entry(df, "ema_6", "ema_9")
@@ -110,6 +122,7 @@ def test_compose_final_signals_with_all_true_matches_trigger() -> None:
         blockers_ok=blockers_ok_baseline(df),
         setup_long=setup_long_baseline(df),
         trigger_long=trig,
+        risk_ok=no_risk_filter(df),
         exit_signal=ex,
     )
     assert fe.equals(trig)

@@ -13,6 +13,15 @@ import json
 from pathlib import Path
 from typing import Any, Mapping
 
+from research.strategies.ema_pullback.components import (
+    DEFAULT_BLOCKERS_COMPONENT,
+    DEFAULT_DIRECTION_COMPONENT,
+    DEFAULT_EXITS_COMPONENT,
+    DEFAULT_RISK_COMPONENT,
+    DEFAULT_SETUP_COMPONENT,
+    DEFAULT_TRIGGER_COMPONENT,
+)
+
 
 @dataclass(frozen=True)
 class StrategyConfig:
@@ -26,6 +35,12 @@ class StrategyConfig:
     init_cash: float
     fees: float
     slippage: float
+    direction_component: str = DEFAULT_DIRECTION_COMPONENT
+    blockers_component: str = DEFAULT_BLOCKERS_COMPONENT
+    setup_component: str = DEFAULT_SETUP_COMPONENT
+    trigger_component: str = DEFAULT_TRIGGER_COMPONENT
+    exits_component: str = DEFAULT_EXITS_COMPONENT
+    risk_component: str = DEFAULT_RISK_COMPONENT
 
     def __post_init__(self) -> None:
         if self.family != "ema_pullback":
@@ -46,6 +61,18 @@ class StrategyConfig:
             raise ValueError("fees must be >= 0")
         if self.slippage < 0:
             raise ValueError("slippage must be >= 0")
+        if not self.direction_component.strip():
+            raise ValueError("direction_component must be non-empty")
+        if not self.blockers_component.strip():
+            raise ValueError("blockers_component must be non-empty")
+        if not self.setup_component.strip():
+            raise ValueError("setup_component must be non-empty")
+        if not self.trigger_component.strip():
+            raise ValueError("trigger_component must be non-empty")
+        if not self.exits_component.strip():
+            raise ValueError("exits_component must be non-empty")
+        if not self.risk_component.strip():
+            raise ValueError("risk_component must be non-empty")
 
 
 IDENTITY_FIELDS: tuple[str, ...] = (
@@ -58,6 +85,12 @@ IDENTITY_FIELDS: tuple[str, ...] = (
     "init_cash",
     "fees",
     "slippage",
+    "direction_component",
+    "blockers_component",
+    "setup_component",
+    "trigger_component",
+    "exits_component",
+    "risk_component",
 )
 
 
@@ -99,6 +132,12 @@ def identity_payload(config: StrategyConfig) -> dict[str, Any]:
         "init_cash": config.init_cash,
         "fees": config.fees,
         "slippage": config.slippage,
+        "direction_component": config.direction_component,
+        "blockers_component": config.blockers_component,
+        "setup_component": config.setup_component,
+        "trigger_component": config.trigger_component,
+        "exits_component": config.exits_component,
+        "risk_component": config.risk_component,
     }
     return {key: _normalize_value(value) for key, value in raw.items()}
 
