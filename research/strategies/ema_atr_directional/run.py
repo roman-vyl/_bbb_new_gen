@@ -8,6 +8,7 @@ Run from repo root (after ``pip install -e ".[research]"``):
 from __future__ import annotations
 
 import argparse
+import math
 import sys
 from dataclasses import replace
 from pathlib import Path
@@ -53,6 +54,17 @@ def config_from_args(args: argparse.Namespace) -> EmaAtrDirectionalConfig:
         timeframe=args.tf.strip(),
         db_path=args.db_path,
     )
+
+
+def ensure_finite_metric(name: str, value: float) -> float:
+    """Return value if finite; otherwise exit with a clear error (no status=ok)."""
+
+    if not math.isfinite(value):
+        raise SystemExit(
+            f"backtest metric {name!r} is not finite (got {value!r}); "
+            "refusing to print status=ok."
+        )
+    return value
 
 
 def pd_freq_alias(tf: str) -> str:
@@ -150,13 +162,15 @@ def run_with_config(cfg: EmaAtrDirectionalConfig) -> None:
         slippage=cfg.slippage,
     )
 
-    sharpe = float(pf.sharpe_ratio())
+    sharpe = ensure_finite_metric("sharpe_ratio", float(pf.sharpe_ratio()))
     trades = pf.trades
     pf_val = trades.profit_factor()
     profit_factor = float(pf_val) if hasattr(pf_val, "item") else float(pf_val)
+    profit_factor = ensure_finite_metric("profit_factor", profit_factor)
 
     max_dd = pf.max_drawdown()
     max_dd_f = float(max_dd) if hasattr(max_dd, "item") else float(max_dd)
+    max_dd_f = ensure_finite_metric("max_drawdown", max_dd_f)
 
     print(
         f"family={cfg.family} variant={cfg.variant} "
