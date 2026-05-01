@@ -43,7 +43,7 @@ class FeatureProfile:
 
 
 EMA_PULLBACK_DEFAULT_PROFILE_ID = "ema_pullback_default"
-EMA_PULLBACK_1H_20_200_500_PROFILE_ID = "ema_pullback_1h_20_200_500"
+EMA_PULLBACK_20_200_500_PROFILE_ID = "ema_pullback_20_200_500"
 
 
 EMA_PULLBACK_DEFAULT_FEATURE_PROFILE = FeatureProfile(
@@ -77,27 +77,27 @@ EMA_PULLBACK_DEFAULT_FEATURE_PROFILE = FeatureProfile(
     },
 )
 
-EMA_PULLBACK_1H_20_200_500_FEATURE_PROFILE = FeatureProfile(
-    profile_id=EMA_PULLBACK_1H_20_200_500_PROFILE_ID,
+EMA_PULLBACK_20_200_500_FEATURE_PROFILE = FeatureProfile(
+    profile_id=EMA_PULLBACK_20_200_500_PROFILE_ID,
     series={
-        "ema_close_1h_20": FeatureSeries(
-            series_id="ema_close_1h_20",
+        "ema_close_base_tf_20": FeatureSeries(
+            series_id="ema_close_base_tf_20",
             indicator="ema",
-            timeframe="1h",
+            timeframe="base_tf",
             source="close",
             params=(20,),
         ),
-        "ema_close_1h_200": FeatureSeries(
-            series_id="ema_close_1h_200",
+        "ema_close_base_tf_200": FeatureSeries(
+            series_id="ema_close_base_tf_200",
             indicator="ema",
-            timeframe="1h",
+            timeframe="base_tf",
             source="close",
             params=(200,),
         ),
-        "ema_close_1h_500": FeatureSeries(
-            series_id="ema_close_1h_500",
+        "ema_close_base_tf_500": FeatureSeries(
+            series_id="ema_close_base_tf_500",
             indicator="ema",
-            timeframe="1h",
+            timeframe="base_tf",
             source="close",
             params=(500,),
         ),
@@ -107,21 +107,21 @@ EMA_PULLBACK_1H_20_200_500_FEATURE_PROFILE = FeatureProfile(
         "intraday_trend": FeatureRelation(
             relation_id="intraday_trend",
             roles={
-                "fast": "ema_close_1h_20",
-                "slow": "ema_close_1h_200",
+                "fast": "ema_close_base_tf_20",
+                "slow": "ema_close_base_tf_200",
             },
         ),
         "swing_trend": FeatureRelation(
             relation_id="swing_trend",
             roles={
-                "fast": "ema_close_1h_200",
-                "slow": "ema_close_1h_500",
+                "fast": "ema_close_base_tf_200",
+                "slow": "ema_close_base_tf_500",
             },
         ),
         "entry_anchor": FeatureRelation(
             relation_id="entry_anchor",
             roles={
-                "ema": "ema_close_1h_200",
+                "ema": "ema_close_base_tf_200",
             },
         ),
     },
@@ -129,7 +129,7 @@ EMA_PULLBACK_1H_20_200_500_FEATURE_PROFILE = FeatureProfile(
 
 FEATURE_PROFILES: dict[str, FeatureProfile] = {
     EMA_PULLBACK_DEFAULT_PROFILE_ID: EMA_PULLBACK_DEFAULT_FEATURE_PROFILE,
-    EMA_PULLBACK_1H_20_200_500_PROFILE_ID: EMA_PULLBACK_1H_20_200_500_FEATURE_PROFILE,
+    EMA_PULLBACK_20_200_500_PROFILE_ID: EMA_PULLBACK_20_200_500_FEATURE_PROFILE,
 }
 
 

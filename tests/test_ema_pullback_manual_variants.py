@@ -7,7 +7,7 @@ from research.strategies.ema_pullback.components import (
     PULLBACK_TO_ENTRY_ANCHOR_COMPONENT,
     RECLAIM_ENTRY_ANCHOR_COMPONENT,
 )
-from research.strategies.ema_pullback.feature_profile import EMA_PULLBACK_1H_20_200_500_PROFILE_ID
+from research.strategies.ema_pullback.feature_profile import EMA_PULLBACK_20_200_500_PROFILE_ID
 from research.strategies.ema_pullback.variants import build_manual_variants
 
 
@@ -18,7 +18,7 @@ def test_manual_variants_match_expected_matrix() -> None:
         ("ema_pullback_baseline", 20, 50),
         ("ema_pullback_conservative", 50, 200),
         ("ema_pullback_aggressive", 10, 30),
-        ("ema_pullback_1h_20_200_500_reclaim", 20, 200),
+        ("ema_pullback_20_200_500_reclaim", 20, 200),
     ]
 
 
@@ -57,8 +57,8 @@ def test_manual_variants_all_have_fast_less_than_slow() -> None:
 
 def test_stage7_variant_uses_expected_profile_and_components() -> None:
     variants = build_manual_variants()
-    stage7 = next(v for v in variants if v.config.variant == "ema_pullback_1h_20_200_500_reclaim")
-    assert stage7.config.feature_profile == EMA_PULLBACK_1H_20_200_500_PROFILE_ID
+    stage7 = next(v for v in variants if v.config.variant == "ema_pullback_20_200_500_reclaim")
+    assert stage7.config.feature_profile == EMA_PULLBACK_20_200_500_PROFILE_ID
     assert stage7.config.direction_component == INTRADAY_AND_SWING_TREND_LONG_COMPONENT
     assert stage7.config.setup_component == PULLBACK_TO_ENTRY_ANCHOR_COMPONENT
     assert stage7.config.trigger_component == RECLAIM_ENTRY_ANCHOR_COMPONENT

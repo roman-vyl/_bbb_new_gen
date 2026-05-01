@@ -90,17 +90,21 @@ Trigger — это событие:
 Добавить новый feature profile:
 
 ```text
-ema_pullback_1h_20_200_500
+ema_pullback_20_200_500
 ```
 
 Он должен описывать физические EMA series и semantic relations.
+Этот profile задаёт periods/relations для текущего base timeframe из `StrategyConfig.timeframe`.
+То есть имя profile не фиксирует `1h`.
+Практический запуск Stage 7 по default config сейчас выполняется на `1h`,
+но это не причина включать `1h` в profile id.
 
 ### Physical FeatureSeries
 
 ```text
-ema_close_1h_20
-ema_close_1h_200
-ema_close_1h_500
+ema_close_base_tf_20
+ema_close_base_tf_200
+ema_close_base_tf_500
 ```
 
 На первом внедрении допускаются compatibility columns / aliases, если текущий код использует имена вроде:
@@ -117,15 +121,15 @@ ema_500
 
 ```text
 intraday_trend:
-  fast = ema_close_1h_20
-  slow = ema_close_1h_200
+  fast = ema_close_base_tf_20
+  slow = ema_close_base_tf_200
 
 swing_trend:
-  fast = ema_close_1h_200
-  slow = ema_close_1h_500
+  fast = ema_close_base_tf_200
+  slow = ema_close_base_tf_500
 
 entry_anchor:
-  ema = ema_close_1h_200
+  ema = ema_close_base_tf_200
 ```
 
 Ключевой смысл:
@@ -259,13 +263,13 @@ Trigger не должен сам проверять весь trend/setup.
 Добавить новый manual variant:
 
 ```text
-ema_pullback_1h_20_200_500_reclaim
+ema_pullback_20_200_500_reclaim
 ```
 
 Сборка:
 
 ```text
-feature_profile = ema_pullback_1h_20_200_500
+feature_profile = ema_pullback_20_200_500
 
 direction_component = intraday_and_swing_trend_long
 blockers_component = no_blockers
@@ -379,7 +383,7 @@ writes to SQLite
 Добавить profile:
 
 ```text
-ema_pullback_1h_20_200_500
+ema_pullback_20_200_500
 ```
 
 С relations:
@@ -476,13 +480,13 @@ trigger:
 В `variants.py` добавить:
 
 ```text
-ema_pullback_1h_20_200_500_reclaim
+ema_pullback_20_200_500_reclaim
 ```
 
 Он должен использовать:
 
 ```text
-feature_profile = ema_pullback_1h_20_200_500
+feature_profile = ema_pullback_20_200_500
 direction_component = intraday_and_swing_trend_long
 setup_component = pullback_to_entry_anchor
 trigger_component = reclaim_entry_anchor
@@ -564,7 +568,7 @@ confirmation that data_engine/ was not changed
 
 Implemented Stage 7 end-to-end:
 
-- Added new feature profile `ema_pullback_1h_20_200_500` with semantic relations:
+- Added new feature profile `ema_pullback_20_200_500` with semantic relations:
   - `intraday_trend` (`EMA20` vs `EMA200`)
   - `swing_trend` (`EMA200` vs `EMA500`)
   - `entry_anchor` (`EMA200`)
@@ -575,7 +579,7 @@ Implemented Stage 7 end-to-end:
   - setup: `pullback_to_entry_anchor`
   - trigger: `reclaim_entry_anchor`
 - Registered new component ids in the family registry.
-- Added manual variant `ema_pullback_1h_20_200_500_reclaim`.
+- Added manual variant `ema_pullback_20_200_500_reclaim`.
 - Updated signal composition path to pass semantic relation columns from selected
   feature profile into direction/setup/trigger components.
 - Extended tests to cover new profile, component ids, component logic, and variant wiring.
@@ -629,7 +633,7 @@ python research/ema_smoke.py
 ema_pullback_baseline              sharpe=0.951653  pf=1.189819  max_dd=-0.587362
 ema_pullback_conservative          sharpe=0.863949  pf=1.322492  max_dd=-0.597011
 ema_pullback_aggressive            sharpe=1.014079  pf=1.139126  max_dd=-0.600443
-ema_pullback_1h_20_200_500_reclaim sharpe=0.820921  pf=1.883021  max_dd=-0.527299
+ema_pullback_20_200_500_reclaim    sharpe=0.820921  pf=1.883021  max_dd=-0.527299
 ```
 
 ### data_engine confirmation
@@ -639,13 +643,13 @@ ema_pullback_1h_20_200_500_reclaim sharpe=0.820921  pf=1.883021  max_dd=-0.52729
 Stage 7 считается успешным, если:
 
 ```text
-1. Добавлен feature profile ema_pullback_1h_20_200_500.
+1. Добавлен feature profile ema_pullback_20_200_500.
 2. EMA20/EMA200/EMA500 подготовлены через FeaturesDev.
 3. Добавлен direction component intraday_and_swing_trend_long.
 4. Добавлен setup component pullback_to_entry_anchor.
 5. Добавлен trigger component reclaim_entry_anchor.
 6. Все новые component ids зарегистрированы.
-7. Добавлен manual variant ema_pullback_1h_20_200_500_reclaim.
+7. Добавлен manual variant ema_pullback_20_200_500_reclaim.
 8. Старые manual variants продолжают работать.
 9. run.py печатает comparison table со старым variants и новым variant.
 10. run.py завершается status=ok.

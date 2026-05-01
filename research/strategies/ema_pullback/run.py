@@ -1,8 +1,9 @@
 """CLI: DB candles -> component-aware pipeline -> manual variants -> vectorbt.
 
-Stage 5 runs fixed/manual variants for one ema_pullback family in a single pass
-over shared candles. EMA periods are defined in ``variants.py`` (not via CLI),
-while component ids come from ``StrategyConfig`` defaults/selection.
+EMA pullback research runner for component-aware manual variants.
+It runs fixed/manual variants for one ema_pullback family over shared candles.
+EMA periods are defined in ``variants.py`` (not via CLI), while component ids
+come from ``StrategyConfig`` defaults/selection.
 
 Run from repo root (after ``pip install -e ".[research]"``):
 
@@ -42,7 +43,7 @@ from research.strategies.ema_pullback.variants import build_manual_variants
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(
-        description="EMA pullback Stage 5 component-aware manual variants runner."
+        description="EMA pullback research runner for component-aware manual variants."
     )
     p.add_argument("--symbol", default=DEFAULT_CONFIG.symbol, help="Symbol in DB")
     p.add_argument("--tf", default=DEFAULT_CONFIG.timeframe, help="Timeframe")
@@ -313,6 +314,7 @@ def _run_instance_on_ohlcv(instance: StrategyInstance, ohlcv: Any) -> dict[str, 
         "config_id": instance.config_id,
         "ema_fast": cfg.ema_fast,
         "ema_slow": cfg.ema_slow,
+        "trades": int(trades.count()),
         "sharpe": sharpe,
         "profit_factor": profit_factor,
         "max_drawdown": max_dd_f,
@@ -325,6 +327,7 @@ def _print_comparison_table(rows: list[dict[str, float | str]]) -> None:
         "config_id",
         "ema_fast",
         "ema_slow",
+        "trades",
         "sharpe",
         "profit_factor",
         "max_drawdown",
@@ -337,6 +340,7 @@ def _print_comparison_table(rows: list[dict[str, float | str]]) -> None:
                 "config_id": str(row["config_id"]),
                 "ema_fast": str(row["ema_fast"]),
                 "ema_slow": str(row["ema_slow"]),
+                "trades": str(row["trades"]),
                 "sharpe": f"{float(row['sharpe']):.6f}",
                 "profit_factor": f"{float(row['profit_factor']):.6f}",
                 "max_drawdown": f"{float(row['max_drawdown']):.6f}",

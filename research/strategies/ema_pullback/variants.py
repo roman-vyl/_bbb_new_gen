@@ -1,7 +1,6 @@
 """Manual variants factory for ema_pullback family.
 
-Stage 5 keeps fixed/manual variants and preserves Stage 4 variant names.
-Component defaults are sourced from ``StrategyConfig``.
+Includes control variants and the first real component-based reclaim variant.
 """
 
 from __future__ import annotations
@@ -14,7 +13,7 @@ from research.strategies.ema_pullback.components import (
     RECLAIM_ENTRY_ANCHOR_COMPONENT,
 )
 from research.strategies.ema_pullback.config import DEFAULT_CONFIG, StrategyConfig
-from research.strategies.ema_pullback.feature_profile import EMA_PULLBACK_1H_20_200_500_PROFILE_ID
+from research.strategies.ema_pullback.feature_profile import EMA_PULLBACK_20_200_500_PROFILE_ID
 from research.strategies.ema_pullback.instance import StrategyInstance
 
 
@@ -26,10 +25,10 @@ def build_manual_variants(base_config: StrategyConfig = DEFAULT_CONFIG) -> list[
         {"variant": "ema_pullback_conservative", "ema_fast": 50, "ema_slow": 200},
         {"variant": "ema_pullback_aggressive", "ema_fast": 10, "ema_slow": 30},
         {
-            "variant": "ema_pullback_1h_20_200_500_reclaim",
+            "variant": "ema_pullback_20_200_500_reclaim",
             "ema_fast": 20,
             "ema_slow": 200,
-            "feature_profile": EMA_PULLBACK_1H_20_200_500_PROFILE_ID,
+            "feature_profile": EMA_PULLBACK_20_200_500_PROFILE_ID,
             "direction_component": INTRADAY_AND_SWING_TREND_LONG_COMPONENT,
             "setup_component": PULLBACK_TO_ENTRY_ANCHOR_COMPONENT,
             "trigger_component": RECLAIM_ENTRY_ANCHOR_COMPONENT,

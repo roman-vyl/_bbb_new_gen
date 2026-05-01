@@ -27,7 +27,7 @@ from research.strategies.ema_pullback.signals import (
     ema_crossover_signals,
     ema_pullback_pipeline_signals,
 )
-from research.strategies.ema_pullback.feature_profile import EMA_PULLBACK_1H_20_200_500_PROFILE_ID
+from research.strategies.ema_pullback.feature_profile import EMA_PULLBACK_20_200_500_PROFILE_ID
 
 
 
@@ -195,7 +195,7 @@ def test_add_feature_columns_adds_profile_ema_periods() -> None:
     df = _minimal_ohlcv(20)
     enriched = add_feature_columns(
         df,
-        profile_id=EMA_PULLBACK_1H_20_200_500_PROFILE_ID,
+        profile_id=EMA_PULLBACK_20_200_500_PROFILE_ID,
         ema_fast=20,
         ema_slow=200,
     )
