@@ -8,11 +8,9 @@ pytest.importorskip("pandas")
 
 from data_engine.contracts import Candle
 
-from research.ema_smoke_helpers import (
-    add_ema_columns,
-    candles_to_ohlcv_dataframe,
-    ema_crossover_signals,
-)
+from research.ema_smoke_helpers import candles_to_ohlcv_dataframe
+from research.strategies.ema_atr_directional.features import add_ema_columns
+from research.strategies.ema_atr_directional.signals import ema_crossover_signals
 
 
 def _synthetic_candles(n: int = 120) -> list[Candle]:
@@ -52,15 +50,15 @@ def test_candles_to_ohlcv_preserves_length_and_order() -> None:
 def test_ema_columns_no_nan_on_finite_close() -> None:
     candles = _synthetic_candles(80)
     df = candles_to_ohlcv_dataframe(candles)
-    enriched = add_ema_columns(df, fast=20, slow=50)
+    enriched = add_ema_columns(df, ema_fast=20, ema_slow=50)
     assert not enriched["ema_20"].isna().any()
     assert not enriched["ema_50"].isna().any()
 
 
 def test_crossover_signals_boolean_aligned() -> None:
     candles = _synthetic_candles(80)
-    df = add_ema_columns(candles_to_ohlcv_dataframe(candles))
-    entries, exits = ema_crossover_signals(df, "ema_20", "ema_50")
+    df = add_ema_columns(candles_to_ohlcv_dataframe(candles), ema_fast=20, ema_slow=50)
+    entries, exits = ema_crossover_signals(df, ema_fast=20, ema_slow=50)
     assert entries.dtype == bool or entries.dtype == "bool"
     assert exits.dtype == bool or exits.dtype == "bool"
     assert len(entries) == len(df)
@@ -70,13 +68,12 @@ def test_crossover_signals_boolean_aligned() -> None:
 @pytest.mark.optional_vectorbt
 def test_minimal_vectorbt_portfolio_from_signals() -> None:
     pytest.importorskip("vectorbt")
-    import pandas as pd
     import vectorbt as vbt
 
     candles = _synthetic_candles(100)
     ohlcv = candles_to_ohlcv_dataframe(candles)
-    enriched = add_ema_columns(ohlcv)
-    entries, exits = ema_crossover_signals(enriched)
+    enriched = add_ema_columns(ohlcv, ema_fast=20, ema_slow=50)
+    entries, exits = ema_crossover_signals(enriched, ema_fast=20, ema_slow=50)
     close = enriched["close"].astype(float)
     pf = vbt.Portfolio.from_signals(close, entries, exits, freq="1h")
     sharpe = float(pf.sharpe_ratio())

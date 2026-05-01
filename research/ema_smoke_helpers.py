@@ -1,10 +1,20 @@
-"""Pure helpers for EMA smoke backtest (testable without vectorbt)."""
+"""Pure helpers for EMA smoke backtest (testable without vectorbt).
+
+``candles_to_ohlcv_dataframe`` lives here (list[Candle] -> DataFrame).
+EMA columns and crossover signals delegate to ``ema_atr_directional`` family
+so there is a single implementation.
+"""
 
 from __future__ import annotations
 
 import pandas as pd
 
 from data_engine.contracts import Candle
+
+from research.strategies.ema_atr_directional.features import add_ema_columns as _add_ema
+from research.strategies.ema_atr_directional.signals import (
+    crossover_from_ema_columns,
+)
 
 
 def candles_to_ohlcv_dataframe(candles: list[Candle]) -> pd.DataFrame:
@@ -34,24 +44,16 @@ def candles_to_ohlcv_dataframe(candles: list[Candle]) -> pd.DataFrame:
 
 
 def add_ema_columns(df: pd.DataFrame, fast: int = 20, slow: int = 50) -> pd.DataFrame:
-    """Append EMA columns using pandas ewm(adjust=False) on close."""
+    """Append EMA columns; wraps family ``add_ema_columns`` (legacy kw names)."""
 
-    out = df.copy()
-    close = out["close"].astype(float)
-    out[f"ema_{fast}"] = close.ewm(span=fast, adjust=False).mean()
-    out[f"ema_{slow}"] = close.ewm(span=slow, adjust=False).mean()
-    return out
+    return _add_ema(df, ema_fast=fast, ema_slow=slow)
 
 
 def ema_crossover_signals(
-    df: pd.DataFrame, fast_col: str = "ema_20", slow_col: str = "ema_50"
+    df: pd.DataFrame,
+    fast_col: str = "ema_20",
+    slow_col: str = "ema_50",
 ) -> tuple[pd.Series, pd.Series]:
-    """Long on bullish cross, exit on bearish cross (boolean Series, index-aligned)."""
+    """Long/exit crossover using named EMA columns (legacy API)."""
 
-    fast = df[fast_col]
-    slow = df[slow_col]
-    prev_fast = fast.shift(1)
-    prev_slow = slow.shift(1)
-    entries = (fast > slow) & (prev_fast <= prev_slow)
-    exits = (fast < slow) & (prev_fast >= prev_slow)
-    return entries.fillna(False), exits.fillna(False)
+    return crossover_from_ema_columns(df, fast_col, slow_col)
