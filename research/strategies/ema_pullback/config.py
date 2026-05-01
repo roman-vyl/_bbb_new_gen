@@ -42,6 +42,7 @@ class StrategyConfig:
     exits_component: str = DEFAULT_EXITS_COMPONENT
     risk_component: str = DEFAULT_RISK_COMPONENT
     feature_profile: str = "ema_pullback_default"
+    trade_management_profile: str = "none"
 
     def __post_init__(self) -> None:
         if self.family != "ema_pullback":
@@ -76,6 +77,8 @@ class StrategyConfig:
             raise ValueError("risk_component must be non-empty")
         if not self.feature_profile.strip():
             raise ValueError("feature_profile must be non-empty")
+        if not self.trade_management_profile.strip():
+            raise ValueError("trade_management_profile must be non-empty")
 
 
 IDENTITY_FIELDS: tuple[str, ...] = (
@@ -95,6 +98,7 @@ IDENTITY_FIELDS: tuple[str, ...] = (
     "exits_component",
     "risk_component",
     "feature_profile",
+    "trade_management_profile",
 )
 
 
@@ -143,6 +147,7 @@ def identity_payload(config: StrategyConfig) -> dict[str, Any]:
         "exits_component": config.exits_component,
         "risk_component": config.risk_component,
         "feature_profile": config.feature_profile,
+        "trade_management_profile": config.trade_management_profile,
     }
     return {key: _normalize_value(value) for key, value in raw.items()}
 

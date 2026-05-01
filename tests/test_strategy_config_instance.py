@@ -24,10 +24,12 @@ def test_identity_change_changes_config_id() -> None:
     changed_fast = replace(DEFAULT_CONFIG, ema_fast=DEFAULT_CONFIG.ema_fast + 1)
     changed_fees = replace(DEFAULT_CONFIG, fees=DEFAULT_CONFIG.fees + 0.001)
     changed_profile = replace(DEFAULT_CONFIG, feature_profile="ema_pullback_alt")
+    changed_trade_management = replace(DEFAULT_CONFIG, trade_management_profile="fixed_pct_sl_tp")
     base = strategy_config_id(DEFAULT_CONFIG)
     assert strategy_config_id(changed_fast) != base
     assert strategy_config_id(changed_fees) != base
     assert strategy_config_id(changed_profile) != base
+    assert strategy_config_id(changed_trade_management) != base
 
 
 def test_config_id_is_stable_for_dict_key_order() -> None:
@@ -64,6 +66,11 @@ def test_db_path_is_not_part_of_config_id() -> None:
     assert strategy_config_id(local_a) == strategy_config_id(local_b)
 
 
+def test_trade_management_profile_is_included_in_identity_payload() -> None:
+    identity = identity_payload(DEFAULT_CONFIG)
+    assert identity["trade_management_profile"] == DEFAULT_CONFIG.trade_management_profile
+
+
 def test_strategy_instance_exposes_config_id() -> None:
     instance = StrategyInstance.from_config(DEFAULT_CONFIG)
     assert instance.config is DEFAULT_CONFIG
@@ -97,3 +104,4 @@ def test_cli_overrides_build_final_strategy_config() -> None:
     assert cfg.fees == 0.001
     assert cfg.slippage == 0.0005
     assert cfg.feature_profile == DEFAULT_CONFIG.feature_profile
+    assert cfg.trade_management_profile == DEFAULT_CONFIG.trade_management_profile

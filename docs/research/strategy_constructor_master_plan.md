@@ -336,7 +336,38 @@ risk_component = существующий/дефолтный no_risk_filter
 
 ---
 
-### Step 8 — Component Grid
+### Step 8 — Feature-based Trade Management / SL-TP
+
+После первой реальной component-based стратегии вводится отдельный слой управления открытой сделкой.
+
+Trade Management не является FeaturesDev и не является entry-логикой.
+
+FeaturesDev готовит признаки, anchors и relations:
+
+```text
+ATR
+EMA anchors
+higher-timeframe EMA levels
+volatility context
+trend relations
+```
+
+Trade Management использует prepared feature bindings/relations, чтобы рассчитывать правила фиксации прибыли и убытка:
+
+```text
+stop_loss
+take_profit
+time_stop
+later: trailing_stop / partial exits
+```
+
+`trade_management_profile` должен быть частью `StrategyConfig` и входить в `config_id`, потому что одинаковая entry-логика с разными правилами фиксации прибыли/убытка — это разные strategy instances.
+
+Component Grid начинается только после базового Trade Management, потому что массово тестировать входы без стабильной архитектуры stop/take даёт искажённые выводы.
+
+---
+
+### Step 9 — Component Grid
 
 После появления нескольких реальных компонентов добавить ограниченный перебор комбинаций.
 
@@ -354,7 +385,7 @@ Grid должен:
 
 ---
 
-### Step 9 — Results & Debug Reports
+### Step 10 — Results & Debug Reports
 
 Сохранять результаты в `research/results/`.
 
@@ -386,7 +417,7 @@ trade_count
 
 ---
 
-### Step 10 — Validation
+### Step 11 — Validation
 
 Добавить защиту от самообмана:
 
@@ -414,7 +445,7 @@ trade_count
 
 Roadmap note:
 
-Component Grid намеренно отложен на один шаг. Одного registry недостаточно для полезного grid; в Stage 7 сначала добавляются реальные setup/trigger components и один manual component-based variant.
+FeaturesDev keeps indicator calculation out of components. Trade Management is inserted before Component Grid to keep SL/TP logic out of runner and entry components. Component Grid remains postponed until FeaturesDev, components, and basic Trade Management boundaries are stable.
 
 ---
 
@@ -433,10 +464,11 @@ Component Grid намеренно отложен на один шаг. Одно�
 6. featuresdev layer
 7. component registry
 8. first real component variant
-9. component grid
-10. results table
-11. debug report
-12. validation
+9. feature-based trade management / sl-tp
+10. component grid
+11. results table
+12. debug report
+13. validation
 ```
 
 Итоговая цель:
