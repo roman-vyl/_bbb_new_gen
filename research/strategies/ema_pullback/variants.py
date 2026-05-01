@@ -1,6 +1,6 @@
 """Manual variants factory for ema_pullback family.
 
-Includes control variants and the first real component-based reclaim variant.
+Includes control variants and component-based reclaim variants.
 """
 
 from __future__ import annotations
