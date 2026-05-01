@@ -38,6 +38,15 @@ class _DiscoveryFetcher:
         return []
 
 
+def test_fix_rejects_unsupported_timeframe(tmp_path: Path) -> None:
+    result = CliRunner().invoke(
+        app,
+        ["fix", "--symbol", "BTCUSDT", "--tf", "2h", "--db-path", str(tmp_path / "x.sqlite")],
+    )
+    assert result.exit_code != 0
+    assert "unsupported" in (result.stdout + result.stderr).lower()
+
+
 def test_fix_cli_builds_full_historical_window_and_delegates_to_fix_candles(tmp_path: Path, monkeypatch) -> None:
     db_file = tmp_path / "fix.sqlite"
     calls = {}

@@ -26,7 +26,7 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 from data_engine.config import Settings
-from data_engine.contracts import TimeWindow
+from data_engine.contracts import TimeWindow, pandas_freq_alias
 from data_engine.engine.time_grid import tf_ms
 from data_engine.store import Db
 
@@ -39,7 +39,10 @@ from research.strategies.ema_pullback.features import add_feature_columns
 from research.strategies.ema_pullback.instance import StrategyInstance
 from research.strategies.ema_pullback.risk import portfolio_risk_from_config
 from research.strategies.ema_pullback.signals import ema_crossover_signals
-from research.strategies.ema_pullback.trade_management import resolve_trade_management_profile
+from research.strategies.ema_pullback.trade_management import (
+    resolve_portfolio_kwargs_for_signals,
+    resolve_trade_management_profile,
+)
 from research.strategies.ema_pullback.results import (
     build_research_run_payload,
     build_run_id,
@@ -88,29 +91,6 @@ def ensure_finite_metric(name: str, value: float) -> float:
             "refusing to print status=ok."
         )
     return value
-
-
-def pd_freq_alias(tf: str) -> str:
-    """Map engine tf string to pandas / vectorbt frequency string."""
-
-    mapping = {
-        "1m": "1min",
-        "3m": "3min",
-        "5m": "5min",
-        "15m": "15min",
-        "30m": "30min",
-        "1h": "1h",
-        "2h": "2h",
-        "4h": "4h",
-        "6h": "6h",
-        "12h": "12h",
-        "1d": "1D",
-        "1w": "1W",
-    }
-    try:
-        return mapping[tf]
-    except KeyError as exc:
-        raise ValueError(f"unsupported tf for freq: {tf}") from exc
 
 
 def run_with_config(cfg: StrategyConfig) -> None:
@@ -185,9 +165,15 @@ def run_with_config(cfg: StrategyConfig) -> None:
     if ema_f.isna().any() or ema_s.isna().any():
         raise SystemExit("EMA columns contain NaN (unexpected for ewm on finite close).")
 
-    freq = pd_freq_alias(tf)
+    freq = pandas_freq_alias(tf)
     risk = portfolio_risk_from_config(cfg)
     trade_mgmt = resolve_trade_management_profile(cfg.trade_management_profile)
+    tm_kwargs = resolve_portfolio_kwargs_for_signals(
+        trade_mgmt,
+        df=enriched,
+        close=close,
+        feature_profile_id=cfg.feature_profile,
+    )
     pf = vbt.Portfolio.from_signals(
         close,
         entries,
@@ -196,7 +182,7 @@ def run_with_config(cfg: StrategyConfig) -> None:
         init_cash=risk.init_cash,
         fees=risk.fees,
         slippage=risk.slippage,
-        **dict(trade_mgmt.portfolio_kwargs),
+        **tm_kwargs,
     )
 
     sharpe = ensure_finite_metric("sharpe_ratio", float(pf.sharpe_ratio()))
@@ -314,9 +300,15 @@ def _run_instance_on_ohlcv(instance: StrategyInstance, ohlcv: Any) -> dict[str, 
     if ema_f.isna().any() or ema_s.isna().any():
         raise SystemExit("EMA columns contain NaN (unexpected for ewm on finite close).")
 
-    freq = pd_freq_alias(cfg.timeframe)
+    freq = pandas_freq_alias(cfg.timeframe)
     risk = portfolio_risk_from_config(cfg)
     trade_mgmt = resolve_trade_management_profile(cfg.trade_management_profile)
+    tm_kwargs = resolve_portfolio_kwargs_for_signals(
+        trade_mgmt,
+        df=enriched,
+        close=close,
+        feature_profile_id=cfg.feature_profile,
+    )
     pf = vbt.Portfolio.from_signals(
         close,
         entries,
@@ -325,7 +317,7 @@ def _run_instance_on_ohlcv(instance: StrategyInstance, ohlcv: Any) -> dict[str, 
         init_cash=risk.init_cash,
         fees=risk.fees,
         slippage=risk.slippage,
-        **dict(trade_mgmt.portfolio_kwargs),
+        **tm_kwargs,
     )
 
     sharpe = ensure_finite_metric("sharpe_ratio", float(pf.sharpe_ratio()))

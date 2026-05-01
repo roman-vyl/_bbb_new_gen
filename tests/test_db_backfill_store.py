@@ -87,6 +87,27 @@ def test_range_get_uses_half_open_window_and_returns_asc(tmp_path: Path) -> None
     assert [row.open_time_ms for row in rows] == [3_600_000]
 
 
+def test_same_symbol_independent_timeframes(tmp_path: Path) -> None:
+    db_file = tmp_path / "multi_tf.sqlite"
+    db = Db(db_file)
+    db.apply_ddl()
+    db.upsert(
+        [
+            _candle("BTCUSDT", "5m", 0),
+            _candle("BTCUSDT", "5m", 300_000),
+            _candle("BTCUSDT", "1h", 0),
+        ]
+    )
+    assert db.count_candles("BTCUSDT", "5m", TimeWindow(0, 600_000)) == 2
+    assert db.count_candles("BTCUSDT", "1h", TimeWindow(0, 3_600_000)) == 1
+    assert db.max_open_time_ms("BTCUSDT", "5m") == 300_000
+    assert db.max_open_time_ms("BTCUSDT", "1h") == 0
+    summary_5m = db.candle_summary("BTCUSDT", "5m")
+    assert summary_5m["count"] == 2
+    assert summary_5m["min_open_time_ms"] == 0
+    assert summary_5m["max_open_time_ms"] == 300_000
+
+
 def test_count_candles_filters_symbol_and_tf(tmp_path: Path) -> None:
     db = _db(tmp_path)
     db.upsert(

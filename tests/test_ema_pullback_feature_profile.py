@@ -51,3 +51,16 @@ def test_stage7_relations_have_expected_roles() -> None:
     assert profile.relations["entry_anchor"].roles == {
         "ema": "ema_close_base_tf_200",
     }
+
+
+def test_stage7_trade_distance_bindings() -> None:
+    profile = EMA_PULLBACK_20_200_500_FEATURE_PROFILE
+    assert profile.bindings["trade_stop_distance"].series_id == "atr_14_x1_5"
+    assert profile.bindings["trade_take_distance"].series_id == "atr_14_x4_0"
+
+
+def test_stage7_includes_atr_series_descriptors() -> None:
+    profile = EMA_PULLBACK_20_200_500_FEATURE_PROFILE
+    assert "atr_14" in profile.series
+    assert "atr_14_x1_5" in profile.series
+    assert "atr_14_x4_0" in profile.series

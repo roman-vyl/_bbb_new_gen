@@ -4,6 +4,7 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from data_engine.contracts import Candle, FetchRequest
+from data_engine.engine.time_grid import tf_ms
 from data_engine.service import cli
 from data_engine.service.cli import app
 from data_engine.store import Db
@@ -37,6 +38,7 @@ class FakeFetcher:
 
         rows: list[Candle] = []
         open_time_ms = request.window.start_ms
+        step = tf_ms(request.timeframe)
         while open_time_ms < request.window.end_ms:
             rows.append(
                 Candle(
@@ -50,7 +52,7 @@ class FakeFetcher:
                     volume=10.0,
                 )
             )
-            open_time_ms += 3_600_000
+            open_time_ms += step
         if self.drop_last and rows:
             rows.pop()
         if rows:
@@ -67,6 +69,29 @@ def _patch_backfill(monkeypatch, fetcher: FakeFetcher, *, launch_time_ms: int = 
 def _invoke(db_file: Path) -> object:
     runner = CliRunner()
     return runner.invoke(app, ["backfill", "--symbol", "BTCUSDT", "--tf", "1h", "--db-path", str(db_file)])
+
+
+def test_backfill_non_1h_timeframe(tmp_path: Path, monkeypatch) -> None:
+    db_file = tmp_path / "tf5m.sqlite"
+    fetcher = FakeFetcher()
+    _patch_backfill(monkeypatch, fetcher, now_ms=10_800_000)
+    runner = CliRunner()
+    result = runner.invoke(app, ["backfill", "--symbol", "BTCUSDT", "--tf", "5m", "--db-path", str(db_file)])
+
+    assert result.exit_code == 0
+    assert "timeframe: 5m" in result.stdout
+    assert "status: ok" in result.stdout
+    assert fetcher.requests[0].timeframe == "5m"
+
+
+def test_backfill_rejects_unsupported_timeframe(tmp_path: Path) -> None:
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        ["backfill", "--symbol", "BTCUSDT", "--tf", "1m", "--db-path", str(tmp_path / "bad.sqlite")],
+    )
+    assert result.exit_code != 0
+    assert "unsupported" in (result.stdout + result.stderr).lower()
 
 
 def test_backfill_from_empty_db(tmp_path: Path, monkeypatch) -> None:

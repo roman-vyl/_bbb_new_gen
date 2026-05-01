@@ -15,7 +15,10 @@ from research.strategies.ema_pullback.components import (
 from research.strategies.ema_pullback.config import DEFAULT_CONFIG, StrategyConfig
 from research.strategies.ema_pullback.feature_profile import EMA_PULLBACK_20_200_500_PROFILE_ID
 from research.strategies.ema_pullback.instance import StrategyInstance
-from research.strategies.ema_pullback.trade_management import FIXED_PCT_SL_TP_PROFILE
+from research.strategies.ema_pullback.trade_management import (
+    FEATURE_DISTANCE_SL_TP_PROFILE,
+    FIXED_PCT_SL_TP_PROFILE,
+)
 
 
 def build_manual_variants(base_config: StrategyConfig = DEFAULT_CONFIG) -> list[StrategyInstance]:
@@ -43,6 +46,16 @@ def build_manual_variants(base_config: StrategyConfig = DEFAULT_CONFIG) -> list[
             "setup_component": PULLBACK_TO_ENTRY_ANCHOR_COMPONENT,
             "trigger_component": RECLAIM_ENTRY_ANCHOR_COMPONENT,
             "trade_management_profile": FIXED_PCT_SL_TP_PROFILE,
+        },
+        {
+            "variant": "ema_pullback_20_200_500_reclaim_feature_distance_sl_tp",
+            "ema_fast": 20,
+            "ema_slow": 200,
+            "feature_profile": EMA_PULLBACK_20_200_500_PROFILE_ID,
+            "direction_component": INTRADAY_AND_SWING_TREND_LONG_COMPONENT,
+            "setup_component": PULLBACK_TO_ENTRY_ANCHOR_COMPONENT,
+            "trigger_component": RECLAIM_ENTRY_ANCHOR_COMPONENT,
+            "trade_management_profile": FEATURE_DISTANCE_SL_TP_PROFILE,
         },
     )
     return [
