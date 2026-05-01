@@ -102,6 +102,17 @@ def test_ema_crossover_signals_uses_composer_path() -> None:
     assert b.equals(d)
 
 
+def test_ema_crossover_signals_rejects_unknown_trigger_component_id() -> None:
+    df = add_ema_columns(_minimal_ohlcv(40), ema_fast=5, ema_slow=8)
+    with pytest.raises(ValueError, match="unknown component_id"):
+        ema_crossover_signals(
+            df,
+            ema_fast=5,
+            ema_slow=8,
+            trigger_component="missing_trigger",
+        )
+
+
 def test_compose_final_signals_with_all_true_matches_trigger() -> None:
     df = add_ema_columns(_minimal_ohlcv(70), ema_fast=6, ema_slow=9)
     trig = ema_bullish_cross_entry(df, "ema_6", "ema_9")

@@ -1,7 +1,8 @@
-"""CLI: DB candles -> shared pipeline -> manual variants -> vectorbt.
+"""CLI: DB candles -> component-aware pipeline -> manual variants -> vectorbt.
 
-Stage 4 runs fixed manual variants for one ema_pullback family in a single pass
-over shared candles. EMA periods are defined in ``variants.py`` (not via CLI).
+Stage 5 runs fixed/manual variants for one ema_pullback family in a single pass
+over shared candles. EMA periods are defined in ``variants.py`` (not via CLI),
+while component ids come from ``StrategyConfig`` defaults/selection.
 
 Run from repo root (after ``pip install -e ".[research]"``):
 
@@ -41,7 +42,7 @@ from research.strategies.ema_pullback.variants import build_manual_variants
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(
-        description="EMA pullback Stage 4 manual variants runner."
+        description="EMA pullback Stage 5 component-aware manual variants runner."
     )
     p.add_argument("--symbol", default=DEFAULT_CONFIG.symbol, help="Symbol in DB")
     p.add_argument("--tf", default=DEFAULT_CONFIG.timeframe, help="Timeframe")

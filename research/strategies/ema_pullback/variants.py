@@ -1,4 +1,8 @@
-"""Manual variants factory for ema_pullback Stage 4."""
+"""Manual variants factory for ema_pullback family.
+
+Stage 5 keeps fixed/manual variants and preserves Stage 4 variant names.
+Component defaults are sourced from ``StrategyConfig``.
+"""
 
 from __future__ import annotations
 
@@ -9,7 +13,7 @@ from research.strategies.ema_pullback.instance import StrategyInstance
 
 
 def build_manual_variants(base_config: StrategyConfig = DEFAULT_CONFIG) -> list[StrategyInstance]:
-    """Build the fixed Stage 4 manual variants for one ema_pullback family."""
+    """Build fixed/manual variants for one ema_pullback family."""
 
     variant_specs: tuple[tuple[str, int, int], ...] = (
         ("ema_pullback_baseline", 20, 50),
