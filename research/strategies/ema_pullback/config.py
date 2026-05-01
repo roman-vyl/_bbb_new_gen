@@ -41,6 +41,7 @@ class StrategyConfig:
     trigger_component: str = DEFAULT_TRIGGER_COMPONENT
     exits_component: str = DEFAULT_EXITS_COMPONENT
     risk_component: str = DEFAULT_RISK_COMPONENT
+    feature_profile: str = "ema_pullback_default"
 
     def __post_init__(self) -> None:
         if self.family != "ema_pullback":
@@ -73,6 +74,8 @@ class StrategyConfig:
             raise ValueError("exits_component must be non-empty")
         if not self.risk_component.strip():
             raise ValueError("risk_component must be non-empty")
+        if not self.feature_profile.strip():
+            raise ValueError("feature_profile must be non-empty")
 
 
 IDENTITY_FIELDS: tuple[str, ...] = (
@@ -91,6 +94,7 @@ IDENTITY_FIELDS: tuple[str, ...] = (
     "trigger_component",
     "exits_component",
     "risk_component",
+    "feature_profile",
 )
 
 
@@ -138,6 +142,7 @@ def identity_payload(config: StrategyConfig) -> dict[str, Any]:
         "trigger_component": config.trigger_component,
         "exits_component": config.exits_component,
         "risk_component": config.risk_component,
+        "feature_profile": config.feature_profile,
     }
     return {key: _normalize_value(value) for key, value in raw.items()}
 

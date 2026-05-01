@@ -555,3 +555,46 @@ FeaturesDev — это слой подготовки языка признако
 features/profile layer говорит: что известно о рынке и как это называется по смыслу.
 components говорят: как использовать это знание для signal logic.
 ```
+
+---
+
+## Stage 5 implementation summary
+
+```text
+что добавлено:
+- Добавлен family-local файл feature_profile.py для ema_pullback.
+- Реализованы модели: FeatureSeries, FeatureBinding, FeatureRelation, FeatureProfile.
+- Добавлен default profile: ema_pullback_default.
+- В default profile зафиксирована relation:
+    entry_trend.fast = ema_fast
+    entry_trend.slow = ema_slow
+- В StrategyConfig добавлено поле feature_profile (default: "ema_pullback_default").
+- feature_profile включён в deterministic config_id.
+- В features.py добавлены compatibility columns:
+    ema_fast
+    ema_slow
+  (как aliases к ema_{ema_fast} и ema_{ema_slow}).
+
+какие файлы изменены:
+- research/strategies/ema_pullback/feature_profile.py (new)
+- research/strategies/ema_pullback/config.py
+- research/strategies/ema_pullback/features.py
+- tests/test_ema_pullback_feature_profile.py (new)
+- tests/test_strategy_config_instance.py
+
+что осталось совместимым:
+- Текущие manual variants (baseline/conservative/aggressive) работают без изменений.
+- run.py по-прежнему печатает comparison table и status=ok.
+- research/ema_smoke.py по-прежнему печатает status=ok.
+- db_path по-прежнему не влияет на config_id.
+
+какие проверки выполнены:
+- python -m pytest -q
+- python research/strategies/ema_pullback/run.py
+- python research/ema_smoke.py
+- git diff --stat data_engine/
+- git status -sb
+
+подтверждение, что data_engine/ не изменялся:
+- git diff --stat data_engine/ не показал изменений.
+```
