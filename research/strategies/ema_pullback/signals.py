@@ -13,6 +13,11 @@ from research.strategies.ema_pullback.components import (
     DEFAULT_TRIGGER_COMPONENT,
     resolve_component,
 )
+from research.strategies.ema_pullback.feature_profile import (
+    EMA_PULLBACK_DEFAULT_PROFILE_ID,
+    relation_columns,
+    resolve_feature_profile,
+)
 
 
 def compose_final_signals(
@@ -42,6 +47,7 @@ def ema_pullback_pipeline_signals(
     trigger_component: str = DEFAULT_TRIGGER_COMPONENT,
     exits_component: str = DEFAULT_EXITS_COMPONENT,
     risk_component: str = DEFAULT_RISK_COMPONENT,
+    feature_profile: str = EMA_PULLBACK_DEFAULT_PROFILE_ID,
 ) -> tuple[pd.Series, pd.Series]:
     """Run direction → blockers → setup → trigger/exit/risk by selected component ids."""
 
@@ -51,13 +57,37 @@ def ema_pullback_pipeline_signals(
     trigger_fn = resolve_component("trigger", trigger_component).func
     exits_fn = resolve_component("exits", exits_component).func
     risk_fn = resolve_component("risk", risk_component).func
+    profile = resolve_feature_profile(feature_profile)
 
-    long_al = direction_fn(df)
+    intraday_cols = {"fast": f"ema_{ema_fast}", "slow": f"ema_{ema_slow}"}
+    if "intraday_trend" in profile.relations:
+        intraday_cols = relation_columns(profile, "intraday_trend")
+
+    swing_cols = dict(intraday_cols)
+    if "swing_trend" in profile.relations:
+        swing_cols = relation_columns(profile, "swing_trend")
+
+    entry_anchor_col = intraday_cols["slow"]
+    if "entry_anchor" in profile.relations:
+        entry_anchor_col = relation_columns(profile, "entry_anchor")["ema"]
+
+    long_al = direction_fn(
+        df,
+        intraday_fast_col=intraday_cols["fast"],
+        intraday_slow_col=intraday_cols["slow"],
+        swing_fast_col=swing_cols["fast"],
+        swing_slow_col=swing_cols["slow"],
+    )
     block_ok = blockers_fn(df)
-    setup = setup_fn(df)
+    setup = setup_fn(df, entry_anchor_col=entry_anchor_col)
     fast_col = f"ema_{ema_fast}"
     slow_col = f"ema_{ema_slow}"
-    trig = trigger_fn(df, fast_col, slow_col)
+    trig = trigger_fn(
+        df,
+        fast_col=fast_col,
+        slow_col=slow_col,
+        entry_anchor_col=entry_anchor_col,
+    )
     ex = exits_fn(df, fast_col, slow_col)
     risk_ok = risk_fn(df)
     return compose_final_signals(
@@ -99,6 +129,7 @@ def ema_crossover_signals(
     trigger_component: str = DEFAULT_TRIGGER_COMPONENT,
     exits_component: str = DEFAULT_EXITS_COMPONENT,
     risk_component: str = DEFAULT_RISK_COMPONENT,
+    feature_profile: str = EMA_PULLBACK_DEFAULT_PROFILE_ID,
 ) -> tuple[pd.Series, pd.Series]:
     """Crossover using columns ``ema_{ema_fast}`` and ``ema_{ema_slow}``."""
 
@@ -112,4 +143,5 @@ def ema_crossover_signals(
         trigger_component=trigger_component,
         exits_component=exits_component,
         risk_component=risk_component,
+        feature_profile=feature_profile,
     )

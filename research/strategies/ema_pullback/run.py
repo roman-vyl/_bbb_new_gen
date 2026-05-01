@@ -33,7 +33,7 @@ from research.strategies.ema_pullback.config import (
     DEFAULT_CONFIG,
     StrategyConfig,
 )
-from research.strategies.ema_pullback.features import add_ema_columns
+from research.strategies.ema_pullback.features import add_feature_columns
 from research.strategies.ema_pullback.instance import StrategyInstance
 from research.strategies.ema_pullback.risk import portfolio_risk_from_config
 from research.strategies.ema_pullback.signals import ema_crossover_signals
@@ -148,8 +148,9 @@ def run_with_config(cfg: StrategyConfig) -> None:
         raise SystemExit("Not enough candles for a backtest.")
 
     ohlcv = candles_to_ohlcv_dataframe(candles)
-    enriched = add_ema_columns(
+    enriched = add_feature_columns(
         ohlcv,
+        profile_id=cfg.feature_profile,
         ema_fast=cfg.ema_fast,
         ema_slow=cfg.ema_slow,
     )
@@ -163,6 +164,7 @@ def run_with_config(cfg: StrategyConfig) -> None:
         trigger_component=cfg.trigger_component,
         exits_component=cfg.exits_component,
         risk_component=cfg.risk_component,
+        feature_profile=cfg.feature_profile,
     )
 
     close = enriched["close"].astype(float)
@@ -256,8 +258,9 @@ def _run_instance_on_ohlcv(instance: StrategyInstance, ohlcv: Any) -> dict[str, 
         ) from exc
 
     cfg = instance.config
-    enriched = add_ema_columns(
+    enriched = add_feature_columns(
         ohlcv,
+        profile_id=cfg.feature_profile,
         ema_fast=cfg.ema_fast,
         ema_slow=cfg.ema_slow,
     )
@@ -271,6 +274,7 @@ def _run_instance_on_ohlcv(instance: StrategyInstance, ohlcv: Any) -> dict[str, 
         trigger_component=cfg.trigger_component,
         exits_component=cfg.exits_component,
         risk_component=cfg.risk_component,
+        feature_profile=cfg.feature_profile,
     )
 
     close = enriched["close"].astype(float)

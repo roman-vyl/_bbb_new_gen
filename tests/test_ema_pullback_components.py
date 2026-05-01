@@ -15,6 +15,9 @@ from research.strategies.ema_pullback.components import (
     DEFAULT_RISK_COMPONENT,
     DEFAULT_SETUP_COMPONENT,
     DEFAULT_TRIGGER_COMPONENT,
+    INTRADAY_AND_SWING_TREND_LONG_COMPONENT,
+    PULLBACK_TO_ENTRY_ANCHOR_COMPONENT,
+    RECLAIM_ENTRY_ANCHOR_COMPONENT,
     REQUIRED_COMPONENT_ROLES,
     resolve_component,
 )
@@ -78,3 +81,9 @@ def test_db_path_does_not_change_config_id_with_components() -> None:
     a = replace(DEFAULT_CONFIG, db_path=Path("alpha.sqlite"))
     b = replace(DEFAULT_CONFIG, db_path=Path("beta.sqlite"))
     assert strategy_config_id(a) == strategy_config_id(b)
+
+
+def test_stage7_component_ids_resolve() -> None:
+    assert callable(resolve_component("direction", INTRADAY_AND_SWING_TREND_LONG_COMPONENT).func)
+    assert callable(resolve_component("setup", PULLBACK_TO_ENTRY_ANCHOR_COMPONENT).func)
+    assert callable(resolve_component("trigger", RECLAIM_ENTRY_ANCHOR_COMPONENT).func)
