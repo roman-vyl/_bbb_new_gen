@@ -1,8 +1,8 @@
-# Research Stage 5 — Component Registry
+# Research Stage 6 — Component Registry
 
 ## Goal
 
-Цель Stage 5 — добавить минимальную и стабильную компонентную адресацию внутри family `ema_pullback`, без превращения Research-трека в framework.
+Цель Stage 6 — добавить минимальную и стабильную компонентную адресацию внутри family `ema_pullback`, без превращения Research-трека в framework.
 
 - дать каждому блоку strategy pipeline стабильный `component_id`;
 - научить `StrategyConfig` хранить выбранные component ids;
@@ -12,7 +12,7 @@
 
 ## Desired outcome
 
-Ожидаемый результат Stage 5:
+Ожидаемый результат Stage 6:
 
 - внутри `research/strategies/ema_pullback/` появляется family-local component registry;
 - роли компонентов:
@@ -30,7 +30,7 @@
 
 ## Scope
 
-Разрешено в рамках Stage 5:
+Разрешено в рамках Stage 6:
 
 - создать `research/strategies/ema_pullback/components.py`;
 - точечно изменить `config.py`, чтобы добавить component id fields;
@@ -38,11 +38,11 @@
 - при необходимости точечно изменить `variants.py`, чтобы manual variants явно получали/default component ids;
 - при необходимости точечно изменить `run.py`, если это нужно из-за `config`/`signals` contract;
 - добавить тесты для component registry and config_id;
-- обновить Stage 5 implementation summary после реализации.
+- обновить Stage 6 implementation summary после реализации.
 
 ## Out of scope
 
-Ограничения Stage 5 (явно запрещено):
+Ограничения Stage 6 (явно запрещено):
 
 - не менять `data_engine/`;
 - не добавлять `data_engine/strategies`, `data_engine/signals`, `data_engine/backtest`, `data_engine/adapters/vectorbt.py`;
@@ -59,7 +59,7 @@
 
 ## Component roles
 
-Обязательные roles для Stage 5:
+Обязательные roles для Stage 6:
 
 - `direction`
 - `blockers`
@@ -96,7 +96,7 @@
 - неизвестный `role`/`component_id` должен давать понятную ошибку;
 - `signals.py` остаётся composer, а не превращается в registry или optimizer.
 
-Код в Stage 5 должен остаться минимальным и прямолинейным: без магии регистрации и без динамических загрузок.
+Код в Stage 6 должен остаться минимальным и прямолинейным: без магии регистрации и без динамических загрузок.
 
 ## StrategyConfig impact
 
@@ -115,9 +115,9 @@
 - `db_path` по-прежнему не входит в `config_id`;
 - изменение `config_id` относительно Stage 4 допустимо, потому что смысловая конфигурация стратегии расширяется.
 
-## Manual variants after Stage 5
+## Manual variants after Stage 6
 
-После Stage 5 сохраняются Stage 4 variants:
+После Stage 6 сохраняются Stage 4 variants:
 
 - `ema_pullback_baseline`
 - `ema_pullback_conservative`
@@ -127,7 +127,7 @@
 
 - пока variants отличаются только `ema_fast` / `ema_slow`;
 - все три variants могут использовать одинаковые baseline/default components;
-- Stage 5 не обязан добавлять новые торговые идеи или альтернативные `trigger`/`setup`/`exits`.
+- Stage 6 не обязан добавлять новые торговые идеи или альтернативные `trigger`/`setup`/`exits`.
 
 ## Proposed file changes
 
@@ -142,12 +142,12 @@
 
 ## Rollout steps
 
-### Step 5.1 — Document the plan
+### Step 6.1 — Document the plan
 
-- Create and approve `docs/research/05_component_registry.md`.
+- Create and approve `docs/research/06_component_registry.md`.
 - No code changes yet.
 
-### Step 5.2 — Add family-local component registry
+### Step 6.2 — Add family-local component registry
 
 - Create `research/strategies/ema_pullback/components.py`.
 - Define required component roles:
@@ -161,32 +161,32 @@
 - Add minimal `resolve_component(role, component_id)`.
 - Keep registry explicit and boring: manual dict only, no auto-discovery, no decorators, no dynamic imports.
 
-### Step 5.3 — Extend StrategyConfig with component ids
+### Step 6.3 — Extend StrategyConfig with component ids
 
 - Add component id fields to `StrategyConfig`.
 - Provide defaults matching the baseline/default components.
 - Keep `db_path` excluded from `config_id`.
 - Include component ids in deterministic `config_id`.
-- Accept that Stage 5 may change config ids compared to Stage 4.
+- Accept that Stage 6 may change config ids compared to Stage 4.
 
-### Step 5.4 — Wire signals composer through registry
+### Step 6.4 — Wire signals composer through registry
 
 - Update `signals.py` so it resolves selected components through `components.py`.
 - Keep `signals.py` as composer only.
 - Do not move registry logic into `signals.py`.
 - Preserve current baseline trading behavior.
 
-### Step 5.5 — Keep manual variants working
+### Step 6.5 — Keep manual variants working
 
 - Ensure Stage 4 manual variants still exist:
   - `ema_pullback_baseline`
   - `ema_pullback_conservative`
   - `ema_pullback_aggressive`
 - Variants may all use the same default components.
-- Variants still differ only by `ema_fast` / `ema_slow` in Stage 5.
+- Variants still differ only by `ema_fast` / `ema_slow` in Stage 6.
 - Do not introduce component combinations yet.
 
-### Step 5.6 — Add tests
+### Step 6.6 — Add tests
 
 - Add tests for required roles.
 - Add tests for valid/invalid component resolution.
@@ -194,7 +194,7 @@
 - Add tests that component ids affect `config_id`.
 - Add tests that `db_path` still does not affect `config_id`.
 
-### Step 5.7 — Run acceptance commands
+### Step 6.7 — Run acceptance commands
 
 Use:
 
@@ -206,9 +206,9 @@ git diff --stat data_engine/
 git status -sb
 ```
 
-### Step 5.8 — Add implementation summary
+### Step 6.8 — Add implementation summary
 
-- After implementation, append a short implementation summary to `docs/research/05_component_registry.md`.
+- After implementation, append a short implementation summary to `docs/research/06_component_registry.md`.
 - Summary should list files changed, behavior preserved, tests run, and explicit confirmation that `data_engine/` was not changed.
 
 ## Runner behavior
@@ -257,11 +257,11 @@ git status -sb
 - `python research/strategies/ema_pullback/run.py` prints 3 manual variants and `status=ok`.
 - `python research/ema_smoke.py` remains working.
 - `git diff --stat data_engine/` is empty.
-- `git status -sb` shows only intended Stage 5 changes.
+- `git status -sb` shows only intended Stage 6 changes.
 
 ## Architecture notes
 
-- Stage 5 introduces a family-local registry only.
+- Stage 6 introduces a family-local registry only.
 - No global strategy framework yet.
 - No component grid yet.
 - No optimizer yet.
@@ -272,7 +272,7 @@ git status -sb
 - `run.py` remains a research runner.
 - `data_engine/` remains unaware of strategies.
 
-## Stage 5 implementation summary
+## Stage 6 implementation summary
 
 Что появилось по функционалу:
 
@@ -292,7 +292,7 @@ git status -sb
   - `ema_pullback_baseline`
   - `ema_pullback_conservative`
   - `ema_pullback_aggressive`
-- В Stage 5 варианты всё ещё отличаются только `ema_fast` / `ema_slow`; component ids у них одинаковые дефолтные.
+- В Stage 6 варианты всё ещё отличаются только `ema_fast` / `ema_slow`; component ids у них одинаковые дефолтные.
 - Runner по-прежнему печатает сравнение 3 вариантов и завершает `status=ok`.
 - `research/ema_smoke.py` остаётся рабочим.
 

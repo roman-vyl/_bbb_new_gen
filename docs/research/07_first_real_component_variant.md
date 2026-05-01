@@ -1,19 +1,19 @@
-# Research Stage 6 — First Real Component Variant
+# Research Stage 7 — First Real Component Variant
 
 ## Goal
 
-Цель Stage 6 — сделать первый полный component-based variant внутри `research/strategies/ema_pullback`, чтобы подтвердить, что цепочка `components.py` -> `StrategyConfig` -> `StrategyInstance` -> composer в `signals.py` -> runner действительно запускает новую торговую логику через component ids.
+Цель Stage 7 — сделать первый полный component-based variant внутри `research/strategies/ema_pullback`, чтобы подтвердить, что цепочка `components.py` -> `StrategyConfig` -> `StrategyInstance` -> composer в `signals.py` -> runner действительно запускает новую торговую логику через component ids.
 
 На этой стадии добавляются только два новых реальных компонента:
 
 - `setup`: `pullback_to_fast_ema`;
 - `trigger`: `reclaim_fast_ema`.
 
-Остальные роли должны оставаться подключёнными через существующие/default/stub components. Также Stage 6 должен дать прямое сравнение нового variant с уже существующими manual variants, без перехода к grid/optimizer/framework.
+Остальные роли должны оставаться подключёнными через существующие/default/stub components. Также Stage 7 должен дать прямое сравнение нового variant с уже существующими manual variants, без перехода к grid/optimizer/framework.
 
 ## Desired outcome
 
-К концу Stage 6 ожидается следующее:
+К концу Stage 7 ожидается следующее:
 
 - в `setup.py` добавлен новый реальный setup component `pullback_to_fast_ema`;
 - в `triggers.py` добавлен новый реальный trigger component `reclaim_fast_ema`;
@@ -35,7 +35,7 @@
 
 ## Scope
 
-Разрешено в Stage 6:
+Разрешено в Stage 7:
 
 - изменить `research/strategies/ema_pullback/setup.py`;
 - изменить `research/strategies/ema_pullback/triggers.py`;
@@ -47,7 +47,7 @@
 
 ## Out of scope
 
-В Stage 6 явно запрещено:
+В Stage 7 явно запрещено:
 
 - не менять `data_engine/`;
 - не делать component grid;
@@ -59,13 +59,13 @@
 - не создавать `research/common`;
 - не делать auto-discovery/plugin system/dynamic imports;
 - не добавлять live trading/execution/order routing;
-- не делать advanced blockers/exits/risk в Stage 6;
+- не делать advanced blockers/exits/risk в Stage 7;
 - не менять смысл существующих baseline/manual variants без необходимости;
 - не сохранять results в БД или файлы.
 
 ## Component design
 
-Ниже зафиксирована минимальная семантика новых компонентов на Stage 6.
+Ниже зафиксирована минимальная семантика новых компонентов на Stage 7.
 
 ### Setup: `pullback_to_fast_ema`
 
@@ -87,7 +87,7 @@
 
 - не добавлять новые параметры в CLI;
 - если параметр нужен, он должен иметь default внутри компонента или быть вынесен в config на отдельной стадии;
-- не добавлять ATR/volume/complex filters в Stage 6.
+- не добавлять ATR/volume/complex filters в Stage 7.
 
 ### Trigger: `reclaim_fast_ema`
 
