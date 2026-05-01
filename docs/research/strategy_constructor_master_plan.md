@@ -336,7 +336,25 @@ risk_component = существующий/дефолтный no_risk_filter
 
 ---
 
-### Step 8 — Component Grid
+### Step 8 — Feature-based Trade Management / SL-TP
+
+После первой реальной component-based стратегии вводится отдельный слой управления открытой сделкой.
+
+Trade Management не является FeaturesDev и не является entry-логикой.
+
+FeaturesDev готовит признаки, anchors и relations:
+
+```text
+ATR
+EMA anchors
+higher-timeframe EMA levels
+volatility context
+trend relations
+```
+
+---
+
+### Step 9 — Component Grid
 
 После появления нескольких реальных компонентов добавить ограниченный перебор комбинаций.
 
@@ -354,7 +372,7 @@ Grid должен:
 
 ---
 
-### Step 9 — Results & Debug Reports
+### Step 10 — Results & Debug Reports
 
 Сохранять результаты в `research/results/`.
 
@@ -386,7 +404,7 @@ trade_count
 
 ---
 
-### Step 10 — Validation
+### Step 11 — Validation
 
 Добавить защиту от самообмана:
 
@@ -414,7 +432,7 @@ trade_count
 
 Roadmap note:
 
-Component Grid намеренно отложен на один шаг. Одного registry недостаточно для полезного grid; в Stage 7 сначала добавляются реальные setup/trigger components и один manual component-based variant.
+Component Grid намеренно отложен на один шаг после Stage 7. Одного registry недостаточно для полезного grid; сначала добавляются реальные setup/trigger components и один manual component-based variant, затем выделяется отдельный слой Trade Management / SL-TP.
 
 ---
 
@@ -433,10 +451,11 @@ Component Grid намеренно отложен на один шаг. Одно�
 6. featuresdev layer
 7. component registry
 8. first real component variant
-9. component grid
-10. results table
-11. debug report
-12. validation
+9. feature-based trade management / sl-tp
+10. component grid
+11. results table
+12. debug report
+13. validation
 ```
 
 Итоговая цель:
