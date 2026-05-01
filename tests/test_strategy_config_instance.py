@@ -23,9 +23,11 @@ def test_same_config_yields_same_config_id() -> None:
 def test_identity_change_changes_config_id() -> None:
     changed_fast = replace(DEFAULT_CONFIG, ema_fast=DEFAULT_CONFIG.ema_fast + 1)
     changed_fees = replace(DEFAULT_CONFIG, fees=DEFAULT_CONFIG.fees + 0.001)
+    changed_profile = replace(DEFAULT_CONFIG, feature_profile="ema_pullback_alt")
     base = strategy_config_id(DEFAULT_CONFIG)
     assert strategy_config_id(changed_fast) != base
     assert strategy_config_id(changed_fees) != base
+    assert strategy_config_id(changed_profile) != base
 
 
 def test_config_id_is_stable_for_dict_key_order() -> None:
@@ -94,3 +96,4 @@ def test_cli_overrides_build_final_strategy_config() -> None:
     assert cfg.init_cash == 1500.0
     assert cfg.fees == 0.001
     assert cfg.slippage == 0.0005
+    assert cfg.feature_profile == DEFAULT_CONFIG.feature_profile
