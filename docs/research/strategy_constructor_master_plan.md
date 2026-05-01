@@ -239,7 +239,34 @@ aggressive
 
 ---
 
-### Step 5 — Component Registry
+### Step 5 — FeaturesDev Layer
+
+Перед внедрением component registry вводим отдельный слой подготовки признаков.
+
+FeaturesDev — это research-only слой внутри strategy family. Для ema_pullback он живёт в:
+
+```text
+research/strategies/ema_pullback/features.py
+```
+
+Задача слоя — заранее подготовить вычислимые признаки и смысловые привязки для компонентов. Компоненты не должны сами считать EMA, RSI, ATR, trend/context и другие индикаторы внутри себя.
+
+Важный принцип:
+
+- `features.py` считает признаки рынка.
+- `components` используют подготовленные признаки и смысловые relations/bindings.
+- `signals.py` соединяет outputs компонентов.
+- `run.py` запускает experiment.
+
+fast / slow — это роли внутри relation, а не свойства самой EMA. Одна и та же EMA может быть slow в одной relation и fast в другой.
+
+intraday / swing / daily — это смысловые роли для RSI или других признаков, а не жёстко зашитые имена индикаторов.
+
+Подробные правила FeatureSeries, FeatureBinding и FeatureRelation фиксируются в отдельном плане Stage 5.
+
+---
+
+### Step 6 — Component Registry
 
 Добавить registry компонентов:
 
@@ -256,21 +283,78 @@ RISK_REGISTRY
 
 ---
 
-### Step 6 — Component Grid
+### Step 7 — First Real Component Variant
 
-Добавить перебор компонентов и параметров.
+Stage 7 создаёт первую полную component-based сборку стратегии внутри `ema_pullback`.
 
-Пример:
+Цель не в том, чтобы сделать много компонентов. Цель — доказать, что цепочка registry/config/instance/composer может запустить новую торговую логику, собранную из component ids.
+
+В Stage 7 вводятся только два новых реальных компонента:
+
+- реальный `setup` component, например `pullback_to_fast_ema`;
+- реальный `trigger` component, например `reclaim_fast_ema`.
+
+Все обязательные роли по-прежнему должны присутствовать в сборке StrategyConfig/StrategyInstance:
 
 ```text
-direction: ema_trend | market_structure
-blockers: atr_range | atr_range + distance_from_ema
-exit: atr_stop_take | atr_trailing_stop
+direction_component = существующий/дефолтный ema_trend
+blockers_component = существующий/дефолтный no_blockers
+setup_component = NEW pullback_to_fast_ema
+trigger_component = NEW reclaim_fast_ema
+exits_component = существующий/дефолтный ema_cross_down
+risk_component = существующий/дефолтный no_risk_filter
 ```
+
+Практический scope Stage 7:
+
+- зарегистрировать новые `setup`/`trigger` в family-local registry `ema_pullback`;
+- собрать один manual variant на новых component ids;
+- сравнить этот variant с существующими baseline/manual variants;
+- при необходимости сохранить старые variants как контрольную группу.
+
+Критерий успеха:
+
+```text
+новая component-based сборка работает в runner и сравнивается с baseline.
+```
+
+Важно:
+
+- прибыльность стратегии не является критерием успеха Stage 7;
+- Stage 7 не должен делать grid/optimizer/framework.
+
+Ограничения Stage 7:
+
+- не делать component grid;
+- не делать optimizer;
+- не делать parameter sweep;
+- не делать YAML/JSON strategy config;
+- не делать frontend/visual constructor;
+- не менять `data_engine/`;
+- не добавлять live trading/execution/order routing;
+- не строить global framework.
 
 ---
 
-### Step 7 — Results & Debug Reports
+### Step 8 — Component Grid
+
+После появления нескольких реальных компонентов добавить ограниченный перебор комбинаций.
+
+Grid должен:
+
+- работать только по уже существующим component ids;
+- не появляться раньше, чем есть хотя бы несколько осмысленных `setup/trigger/blocker/exit` components.
+
+Ограничения:
+
+- всё ещё без optimizer;
+- всё ещё без global framework;
+- без auto-discovery/plugin system;
+- без изменений в `data_engine/`.
+
+---
+
+### Step 9 — Results & Debug Reports
 
 Сохранять результаты в `research/results/`.
 
@@ -302,7 +386,7 @@ trade_count
 
 ---
 
-### Step 8 — Validation
+### Step 10 — Validation
 
 Добавить защиту от самообмана:
 
@@ -328,6 +412,10 @@ trade_count
 
 После Phase 4 внедрять только пошагово.
 
+Roadmap note:
+
+Component Grid намеренно отложен на один шаг. Одного registry недостаточно для полезного grid; в Stage 7 сначала добавляются реальные setup/trigger components и один manual component-based variant.
+
 ---
 
 ## 7. Основной принцип
@@ -342,11 +430,13 @@ trade_count
 3. config
 4. instance
 5. manual variants
-6. component registry
-7. component grid
-8. results table
-9. debug report
-10. validation
+6. featuresdev layer
+7. component registry
+8. first real component variant
+9. component grid
+10. results table
+11. debug report
+12. validation
 ```
 
 Итоговая цель:
