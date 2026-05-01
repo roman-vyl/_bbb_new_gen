@@ -2,7 +2,7 @@
 
 > **Трек:** post-MVP research, Strategy Constructor — **шаг 2** из `docs/research/strategy_constructor_master_plan.md` (§5 «Step 2 — Pipeline Decomposition»).  
 > **Предпосылка:** Stage 1 реализован — каталог `research/strategies/ema_pullback/` с `config.py`, `features.py`, `signals.py`, `run.py`; логика EMA smoke перенесена в family pipeline.  
-> **Статус документа:** спецификация для реализации; в рамках этой задачи **код не пишется** — только этот документ.
+> **Статус документа:** спецификация; реализация Stage 2 выполнена (см. §8 Implementation summary).
 
 ---
 
@@ -212,19 +212,15 @@ Stage 2 — это **refactor / decomposition**, а не развитие аль
 
 ---
 
-## 8. Implementation summary placeholder
+## 8. Implementation summary
 
-**Статус:** pending.
+**Статус:** done (Stage 2).
 
-После завершения реализации Stage 2 эту секцию обновить кратким резюме (несколько предложений или маркированный список):
-
-- какие модули добавлены и какая у каждого роль;
-- как устроен composer в `signals.py`;
-- подтверждение parity с Stage 1 (или перечисление допустимых численных отличий с объяснением);
-- ссылка на ключевые тесты;
-- любые сознательные отложенные решения (например short_allowed зарезервирован на будущее).
-
-**Статус:** pending.
+- **Новые модули** в `research/strategies/ema_pullback/`: `direction.py` (`long_allowed_baseline`, `short_allowed_baseline` — long-only), `blockers.py` / `setup.py` (заглушки «всё True»), `triggers.py` / `exits.py` (бычий/медвежий EMA cross, первая строка без сигнала), `risk.py` (`PortfolioRiskParams`, `portfolio_risk_from_config` для `vectorbt.Portfolio.from_signals`). `features.py` без изменений логики.
+- **Composer** (`signals.py`): `compose_final_signals` собирает `final_entry = long_allowed & blockers_ok & setup_long & trigger_long`, `final_exit` = серия из `exits`. Публичный путь прогона: `ema_pullback_pipeline_signals` / `ema_crossover_signals`. `crossover_from_ema_columns` остаётся тонкой обёрткой над trigger+exit для legacy (`research/ema_smoke_helpers.py`).
+- **Parity со Stage 1:** при baseline-заглушках композиция булевых этапов эквивалентна «только кроссовер»; те же EWM на `close`, те же правила кросса. Численных расхождений отдельно не зафиксировано.
+- **Тесты:** `tests/test_ema_pullback_pipeline.py` (блоки, первая строка, совпадение pipeline с `crossover_from_ema_columns`, composer), `tests/test_research_stage2_boundaries.py` (нет `registry.py` / `variants.py`, нет `*_REGISTRY`, нет `research/common/`).
+- **Отложено:** `short_allowed_baseline` всегда `False` — контракт на будущее; sizing в `risk.py` только комментарий/placeholder, без изменения поведения vectorbt по умолчанию.
 
 ---
 

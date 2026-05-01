@@ -1,9 +1,8 @@
-"""CLI: DB candles -> features -> signals -> vectorbt -> metrics.
+"""CLI: DB candles -> features -> pipeline stages -> composer -> vectorbt.
 
-Stage 1 family ``ema_pullback`` is an EMA fast/slow crossover baseline (same
-semantics as the historical Phase 4 smoke). ATR-based filters/exits and a full
-directional pipeline are intentionally out of scope here and reserved for later
-stages.
+Stage 2 decomposes the EMA crossover into explicit blocks (direction, blockers,
+setup, triggers, exits, risk) composed in ``signals.py``. Trading semantics match
+Stage 1; ATR filters and richer directional logic are future work.
 
 Run from repo root (after ``pip install -e ".[research]"``):
 
@@ -34,12 +33,13 @@ from research.strategies.ema_pullback.config import (
     EmaPullbackConfig,
 )
 from research.strategies.ema_pullback.features import add_ema_columns
+from research.strategies.ema_pullback.risk import portfolio_risk_from_config
 from research.strategies.ema_pullback.signals import ema_crossover_signals
 
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(
-        description="EMA crossover backtest (ema_pullback family, Stage 1 skeleton)."
+        description="EMA crossover backtest (ema_pullback family, Stage 2 pipeline)."
     )
     p.add_argument("--symbol", default=DEFAULT_CONFIG.symbol, help="Symbol in DB")
     p.add_argument("--tf", default=DEFAULT_CONFIG.timeframe, help="Timeframe")
@@ -157,14 +157,15 @@ def run_with_config(cfg: EmaPullbackConfig) -> None:
         raise SystemExit("EMA columns contain NaN (unexpected for ewm on finite close).")
 
     freq = pd_freq_alias(tf)
+    risk = portfolio_risk_from_config(cfg)
     pf = vbt.Portfolio.from_signals(
         close,
         entries,
         exits,
         freq=freq,
-        init_cash=cfg.init_cash,
-        fees=cfg.fees,
-        slippage=cfg.slippage,
+        init_cash=risk.init_cash,
+        fees=risk.fees,
+        slippage=risk.slippage,
     )
 
     sharpe = ensure_finite_metric("sharpe_ratio", float(pf.sharpe_ratio()))

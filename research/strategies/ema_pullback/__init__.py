@@ -1,5 +1,6 @@
-"""EMA pullback-oriented family (Stage 1 skeleton).
+"""EMA pullback-oriented family (Stage 2 pipeline decomposition).
 
-Stage 1: EMA fast/slow crossover baseline (pullback-oriented naming target);
-ATR filters, ATR exits, and full directional pipeline blocks are future stages.
+Baseline: EMA fast/slow crossover with explicit direction / blockers / setup /
+triggers / exits / risk modules composed in ``signals.py``. ATR filters and
+short-side trading are future stages.
 """
