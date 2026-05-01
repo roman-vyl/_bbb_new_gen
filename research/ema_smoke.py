@@ -1,6 +1,6 @@
 """Phase 4 smoke: SQLite candles -> pandas EMA -> vectorbt -> metrics.
 
-Thin entrypoint; pipeline lives in ``research/strategies/ema_atr_directional/run.py``.
+Thin entrypoint; pipeline lives in ``research/strategies/ema_pullback/run.py``.
 
 Run from repo root (after ``pip install -e ".[research]"``):
 
@@ -19,7 +19,7 @@ _ROOT = Path(__file__).resolve().parents[1]
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
-from research.strategies.ema_atr_directional.run import (
+from research.strategies.ema_pullback.run import (
     config_from_args,
     parse_args,
     run_with_config,

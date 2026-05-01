@@ -1,7 +1,7 @@
 """Pure helpers for EMA smoke backtest (testable without vectorbt).
 
 ``candles_to_ohlcv_dataframe`` lives here (list[Candle] -> DataFrame).
-EMA columns and crossover signals delegate to ``ema_atr_directional`` family
+EMA columns and crossover signals delegate to ``ema_pullback`` family
 so there is a single implementation.
 """
 
@@ -11,8 +11,8 @@ import pandas as pd
 
 from data_engine.contracts import Candle
 
-from research.strategies.ema_atr_directional.features import add_ema_columns as _add_ema
-from research.strategies.ema_atr_directional.signals import (
+from research.strategies.ema_pullback.features import add_ema_columns as _add_ema
+from research.strategies.ema_pullback.signals import (
     crossover_from_ema_columns,
 )
 

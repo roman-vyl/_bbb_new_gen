@@ -1,13 +1,19 @@
 """CLI: DB candles -> features -> signals -> vectorbt -> metrics.
 
+Stage 1 family ``ema_pullback`` is an EMA fast/slow crossover baseline (same
+semantics as the historical Phase 4 smoke). ATR-based filters/exits and a full
+directional pipeline are intentionally out of scope here and reserved for later
+stages.
+
 Run from repo root (after ``pip install -e ".[research]"``):
 
-    python research/strategies/ema_atr_directional/run.py
+    python research/strategies/ema_pullback/run.py
 """
 
 from __future__ import annotations
 
 import argparse
+import math
 import sys
 from dataclasses import replace
 from pathlib import Path
@@ -23,17 +29,17 @@ from data_engine.engine.time_grid import tf_ms
 from data_engine.store import Db
 
 from research.ema_smoke_helpers import candles_to_ohlcv_dataframe
-from research.strategies.ema_atr_directional.config import (
+from research.strategies.ema_pullback.config import (
     DEFAULT_CONFIG,
-    EmaAtrDirectionalConfig,
+    EmaPullbackConfig,
 )
-from research.strategies.ema_atr_directional.features import add_ema_columns
-from research.strategies.ema_atr_directional.signals import ema_crossover_signals
+from research.strategies.ema_pullback.features import add_ema_columns
+from research.strategies.ema_pullback.signals import ema_crossover_signals
 
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(
-        description="EMA crossover backtest (ema_atr_directional family, Stage 1 skeleton)."
+        description="EMA crossover backtest (ema_pullback family, Stage 1 skeleton)."
     )
     p.add_argument("--symbol", default=DEFAULT_CONFIG.symbol, help="Symbol in DB")
     p.add_argument("--tf", default=DEFAULT_CONFIG.timeframe, help="Timeframe")
@@ -46,13 +52,24 @@ def parse_args() -> argparse.Namespace:
     return p.parse_args()
 
 
-def config_from_args(args: argparse.Namespace) -> EmaAtrDirectionalConfig:
+def config_from_args(args: argparse.Namespace) -> EmaPullbackConfig:
     return replace(
         DEFAULT_CONFIG,
         symbol=args.symbol.strip().upper(),
         timeframe=args.tf.strip(),
         db_path=args.db_path,
     )
+
+
+def ensure_finite_metric(name: str, value: float) -> float:
+    """Return value if finite; otherwise exit with a clear error (no status=ok)."""
+
+    if not math.isfinite(value):
+        raise SystemExit(
+            f"backtest metric {name!r} is not finite (got {value!r}); "
+            "refusing to print status=ok."
+        )
+    return value
 
 
 def pd_freq_alias(tf: str) -> str:
@@ -78,7 +95,7 @@ def pd_freq_alias(tf: str) -> str:
         raise ValueError(f"unsupported tf for freq: {tf}") from exc
 
 
-def run_with_config(cfg: EmaAtrDirectionalConfig) -> None:
+def run_with_config(cfg: EmaPullbackConfig) -> None:
     try:
         import vectorbt as vbt
     except ImportError as exc:  # pragma: no cover - exercised when extra missing
@@ -150,13 +167,15 @@ def run_with_config(cfg: EmaAtrDirectionalConfig) -> None:
         slippage=cfg.slippage,
     )
 
-    sharpe = float(pf.sharpe_ratio())
+    sharpe = ensure_finite_metric("sharpe_ratio", float(pf.sharpe_ratio()))
     trades = pf.trades
     pf_val = trades.profit_factor()
     profit_factor = float(pf_val) if hasattr(pf_val, "item") else float(pf_val)
+    profit_factor = ensure_finite_metric("profit_factor", profit_factor)
 
     max_dd = pf.max_drawdown()
     max_dd_f = float(max_dd) if hasattr(max_dd, "item") else float(max_dd)
+    max_dd_f = ensure_finite_metric("max_drawdown", max_dd_f)
 
     print(
         f"family={cfg.family} variant={cfg.variant} "

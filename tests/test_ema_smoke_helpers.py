@@ -8,9 +8,13 @@ pytest.importorskip("pandas")
 
 from data_engine.contracts import Candle
 
-from research.ema_smoke_helpers import candles_to_ohlcv_dataframe
-from research.strategies.ema_atr_directional.features import add_ema_columns
-from research.strategies.ema_atr_directional.signals import ema_crossover_signals
+from research.ema_smoke_helpers import (
+    add_ema_columns as legacy_add_ema_columns,
+    candles_to_ohlcv_dataframe,
+    ema_crossover_signals as legacy_ema_crossover_signals,
+)
+from research.strategies.ema_pullback.features import add_ema_columns
+from research.strategies.ema_pullback.signals import ema_crossover_signals
 
 
 def _synthetic_candles(n: int = 120) -> list[Candle]:
@@ -53,6 +57,18 @@ def test_ema_columns_no_nan_on_finite_close() -> None:
     enriched = add_ema_columns(df, ema_fast=20, ema_slow=50)
     assert not enriched["ema_20"].isna().any()
     assert not enriched["ema_50"].isna().any()
+
+
+def test_legacy_helpers_delegate_same_as_family() -> None:
+    candles = _synthetic_candles(40)
+    ohlcv = candles_to_ohlcv_dataframe(candles)
+    fam = add_ema_columns(ohlcv, ema_fast=20, ema_slow=50)
+    leg = legacy_add_ema_columns(ohlcv, fast=20, slow=50)
+    assert fam["ema_20"].equals(leg["ema_20"])
+    e1, x1 = ema_crossover_signals(fam, ema_fast=20, ema_slow=50)
+    e2, x2 = legacy_ema_crossover_signals(leg, "ema_20", "ema_50")
+    assert e1.equals(e2)
+    assert x1.equals(x2)
 
 
 def test_crossover_signals_boolean_aligned() -> None:

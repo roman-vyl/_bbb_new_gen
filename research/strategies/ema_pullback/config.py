@@ -1,4 +1,4 @@
-"""Frozen run config for the ema_atr_directional family (Stage 1)."""
+"""Frozen run config for the ema_pullback family (Stage 1)."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from pathlib import Path
 
 
 @dataclass(frozen=True)
-class EmaAtrDirectionalConfig:
+class EmaPullbackConfig:
     family: str
     variant: str
     symbol: str
@@ -20,9 +20,9 @@ class EmaAtrDirectionalConfig:
     slippage: float
 
 
-DEFAULT_CONFIG = EmaAtrDirectionalConfig(
-    family="ema_atr_directional",
-    variant="ema_crossover_baseline",
+DEFAULT_CONFIG = EmaPullbackConfig(
+    family="ema_pullback",
+    variant="ema_pullback_baseline",
     symbol="BTCUSDT",
     timeframe="1h",
     db_path=None,
