@@ -389,7 +389,7 @@ research/results/*.json
 
 ### Step 10 — Component Grid
 
-Component Grid starts only after structured research result artifacts exist, because mass-testing variants without stable result storage gives hard-to-compare stdout noise.
+Component Grid запускается только после того, как появятся структурированные результаты research-прогонов: без стабильного хранения результатов массовый прогон вариантов превращается в шумный и плохо сопоставимый `stdout`.
 
 После появления нескольких реальных компонентов добавить ограниченный перебор комбинаций.
 
@@ -471,7 +471,7 @@ FeaturesDev keeps indicator calculation out of components. Trade Management keep
 7. component registry
 8. first real component variant
 9. trade management / SL-TP
-10. research results artifact
+10. артефакт результатов research
 11. component grid
 12. debug report / diagnostics
 13. validation

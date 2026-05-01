@@ -1,64 +1,64 @@
-# Frontend — Master Plan
+# Frontend — мастер-план
 
-## Goal
+## Цель
 
-Frontend is a separate read/view layer for observing research runs, strategy instances, metrics, and later backtest results.
+Frontend — отдельный слой просмотра для наблюдения за прогонами research, экземплярами стратегий, метриками и позже результатами бэктестов.
 
-It is not Data Engine.
-It is not Strategy Constructor.
-It is not an execution layer.
+Это не Data Engine.
+Это не Strategy Constructor.
+Это не слой исполнения.
 
-Main boundary:
+Главная граница:
 
 ```text
-Data Engine provides clean data.
-Research layer creates strategy instances and result artifacts.
-Frontend displays prepared information via API/read layer.
+Data Engine отдаёт чистые данные.
+Research-слой создаёт экземпляры стратегий и артефакты результатов.
+Frontend показывает подготовленную информацию через API / read-слой.
 ```
 
-## What Frontend Must Not Do Initially
+## Чего frontend не должен делать на старте
 
-- Do not launch live trading.
-- Do not send orders.
-- Do not modify Data Engine directly.
-- Do not build strategy logic inside UI.
-- Do not become a visual constructor at the first stage.
-- Do not edit arbitrary strategy configs.
-- Do not bypass research-layer validation.
+- Не запускать живую торговлю.
+- Не отправлять ордера.
+- Не менять Data Engine напрямую.
+- Не встраивать торговую логику в UI.
+- Не становиться визуальным конструктором на первом этапе.
+- Не править произвольные конфиги стратегий.
+- Не обходить валидацию research-слоя.
 
-## Proposed Architecture
+## Предлагаемая архитектура
 
 ```text
 research/results/*.json
         ↓
-read-only API layer
+read-only API-слой
         ↓
 frontend dashboard
 ```
 
-API layer can be a separate preparatory step.
+API-слой может быть отдельным подготовительным шагом.
 
-Frontend reads prepared results and does not compute backtests itself.
+Frontend читает подготовленные результаты и сам не считает бэктесты.
 
-## Step 1 — Read-only Research API Preparation
+## Шаг 1 — подготовка read-only Research API
 
-The first frontend stage is not UI, but preparation of API/read layer.
+Первый этап frontend — не UI, а подготовка API / read-слоя.
 
-Purpose:
+Задачи:
 
-- Give frontend stable read-only access to research results.
-- Read structured artifacts from `research/results`.
-- Do not launch backtests from API.
-- Do not modify `StrategyConfig`.
-- Do not write to Data Engine.
+- Дать frontend стабильный read-only доступ к результатам research.
+- Читать структурированные артефакты из `research/results`.
+- Не запускать бэктесты из API.
+- Не менять `StrategyConfig`.
+- Не писать в Data Engine.
 
-Minimum future endpoints (direction):
+Минимальный набор эндпоинтов на будущее (направление):
 
 - `GET /api/research/runs`
 - `GET /api/research/runs/latest`
 - `GET /api/research/runs/{run_id}`
 
-Fields API should provide:
+Поля, которые API должен отдавать:
 
 - `run_id`
 - `timestamp`
@@ -75,61 +75,61 @@ Fields API should provide:
 - `profit_factor`
 - `max_drawdown`
 
-Important:
+Важно:
 
-- This is read-only API.
-- API does not execute backtests.
-- API does not modify configs.
-- API does not handle exchange execution.
+- Это read-only API.
+- API не исполняет бэктесты.
+- API не меняет конфиги.
+- API не занимается исполнением на бирже.
 
-## Step 2 — Research Dashboard
+## Шаг 2 — Research Dashboard
 
-The second stage is a simple dashboard.
+Второй этап — простой дашборд.
 
-Purpose:
+Задачи:
 
-- Show latest research runs.
-- Show variants comparison table.
-- Show metrics.
-- Show which components/profile/trade_management_profile formed the selected strategy instance.
+- Показывать последние research-прогоны.
+- Показывать таблицу сравнения вариантов (variants).
+- Показывать метрики.
+- Показывать, какие компоненты / profile / trade_management_profile сформировали выбранный экземпляр стратегии.
 
-Minimum screen:
+Минимальный экран:
 
-- Run summary
-- Variants comparison table
-- Selected strategy instance details
-- Metrics: trades, Sharpe, PF, MaxDD
+- Сводка по прогону (run summary)
+- Таблица сравнения вариантов
+- Детали выбранного экземпляра стратегии
+- Метрики: trades, Sharpe, PF, MaxDD
 
-At this stage:
+На этом этапе:
 
-- No strategy editing.
-- No backtest launch from UI.
-- No visual constructor.
-- No drag-and-drop components.
-- Read-only viewing only.
+- Нет редактирования стратегии.
+- Нет запуска бэктеста из UI.
+- Нет визуального конструктора.
+- Нет drag-and-drop компонентов.
+- Только read-only просмотр.
 
-## Later Stages
+## Следующие этапы
 
-### Step 3 — Run Comparison
+### Шаг 3 — сравнение прогонов
 
-Compare multiple research runs.
+Сравнение нескольких research-прогонов.
 
-### Step 4 — Launch Predefined Research Runs
+### Шаг 4 — запуск заранее заданных research-прогонов
 
-UI can launch only pre-approved predefined variants/profiles.
+UI может запускать только заранее согласованные predefined variants / profiles.
 
-### Step 5 — Controlled Parameter Forms
+### Шаг 5 — контролируемые формы параметров
 
-UI can modify only whitelist parameters after backend validation.
+UI может менять только параметры из whitelist после валидации на бэкенде.
 
-### Step 6 — Visual Strategy Constructor
+### Шаг 6 — визуальный Strategy Constructor
 
-Deferred stage. Canvas/blocks/graph UI is possible only after stable `StrategySpec` and validation layer are in place.
+Отложенный этап. Canvas / блоки / графовый UI возможны только после стабильного `StrategySpec` и слоя валидации.
 
-## Guardrails
+## Ограничения (guardrails)
 
-- Frontend reads prepared state.
-- Research owns strategy construction and backtest.
-- Data Engine owns clean market data.
-- No live execution from frontend.
-- No visual constructor before stable `StrategySpec`.
+- Frontend читает подготовленное состояние.
+- За построение стратегии и бэктест отвечает research.
+- За чистые рыночные данные отвечает Data Engine.
+- Нет живого исполнения из frontend.
+- Нет визуального конструктора до стабильного `StrategySpec`.
