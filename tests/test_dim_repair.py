@@ -80,6 +80,26 @@ def _candle(open_time_ms: int, *, o: float = 1.0, h: float = 2.0, l: float = 0.5
     return Candle("BTCUSDT", "1h", open_time_ms, o, h, l, c, v)
 
 
+def _candle_tf(tf: str, open_time_ms: int) -> Candle:
+    return Candle("BTCUSDT", tf, open_time_ms, 1.0, 2.0, 0.5, 1.5, 10.0)
+
+
+def test_fix_candles_does_not_touch_other_timeframe_for_same_symbol() -> None:
+    db = FakeDb(
+        candles=[
+            _candle_tf("5m", 0),
+            _candle_tf("5m", 600_000),
+            _candle_tf("1h", 0),
+            _candle_tf("1h", 3_600_000),
+        ]
+    )
+    fetcher = FakeFetcher(responses={(300_000, 600_000): [_candle_tf("5m", 300_000)]})
+    report = fix_candles("BTCUSDT", "5m", TimeWindow(0, 900_000), db, fetcher)
+    assert report.status == "ok"
+    one_h = sorted([c.open_time_ms for c in db.candles if c.timeframe == "1h"])
+    assert one_h == [0, 3_600_000]
+
+
 def test_fix_candles_complete_window_does_not_fetch() -> None:
     db = FakeDb(candles=[_candle(0), _candle(3_600_000)])
     fetcher = FakeFetcher()

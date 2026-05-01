@@ -4,6 +4,10 @@ from data_engine.contracts import FetchRequest, TimeWindow
 from data_engine.fetcher.bybit_rest import BYBIT_CATEGORY, BYBIT_KLINE_LIMIT, BybitREST
 
 
+def _request_tf(tf: str) -> FetchRequest:
+    return FetchRequest("BTCUSDT", tf, TimeWindow(0, 3_600_000 * 2))
+
+
 class FakeKlineClient:
     def __init__(self, payload: list[list[str]], fail_times: int = 0) -> None:
         self.payload = payload
@@ -19,7 +23,7 @@ class FakeKlineClient:
 
 
 def _request() -> FetchRequest:
-    return FetchRequest("BTCUSDT", "1h", TimeWindow(0, 3_600_000 * 2))
+    return _request_tf("1h")
 
 
 def test_fetch_candles_maps_payload_to_candle() -> None:
@@ -92,6 +96,22 @@ def test_fetcher_maps_1h_to_bybit_interval_60() -> None:
     BybitREST(client=client, wait=wait_none()).fetch_candles(_request())
 
     assert client.calls[0]["interval"] == "60"
+
+
+def test_fetcher_maps_5m_to_bybit_interval_5() -> None:
+    client = FakeKlineClient([])
+
+    BybitREST(client=client, wait=wait_none()).fetch_candles(_request_tf("5m"))
+
+    assert client.calls[0]["interval"] == "5"
+
+
+def test_fetcher_maps_1d_to_bybit_interval_d() -> None:
+    client = FakeKlineClient([])
+
+    BybitREST(client=client, wait=wait_none()).fetch_candles(_request_tf("1d"))
+
+    assert client.calls[0]["interval"] == "D"
 
 
 def test_fetcher_passes_end_as_window_end_minus_one() -> None:

@@ -9,6 +9,7 @@ import typer
 
 from data_engine.config import Settings
 from data_engine.contracts import FetchRequest, FixReport, TimeWindow
+from data_engine.contracts.timeframes import validate_timeframe
 from data_engine.engine.dim import fix_candles
 from data_engine.engine.time_grid import ceil_to_grid, last_closed_open_time_ms, tf_ms
 from data_engine.fetcher import BYBIT_KLINE_LIMIT, BybitREST
@@ -79,6 +80,13 @@ def _now_ms() -> int:
     return int(time.time() * 1000)
 
 
+def _parse_tf(value: str) -> str:
+    try:
+        return validate_timeframe(value)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+
 def _discover_first_available_open_time_ms(
     *,
     fetcher: BybitREST,
@@ -113,14 +121,30 @@ def main() -> None:
 
 
 @app.command()
-def status(db_path: Path | None = None) -> None:
+def status(
+    db_path: Path | None = None,
+    symbol: str | None = typer.Option(
+        None,
+        "--symbol",
+        help="With --tf: show candle span for this symbol/timeframe only",
+    ),
+    tf: str | None = typer.Option(
+        None,
+        "--tf",
+        help="With --symbol: show candle span for this pair (whitelisted timeframe)",
+    ),
+) -> None:
     """Show current database status.
 
     Beginner contract:
     - first run creates sqlite file and tables;
     - next runs just read and show real counts;
     - if schema is broken, shows `schema_mismatch`.
+    - optional `--symbol` + `--tf` adds a read-only summary for that pair.
     """
+
+    if (symbol is None) ^ (tf is None):
+        raise typer.BadParameter("--symbol and --tf must be passed together")
 
     settings = Settings()
     if db_path is not None:
@@ -132,6 +156,15 @@ def status(db_path: Path | None = None) -> None:
         db.apply_ddl()
     result = db.health()
     _print_status(result)
+
+    if symbol is not None and tf is not None and result.get("contract") == "ok":
+        sym = symbol.strip().upper()
+        canon_tf = _parse_tf(tf)
+        span = db.candle_summary(sym, canon_tf)
+        typer.echo(f"pair: {sym} {canon_tf}")
+        typer.echo(f"pair_candles: {span['count']}")
+        typer.echo(f"pair_min_open_time_ms: {span['min_open_time_ms']}")
+        typer.echo(f"pair_max_open_time_ms: {span['max_open_time_ms']}")
 
 
 @app.command()
@@ -146,6 +179,7 @@ def backfill(
     if not symbol:
         raise typer.BadParameter("symbol must not be empty")
 
+    tf = _parse_tf(tf)
     step_ms = tf_ms(tf)
     settings = Settings()
     if db_path is not None:
@@ -212,6 +246,7 @@ def fix(
     if not symbol:
         raise typer.BadParameter("symbol must not be empty")
 
+    tf = _parse_tf(tf)
     step_ms = tf_ms(tf)
     settings = Settings()
     if db_path is not None:

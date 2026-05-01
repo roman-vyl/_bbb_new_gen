@@ -2,27 +2,13 @@
 
 from __future__ import annotations
 
-TF_TO_MS = {
-    "1m": 60_000,
-    "3m": 3 * 60_000,
-    "5m": 5 * 60_000,
-    "15m": 15 * 60_000,
-    "30m": 30 * 60_000,
-    "1h": 60 * 60_000,
-    "2h": 2 * 60 * 60_000,
-    "4h": 4 * 60 * 60_000,
-    "6h": 6 * 60 * 60_000,
-    "12h": 12 * 60 * 60_000,
-    "1d": 24 * 60 * 60_000,
-    "1w": 7 * 24 * 60 * 60_000,
-}
+from data_engine.contracts.timeframes import timeframe_ms
 
 
 def tf_ms(tf: str) -> int:
-    try:
-        return TF_TO_MS[tf]
-    except KeyError as exc:
-        raise ValueError(f"unsupported timeframe: {tf}") from exc
+    """Bar step in ms; delegates to :func:`timeframe_ms` (Phase 5 whitelist)."""
+
+    return timeframe_ms(tf)
 
 
 def align_to_grid(ts_ms: int, tf: str) -> int:

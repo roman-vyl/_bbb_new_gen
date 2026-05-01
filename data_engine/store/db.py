@@ -183,6 +183,27 @@ class Db:
         ).fetchone()
         return None if row is None or row[0] is None else int(row[0])
 
+    def candle_summary(self, symbol: str, tf: str) -> dict[str, Any]:
+        """Aggregate row count and open_time span for one symbol/timeframe pair."""
+
+        row = self.conn.execute(
+            """
+            SELECT COUNT(*), MIN(open_time_ms), MAX(open_time_ms)
+            FROM candles
+            WHERE symbol = ?
+              AND timeframe = ?;
+            """,
+            (symbol, tf),
+        ).fetchone()
+        if row is None:
+            return {"count": 0, "min_open_time_ms": None, "max_open_time_ms": None}
+        count, t_min, t_max = int(row[0]), row[1], row[2]
+        return {
+            "count": count,
+            "min_open_time_ms": None if t_min is None else int(t_min),
+            "max_open_time_ms": None if t_max is None else int(t_max),
+        }
+
     def set_launch_time_ms(self, symbol: str, ts_ms: int) -> None:
         with self.conn:
             self.conn.execute(

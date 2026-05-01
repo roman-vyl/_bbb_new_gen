@@ -10,13 +10,16 @@ from data_engine.engine.time_grid import (
 
 
 def test_tf_ms_known_values() -> None:
-    assert tf_ms("1m") == 60_000
+    assert tf_ms("5m") == 300_000
+    assert tf_ms("15m") == 900_000
     assert tf_ms("1h") == 3_600_000
+    assert tf_ms("4h") == 14_400_000
     assert tf_ms("1d") == 86_400_000
-    assert tf_ms("1w") == 604_800_000
 
 
 def test_tf_ms_rejects_unknown_tf() -> None:
+    with pytest.raises(ValueError):
+        tf_ms("1m")
     with pytest.raises(ValueError):
         tf_ms("2d")
 

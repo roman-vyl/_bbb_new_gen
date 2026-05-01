@@ -7,25 +7,10 @@ from typing import Any
 from tenacity import Retrying, retry_if_exception, stop_after_attempt, wait_exponential
 
 from data_engine.contracts import Candle, FetchRequest
-from data_engine.engine.time_grid import tf_ms
+from data_engine.contracts.timeframes import bybit_interval, timeframe_ms
 
 BYBIT_CATEGORY = "linear"
 BYBIT_KLINE_LIMIT = 200
-
-TF_TO_BYBIT_INTERVAL = {
-    "1m": "1",
-    "3m": "3",
-    "5m": "5",
-    "15m": "15",
-    "30m": "30",
-    "1h": "60",
-    "2h": "120",
-    "4h": "240",
-    "6h": "360",
-    "12h": "720",
-    "1d": "D",
-    "1w": "W",
-}
 
 
 class BybitHTTPError(RuntimeError):
@@ -79,11 +64,11 @@ class BybitREST:
         self._retrying = retrying if retrying is not None else _default_retrying(wait=wait)
 
     def fetch_candles(self, request: FetchRequest) -> list[Candle]:
-        max_window_ms = tf_ms(request.timeframe) * BYBIT_KLINE_LIMIT
+        max_window_ms = timeframe_ms(request.timeframe) * BYBIT_KLINE_LIMIT
         if request.window.end_ms - request.window.start_ms > max_window_ms:
             raise ValueError("fetch request window exceeds Bybit kline limit")
 
-        interval = _bybit_interval(request.timeframe)
+        interval = bybit_interval(request.timeframe)
         def _request_kline() -> dict[str, Any]:
             response = self._client.get_kline(
                 category=BYBIT_CATEGORY,
@@ -113,13 +98,6 @@ class BybitREST:
             if request.window.start_ms <= int(row[0]) < request.window.end_ms
         ]
         return sorted(candles, key=lambda candle: candle.open_time_ms)
-
-
-def _bybit_interval(tf: str) -> str:
-    try:
-        return TF_TO_BYBIT_INTERVAL[tf]
-    except KeyError as exc:
-        raise ValueError(f"unsupported timeframe: {tf}") from exc
 
 
 def fetch_launch_time_ms(symbol: str, client: Any | None = None, retrying: Retrying | None = None) -> int:
