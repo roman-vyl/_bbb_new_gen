@@ -12,10 +12,16 @@ from dataclasses import dataclass
 from typing import Callable
 
 from research.strategies.ema_pullback.blockers import blockers_ok_baseline
-from research.strategies.ema_pullback.direction import long_allowed_baseline
+from research.strategies.ema_pullback.direction import (
+    intraday_and_swing_trend_long,
+    long_allowed_baseline,
+)
 from research.strategies.ema_pullback.exits import ema_bearish_cross_exit
-from research.strategies.ema_pullback.setup import setup_long_baseline
-from research.strategies.ema_pullback.triggers import ema_bullish_cross_entry
+from research.strategies.ema_pullback.setup import pullback_to_entry_anchor, setup_long_baseline
+from research.strategies.ema_pullback.triggers import (
+    ema_bullish_cross_entry,
+    reclaim_entry_anchor,
+)
 
 
 REQUIRED_COMPONENT_ROLES: tuple[str, ...] = (
@@ -33,6 +39,9 @@ DEFAULT_SETUP_COMPONENT = "always_ready"
 DEFAULT_TRIGGER_COMPONENT = "ema_cross_up"
 DEFAULT_EXITS_COMPONENT = "ema_cross_down"
 DEFAULT_RISK_COMPONENT = "no_risk_filter"
+INTRADAY_AND_SWING_TREND_LONG_COMPONENT = "intraday_and_swing_trend_long"
+PULLBACK_TO_ENTRY_ANCHOR_COMPONENT = "pullback_to_entry_anchor"
+RECLAIM_ENTRY_ANCHOR_COMPONENT = "reclaim_entry_anchor"
 
 
 def no_risk_filter(df: object) -> object:
@@ -62,6 +71,12 @@ COMPONENT_REGISTRY: dict[str, dict[str, ComponentDefinition]] = {
             func=long_allowed_baseline,
             description="Long direction baseline (all True).",
         ),
+        INTRADAY_AND_SWING_TREND_LONG_COMPONENT: ComponentDefinition(
+            role="direction",
+            component_id=INTRADAY_AND_SWING_TREND_LONG_COMPONENT,
+            func=intraday_and_swing_trend_long,
+            description="Allow long only when intraday and swing trends are bullish.",
+        ),
     },
     "blockers": {
         DEFAULT_BLOCKERS_COMPONENT: ComponentDefinition(
@@ -78,6 +93,12 @@ COMPONENT_REGISTRY: dict[str, dict[str, ComponentDefinition]] = {
             func=setup_long_baseline,
             description="Setup always ready baseline (all True).",
         ),
+        PULLBACK_TO_ENTRY_ANCHOR_COMPONENT: ComponentDefinition(
+            role="setup",
+            component_id=PULLBACK_TO_ENTRY_ANCHOR_COMPONENT,
+            func=pullback_to_entry_anchor,
+            description="Recent pullback to entry anchor in rolling window.",
+        ),
     },
     "trigger": {
         DEFAULT_TRIGGER_COMPONENT: ComponentDefinition(
@@ -85,6 +106,12 @@ COMPONENT_REGISTRY: dict[str, dict[str, ComponentDefinition]] = {
             component_id=DEFAULT_TRIGGER_COMPONENT,
             func=ema_bullish_cross_entry,
             description="Entry on EMA bullish cross.",
+        ),
+        RECLAIM_ENTRY_ANCHOR_COMPONENT: ComponentDefinition(
+            role="trigger",
+            component_id=RECLAIM_ENTRY_ANCHOR_COMPONENT,
+            func=reclaim_entry_anchor,
+            description="Entry when close reclaims entry anchor from below.",
         ),
     },
     "exits": {

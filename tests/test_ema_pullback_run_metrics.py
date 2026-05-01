@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from research.strategies.ema_pullback.run import ensure_finite_metric
+from research.strategies.ema_pullback.run import _print_comparison_table, ensure_finite_metric
 
 
 def test_ensure_finite_metric_accepts_finite() -> None:
@@ -21,3 +21,22 @@ def test_ensure_finite_metric_rejects_nan() -> None:
 def test_ensure_finite_metric_rejects_inf() -> None:
     with pytest.raises(SystemExit, match="max_drawdown"):
         ensure_finite_metric("max_drawdown", float("inf"))
+
+
+def test_comparison_table_includes_trades_column(capsys: pytest.CaptureFixture[str]) -> None:
+    _print_comparison_table(
+        [
+            {
+                "variant": "v",
+                "config_id": "cid",
+                "ema_fast": 20,
+                "ema_slow": 200,
+                "trades": 7,
+                "sharpe": 0.1,
+                "profit_factor": 1.2,
+                "max_drawdown": -0.3,
+            }
+        ]
+    )
+    out = capsys.readouterr().out
+    assert "trades" in out

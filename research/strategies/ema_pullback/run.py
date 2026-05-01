@@ -1,8 +1,9 @@
 """CLI: DB candles -> component-aware pipeline -> manual variants -> vectorbt.
 
-Stage 5 runs fixed/manual variants for one ema_pullback family in a single pass
-over shared candles. EMA periods are defined in ``variants.py`` (not via CLI),
-while component ids come from ``StrategyConfig`` defaults/selection.
+EMA pullback research runner for component-aware manual variants.
+It runs fixed/manual variants for one ema_pullback family over shared candles.
+EMA periods are defined in ``variants.py`` (not via CLI), while component ids
+come from ``StrategyConfig`` defaults/selection.
 
 Run from repo root (after ``pip install -e ".[research]"``):
 
@@ -33,7 +34,7 @@ from research.strategies.ema_pullback.config import (
     DEFAULT_CONFIG,
     StrategyConfig,
 )
-from research.strategies.ema_pullback.features import add_ema_columns
+from research.strategies.ema_pullback.features import add_feature_columns
 from research.strategies.ema_pullback.instance import StrategyInstance
 from research.strategies.ema_pullback.risk import portfolio_risk_from_config
 from research.strategies.ema_pullback.signals import ema_crossover_signals
@@ -42,7 +43,7 @@ from research.strategies.ema_pullback.variants import build_manual_variants
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(
-        description="EMA pullback Stage 5 component-aware manual variants runner."
+        description="EMA pullback research runner for component-aware manual variants."
     )
     p.add_argument("--symbol", default=DEFAULT_CONFIG.symbol, help="Symbol in DB")
     p.add_argument("--tf", default=DEFAULT_CONFIG.timeframe, help="Timeframe")
@@ -148,8 +149,9 @@ def run_with_config(cfg: StrategyConfig) -> None:
         raise SystemExit("Not enough candles for a backtest.")
 
     ohlcv = candles_to_ohlcv_dataframe(candles)
-    enriched = add_ema_columns(
+    enriched = add_feature_columns(
         ohlcv,
+        profile_id=cfg.feature_profile,
         ema_fast=cfg.ema_fast,
         ema_slow=cfg.ema_slow,
     )
@@ -163,6 +165,7 @@ def run_with_config(cfg: StrategyConfig) -> None:
         trigger_component=cfg.trigger_component,
         exits_component=cfg.exits_component,
         risk_component=cfg.risk_component,
+        feature_profile=cfg.feature_profile,
     )
 
     close = enriched["close"].astype(float)
@@ -256,8 +259,9 @@ def _run_instance_on_ohlcv(instance: StrategyInstance, ohlcv: Any) -> dict[str, 
         ) from exc
 
     cfg = instance.config
-    enriched = add_ema_columns(
+    enriched = add_feature_columns(
         ohlcv,
+        profile_id=cfg.feature_profile,
         ema_fast=cfg.ema_fast,
         ema_slow=cfg.ema_slow,
     )
@@ -271,6 +275,7 @@ def _run_instance_on_ohlcv(instance: StrategyInstance, ohlcv: Any) -> dict[str, 
         trigger_component=cfg.trigger_component,
         exits_component=cfg.exits_component,
         risk_component=cfg.risk_component,
+        feature_profile=cfg.feature_profile,
     )
 
     close = enriched["close"].astype(float)
@@ -309,6 +314,7 @@ def _run_instance_on_ohlcv(instance: StrategyInstance, ohlcv: Any) -> dict[str, 
         "config_id": instance.config_id,
         "ema_fast": cfg.ema_fast,
         "ema_slow": cfg.ema_slow,
+        "trades": int(trades.count()),
         "sharpe": sharpe,
         "profit_factor": profit_factor,
         "max_drawdown": max_dd_f,
@@ -321,6 +327,7 @@ def _print_comparison_table(rows: list[dict[str, float | str]]) -> None:
         "config_id",
         "ema_fast",
         "ema_slow",
+        "trades",
         "sharpe",
         "profit_factor",
         "max_drawdown",
@@ -333,6 +340,7 @@ def _print_comparison_table(rows: list[dict[str, float | str]]) -> None:
                 "config_id": str(row["config_id"]),
                 "ema_fast": str(row["ema_fast"]),
                 "ema_slow": str(row["ema_slow"]),
+                "trades": str(row["trades"]),
                 "sharpe": f"{float(row['sharpe']):.6f}",
                 "profit_factor": f"{float(row['profit_factor']):.6f}",
                 "max_drawdown": f"{float(row['max_drawdown']):.6f}",

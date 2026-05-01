@@ -12,20 +12,23 @@ from research.strategies.ema_pullback.blockers import blockers_ok_baseline
 from research.strategies.ema_pullback.components import no_risk_filter
 from research.strategies.ema_pullback.config import DEFAULT_CONFIG
 from research.strategies.ema_pullback.direction import (
+    intraday_and_swing_trend_long,
     long_allowed_baseline,
     short_allowed_baseline,
 )
 from research.strategies.ema_pullback.exits import ema_bearish_cross_exit
-from research.strategies.ema_pullback.features import add_ema_columns
+from research.strategies.ema_pullback.features import add_ema_columns, add_feature_columns
+from research.strategies.ema_pullback.setup import pullback_to_entry_anchor, setup_long_baseline
+from research.strategies.ema_pullback.triggers import ema_bullish_cross_entry, reclaim_entry_anchor
 from research.strategies.ema_pullback.risk import portfolio_risk_from_config
-from research.strategies.ema_pullback.setup import setup_long_baseline
 from research.strategies.ema_pullback.signals import (
     compose_final_signals,
     crossover_from_ema_columns,
     ema_crossover_signals,
     ema_pullback_pipeline_signals,
 )
-from research.strategies.ema_pullback.triggers import ema_bullish_cross_entry
+from research.strategies.ema_pullback.feature_profile import EMA_PULLBACK_20_200_500_PROFILE_ID
+
 
 
 def _minimal_ohlcv(n: int = 5) -> pd.DataFrame:
@@ -140,3 +143,62 @@ def test_crossover_synthetic_bullish_then_bearish() -> None:
     assert not bool(e.iloc[0])
     assert bool(e.iloc[2]) is True  # 3>2, prev 2<=2
     assert bool(x.iloc[4]) is True  # 1<2, prev 2>=2
+
+
+def test_intraday_and_swing_direction_component() -> None:
+    idx = pd.date_range("2024-01-01", periods=3, freq="h", tz="UTC")
+    df = pd.DataFrame(
+        {
+            "ema_20": [11.0, 12.0, 10.0],
+            "ema_200": [10.0, 11.0, 10.0],
+            "ema_500": [9.0, 12.0, 9.0],
+        },
+        index=idx,
+    )
+    out = intraday_and_swing_trend_long(
+        df,
+        intraday_fast_col="ema_20",
+        intraday_slow_col="ema_200",
+        swing_fast_col="ema_200",
+        swing_slow_col="ema_500",
+    )
+    assert out.tolist() == [True, False, False]
+
+
+def test_pullback_to_entry_anchor_detects_recent_touch() -> None:
+    idx = pd.date_range("2024-01-01", periods=5, freq="h", tz="UTC")
+    df = pd.DataFrame(
+        {
+            "low": [101.0, 99.0, 103.0, 104.0, 105.0],
+            "ema_200": [100.0, 100.0, 100.0, 100.0, 100.0],
+        },
+        index=idx,
+    )
+    out = pullback_to_entry_anchor(df, entry_anchor_col="ema_200", window=3)
+    assert out.tolist() == [False, True, True, True, False]
+
+
+def test_reclaim_entry_anchor_detects_cross_above_anchor() -> None:
+    idx = pd.date_range("2024-01-01", periods=4, freq="h", tz="UTC")
+    df = pd.DataFrame(
+        {
+            "close": [99.0, 100.0, 101.0, 102.0],
+            "ema_200": [100.0, 100.0, 100.0, 103.0],
+        },
+        index=idx,
+    )
+    out = reclaim_entry_anchor(df, entry_anchor_col="ema_200")
+    assert out.tolist() == [False, False, True, False]
+
+
+def test_add_feature_columns_adds_profile_ema_periods() -> None:
+    df = _minimal_ohlcv(20)
+    enriched = add_feature_columns(
+        df,
+        profile_id=EMA_PULLBACK_20_200_500_PROFILE_ID,
+        ema_fast=20,
+        ema_slow=200,
+    )
+    assert "ema_20" in enriched.columns
+    assert "ema_200" in enriched.columns
+    assert "ema_500" in enriched.columns
