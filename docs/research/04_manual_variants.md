@@ -80,7 +80,7 @@
 Ожидаемые тесты Stage 4:
 
 - `build_manual_variants` возвращает минимум 3 variants.
-- Все variants имеют уникальные names.
+- Все variants имеют уникальные `config.variant` values.
 - Все variants имеют уникальные `config_id`.
 - Повторные вызовы дают те же `config_id`.
 - Все variants имеют family `ema_pullback`.
@@ -96,3 +96,20 @@ python research/ema_smoke.py
 git diff --stat data_engine/
 git status -sb
 ```
+
+## Expected acceptance result
+
+- `python -m pytest -q` passes.
+- `python research/strategies/ema_pullback/run.py` prints a manual variants comparison table and `status=ok`.
+- `python research/ema_smoke.py` remains working.
+- `git diff --stat data_engine/` is empty.
+- `git status -sb` shows only intended Stage 4 changes.
+
+## Architecture notes
+
+- Stage 4 is still a small vertical research step.
+- No framework extraction yet.
+- No optimizer yet.
+- Results comparison is stdout-only for now.
+- Extracting `research/results.py` is allowed only later, after real repetition appears across runners or families.
+- `vectorbt` remains inside the research runner and must not move into `data_engine/`.
