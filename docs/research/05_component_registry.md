@@ -271,3 +271,37 @@ git status -sb
 - `signals.py` remains a composer.
 - `run.py` remains a research runner.
 - `data_engine/` remains unaware of strategies.
+
+## Stage 5 implementation summary
+
+Что появилось по функционалу:
+
+- Внутри family `ema_pullback` появился явный локальный реестр компонентов (`components.py`) с фиксированными ролями:
+  - `direction`, `blockers`, `setup`, `trigger`, `exits`, `risk`.
+- Для каждой роли есть baseline-компонент с стабильным `component_id` (например `ema_cross_up`, `ema_cross_down`), и есть единая точка резолва `resolve_component(role, component_id)` с понятными ошибками для неизвестных значений.
+- `signals.py` теперь собирает pipeline не через жёсткие импорты baseline-функций, а через выбранные в конфиге `component_id`.
+  - Это делает pipeline адресуемым и готовым к расширению, но без framework-магии и без динамических загрузок.
+- В `StrategyConfig` добавлены поля выбора компонентов (`*_component`), и эти значения теперь входят в `config_id`.
+  - То есть `config_id` теперь отражает не только EMA-параметры, но и “из каких компонентов собрана стратегия”.
+  - `db_path` по-прежнему не влияет на `config_id`.
+
+Что осталось прежним (важно):
+
+- Торговая логика baseline не изменилась: дефолтные компоненты повторяют старое поведение.
+- Manual variants Stage 4 живы в том же виде:
+  - `ema_pullback_baseline`
+  - `ema_pullback_conservative`
+  - `ema_pullback_aggressive`
+- В Stage 5 варианты всё ещё отличаются только `ema_fast` / `ema_slow`; component ids у них одинаковые дефолтные.
+- Runner по-прежнему печатает сравнение 3 вариантов и завершает `status=ok`.
+- `research/ema_smoke.py` остаётся рабочим.
+
+Как это проверено:
+
+- Добавлены тесты на реестр компонентов, `resolve_component`, связь manual variants с валидными ids и влияние component ids на `config_id`.
+- Обновлены тесты composer после добавления explicit `risk` gate.
+- Прогон acceptance-команд:
+  - `python -m pytest -q` -> `127 passed`
+  - `python research/strategies/ema_pullback/run.py` -> `status=ok` и таблица из 3 variants
+  - `python research/ema_smoke.py` -> `status=ok`
+- Подтверждено, что `data_engine/` не трогали (`git diff --stat data_engine/` пустой).

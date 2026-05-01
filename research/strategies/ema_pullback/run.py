@@ -156,6 +156,12 @@ def run_with_config(cfg: StrategyConfig) -> None:
         enriched,
         ema_fast=cfg.ema_fast,
         ema_slow=cfg.ema_slow,
+        direction_component=cfg.direction_component,
+        blockers_component=cfg.blockers_component,
+        setup_component=cfg.setup_component,
+        trigger_component=cfg.trigger_component,
+        exits_component=cfg.exits_component,
+        risk_component=cfg.risk_component,
     )
 
     close = enriched["close"].astype(float)
@@ -258,6 +264,12 @@ def _run_instance_on_ohlcv(instance: StrategyInstance, ohlcv: Any) -> dict[str, 
         enriched,
         ema_fast=cfg.ema_fast,
         ema_slow=cfg.ema_slow,
+        direction_component=cfg.direction_component,
+        blockers_component=cfg.blockers_component,
+        setup_component=cfg.setup_component,
+        trigger_component=cfg.trigger_component,
+        exits_component=cfg.exits_component,
+        risk_component=cfg.risk_component,
     )
 
     close = enriched["close"].astype(float)

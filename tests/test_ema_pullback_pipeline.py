@@ -9,6 +9,7 @@ pytest.importorskip("pandas")
 import pandas as pd
 
 from research.strategies.ema_pullback.blockers import blockers_ok_baseline
+from research.strategies.ema_pullback.components import no_risk_filter
 from research.strategies.ema_pullback.config import DEFAULT_CONFIG
 from research.strategies.ema_pullback.direction import (
     long_allowed_baseline,
@@ -110,6 +111,7 @@ def test_compose_final_signals_with_all_true_matches_trigger() -> None:
         blockers_ok=blockers_ok_baseline(df),
         setup_long=setup_long_baseline(df),
         trigger_long=trig,
+        risk_ok=no_risk_filter(df),
         exit_signal=ex,
     )
     assert fe.equals(trig)

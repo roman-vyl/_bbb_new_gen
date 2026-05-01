@@ -1,4 +1,4 @@
-"""Research guardrails: no registry and no research/common framework."""
+"""Research guardrails for staged architecture boundaries."""
 
 from __future__ import annotations
 
@@ -18,7 +18,10 @@ def test_ema_pullback_python_has_no_registry_pattern() -> None:
     offenders: list[str] = []
     for path in sorted(FAMILY.glob("*.py")):
         text = path.read_text(encoding="utf-8")
-        if registry_re.search(text):
+        matches = set(registry_re.findall(text))
+        allowed = {"COMPONENT_REGISTRY"} if path.name == "components.py" else set()
+        unexpected = sorted(matches - allowed)
+        if unexpected:
             offenders.append(str(path.relative_to(ROOT)))
     assert offenders == [], f"unexpected *_REGISTRY in family: {offenders}"
 
