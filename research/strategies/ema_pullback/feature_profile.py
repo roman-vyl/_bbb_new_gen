@@ -103,7 +103,7 @@ EMA_PULLBACK_20_200_500_FEATURE_PROFILE = FeatureProfile(
         ),
         "atr_14": FeatureSeries(
             series_id="atr_14",
-            indicator="prepared_distance",
+            indicator="atr",
             timeframe="base_tf",
             source="ohlc",
             params=(14,),
