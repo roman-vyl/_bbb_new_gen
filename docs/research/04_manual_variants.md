@@ -113,3 +113,25 @@ git status -sb
 - Results comparison is stdout-only for now.
 - Extracting `research/results.py` is allowed only later, after real repetition appears across runners or families.
 - `vectorbt` remains inside the research runner and must not move into `data_engine/`.
+
+## Implementation summary
+
+**Status:** implemented.
+
+**Что сделано:** добавлен manual variants слой для family `ema_pullback` внутри `research/`: создан `variants.py` с фиксированными вариантами `baseline` / `conservative` / `aggressive`, обновлён `run.py` под multi-variant execution и печать comparison table. Runner теперь грузит candles один раз и последовательно прогоняет каждый `StrategyInstance` через тот же pipeline features/signals/portfolio/metrics.
+
+**Identity contract:** каждый variant получает deterministic `config_id`; `config_id` уникален между variants и стабилен при повторных вызовах. Variants различаются только параметрами `StrategyConfig` (`ema_fast`, `ema_slow`, `variant`), без вариативности компонентов `direction/setup/trigger/exits`.
+
+**Тесты Stage 4:** добавлено покрытие для `build_manual_variants`: минимум 3 variants, уникальность `variant` и `config_id`, детерминированность `config_id`, family=`ema_pullback`, инвариант `ema_fast < ema_slow`.
+
+**Сознательно не сделано:** registry/component registry; grid/optimizer; YAML/JSON config; framework extraction в `research/common`; перенос `vectorbt` в `data_engine`; любые изменения в `data_engine/`; сохранение результатов в БД.
+
+**Validation (зафиксированные команды):**
+
+- `python -m pytest -q`
+- `python research/strategies/ema_pullback/run.py`
+- `python research/ema_smoke.py`
+- `git diff --stat data_engine/`
+- `git status -sb`
+
+**Acceptance:** `pytest` зелёный; runner печатает comparison table и `status=ok`; `research/ema_smoke.py` остаётся рабочим; `data_engine/` не изменён.
