@@ -1,10 +1,10 @@
-"""Tests for ema_atr_directional run helpers (no vectorbt)."""
+"""Tests for ema_pullback run helpers (no vectorbt)."""
 
 from __future__ import annotations
 
 import pytest
 
-from research.strategies.ema_atr_directional.run import ensure_finite_metric
+from research.strategies.ema_pullback.run import ensure_finite_metric
 
 
 def test_ensure_finite_metric_accepts_finite() -> None:

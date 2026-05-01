@@ -34,11 +34,11 @@
 
 ## 3. Имя family и смысл «скелета»
 
-**Каталог family:** `research/strategies/ema_atr_directional/`.
+**Каталог family:** `research/strategies/ema_pullback/`.
 
-- Имя отражает **целевое** семейство из мастер-плана (тренд/направление + ATR-контекст).  
-- На **Stage 1** допускается и **ожидается**, что **реализованная** логика совпадает с текущим Phase 4 smoke: **EMA crossover** (иллюстративная стратегия), без обязательной реализации ATR-фильтров и «directional» правил.  
-- Явно задокументировать в docstring пакета/модуля family: *«Stage 1: skeleton + EMA crossover parity with `ema_smoke`; ATR/directional blocks — future stages.»*
+- Имя **ema_pullback** отражает ориентацию Stage 1: простой **EMA fast/slow crossover** как baseline в духе pullback/trend-контекста, **без** обещания уже реализованного ATR-слоя или полноценной directional-архитектуры.  
+- На **Stage 1** **реализованная** логика совпадает с Phase 4 smoke (**EMA crossover**); ATR-фильтры, ATR-выходы и блоки directional pipeline — **следующие этапы**.  
+- В docstring пакета family зафиксировать: Stage 1 = skeleton + паритет с `ema_smoke`; ATR/directional — future stages.
 
 Таким образом, этап про **организацию кода и контракт конфига**, а не про новую альфу.
 
@@ -51,11 +51,11 @@
 | Файл | Назначение |
 |------|------------|
 | `research/strategies/__init__.py` | Делает `research.strategies` обычным пакетом (может быть пустым или с кратким описанием). |
-| `research/strategies/ema_atr_directional/__init__.py` | Пакет family; экспорт не обязателен. |
-| `research/strategies/ema_atr_directional/config.py` | Единственный «источник правды» для параметров прогона и стратегии на этом этапе. |
-| `research/strategies/ema_atr_directional/features.py` | Чистые функции: из OHLCV/DataFrame строят признаки (индикаторы), **без** `vectorbt`. |
-| `research/strategies/ema_atr_directional/signals.py` | Чистые функции: из фич строят boolean Series входа/выхода, **без** `vectorbt`. |
-| `research/strategies/ema_atr_directional/run.py` | CLI/entrypoint: БД → свечи → features → signals → портфель → stdout. |
+| `research/strategies/ema_pullback/__init__.py` | Пакет family; экспорт не обязателен. |
+| `research/strategies/ema_pullback/config.py` | Единственный «источник правды» для параметров прогона и стратегии на этом этапе. |
+| `research/strategies/ema_pullback/features.py` | Чистые функции: из OHLCV/DataFrame строят признаки (индикаторы), **без** `vectorbt`. |
+| `research/strategies/ema_pullback/signals.py` | Чистые функции: из фич строят boolean Series входа/выхода, **без** `vectorbt`. |
+| `research/strategies/ema_pullback/run.py` | CLI/entrypoint: БД → свечи → features → signals → портфель → stdout. |
 
 **Запрещённый deliverable:** отдельный `registry.py`, `optimizer.py`, `framework.py` внутри family на этом этапе.
 
@@ -65,8 +65,8 @@
 
 ### 5.1 `config.py`
 
-- Один тип конфигурации (например `EmaAtrDirectionalConfig` или нейтральное `StrategyRunConfig`), описывающий **как минимум**:
-  - идентификаторы прогона: `family` (строка, константа `"ema_atr_directional"`), `variant` (строка, напр. `"ema_crossover_baseline"`) — для будущего `config_id`;
+- Один тип конфигурации (например `EmaPullbackConfig` или нейтральное `StrategyRunConfig`), описывающий **как минимум**:
+  - идентификаторы прогона: `family` (строка, константа `"ema_pullback"`), `variant` (строка, напр. `"ema_pullback_baseline"`) — для будущего `config_id`;
   - рынок: `symbol`, `timeframe` (строки, те же конвенции, что в Phase 4, напр. `BTCUSDT`, `1h`);
   - путь к БД: опциональный override; если `None` — как в smoke, через `Settings().db_path`;
   - параметры фич: периоды EMA (`fast`, `slow`), согласованные с именами колонок в `features.py`;
@@ -126,7 +126,7 @@
 
 | Критерий | Проверка |
 |----------|----------|
-| Запуск из корня репозитория | `python research/strategies/ema_atr_directional/run.py` завершается с кодом 0 на валидной БД MVP (данные для `BTCUSDT` / `1h` или то, что переопределено флагами). |
+| Запуск из корня репозитория | `python research/strategies/ema_pullback/run.py` завершается с кодом 0 на валидной БД MVP (данные для `BTCUSDT` / `1h` или то, что переопределено флагами). |
 | Метрики и статус | В stdout присутствуют численные метрики (не NaN) и маркер успеха согласно §6. |
 | Тесты | `pytest` зелёный в конфигурации проекта (включая маркер `optional_vectorbt`, если он используется для интеграционного теста портфеля). |
 | Data engine | Нет изменений в дереве `data_engine/`. |
@@ -136,7 +136,7 @@
 
 ## 8. Тестирование
 
-- **Unit-тесты** (без `vectorbt`): импорты из `research.strategies.ema_atr_directional.features` и `.signals`; сценарии аналогичны `tests/test_ema_smoke_helpers.py` (длина OHLCV, типы сигналов, отсутствие NaN в EMA на синтетике, первая строка без сигнала).
+- **Unit-тесты** (без `vectorbt`): импорты из `research.strategies.ema_pullback.features` и `.signals`; сценарии аналогичны `tests/test_ema_smoke_helpers.py` (длина OHLCV, типы сигналов, отсутствие NaN в EMA на синтетике, первая строка без сигнала).
 - **Интеграция (опционально):** маркер `optional_vectorbt`, минимальный портфель из синтетических свечей — по аналогии с существующим тестом.
 - **Регрессия политики Phase 4:** `tests/test_phase4_boundaries.py` по-прежнему запрещает `vectorbt` внутри `data_engine/` и лишние пути; после изменений дерево `data_engine/` не трогаем.
 - Решение по **миграции** `tests/test_ema_smoke_helpers.py`: либо перенаправить импорты на новые модули family и оставить файл как тест совместимости, либо переименовать/дублировать тесты под family — зафиксировать в PR так, чтобы не было двух расходящихся реализаций одной и той же математики.
@@ -159,7 +159,7 @@
 
 Рекомендуемая политика (выбрать одну при реализации и отразить в коммите):
 
-1. **Предпочтительно:** `ema_smoke.py` становится тонкой обёрткой: импортирует `run.main` или общие хелперы из `ema_atr_directional`, либо делегирует в тот же pipeline.  
+1. **Предпочтительно:** `ema_smoke.py` становится тонкой обёрткой: импортирует `run.main` или общие хелперы из `ema_pullback`, либо делегирует в тот же pipeline.  
 2. **Допустимо:** `ema_smoke_helpers.py` реэкспортирует функции из family для старых импортов, пока тесты не переключены.
 
 Запрещено по смыслу этапа: оставить в family одну реализацию, а в `ema_smoke_helpers` другую с расходящейся семантикой.
@@ -168,12 +168,12 @@
 
 ## 11. Чеклист перед merge
 
-- [ ] `research/strategies/ema_atr_directional/{config,features,signals,run}.py` присутствуют.
-- [ ] `python research/strategies/ema_atr_directional/run.py` → метрики + `status=ok`.
+- [ ] `research/strategies/ema_pullback/{config,features,signals,run}.py` присутствуют.
+- [ ] `python research/strategies/ema_pullback/run.py` → метрики + `status=ok`.
 - [ ] `pytest` green.
 - [ ] `git diff --stat data_engine/` пустой.
 - [ ] Нет новых модулей registry/optimizer/framework.
-- [ ] Документация в коде family объясняет, что ATR/directional — следующие этапы.
+- [ ] Документация в коде family объясняет, что ATR-фильтры / ATR-выходы / directional-блоки — следующие этапы.
 
 ---
 
@@ -183,3 +183,25 @@
 - Полноценный `StrategyConfig` с `config_id`, несколько variants, сравнительные отчёты (Step 3–4).
 
 Данное ТЗ **не** требует реализации этих шагов.
+
+---
+
+## 13. Implementation summary
+
+**Status:** implemented.
+
+**Что сделано:** добавлена первая research strategy family — `research/strategies/ema_pullback/`. Логика Phase 4 smoke (EMA) перенесена в конвейер family: модули `config.py`, `features.py`, `signals.py`, `run.py`. `research/ema_smoke.py` остаётся совместимым тонким entrypoint’ом поверх того же pipeline. `research/ema_smoke_helpers.py` делегирует EMA/сигналы в family, чтобы не было двух расходящихся реализаций.
+
+**Что означает Stage 1:** это не полноценный Strategy Constructor, а первый организационный шаг — один предсказуемый каталог и разделение `features → signals → run`. Торговая логика по-прежнему простой baseline: пересечение EMA fast / EMA slow. Имя **ema_pullback** задаёт направление развития family, но на Stage 1 нет сложных моделей pullback, blocker’ов и многослойных exit rules.
+
+**Сознательно не сделано:** registry; component grid; optimizer; несколько variants в продуктовом смысле; общий Strategy Instance framework; ATR exits и прочий ATR-контур; декомпозиция direction / blockers / setup / trigger / exit; backend indicators; любые изменения в `data_engine/`.
+
+**Validation (зафиксированные команды):**
+
+- `python -m pytest -q`
+- `python research/strategies/ema_pullback/run.py`
+- `python research/ema_smoke.py`
+
+**Acceptance:** в stdout есть `status=ok`; метрики Sharpe, Profit Factor и Max Drawdown конечны (finite); дерево `data_engine/` не менялось ради этого этапа.
+
+**Next step:** Research Stage 2 — Pipeline Decomposition: разнести логику family на блоки direction / blockers / setup / trigger / exit / risk, по-прежнему без registry, grid и общего constructor framework.

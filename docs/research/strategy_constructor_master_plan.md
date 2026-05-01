@@ -48,7 +48,7 @@ clean candles → strategy components → vectorbt → metrics/report
 Пример:
 
 ```text
-ema_atr_directional
+ema_pullback
 ```
 
 Family описывает общий подход, но не фиксирует конкретные компоненты и параметры.
@@ -165,7 +165,7 @@ clean candles → simple EMA crossover → vectorbt stats
 Создать первую family:
 
 ```text
-research/strategies/ema_atr_directional/
+research/strategies/ema_pullback/
 ```
 
 Минимально:

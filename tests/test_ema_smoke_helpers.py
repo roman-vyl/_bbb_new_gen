@@ -13,8 +13,8 @@ from research.ema_smoke_helpers import (
     candles_to_ohlcv_dataframe,
     ema_crossover_signals as legacy_ema_crossover_signals,
 )
-from research.strategies.ema_atr_directional.features import add_ema_columns
-from research.strategies.ema_atr_directional.signals import ema_crossover_signals
+from research.strategies.ema_pullback.features import add_ema_columns
+from research.strategies.ema_pullback.signals import ema_crossover_signals
 
 
 def _synthetic_candles(n: int = 120) -> list[Candle]:

@@ -1,8 +1,13 @@
 """CLI: DB candles -> features -> signals -> vectorbt -> metrics.
 
+Stage 1 family ``ema_pullback`` is an EMA fast/slow crossover baseline (same
+semantics as the historical Phase 4 smoke). ATR-based filters/exits and a full
+directional pipeline are intentionally out of scope here and reserved for later
+stages.
+
 Run from repo root (after ``pip install -e ".[research]"``):
 
-    python research/strategies/ema_atr_directional/run.py
+    python research/strategies/ema_pullback/run.py
 """
 
 from __future__ import annotations
@@ -24,17 +29,17 @@ from data_engine.engine.time_grid import tf_ms
 from data_engine.store import Db
 
 from research.ema_smoke_helpers import candles_to_ohlcv_dataframe
-from research.strategies.ema_atr_directional.config import (
+from research.strategies.ema_pullback.config import (
     DEFAULT_CONFIG,
-    EmaAtrDirectionalConfig,
+    EmaPullbackConfig,
 )
-from research.strategies.ema_atr_directional.features import add_ema_columns
-from research.strategies.ema_atr_directional.signals import ema_crossover_signals
+from research.strategies.ema_pullback.features import add_ema_columns
+from research.strategies.ema_pullback.signals import ema_crossover_signals
 
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(
-        description="EMA crossover backtest (ema_atr_directional family, Stage 1 skeleton)."
+        description="EMA crossover backtest (ema_pullback family, Stage 1 skeleton)."
     )
     p.add_argument("--symbol", default=DEFAULT_CONFIG.symbol, help="Symbol in DB")
     p.add_argument("--tf", default=DEFAULT_CONFIG.timeframe, help="Timeframe")
@@ -47,7 +52,7 @@ def parse_args() -> argparse.Namespace:
     return p.parse_args()
 
 
-def config_from_args(args: argparse.Namespace) -> EmaAtrDirectionalConfig:
+def config_from_args(args: argparse.Namespace) -> EmaPullbackConfig:
     return replace(
         DEFAULT_CONFIG,
         symbol=args.symbol.strip().upper(),
@@ -90,7 +95,7 @@ def pd_freq_alias(tf: str) -> str:
         raise ValueError(f"unsupported tf for freq: {tf}") from exc
 
 
-def run_with_config(cfg: EmaAtrDirectionalConfig) -> None:
+def run_with_config(cfg: EmaPullbackConfig) -> None:
     try:
         import vectorbt as vbt
     except ImportError as exc:  # pragma: no cover - exercised when extra missing
