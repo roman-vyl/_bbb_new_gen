@@ -206,6 +206,11 @@ git diff --stat data_engine/
 git status -sb
 ```
 
+### Step 5.8 — Add implementation summary
+
+- After implementation, append a short implementation summary to `docs/research/05_component_registry.md`.
+- Summary should list files changed, behavior preserved, tests run, and explicit confirmation that `data_engine/` was not changed.
+
 ## Runner behavior
 
 Ожидаемое поведение runner:
@@ -245,3 +250,24 @@ python research/ema_smoke.py
 git diff --stat data_engine/
 git status -sb
 ```
+
+## Expected acceptance result
+
+- `python -m pytest -q` passes.
+- `python research/strategies/ema_pullback/run.py` prints 3 manual variants and `status=ok`.
+- `python research/ema_smoke.py` remains working.
+- `git diff --stat data_engine/` is empty.
+- `git status -sb` shows only intended Stage 5 changes.
+
+## Architecture notes
+
+- Stage 5 introduces a family-local registry only.
+- No global strategy framework yet.
+- No component grid yet.
+- No optimizer yet.
+- No visual constructor yet.
+- No strategy config files yet.
+- The registry must stay boring and explicit.
+- `signals.py` remains a composer.
+- `run.py` remains a research runner.
+- `data_engine/` remains unaware of strategies.
