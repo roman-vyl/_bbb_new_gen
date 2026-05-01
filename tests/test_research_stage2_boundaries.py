@@ -1,4 +1,4 @@
-"""Research Stage 2: guardrails — no registry / variants / research/common framework."""
+"""Research guardrails: no registry and no research/common framework."""
 
 from __future__ import annotations
 
@@ -11,7 +11,6 @@ FAMILY = ROOT / "research" / "strategies" / "ema_pullback"
 
 def test_ema_pullback_has_no_forbidden_stage_files() -> None:
     assert not (FAMILY / "registry.py").exists()
-    assert not (FAMILY / "variants.py").exists()
 
 
 def test_ema_pullback_python_has_no_registry_pattern() -> None:

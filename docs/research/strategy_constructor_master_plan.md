@@ -356,3 +356,41 @@ Data Engine даёт чистые данные.
 Research layer собирает и проверяет стратегии.
 Core data engine не загрязняется торговой логикой.
 ```
+
+---
+
+## Future direction: Visual Strategy Constructor
+
+В будущем Strategy Constructor может получить визуальный слой конфигурации стратегий.
+Это отложенное направление (not current scope), не часть текущего Stage 4 и не изменение текущей дорожной карты.
+
+Идея high-level:
+
+- пользователь собирает стратегию из blocks/components на визуальном canvas;
+- блоки могут соответствовать слоям `direction`, `blockers`, `setup`, `triggers`, `exits`, `risk`;
+- связи между блоками могут выражать pipeline и логические зависимости;
+- условия могут поддерживать простые композиции `AND` / `OR` / `NOT`;
+- параметры компонентов редактируются через UI;
+- результат визуальной сборки сохраняется не как frontend-specific state, а как строгий `StrategySpec` / Strategy AST / JSON-like representation.
+
+Архитектурный принцип:
+
+- UI graph is not the strategy itself.
+- UI graph should compile into a validated `StrategySpec`.
+- `StrategySpec` should be validated and then converted into `StrategyInstance`.
+- Research/backtest execution remains on the research side.
+- Frontend must not dictate the internal architecture of `data_engine/` or research execution.
+- `data_engine/` must remain unaware of strategies and visual configuration.
+
+Потенциальные направления (без финального выбора):
+
+- node-based editor libraries such as React Flow / xyflow may be considered later;
+- Blockly / JsonLogic-like approaches may be considered later for condition builders;
+- heavier workflow engines should not be adopted without a separate architecture decision.
+
+Phased note:
+
+- first build strict Python/JSON strategy model;
+- then validate component registry and component composition;
+- only after that consider visual UI;
+- avoid building a large visual programming framework prematurely.
