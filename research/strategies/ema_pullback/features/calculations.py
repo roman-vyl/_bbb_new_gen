@@ -20,39 +20,6 @@ def _atr_rolling_mean(high: pd.Series, low: pd.Series, close: pd.Series, *, peri
     return tr.rolling(window=period, min_periods=period).mean()
 
 
-def add_ema_columns(
-    df: pd.DataFrame,
-    *,
-    ema_fast: int,
-    ema_slow: int,
-    extra_periods: tuple[int, ...] = (),
-) -> pd.DataFrame:
-    """Append required EMA columns using ``ewm(span=..., adjust=False)`` on ``close``."""
-
-    out = df.copy()
-    close = out["close"].astype(float)
-    periods = sorted({ema_fast, ema_slow, *extra_periods})
-    for period in periods:
-        out[f"ema_{period}"] = close.ewm(span=period, adjust=False).mean()
-    # Stage 5 compatibility aliases used by default feature relation roles.
-    out["ema_fast"] = out[f"ema_{ema_fast}"]
-    out["ema_slow"] = out[f"ema_{ema_slow}"]
-    return out
-
-
-def add_feature_columns(
-    df: pd.DataFrame,
-    *,
-    profile_id: str,
-    ema_fast: int,
-    ema_slow: int,
-) -> pd.DataFrame:
-    """Legacy helper kept for compatibility with old call sites."""
-
-    _ = profile_id
-    return add_ema_columns(df, ema_fast=ema_fast, ema_slow=ema_slow)
-
-
 def add_feature_columns_from_plan(df: pd.DataFrame, plan: FeaturePlan) -> pd.DataFrame:
     out = df.copy()
     close = out["close"].astype(float)

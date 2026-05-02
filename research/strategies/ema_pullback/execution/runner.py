@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from pathlib import Path
 
-from research.strategies.ema_pullback.config import StrategyConfig
+from research.strategies.ema_pullback.config import ExecutionConfig
 from research.strategies.ema_pullback.execution.backtest import run_strategy_spec
 from research.strategies.ema_pullback.execution.data_loader import load_candles_once
 from research.strategies.ema_pullback.execution.report_table import (
@@ -23,7 +23,7 @@ from research.strategies.ema_pullback.spec_instances import active_strategy_spec
 _ROOT = Path(__file__).resolve().parents[4]
 
 
-def run_single_config(cfg: StrategyConfig) -> None:
+def run_single_config(cfg: ExecutionConfig) -> None:
     """Single strategy-spec smoke run."""
 
     loaded = load_candles_once(cfg)
@@ -48,7 +48,7 @@ def run_single_config(cfg: StrategyConfig) -> None:
     print("status=ok")
 
 
-def run_manual_variants(base_config: StrategyConfig) -> None:
+def run_manual_variants(base_config: ExecutionConfig) -> None:
     loaded = load_candles_once(base_config)
     specs = active_strategy_specs(base_config.symbol, base_config.timeframe)
     variant_results = [
