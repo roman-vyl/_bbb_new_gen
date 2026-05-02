@@ -17,10 +17,30 @@ from research.strategies.ema_pullback.execution.results import (
     build_run_id,
     write_research_results,
 )
+from research.strategies.ema_pullback.instance import StrategyInstance
 from research.strategies.ema_pullback.variants import build_manual_variants
 
 
 _ROOT = Path(__file__).resolve().parents[4]
+
+
+def run_single_config(cfg: StrategyConfig) -> None:
+    """Historical single-config smoke output using the shared backend."""
+
+    instance = StrategyInstance.from_config(cfg)
+    loaded = load_candles_once(instance.config)
+    result = run_strategy_instance(instance, loaded.ohlcv)
+
+    print(
+        f"family={instance.config.family} variant={result.variant} "
+        f"config_id={result.config_id} "
+        f"symbol={result.symbol} timeframe={result.timeframe} "
+        f"candles={loaded.candles_count}"
+    )
+    print("vectorbt_portfolio.sharpe_ratio (freq-aware):", result.metrics.sharpe)
+    print("vectorbt_portfolio.trades.profit_factor:", result.metrics.profit_factor)
+    print("vectorbt_portfolio.max_drawdown:", result.metrics.max_drawdown)
+    print("status=ok")
 
 
 def run_manual_variants(base_config: StrategyConfig) -> None:

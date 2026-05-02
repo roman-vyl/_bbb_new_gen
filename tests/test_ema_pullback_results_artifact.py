@@ -171,7 +171,7 @@ def test_extract_trade_records_closed_and_open() -> None:
 def test_variant_payload_from_instance_matches_schema() -> None:
     pd = pytest.importorskip("pandas")
     pytest.importorskip("vectorbt")
-    from research.strategies.ema_pullback.run import _run_instance_on_ohlcv
+    from research.strategies.ema_pullback.execution.backtest import run_strategy_instance
 
     n = 400
     idx = pd.date_range("2024-01-01", periods=n, freq="h", tz="UTC")
@@ -200,7 +200,7 @@ def test_variant_payload_from_instance_matches_schema() -> None:
         slippage=0.0001,
     )
     instance = StrategyInstance.from_config(cfg)
-    vr = _run_instance_on_ohlcv(instance, ohlcv)
+    vr = run_strategy_instance(instance, ohlcv).to_payload()
     for k in REQUIRED_VARIANT:
         assert k in vr
     assert tuple(vr["components"].keys()) == COMPONENT_ROLES
