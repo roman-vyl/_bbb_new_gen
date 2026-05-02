@@ -17,3 +17,9 @@ def ema_bearish_cross_exit(
     prev_fast = fast.shift(1)
     prev_slow = slow.shift(1)
     return ((fast < slow) & (prev_fast >= prev_slow)).fillna(False).astype(bool)
+
+
+def no_signal_exit(df: pd.DataFrame) -> pd.Series:
+    """No signal exit: always False (exits handled by stop/take)."""
+
+    return pd.Series(False, index=df.index, dtype=bool)

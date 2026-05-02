@@ -9,3 +9,9 @@ def blockers_ok_baseline(df: pd.DataFrame) -> pd.Series:
     """Stage 2: no blocking rules — extension point only (all True)."""
 
     return pd.Series(True, index=df.index, dtype=bool)
+
+
+def no_blockers(df: pd.DataFrame) -> pd.Series:
+    """No blockers: pass all rows."""
+
+    return pd.Series(True, index=df.index, dtype=bool)

@@ -38,10 +38,7 @@ class VariantResult:
     config_id: str
     symbol: str
     timeframe: str
-    feature_profile: str
-    components: dict[str, str]
-    trade_management_profile: str
-    params: dict[str, int | float]
+    strategy_spec: dict[str, Any]
     metrics: VariantMetrics
     trade_records: list[dict[str, Any]]
 
@@ -51,10 +48,7 @@ class VariantResult:
             "config_id": self.config_id,
             "symbol": self.symbol,
             "timeframe": self.timeframe,
-            "feature_profile": self.feature_profile,
-            "components": self.components,
-            "trade_management_profile": self.trade_management_profile,
-            "params": self.params,
+            "strategy_spec": self.strategy_spec,
             "metrics": self.metrics.to_payload(),
             "trade_records": self.trade_records,
         }

@@ -174,12 +174,12 @@ EmaPullbackConfig = StrategyConfig
 
 DEFAULT_CONFIG = StrategyConfig(
     family="ema_pullback",
-    variant="ema_pullback_baseline",
+    variant="ema_pullback_fast20_anchor200_slow1000",
     symbol="BTCUSDT",
     timeframe="1h",
     db_path=None,
     ema_fast=20,
-    ema_slow=50,
+    ema_slow=200,
     init_cash=100.0,
     fees=0.0,
     slippage=0.0,

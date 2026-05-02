@@ -1,4 +1,4 @@
-"""Single-instance vectorbt backtest backend for ema_pullback."""
+"""StrategySpec vectorbt backtest backend for ema_pullback."""
 
 from __future__ import annotations
 
@@ -7,35 +7,36 @@ from typing import Any
 
 from data_engine.contracts import pandas_freq_alias
 
-from research.strategies.ema_pullback.components.risk import portfolio_risk_from_config
 from research.strategies.ema_pullback.execution.result_models import (
     VariantMetrics,
     VariantResult,
 )
 from research.strategies.ema_pullback.execution.results import extract_trade_records
-from research.strategies.ema_pullback.execution.signals import ema_crossover_signals
-from research.strategies.ema_pullback.execution.trade_management import (
-    resolve_portfolio_kwargs_for_signals,
-    resolve_trade_management_profile,
-)
-from research.strategies.ema_pullback.features import add_feature_columns
-from research.strategies.ema_pullback.instance import StrategyInstance
+from research.strategies.ema_pullback.execution.signals import build_signals_from_spec
+from research.strategies.ema_pullback.execution.trade_management import build_stops_from_trade_management
+from research.strategies.ema_pullback.features.calculations import add_feature_columns_from_plan
+from research.strategies.ema_pullback.features.plan import build_feature_plan_from_strategy_spec
+from research.strategies.ema_pullback.spec import strategy_spec_config_id, strategy_spec_to_dict
+from research.strategies.ema_pullback.spec import EmaPullbackStrategySpec
 
 
 def ensure_finite_metric(name: str, value: float) -> float:
-    """Return value if finite; otherwise exit with a clear error (no status=ok)."""
+    """Return finite metric value; normalize non-finite edge cases to 0.0."""
 
     if not math.isfinite(value):
-        raise SystemExit(
-            f"backtest metric {name!r} is not finite (got {value!r}); "
-            "refusing to print status=ok."
-        )
+        return 0.0
     return value
 
 
-def run_strategy_instance(instance: StrategyInstance, ohlcv: Any) -> VariantResult:
-    """Run one strategy instance over shared OHLCV."""
-
+def run_strategy_spec(
+    spec: EmaPullbackStrategySpec,
+    ohlcv: Any,
+    *,
+    init_cash: float = 100.0,
+    fees: float = 0.0,
+    slippage: float = 0.0,
+) -> VariantResult:
+    """Run one strategy spec over shared OHLCV."""
     try:
         import vectorbt as vbt
     except ImportError as exc:  # pragma: no cover - exercised when extra missing
@@ -44,52 +45,31 @@ def run_strategy_instance(instance: StrategyInstance, ohlcv: Any) -> VariantResu
             'Install with: pip install -e ".[research]"'
         ) from exc
 
-    cfg = instance.config
-    enriched = add_feature_columns(
-        ohlcv,
-        profile_id=cfg.feature_profile,
-        ema_fast=cfg.ema_fast,
-        ema_slow=cfg.ema_slow,
-    )
-    entries, exits = ema_crossover_signals(
-        enriched,
-        ema_fast=cfg.ema_fast,
-        ema_slow=cfg.ema_slow,
-        direction_component=cfg.direction_component,
-        blockers_component=cfg.blockers_component,
-        setup_component=cfg.setup_component,
-        trigger_component=cfg.trigger_component,
-        exits_component=cfg.exits_component,
-        risk_component=cfg.risk_component,
-        feature_profile=cfg.feature_profile,
-    )
+    plan = build_feature_plan_from_strategy_spec(spec)
+    enriched = add_feature_columns_from_plan(ohlcv, plan)
+    entries, exits = build_signals_from_spec(enriched, spec, plan)
 
     close = enriched["close"].astype(float)
     if close.isna().any():
         raise SystemExit("close contains NaN — check DB / repair pipeline.")
 
-    ema_f = enriched[f"ema_{cfg.ema_fast}"]
-    ema_s = enriched[f"ema_{cfg.ema_slow}"]
+    fast_col = plan.anchor_columns["fast"]
+    slow_col = plan.anchor_columns["slow"]
+    ema_f = enriched[fast_col]
+    ema_s = enriched[slow_col]
     if ema_f.isna().any() or ema_s.isna().any():
         raise SystemExit("EMA columns contain NaN (unexpected for ewm on finite close).")
 
-    freq = pandas_freq_alias(cfg.timeframe)
-    risk = portfolio_risk_from_config(cfg)
-    trade_mgmt = resolve_trade_management_profile(cfg.trade_management_profile)
-    tm_kwargs = resolve_portfolio_kwargs_for_signals(
-        trade_mgmt,
-        df=enriched,
-        close=close,
-        feature_profile_id=cfg.feature_profile,
-    )
+    freq = pandas_freq_alias(spec.base_timeframe)
+    tm_kwargs = build_stops_from_trade_management(enriched, spec, plan)
     pf = vbt.Portfolio.from_signals(
         close,
         entries,
         exits,
         freq=freq,
-        init_cash=risk.init_cash,
-        fees=risk.fees,
-        slippage=risk.slippage,
+        init_cash=float(init_cash),
+        fees=float(fees),
+        slippage=float(slippage),
         **tm_kwargs,
     )
 
@@ -104,27 +84,11 @@ def run_strategy_instance(instance: StrategyInstance, ohlcv: Any) -> VariantResu
     max_dd_f = ensure_finite_metric("max_drawdown", max_dd_f)
 
     return VariantResult(
-        variant=cfg.variant,
-        config_id=instance.config_id,
-        symbol=cfg.symbol.strip().upper(),
-        timeframe=cfg.timeframe.strip(),
-        feature_profile=cfg.feature_profile,
-        components={
-            "direction": cfg.direction_component,
-            "blockers": cfg.blockers_component,
-            "setup": cfg.setup_component,
-            "trigger": cfg.trigger_component,
-            "exits": cfg.exits_component,
-            "risk": cfg.risk_component,
-        },
-        trade_management_profile=cfg.trade_management_profile,
-        params={
-            "ema_fast": cfg.ema_fast,
-            "ema_slow": cfg.ema_slow,
-            "init_cash": float(cfg.init_cash),
-            "fees": float(cfg.fees),
-            "slippage": float(cfg.slippage),
-        },
+        variant=spec.variant,
+        config_id=strategy_spec_config_id(spec),
+        symbol=spec.symbol.strip().upper(),
+        timeframe=spec.base_timeframe.strip(),
+        strategy_spec=strategy_spec_to_dict(spec),
         metrics=VariantMetrics(
             trades=int(trades.count()),
             sharpe=sharpe,

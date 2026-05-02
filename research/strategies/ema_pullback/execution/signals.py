@@ -5,19 +5,10 @@ from __future__ import annotations
 import pandas as pd
 
 from research.strategies.ema_pullback.components.registry import (
-    DEFAULT_BLOCKERS_COMPONENT,
-    DEFAULT_DIRECTION_COMPONENT,
-    DEFAULT_EXITS_COMPONENT,
-    DEFAULT_RISK_COMPONENT,
-    DEFAULT_SETUP_COMPONENT,
-    DEFAULT_TRIGGER_COMPONENT,
     resolve_component,
 )
-from research.strategies.ema_pullback.features.profile import (
-    EMA_PULLBACK_DEFAULT_PROFILE_ID,
-    relation_columns,
-    resolve_feature_profile,
-)
+from research.strategies.ema_pullback.features.plan import FeaturePlan
+from research.strategies.ema_pullback.spec import EmaPullbackStrategySpec
 
 
 def compose_final_signals(
@@ -36,85 +27,48 @@ def compose_final_signals(
     return final_entry.astype(bool), final_exit.astype(bool)
 
 
-def ema_pullback_pipeline_signals(
+def build_signals_from_spec(
     df: pd.DataFrame,
-    *,
-    ema_fast: int,
-    ema_slow: int,
-    direction_component: str = DEFAULT_DIRECTION_COMPONENT,
-    blockers_component: str = DEFAULT_BLOCKERS_COMPONENT,
-    setup_component: str = DEFAULT_SETUP_COMPONENT,
-    trigger_component: str = DEFAULT_TRIGGER_COMPONENT,
-    exits_component: str = DEFAULT_EXITS_COMPONENT,
-    risk_component: str = DEFAULT_RISK_COMPONENT,
-    feature_profile: str = EMA_PULLBACK_DEFAULT_PROFILE_ID,
+    spec: EmaPullbackStrategySpec,
+    plan: FeaturePlan,
 ) -> tuple[pd.Series, pd.Series]:
-    """Run direction → blockers → setup → trigger/exit/risk by selected component ids."""
+    """Build entries/exits via component registry using StrategySpec ids."""
 
-    direction_fn = resolve_component("direction", direction_component).func
-    blockers_fn = resolve_component("blockers", blockers_component).func
-    setup_fn = resolve_component("setup", setup_component).func
-    trigger_fn = resolve_component("trigger", trigger_component).func
-    exits_fn = resolve_component("exits", exits_component).func
-    risk_fn = resolve_component("risk", risk_component).func
-    profile = resolve_feature_profile(feature_profile)
+    direction_fn = resolve_component("direction", spec.components.direction).func
+    blockers_fn = resolve_component("blockers", spec.components.blockers).func
+    setup_fn = resolve_component("setup", spec.components.setup).func
+    trigger_fn = resolve_component("trigger", spec.components.trigger).func
+    exits_fn = resolve_component("exits", spec.components.exits).func
+    risk_fn = resolve_component("risk", spec.components.risk).func
 
-    intraday_cols = {"fast": f"ema_{ema_fast}", "slow": f"ema_{ema_slow}"}
-    if "intraday_trend" in profile.relations:
-        intraday_cols = relation_columns(profile, "intraday_trend")
+    fast_col = plan.anchor_columns["fast"]
+    anchor_col = plan.anchor_columns["anchor"]
+    slow_col = plan.anchor_columns["slow"]
 
-    swing_cols = dict(intraday_cols)
-    if "swing_trend" in profile.relations:
-        swing_cols = relation_columns(profile, "swing_trend")
+    direction = direction_fn(df, fast_col, anchor_col, slow_col)
+    blockers = blockers_fn(df)
+    setup = setup_fn(df, anchor_col, spec.setup.lookback)
+    trigger = trigger_fn(df, anchor_col)
+    exits = exits_fn(df)
+    risk = risk_fn(df)
 
-    entry_anchor_col = intraday_cols["slow"]
-    if "entry_anchor" in profile.relations:
-        entry_anchor_col = relation_columns(profile, "entry_anchor")["ema"]
-
-    long_al = direction_fn(
-        df,
-        intraday_fast_col=intraday_cols["fast"],
-        intraday_slow_col=intraday_cols["slow"],
-        swing_fast_col=swing_cols["fast"],
-        swing_slow_col=swing_cols["slow"],
-    )
-    block_ok = blockers_fn(df)
-    setup = setup_fn(df, entry_anchor_col=entry_anchor_col)
-    fast_col = f"ema_{ema_fast}"
-    slow_col = f"ema_{ema_slow}"
-    trig = trigger_fn(
-        df,
-        fast_col=fast_col,
-        slow_col=slow_col,
-        entry_anchor_col=entry_anchor_col,
-    )
-    ex = exits_fn(df, fast_col, slow_col)
-    risk_ok = risk_fn(df)
     return compose_final_signals(
-        long_allowed=long_al,
-        blockers_ok=block_ok,
+        long_allowed=direction,
+        blockers_ok=blockers,
         setup_long=setup,
-        trigger_long=trig,
-        risk_ok=risk_ok,
-        exit_signal=ex,
+        trigger_long=trigger,
+        risk_ok=risk,
+        exit_signal=exits,
     )
 
 
-def crossover_from_ema_columns(
-    df: pd.DataFrame,
-    fast_col: str,
-    slow_col: str,
-) -> tuple[pd.Series, pd.Series]:
-    """Long on bullish cross, exit on bearish cross; first row never fires.
+def crossover_from_ema_columns(df: pd.DataFrame, fast_col: str, slow_col: str) -> tuple[pd.Series, pd.Series]:
+    """Legacy helper used by smoke helper tests."""
 
-    Thin wrapper over trigger/exit blocks for legacy call sites (same boolean
-    semantics as Stage 1 ``crossover_from_ema_columns``).
-    """
-
-    trigger_fn = resolve_component("trigger", DEFAULT_TRIGGER_COMPONENT).func
-    exits_fn = resolve_component("exits", DEFAULT_EXITS_COMPONENT).func
-    entries = trigger_fn(df, fast_col, slow_col)
-    exits = exits_fn(df, fast_col, slow_col)
+    prev_fast = df[fast_col].shift(1)
+    prev_slow = df[slow_col].shift(1)
+    entries = ((df[fast_col] > df[slow_col]) & (prev_fast <= prev_slow)).fillna(False).astype(bool)
+    exits = ((df[fast_col] < df[slow_col]) & (prev_fast >= prev_slow)).fillna(False).astype(bool)
     return entries, exits
 
 
@@ -123,25 +77,7 @@ def ema_crossover_signals(
     *,
     ema_fast: int,
     ema_slow: int,
-    direction_component: str = DEFAULT_DIRECTION_COMPONENT,
-    blockers_component: str = DEFAULT_BLOCKERS_COMPONENT,
-    setup_component: str = DEFAULT_SETUP_COMPONENT,
-    trigger_component: str = DEFAULT_TRIGGER_COMPONENT,
-    exits_component: str = DEFAULT_EXITS_COMPONENT,
-    risk_component: str = DEFAULT_RISK_COMPONENT,
-    feature_profile: str = EMA_PULLBACK_DEFAULT_PROFILE_ID,
 ) -> tuple[pd.Series, pd.Series]:
-    """Crossover using columns ``ema_{ema_fast}`` and ``ema_{ema_slow}``."""
+    """Legacy wrapper for synthetic helper tests."""
 
-    return ema_pullback_pipeline_signals(
-        df,
-        ema_fast=ema_fast,
-        ema_slow=ema_slow,
-        direction_component=direction_component,
-        blockers_component=blockers_component,
-        setup_component=setup_component,
-        trigger_component=trigger_component,
-        exits_component=exits_component,
-        risk_component=risk_component,
-        feature_profile=feature_profile,
-    )
+    return crossover_from_ema_columns(df, f"ema_{ema_fast}", f"ema_{ema_slow}")

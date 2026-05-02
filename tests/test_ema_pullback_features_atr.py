@@ -1,5 +1,3 @@
-"""Tests for prepared ATR distance columns in features (family-local, no DB)."""
-
 from __future__ import annotations
 
 import pytest
@@ -8,8 +6,9 @@ pytest.importorskip("pandas")
 
 import pandas as pd
 
-from research.strategies.ema_pullback.features.profile import EMA_PULLBACK_20_200_500_PROFILE_ID
-from research.strategies.ema_pullback.features import add_feature_columns
+from research.strategies.ema_pullback.features.calculations import add_feature_columns_from_plan
+from research.strategies.ema_pullback.features.plan import build_feature_plan_from_strategy_spec
+from research.strategies.ema_pullback.spec_instances import ema_pullback_fast20_anchor200_slow1000_spec
 
 
 def _ohlcv(n: int = 30) -> pd.DataFrame:
@@ -27,28 +26,38 @@ def _ohlcv(n: int = 30) -> pd.DataFrame:
     )
 
 
-def test_add_feature_columns_creates_atr_distance_series() -> None:
-    df = add_feature_columns(
-        _ohlcv(40),
-        profile_id=EMA_PULLBACK_20_200_500_PROFILE_ID,
-        ema_fast=20,
-        ema_slow=200,
-    )
-    assert "atr_14" in df.columns
-    assert "atr_14_x1_5" in df.columns
-    assert "atr_14_x4_0" in df.columns
+def test_feature_plan_expected_ids() -> None:
+    plan = build_feature_plan_from_strategy_spec(ema_pullback_fast20_anchor200_slow1000_spec())
+    assert [f.feature_id for f in plan.features] == [
+        "ema_close_base_20",
+        "ema_close_base_200",
+        "ema_close_base_1000",
+        "atr_close_base_14",
+        "atr_close_base_14_x1_5",
+        "atr_close_base_14_x4_0",
+    ]
 
 
-def test_atr_scaled_columns_match_multipliers() -> None:
-    df = add_feature_columns(
-        _ohlcv(40),
-        profile_id=EMA_PULLBACK_20_200_500_PROFILE_ID,
-        ema_fast=20,
-        ema_slow=200,
-    )
-    atr = df["atr_14"].astype(float)
-    x15 = df["atr_14_x1_5"].astype(float)
-    x40 = df["atr_14_x4_0"].astype(float)
+def test_add_feature_columns_from_plan_creates_expected_columns() -> None:
+    plan = build_feature_plan_from_strategy_spec(ema_pullback_fast20_anchor200_slow1000_spec())
+    df = add_feature_columns_from_plan(_ohlcv(40), plan)
+    for col in (
+        "ema_close_base_20",
+        "ema_close_base_200",
+        "ema_close_base_1000",
+        "atr_close_base_14",
+        "atr_close_base_14_x1_5",
+        "atr_close_base_14_x4_0",
+    ):
+        assert col in df.columns
+
+
+def test_atr_distance_columns_follow_plan_multipliers() -> None:
+    plan = build_feature_plan_from_strategy_spec(ema_pullback_fast20_anchor200_slow1000_spec())
+    df = add_feature_columns_from_plan(_ohlcv(40), plan)
+    atr = df["atr_close_base_14"].astype(float)
+    x15 = df["atr_close_base_14_x1_5"].astype(float)
+    x40 = df["atr_close_base_14_x4_0"].astype(float)
     valid = atr.notna()
     pd.testing.assert_series_equal(x15.where(valid), (1.5 * atr).where(valid), check_names=False)
     pd.testing.assert_series_equal(x40.where(valid), (4.0 * atr).where(valid), check_names=False)

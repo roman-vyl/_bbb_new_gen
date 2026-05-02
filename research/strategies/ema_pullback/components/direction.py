@@ -21,17 +21,12 @@ def short_allowed_baseline(df: pd.DataFrame) -> pd.Series:
     return pd.Series(False, index=df.index, dtype=bool)
 
 
-def intraday_and_swing_trend_long(
+def ema_anchor_stack_bullish(
     df: pd.DataFrame,
-    *,
-    intraday_fast_col: str,
-    intraday_slow_col: str,
-    swing_fast_col: str,
-    swing_slow_col: str,
-    **_: object,
+    fast_col: str,
+    anchor_col: str,
+    slow_col: str,
 ) -> pd.Series:
-    """Long direction only when intraday and swing EMA relations are bullish."""
+    """Direction is long only when fast > anchor > slow."""
 
-    intraday_ok = df[intraday_fast_col] > df[intraday_slow_col]
-    swing_ok = df[swing_fast_col] > df[swing_slow_col]
-    return (intraday_ok & swing_ok).fillna(False).astype(bool)
+    return ((df[fast_col] > df[anchor_col]) & (df[anchor_col] > df[slow_col])).fillna(False).astype(bool)

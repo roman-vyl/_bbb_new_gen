@@ -22,3 +22,12 @@ def pullback_to_entry_anchor(
 
     touched = df["low"] <= df[entry_anchor_col]
     return touched.rolling(window=window, min_periods=1).max().astype(bool)
+
+
+def pullback_to_anchor(df: pd.DataFrame, anchor_col: str, lookback: int) -> pd.Series:
+    """True when low touched anchor within last ``lookback`` candles."""
+
+    if lookback <= 0:
+        raise ValueError("lookback must be > 0")
+    touched = df["low"] <= df[anchor_col]
+    return touched.rolling(window=lookback, min_periods=1).max().astype(bool)

@@ -1,4 +1,4 @@
-"""CLI entrypoint for ema_pullback manual-variant research runs.
+"""CLI entrypoint for ema_pullback StrategySpec research runs.
 
 Run from repo root (after ``pip install -e ".[research]"``):
 

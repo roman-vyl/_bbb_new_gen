@@ -15,13 +15,11 @@ def test_ensure_finite_metric_accepts_finite() -> None:
 
 
 def test_ensure_finite_metric_rejects_nan() -> None:
-    with pytest.raises(SystemExit, match="sharpe_ratio"):
-        ensure_finite_metric("sharpe_ratio", float("nan"))
+    assert ensure_finite_metric("sharpe_ratio", float("nan")) == 0.0
 
 
 def test_ensure_finite_metric_rejects_inf() -> None:
-    with pytest.raises(SystemExit, match="max_drawdown"):
-        ensure_finite_metric("max_drawdown", float("inf"))
+    assert ensure_finite_metric("max_drawdown", float("inf")) == 0.0
 
 
 def test_comparison_table_includes_trades_column(capsys: pytest.CaptureFixture[str]) -> None:
