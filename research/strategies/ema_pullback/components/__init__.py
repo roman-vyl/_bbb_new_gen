@@ -1,3 +1,35 @@
 """Pipeline decision components: direction, blockers, setup, triggers, exits, risk."""
 
-from .registry import *
+from .registry import (
+    COMPONENT_REGISTRY,
+    ComponentDefinition,
+    DEFAULT_BLOCKERS_COMPONENT,
+    DEFAULT_DIRECTION_COMPONENT,
+    DEFAULT_EXITS_COMPONENT,
+    DEFAULT_RISK_COMPONENT,
+    DEFAULT_SETUP_COMPONENT,
+    DEFAULT_TRIGGER_COMPONENT,
+    INTRADAY_AND_SWING_TREND_LONG_COMPONENT,
+    PULLBACK_TO_ENTRY_ANCHOR_COMPONENT,
+    RECLAIM_ENTRY_ANCHOR_COMPONENT,
+    REQUIRED_COMPONENT_ROLES,
+    no_risk_filter,
+    resolve_component,
+)
+
+__all__ = [
+    "COMPONENT_REGISTRY",
+    "ComponentDefinition",
+    "DEFAULT_BLOCKERS_COMPONENT",
+    "DEFAULT_DIRECTION_COMPONENT",
+    "DEFAULT_EXITS_COMPONENT",
+    "DEFAULT_RISK_COMPONENT",
+    "DEFAULT_SETUP_COMPONENT",
+    "DEFAULT_TRIGGER_COMPONENT",
+    "INTRADAY_AND_SWING_TREND_LONG_COMPONENT",
+    "PULLBACK_TO_ENTRY_ANCHOR_COMPONENT",
+    "RECLAIM_ENTRY_ANCHOR_COMPONENT",
+    "REQUIRED_COMPONENT_ROLES",
+    "no_risk_filter",
+    "resolve_component",
+]

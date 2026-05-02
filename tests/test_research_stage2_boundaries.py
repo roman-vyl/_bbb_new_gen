@@ -20,9 +20,10 @@ def test_ema_pullback_python_has_no_registry_pattern() -> None:
         text = path.read_text(encoding="utf-8")
         matches = set(registry_re.findall(text))
         rel = path.relative_to(FAMILY)
+        # Registry source + package __init__ may name COMPONENT_REGISTRY explicitly.
         allowed = (
             {"COMPONENT_REGISTRY"}
-            if rel.parts == ("components", "registry.py")
+            if rel.parts in (("components", "registry.py"), ("components", "__init__.py"))
             else set()
         )
         unexpected = sorted(matches - allowed)

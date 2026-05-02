@@ -1,39 +1,44 @@
 # ema_pullback
 
-Research strategy family: EMA fast/slow crossover baseline with an explicit
-direction → blockers → setup → trigger → exits → risk pipeline, manual variants,
-and JSON run artifacts.
+Исследовательская strategy family: базовый сценарий пересечения EMA fast/slow с явным
+конвейером direction → blockers → setup → trigger → exits → risk, ручные варианты
+(manual variants) и JSON-артефакты прогона.
 
-## Layout
+## Структура каталога
 
-| Path | Role |
-|------|------|
-| `config.py` | Frozen `StrategyConfig`, defaults, deterministic `config_id` |
-| `variants.py` | Manual `StrategyInstance` list for multi-variant runs |
-| `run.py` | Entrypoint: DB → features → signals → vectorbt → stdout + JSON |
-| `instance.py` | Config + derived `config_id` |
-| `features/calculations.py` | OHLCV → EMA / ATR-prepared columns |
-| `features/profile.py` | Family-local feature profiles and relations |
-| `components/*.py` | Pipeline stages + `registry.py` (static component map) |
-| `execution/signals.py` | Composer: resolved components → entry/exit series |
-| `execution/trade_management.py` | SL/TP profiles for `Portfolio.from_signals` |
-| `execution/results.py` | Run payload, `latest.json` / `runs/<run_id>.json` |
+| Путь | Назначение |
+|------|------------|
+| `config.py` | Неизменяемый `StrategyConfig`, значения по умолчанию, детерминированный `config_id` |
+| `variants.py` | Ручной список `StrategyInstance` для multi-variant прогонов |
+| `run.py` | Тонкая CLI-точка входа + переходные compatibility-wrapper |
+| `instance.py` | Конфиг + вычисленный `config_id` |
+| `features/calculations.py` | OHLCV → колонки EMA / подготовленные ATR-расстояния |
+| `features/profile.py` | Локальные для family профили фич и семантические relations |
+| `components/*.py` | Ступени пайплайна + `registry.py` (статическая карта компонентов) |
+| `execution/data_loader.py` | Загрузка DB candles в `LoadedCandles` (`ohlcv` + metadata диапазона) |
+| `execution/backtest.py` | Единый backend прогона одного `StrategyInstance` через vectorbt |
+| `execution/report_table.py` | Stdout comparison table для manual variants |
+| `execution/runner.py` | Orchestration: variants → backtest → stdout table → JSON artifact |
+| `execution/result_models.py` | Dataclass-контракты `LoadedCandles`, `VariantMetrics`, `VariantResult` |
+| `execution/signals.py` | Композитор: разрешённые компоненты → серии входа/выхода |
+| `execution/trade_management.py` | Профили SL/TP для `Portfolio.from_signals` |
+| `execution/results.py` | Полезная нагрузка прогона, `latest.json` / `runs/<run_id>.json` |
 
-## Run
+## Запуск
 
-From repo root (with research extras, e.g. `pip install -e ".[research]"`):
+Из корня репозитория (с research-зависимостями, например `pip install -e ".[research]"`):
 
 ```bash
 python research/strategies/ema_pullback/run.py
 ```
 
-CLI flags match the historical EMA smoke (`--symbol`, `--tf`, `--db-path`, fees, etc.).
+Флаги CLI совпадают с историческим EMA smoke (`--symbol`, `--tf`, `--db-path`, комиссии и т.д.).
 
-## JSON report
+## JSON-отчёт
 
-Multi-variant runs write:
+Прогоны с несколькими вариантами пишут:
 
-- `research/results/latest.json` — last run (overwritten)
-- `research/results/runs/<run_id>.json` — same payload, named by `run_id`
+- `research/results/latest.json` — последний прогон (перезаписывается)
+- `research/results/runs/<run_id>.json` — тот же payload, имя по `run_id`
 
-`run.py` prints `results_artifact=` and `run_artifact=` paths on success.
+При успехе `run.py` печатает пути `results_artifact=` и `run_artifact=`.
