@@ -20,10 +20,14 @@ EmaPullbackStrategySpec
 → JSON report
 ```
 
-Текущий active variant:
+Текущий active spec создаётся через `default_ema_pullback_strategy_spec(...)`
+и выбирается runner-ом через `active_strategy_specs(...)`.
+
+`variant` — это identity собранного `StrategySpec`. Имя генерируется из
+фактических периодов `anchor_stack`, а не хранится отдельным ручным литералом:
 
 ```text
-ema_pullback_fast20_anchor200_slow1000
+ema_pullback_fast{fast.period}_anchor{anchor.period}_slow{slow.period}
 ```
 
 ## Структура каталога
@@ -48,15 +52,17 @@ ema_pullback_fast20_anchor200_slow1000
 
 ## Active StrategySpec
 
-`spec_instances.py` объявляет один active spec:
+`spec_instances.py` объявляет один active spec через нейтральную default-фабрику.
+Числовые research-параметры задаются в `make_ema_pullback_strategy_spec(...)`,
+а `variant` всегда выводится из фактических `fast / anchor / slow` периодов:
 
 ```text
-variant = ema_pullback_fast20_anchor200_slow1000
+variant = ema_pullback_fast{fast.period}_anchor{anchor.period}_slow{slow.period}
 
 anchor_stack:
-  fast   = EMA close/base/20
-  anchor = EMA close/base/200
-  slow   = EMA close/base/1000
+  fast   = EMA close/base/{fast.period}
+  anchor = EMA close/base/{anchor.period}
+  slow   = EMA close/base/{slow.period}
 
 components:
   direction = ema_anchor_stack_bullish
@@ -67,8 +73,8 @@ components:
   risk      = no_risk_filter
 
 trade_management:
-  stop_loss_by_distance   = ATR base/14 * 1.5
-  take_profit_by_distance = ATR base/14 * 4.0
+  stop_loss_by_distance   = ATR distance from factory params
+  take_profit_by_distance = ATR distance from factory params
 ```
 
 `config_id` считается только из canonical serialization `EmaPullbackStrategySpec`

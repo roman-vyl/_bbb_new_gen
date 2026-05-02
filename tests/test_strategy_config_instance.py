@@ -10,7 +10,7 @@ from research.strategies.ema_pullback.config import (
 )
 from research.strategies.ema_pullback.cli import config_from_args, parse_args
 from research.strategies.ema_pullback.spec import strategy_spec_config_id
-from research.strategies.ema_pullback.spec_instances import ema_pullback_fast20_anchor200_slow1000_spec
+from research.strategies.ema_pullback.spec_instances import default_ema_pullback_strategy_spec
 
 
 def test_default_execution_config_contains_only_runtime_fields() -> None:
@@ -41,7 +41,7 @@ def test_execution_config_validates_runtime_fields() -> None:
 
 
 def test_runtime_changes_do_not_change_strategy_spec_id() -> None:
-    spec = ema_pullback_fast20_anchor200_slow1000_spec(symbol="BTCUSDT", base_timeframe="1h")
+    spec = default_ema_pullback_strategy_spec(symbol="BTCUSDT", base_timeframe="1h")
     base_id = strategy_spec_config_id(spec)
     _runtime_a = ExecutionConfig("ema_pullback", "BTCUSDT", "1h", Path("a.sqlite"), 100.0, 0.0, 0.0)
     _runtime_b = ExecutionConfig("ema_pullback", "BTCUSDT", "1h", Path("b.sqlite"), 500.0, 0.001, 0.0005)

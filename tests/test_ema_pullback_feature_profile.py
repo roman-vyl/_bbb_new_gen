@@ -16,12 +16,16 @@ from research.strategies.ema_pullback.spec import (
     TradeManagementSpec,
     strategy_spec_config_id,
 )
-from research.strategies.ema_pullback.spec_instances import default_ema_pullback_strategy_spec
+from research.strategies.ema_pullback.spec_instances import (
+    default_ema_pullback_strategy_spec,
+    variant_from_spec,
+)
 
 
 def test_default_spec_factory_is_valid_strategy_spec() -> None:
     spec = default_ema_pullback_strategy_spec()
     assert spec.variant.strip()
+    assert spec.variant == variant_from_spec(spec)
     assert spec.symbol.strip()
     assert spec.base_timeframe.strip()
     stack = spec.anchor_stack
