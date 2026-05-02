@@ -13,7 +13,7 @@ from research.ema_smoke_helpers import (
     candles_to_ohlcv_dataframe,
     ema_crossover_signals as legacy_ema_crossover_signals,
 )
-from research.strategies.ema_pullback.execution.signals import ema_crossover_signals
+from research.strategies.ema_pullback.execution.signals import crossover_from_ema_columns
 from research.strategies.ema_pullback.features import add_ema_columns
 
 
@@ -65,7 +65,7 @@ def test_legacy_helpers_delegate_same_as_family() -> None:
     fam = add_ema_columns(ohlcv, ema_fast=20, ema_slow=50)
     leg = legacy_add_ema_columns(ohlcv, fast=20, slow=50)
     assert fam["ema_20"].equals(leg["ema_20"])
-    e1, x1 = ema_crossover_signals(fam, ema_fast=20, ema_slow=50)
+    e1, x1 = crossover_from_ema_columns(fam, "ema_20", "ema_50")
     e2, x2 = legacy_ema_crossover_signals(leg, "ema_20", "ema_50")
     assert e1.equals(e2)
     assert x1.equals(x2)
@@ -74,7 +74,7 @@ def test_legacy_helpers_delegate_same_as_family() -> None:
 def test_crossover_signals_boolean_aligned() -> None:
     candles = _synthetic_candles(80)
     df = add_ema_columns(candles_to_ohlcv_dataframe(candles), ema_fast=20, ema_slow=50)
-    entries, exits = ema_crossover_signals(df, ema_fast=20, ema_slow=50)
+    entries, exits = crossover_from_ema_columns(df, "ema_20", "ema_50")
     assert entries.dtype == bool or entries.dtype == "bool"
     assert exits.dtype == bool or exits.dtype == "bool"
     assert len(entries) == len(df)
@@ -89,7 +89,7 @@ def test_minimal_vectorbt_portfolio_from_signals() -> None:
     candles = _synthetic_candles(100)
     ohlcv = candles_to_ohlcv_dataframe(candles)
     enriched = add_ema_columns(ohlcv, ema_fast=20, ema_slow=50)
-    entries, exits = ema_crossover_signals(enriched, ema_fast=20, ema_slow=50)
+    entries, exits = crossover_from_ema_columns(enriched, "ema_20", "ema_50")
     close = enriched["close"].astype(float)
     pf = vbt.Portfolio.from_signals(close, entries, exits, freq="1h")
     sharpe = float(pf.sharpe_ratio())

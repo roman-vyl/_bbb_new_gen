@@ -1,4 +1,4 @@
-"""CLI entrypoint for ema_pullback manual-variant research runs.
+"""CLI entrypoint for ema_pullback Stage 10 spec runs.
 
 Run from repo root (after ``pip install -e ".[research]"``):
 
@@ -17,12 +17,12 @@ if str(_ROOT) not in sys.path:
 
 from research.strategies.ema_pullback.cli import config_from_args, parse_args  # noqa: E402
 from research.strategies.ema_pullback.execution.runner import (  # noqa: E402
-    run_manual_variants,
+    run_active_specs,
 )
 
 
 def main() -> None:
-    run_manual_variants(config_from_args(parse_args()))
+    run_active_specs(config_from_args(parse_args()))
 
 
 if __name__ == "__main__":

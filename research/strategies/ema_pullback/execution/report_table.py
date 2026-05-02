@@ -11,11 +11,13 @@ def comparison_row(variant_result: VariantResult | dict[str, Any]) -> dict[str, 
     """Flatten a variant result for the stdout comparison table."""
 
     if isinstance(variant_result, VariantResult):
+        spec = variant_result.strategy_spec
         return {
             "variant": variant_result.variant,
             "config_id": variant_result.config_id,
-            "ema_fast": variant_result.params["ema_fast"],
-            "ema_slow": variant_result.params["ema_slow"],
+            "ema_fast": spec.anchor_stack.fast.period,
+            "ema_anchor": spec.anchor_stack.anchor.period,
+            "ema_slow": spec.anchor_stack.slow.period,
             "trades": variant_result.metrics.trades,
             "sharpe": variant_result.metrics.sharpe,
             "profit_factor": variant_result.metrics.profit_factor,
@@ -23,12 +25,13 @@ def comparison_row(variant_result: VariantResult | dict[str, Any]) -> dict[str, 
         }
 
     m = variant_result["metrics"]
-    p = variant_result["params"]
+    spec = variant_result["strategy_spec"]
     return {
         "variant": variant_result["variant"],
         "config_id": variant_result["config_id"],
-        "ema_fast": p["ema_fast"],
-        "ema_slow": p["ema_slow"],
+        "ema_fast": spec["anchor_stack"]["fast"]["period"],
+        "ema_anchor": spec["anchor_stack"]["anchor"]["period"],
+        "ema_slow": spec["anchor_stack"]["slow"]["period"],
         "trades": m["trades"],
         "sharpe": m["sharpe"],
         "profit_factor": m["profit_factor"],
@@ -41,6 +44,7 @@ def print_comparison_table(rows: list[dict[str, float | str]]) -> None:
         "variant",
         "config_id",
         "ema_fast",
+        "ema_anchor",
         "ema_slow",
         "trades",
         "sharpe",
@@ -54,6 +58,7 @@ def print_comparison_table(rows: list[dict[str, float | str]]) -> None:
                 "variant": str(row["variant"]),
                 "config_id": str(row["config_id"]),
                 "ema_fast": str(row["ema_fast"]),
+                "ema_anchor": str(row["ema_anchor"]),
                 "ema_slow": str(row["ema_slow"]),
                 "trades": str(row["trades"]),
                 "sharpe": f"{float(row['sharpe']):.6f}",

@@ -1,13 +1,10 @@
-"""Feature columns from OHLCV DataFrame only (no IO, no vectorbt)."""
+"""Feature calculations for Stage 10 FeaturePlan."""
 
 from __future__ import annotations
 
 import pandas as pd
 
-from research.strategies.ema_pullback.features.profile import (
-    FeatureProfile,
-    resolve_feature_profile,
-)
+from research.strategies.ema_pullback.features.plan import FeaturePlan
 
 
 def _true_range(high: pd.Series, low: pd.Series, close: pd.Series) -> pd.Series:
@@ -23,28 +20,37 @@ def _atr_rolling_mean(high: pd.Series, low: pd.Series, close: pd.Series, *, peri
     return tr.rolling(window=period, min_periods=period).mean()
 
 
-def _add_prepared_atr_distance_columns(df: pd.DataFrame, profile: FeatureProfile) -> pd.DataFrame:
-    """Append ATR-based prepared distance columns when the profile declares them."""
-
-    keys = set(profile.series.keys())
-    need_atr = "atr_14" in keys
-    need_x15 = "atr_14_x1_5" in keys
-    need_x40 = "atr_14_x4_0" in keys
-    if not (need_atr or need_x15 or need_x40):
-        return df
-
-    high = df["high"].astype(float)
-    low = df["low"].astype(float)
-    close = df["close"].astype(float)
-    atr = _atr_rolling_mean(high, low, close, period=14)
+def add_feature_columns_from_plan(df: pd.DataFrame, plan: FeaturePlan) -> pd.DataFrame:
+    """Calculate only columns requested by FeaturePlan."""
 
     out = df.copy()
-    if need_atr:
-        out["atr_14"] = atr
-    if need_x15:
-        out["atr_14_x1_5"] = 1.5 * atr
-    if need_x40:
-        out["atr_14_x4_0"] = 4.0 * atr
+    close = out["close"].astype(float)
+    high = out["high"].astype(float)
+    low = out["low"].astype(float)
+
+    for feature in plan.features:
+        if feature.kind == "ema":
+            source = str(feature.params["source"])
+            if source != "close":
+                raise ValueError(f"unsupported ema source {source!r}")
+            period = int(feature.params["period"])
+            out[feature.column] = close.ewm(span=period, adjust=False).mean()
+            continue
+
+        if feature.kind == "atr":
+            period = int(feature.params["period"])
+            out[feature.column] = _atr_rolling_mean(high, low, close, period=period)
+            continue
+
+        if feature.kind == "atr_distance":
+            base_col = str(feature.params["base_column"])
+            multiplier = float(feature.params["multiplier"])
+            if base_col not in out.columns:
+                raise KeyError(f"missing base ATR column {base_col!r} for atr_distance")
+            out[feature.column] = out[base_col].astype(float) * multiplier
+            continue
+
+        raise ValueError(f"unsupported feature kind {feature.kind!r}")
     return out
 
 
@@ -55,37 +61,10 @@ def add_ema_columns(
     ema_slow: int,
     extra_periods: tuple[int, ...] = (),
 ) -> pd.DataFrame:
-    """Append required EMA columns using ``ewm(span=..., adjust=False)`` on ``close``."""
+    """Utility helper kept for shared smoke helpers."""
 
     out = df.copy()
     close = out["close"].astype(float)
-    periods = sorted({ema_fast, ema_slow, *extra_periods})
-    for period in periods:
+    for period in sorted({ema_fast, ema_slow, *extra_periods}):
         out[f"ema_{period}"] = close.ewm(span=period, adjust=False).mean()
-    # Stage 5 compatibility aliases used by default feature relation roles.
-    out["ema_fast"] = out[f"ema_{ema_fast}"]
-    out["ema_slow"] = out[f"ema_{ema_slow}"]
     return out
-
-
-def add_feature_columns(
-    df: pd.DataFrame,
-    *,
-    profile_id: str,
-    ema_fast: int,
-    ema_slow: int,
-) -> pd.DataFrame:
-    """Append EMA columns needed by selected feature profile and crossover fallback."""
-
-    profile = resolve_feature_profile(profile_id)
-    profile_periods: set[int] = set()
-    for feature_series in profile.series.values():
-        if feature_series.indicator == "ema" and len(feature_series.params) == 1:
-            profile_periods.add(feature_series.params[0])
-    with_ema = add_ema_columns(
-        df,
-        ema_fast=ema_fast,
-        ema_slow=ema_slow,
-        extra_periods=tuple(sorted(profile_periods)),
-    )
-    return _add_prepared_atr_distance_columns(with_ema, profile)
