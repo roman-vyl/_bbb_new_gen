@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from research.strategies.ema_pullback.components import (
+from research.strategies.ema_pullback.components.registry import (
     DEFAULT_BLOCKERS_COMPONENT,
     DEFAULT_DIRECTION_COMPONENT,
     DEFAULT_EXITS_COMPONENT,
@@ -13,7 +13,7 @@ from research.strategies.ema_pullback.components import (
     DEFAULT_TRIGGER_COMPONENT,
     resolve_component,
 )
-from research.strategies.ema_pullback.feature_profile import (
+from research.strategies.ema_pullback.features.profile import (
     EMA_PULLBACK_DEFAULT_PROFILE_ID,
     relation_columns,
     resolve_feature_profile,

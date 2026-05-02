@@ -13,8 +13,9 @@ from typing import Any, Mapping
 
 import pandas as pd
 
+
 def _repo_root() -> Path:
-    return Path(__file__).resolve().parents[3]
+    return Path(__file__).resolve().parents[4]
 
 
 def default_results_dir() -> Path:

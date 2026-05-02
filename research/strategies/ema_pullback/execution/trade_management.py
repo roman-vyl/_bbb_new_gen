@@ -8,7 +8,7 @@ from typing import Any, Mapping
 import numpy as np
 import pandas as pd
 
-from research.strategies.ema_pullback.feature_profile import (
+from research.strategies.ema_pullback.features.profile import (
     binding_to_column,
     resolve_feature_profile,
 )

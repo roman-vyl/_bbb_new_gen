@@ -10,8 +10,8 @@ pytest.importorskip("pandas")
 
 import pandas as pd
 
-from research.strategies.ema_pullback.feature_profile import EMA_PULLBACK_20_200_500_PROFILE_ID
-from research.strategies.ema_pullback.trade_management import (
+from research.strategies.ema_pullback.execution import trade_management
+from research.strategies.ema_pullback.execution.trade_management import (
     FEATURE_DISTANCE_SL_TP_PROFILE,
     FIXED_PCT_SL_TP_PROFILE,
     NONE_TRADE_MANAGEMENT_PROFILE,
@@ -20,7 +20,7 @@ from research.strategies.ema_pullback.trade_management import (
     resolve_portfolio_kwargs_for_signals,
     resolve_trade_management_profile,
 )
-import research.strategies.ema_pullback.trade_management as trade_management
+from research.strategies.ema_pullback.features.profile import EMA_PULLBACK_20_200_500_PROFILE_ID
 
 
 def test_default_trade_management_profile_exists() -> None:

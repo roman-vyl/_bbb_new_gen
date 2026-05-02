@@ -10,7 +10,7 @@ import pytest
 
 from research.strategies.ema_pullback.config import DEFAULT_CONFIG, StrategyConfig
 from research.strategies.ema_pullback.instance import StrategyInstance
-from research.strategies.ema_pullback.results import (
+from research.strategies.ema_pullback.execution.results import (
     build_research_run_payload,
     build_run_id,
     extract_trade_records,

@@ -11,10 +11,10 @@ import pandas as pd
 
 from data_engine.contracts import Candle
 
-from research.strategies.ema_pullback.features import add_ema_columns as _add_ema
-from research.strategies.ema_pullback.signals import (
+from research.strategies.ema_pullback.execution.signals import (
     crossover_from_ema_columns,
 )
+from research.strategies.ema_pullback.features import add_ema_columns as _add_ema
 
 
 def candles_to_ohlcv_dataframe(candles: list[Candle]) -> pd.DataFrame:
