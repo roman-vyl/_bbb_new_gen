@@ -20,11 +20,11 @@ def ema_pullback_fast20_anchor200_slow1000_spec(
     base_timeframe: str = "1h",
 ) -> EmaPullbackStrategySpec:
     return EmaPullbackStrategySpec(
-        variant="ema_pullback_fast20_anchor200_slow1000",
+        variant="ema_pullback_fast100_anchor200_slow1000",
         symbol=symbol.strip().upper(),
         base_timeframe=base_timeframe.strip(),
         anchor_stack=AnchorStackSpec(
-            fast=EmaSpec(source="close", timeframe="base", period=20),
+            fast=EmaSpec(source="close", timeframe="base", period=100),
             anchor=EmaSpec(source="close", timeframe="base", period=200),
             slow=EmaSpec(source="close", timeframe="base", period=1000),
         ),

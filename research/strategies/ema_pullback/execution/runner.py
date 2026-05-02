@@ -48,7 +48,7 @@ def run_single_config(cfg: ExecutionConfig) -> None:
     print("status=ok")
 
 
-def run_manual_variants(base_config: ExecutionConfig) -> None:
+def run_active_strategy_specs(base_config: ExecutionConfig) -> None:
     loaded = load_candles_once(base_config)
     specs = active_strategy_specs(base_config.symbol, base_config.timeframe)
     variant_results = [
