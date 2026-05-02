@@ -1,12 +1,12 @@
-"""Manual-variant orchestration for ema_pullback research runs."""
+"""StrategySpec orchestration for ema_pullback research runs."""
 
 from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
 
-from research.strategies.ema_pullback.config import StrategyConfig
-from research.strategies.ema_pullback.execution.backtest import run_strategy_instance
+from research.strategies.ema_pullback.config import ExecutionConfig
+from research.strategies.ema_pullback.execution.backtest import run_strategy_spec
 from research.strategies.ema_pullback.execution.data_loader import load_candles_once
 from research.strategies.ema_pullback.execution.report_table import (
     comparison_row,
@@ -17,22 +17,27 @@ from research.strategies.ema_pullback.execution.results import (
     build_run_id,
     write_research_results,
 )
-from research.strategies.ema_pullback.instance import StrategyInstance
-from research.strategies.ema_pullback.variants import build_manual_variants
+from research.strategies.ema_pullback.spec_instances import active_strategy_specs
 
 
 _ROOT = Path(__file__).resolve().parents[4]
 
 
-def run_single_config(cfg: StrategyConfig) -> None:
-    """Historical single-config smoke output using the shared backend."""
+def run_single_config(cfg: ExecutionConfig) -> None:
+    """Single strategy-spec smoke run."""
 
-    instance = StrategyInstance.from_config(cfg)
-    loaded = load_candles_once(instance.config)
-    result = run_strategy_instance(instance, loaded.ohlcv)
+    loaded = load_candles_once(cfg)
+    spec = active_strategy_specs(cfg.symbol, cfg.timeframe)[0]
+    result = run_strategy_spec(
+        spec,
+        loaded.ohlcv,
+        init_cash=cfg.init_cash,
+        fees=cfg.fees,
+        slippage=cfg.slippage,
+    )
 
     print(
-        f"family={instance.config.family} variant={result.variant} "
+        f"family={cfg.family} variant={result.variant} "
         f"config_id={result.config_id} "
         f"symbol={result.symbol} timeframe={result.timeframe} "
         f"candles={loaded.candles_count}"
@@ -43,17 +48,24 @@ def run_single_config(cfg: StrategyConfig) -> None:
     print("status=ok")
 
 
-def run_manual_variants(base_config: StrategyConfig) -> None:
-    variants = build_manual_variants(base_config)
+def run_active_strategy_specs(base_config: ExecutionConfig) -> None:
     loaded = load_candles_once(base_config)
+    specs = active_strategy_specs(base_config.symbol, base_config.timeframe)
     variant_results = [
-        run_strategy_instance(instance, loaded.ohlcv) for instance in variants
+        run_strategy_spec(
+            spec,
+            loaded.ohlcv,
+            init_cash=base_config.init_cash,
+            fees=base_config.fees,
+            slippage=base_config.slippage,
+        )
+        for spec in specs
     ]
 
     print(
         f"family={base_config.family} symbol={base_config.symbol} "
         f"timeframe={base_config.timeframe} candles={loaded.candles_count} "
-        f"variants={len(variants)}"
+        f"variants={len(specs)}"
     )
     print_comparison_table([comparison_row(v) for v in variant_results])
 

@@ -1,28 +1,78 @@
 # ema_pullback
 
-Исследовательская strategy family: базовый сценарий пересечения EMA fast/slow с явным
-конвейером direction → blockers → setup → trigger → exits → risk, ручные варианты
-(manual variants) и JSON-артефакты прогона.
+Исследовательская strategy family для EMA pullback после Stage 10.
+
+Единственная semantic-модель стратегии — `EmaPullbackStrategySpec`. Runtime-конфиг
+содержит только технические настройки запуска (`ExecutionConfig`): `family`, `symbol`,
+`timeframe`, `db_path`, `init_cash`, `fees`, `slippage`.
+
+Активный pipeline:
+
+```text
+EmaPullbackStrategySpec
+→ FeaturePlan
+→ calculated features
+→ Component Registry
+→ direction / blockers / setup / trigger / exits / risk
+→ signals composer
+→ trade management
+→ vectorbt
+→ JSON report
+```
+
+Текущий active variant:
+
+```text
+ema_pullback_fast20_anchor200_slow1000
+```
 
 ## Структура каталога
 
 | Путь | Назначение |
 |------|------------|
-| `config.py` | Неизменяемый `StrategyConfig`, значения по умолчанию, детерминированный `config_id` |
-| `variants.py` | Ручной список `StrategyInstance` для multi-variant прогонов |
-| `run.py` | Тонкая CLI-точка входа + переходные compatibility-wrapper |
-| `instance.py` | Конфиг + вычисленный `config_id` |
-| `features/calculations.py` | OHLCV → колонки EMA / подготовленные ATR-расстояния |
-| `features/profile.py` | Локальные для family профили фич и семантические relations |
-| `components/*.py` | Ступени пайплайна + `registry.py` (статическая карта компонентов) |
+| `config.py` | Runtime-only `ExecutionConfig` и значения по умолчанию для CLI |
+| `spec.py` | Dataclass-контракты `EmaPullbackStrategySpec` и вложенных spec-частей |
+| `spec_instances.py` | Factory текущего active spec и `active_strategy_specs(...)` |
+| `run.py` | Тонкая CLI-точка входа для active StrategySpec runner |
+| `features/plan.py` | `FeaturePlan` из `EmaPullbackStrategySpec` без расчёта данных |
+| `features/calculations.py` | Расчёт только features, объявленных в `FeaturePlan` |
+| `components/*.py` | Ступени пайплайна + `registry.py` для новых role ids |
 | `execution/data_loader.py` | Загрузка DB candles в `LoadedCandles` (`ohlcv` + metadata диапазона) |
-| `execution/backtest.py` | Единый backend прогона одного `StrategyInstance` через vectorbt |
-| `execution/report_table.py` | Stdout comparison table для manual variants |
-| `execution/runner.py` | Orchestration: variants → backtest → stdout table → JSON artifact |
+| `execution/backtest.py` | Backend `run_strategy_spec(...)` через vectorbt |
+| `execution/report_table.py` | Stdout comparison table с `fast / anchor / slow` |
+| `execution/runner.py` | Orchestration: active specs → backtest → stdout table → JSON artifact |
 | `execution/result_models.py` | Dataclass-контракты `LoadedCandles`, `VariantMetrics`, `VariantResult` |
-| `execution/signals.py` | Композитор: разрешённые компоненты → серии входа/выхода |
-| `execution/trade_management.py` | Профили SL/TP для `Portfolio.from_signals` |
-| `execution/results.py` | Полезная нагрузка прогона, `latest.json` / `runs/<run_id>.json` |
+| `execution/signals.py` | Композитор signals из spec + plan + Component Registry |
+| `execution/trade_management.py` | SL/TP kwargs из готовых distance columns |
+| `execution/results.py` | JSON payload schema v2, `latest.json` / `runs/<run_id>.json` |
+
+## Active StrategySpec
+
+`spec_instances.py` объявляет один active spec:
+
+```text
+variant = ema_pullback_fast20_anchor200_slow1000
+
+anchor_stack:
+  fast   = EMA close/base/20
+  anchor = EMA close/base/200
+  slow   = EMA close/base/1000
+
+components:
+  direction = ema_anchor_stack_bullish
+  blockers  = no_blockers
+  setup     = pullback_to_anchor
+  trigger   = reclaim_anchor
+  exits     = no_signal_exit
+  risk      = no_risk_filter
+
+trade_management:
+  stop_loss_by_distance   = ATR base/14 * 1.5
+  take_profit_by_distance = ATR base/14 * 4.0
+```
+
+`config_id` считается только из canonical serialization `EmaPullbackStrategySpec`
+через `strategy_spec_config_id(spec)`.
 
 ## Запуск
 
@@ -32,13 +82,39 @@
 python research/strategies/ema_pullback/run.py
 ```
 
-Флаги CLI совпадают с историческим EMA smoke (`--symbol`, `--tf`, `--db-path`, комиссии и т.д.).
+Флаги CLI задают только runtime-настройки: `--symbol`, `--tf`, `--db-path`,
+`--init-cash`, `--fees`, `--slippage`. Они не меняют semantic strategy spec.
+
+Smoke entrypoint использует тот же active StrategySpec runner:
+
+```bash
+python research/ema_smoke.py
+```
+
+Успешный `run.py` печатает одну строку active variant и stdout table:
+
+```text
+variant | config_id | fast | anchor | slow | trades | sharpe | profit_factor | max_drawdown
+```
 
 ## JSON-отчёт
 
-Прогоны с несколькими вариантами пишут:
+Прогон пишет:
 
 - `research/results/latest.json` — последний прогон (перезаписывается)
 - `research/results/runs/<run_id>.json` — тот же payload, имя по `run_id`
 
-При успехе `run.py` печатает пути `results_artifact=` и `run_artifact=`.
+Top-level payload содержит `report_schema_version: 2`. Variant payload содержит:
+
+```text
+variant
+config_id
+symbol
+timeframe
+strategy_spec
+metrics
+trade_records
+```
+
+При успехе `run.py` печатает пути `results_artifact=` и `run_artifact=`, затем
+`status=ok`.

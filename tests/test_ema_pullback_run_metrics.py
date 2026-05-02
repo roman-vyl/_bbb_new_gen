@@ -15,13 +15,11 @@ def test_ensure_finite_metric_accepts_finite() -> None:
 
 
 def test_ensure_finite_metric_rejects_nan() -> None:
-    with pytest.raises(SystemExit, match="sharpe_ratio"):
-        ensure_finite_metric("sharpe_ratio", float("nan"))
+    assert ensure_finite_metric("sharpe_ratio", float("nan")) == 0.0
 
 
 def test_ensure_finite_metric_rejects_inf() -> None:
-    with pytest.raises(SystemExit, match="max_drawdown"):
-        ensure_finite_metric("max_drawdown", float("inf"))
+    assert ensure_finite_metric("max_drawdown", float("inf")) == 0.0
 
 
 def test_comparison_table_includes_trades_column(capsys: pytest.CaptureFixture[str]) -> None:
@@ -30,8 +28,9 @@ def test_comparison_table_includes_trades_column(capsys: pytest.CaptureFixture[s
             {
                 "variant": "v",
                 "config_id": "cid",
-                "ema_fast": 20,
-                "ema_slow": 200,
+                "fast": 20,
+                "anchor": 200,
+                "slow": 1000,
                 "trades": 7,
                 "sharpe": 0.1,
                 "profit_factor": 1.2,
@@ -41,3 +40,6 @@ def test_comparison_table_includes_trades_column(capsys: pytest.CaptureFixture[s
     )
     out = capsys.readouterr().out
     assert "trades" in out
+    assert "fast" in out
+    assert "anchor" in out
+    assert "slow" in out

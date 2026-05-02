@@ -1,89 +1,58 @@
-"""Stage 5 tests: component registry and component-aware config identity."""
-
 from __future__ import annotations
-
-from dataclasses import replace
-from pathlib import Path
 
 import pytest
 
-from research.strategies.ema_pullback.components import (
-    COMPONENT_REGISTRY,
-    DEFAULT_BLOCKERS_COMPONENT,
-    DEFAULT_DIRECTION_COMPONENT,
-    DEFAULT_EXITS_COMPONENT,
-    DEFAULT_RISK_COMPONENT,
-    DEFAULT_SETUP_COMPONENT,
-    DEFAULT_TRIGGER_COMPONENT,
-    INTRADAY_AND_SWING_TREND_LONG_COMPONENT,
-    PULLBACK_TO_ENTRY_ANCHOR_COMPONENT,
-    RECLAIM_ENTRY_ANCHOR_COMPONENT,
-    REQUIRED_COMPONENT_ROLES,
-    resolve_component,
-)
-from research.strategies.ema_pullback.config import DEFAULT_CONFIG, strategy_config_id
-from research.strategies.ema_pullback.variants import build_manual_variants
+pytest.importorskip("pandas")
+
+import pandas as pd
+
+from research.strategies.ema_pullback.components import resolve_component
 
 
-def test_registry_contains_required_roles() -> None:
-    assert set(REQUIRED_COMPONENT_ROLES).issubset(COMPONENT_REGISTRY.keys())
+def _frame() -> pd.DataFrame:
+    idx = pd.date_range("2024-01-01", periods=4, freq="h", tz="UTC")
+    return pd.DataFrame(
+        {
+            "close": [99.0, 100.0, 101.0, 102.0],
+            "low": [101.0, 99.0, 103.0, 104.0],
+            "ema_close_base_20": [11.0, 12.0, 10.0, 14.0],
+            "ema_close_base_200": [10.0, 11.0, 10.0, 13.0],
+            "ema_close_base_1000": [9.0, 10.0, 9.0, 12.0],
+        },
+        index=idx,
+    )
 
 
-def test_each_required_role_has_baseline_component() -> None:
-    expected_defaults = {
-        "direction": DEFAULT_DIRECTION_COMPONENT,
-        "blockers": DEFAULT_BLOCKERS_COMPONENT,
-        "setup": DEFAULT_SETUP_COMPONENT,
-        "trigger": DEFAULT_TRIGGER_COMPONENT,
-        "exits": DEFAULT_EXITS_COMPONENT,
-        "risk": DEFAULT_RISK_COMPONENT,
-    }
-    for role, component_id in expected_defaults.items():
-        assert component_id in COMPONENT_REGISTRY[role]
+def test_registry_resolves_new_stage10_components() -> None:
+    assert callable(resolve_component("direction", "ema_anchor_stack_bullish").func)
+    assert callable(resolve_component("blockers", "no_blockers").func)
+    assert callable(resolve_component("setup", "pullback_to_anchor").func)
+    assert callable(resolve_component("trigger", "reclaim_anchor").func)
+    assert callable(resolve_component("exits", "no_signal_exit").func)
+    assert callable(resolve_component("risk", "no_risk_filter").func)
 
 
-def test_resolve_component_returns_definition_for_known_id() -> None:
-    definition = resolve_component("trigger", DEFAULT_TRIGGER_COMPONENT)
-    assert definition.role == "trigger"
-    assert definition.component_id == DEFAULT_TRIGGER_COMPONENT
-    assert callable(definition.func)
+def test_direction_component_uses_columns_not_period_constants() -> None:
+    df = _frame()
+    fn = resolve_component("direction", "ema_anchor_stack_bullish").func
+    out = fn(df, "ema_close_base_20", "ema_close_base_200", "ema_close_base_1000")
+    assert out.tolist() == [True, True, False, True]
 
 
-def test_resolve_component_fails_for_unknown_role() -> None:
+def test_setup_trigger_exit_risk_components_shape() -> None:
+    df = _frame()
+    setup = resolve_component("setup", "pullback_to_anchor").func(df, "ema_close_base_200", 3)
+    trigger = resolve_component("trigger", "reclaim_anchor").func(df, "ema_close_base_200")
+    exits = resolve_component("exits", "no_signal_exit").func(df)
+    risk = resolve_component("risk", "no_risk_filter").func(df)
+    assert len(setup) == len(df)
+    assert len(trigger) == len(df)
+    assert bool(exits.any()) is False
+    assert bool(risk.all()) is True
+
+
+def test_resolve_component_fails_for_unknown_values() -> None:
     with pytest.raises(ValueError, match="unknown component role"):
-        resolve_component("unknown_role", "anything")
-
-
-def test_resolve_component_fails_for_unknown_component_id() -> None:
+        resolve_component("unknown", "x")
     with pytest.raises(ValueError, match="unknown component_id"):
-        resolve_component("trigger", "does_not_exist")
-
-
-def test_manual_variants_reference_existing_components() -> None:
-    for instance in build_manual_variants():
-        cfg = instance.config
-        resolve_component("direction", cfg.direction_component)
-        resolve_component("blockers", cfg.blockers_component)
-        resolve_component("setup", cfg.setup_component)
-        resolve_component("trigger", cfg.trigger_component)
-        resolve_component("exits", cfg.exits_component)
-        resolve_component("risk", cfg.risk_component)
-
-
-def test_changing_component_id_changes_config_id() -> None:
-    baseline_id = strategy_config_id(DEFAULT_CONFIG)
-    changed = replace(DEFAULT_CONFIG, trigger_component="custom_trigger")
-    changed_id = strategy_config_id(changed)
-    assert changed_id != baseline_id
-
-
-def test_db_path_does_not_change_config_id_with_components() -> None:
-    a = replace(DEFAULT_CONFIG, db_path=Path("alpha.sqlite"))
-    b = replace(DEFAULT_CONFIG, db_path=Path("beta.sqlite"))
-    assert strategy_config_id(a) == strategy_config_id(b)
-
-
-def test_stage7_component_ids_resolve() -> None:
-    assert callable(resolve_component("direction", INTRADAY_AND_SWING_TREND_LONG_COMPONENT).func)
-    assert callable(resolve_component("setup", PULLBACK_TO_ENTRY_ANCHOR_COMPONENT).func)
-    assert callable(resolve_component("trigger", RECLAIM_ENTRY_ANCHOR_COMPONENT).func)
+        resolve_component("trigger", "unknown")

@@ -1,4 +1,4 @@
-"""Stage 9: research result JSON artifact schema and writer."""
+"""Research result JSON artifact schema and writer."""
 
 from __future__ import annotations
 
@@ -8,8 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from research.strategies.ema_pullback.config import DEFAULT_CONFIG, StrategyConfig
-from research.strategies.ema_pullback.instance import StrategyInstance
+from research.strategies.ema_pullback.config import DEFAULT_EXECUTION_CONFIG
 from research.strategies.ema_pullback.execution.results import (
     build_research_run_payload,
     build_run_id,
@@ -21,6 +20,7 @@ from research.strategies.ema_pullback.execution.results import (
 REQUIRED_TOP = (
     "run_id",
     "created_at",
+    "report_schema_version",
     "family",
     "symbol",
     "timeframe",
@@ -30,20 +30,7 @@ REQUIRED_TOP = (
     "variants",
 )
 
-REQUIRED_VARIANT = (
-    "variant",
-    "config_id",
-    "symbol",
-    "timeframe",
-    "feature_profile",
-    "components",
-    "trade_management_profile",
-    "params",
-    "metrics",
-    "trade_records",
-)
-
-COMPONENT_ROLES = ("direction", "blockers", "setup", "trigger", "exits", "risk")
+REQUIRED_VARIANT = ("variant", "config_id", "symbol", "timeframe", "strategy_spec", "metrics", "trade_records")
 
 REQUIRED_METRICS = ("trades", "sharpe", "profit_factor", "max_drawdown")
 
@@ -74,22 +61,16 @@ def test_json_safe_nan_becomes_null() -> None:
 
 
 def test_build_research_run_payload_top_level_keys() -> None:
-    inst = StrategyInstance.from_config(DEFAULT_CONFIG)
-    cfg = inst.config
+    cfg = DEFAULT_EXECUTION_CONFIG
     variant = {
-        "variant": cfg.variant,
-        "config_id": inst.config_id,
+        "variant": "ema_pullback_fast20_anchor200_slow1000",
+        "config_id": "abc123",
         "symbol": cfg.symbol,
         "timeframe": cfg.timeframe,
-        "feature_profile": cfg.feature_profile,
-        "components": {k: getattr(cfg, f"{k}_component") for k in COMPONENT_ROLES},
-        "trade_management_profile": cfg.trade_management_profile,
-        "params": {
-            "ema_fast": cfg.ema_fast,
-            "ema_slow": cfg.ema_slow,
-            "init_cash": cfg.init_cash,
-            "fees": cfg.fees,
-            "slippage": cfg.slippage,
+        "strategy_spec": {
+            "variant": "ema_pullback_fast20_anchor200_slow1000",
+            "symbol": cfg.symbol,
+            "base_timeframe": cfg.timeframe,
         },
         "metrics": {"trades": 0, "sharpe": 0.0, "profit_factor": 1.0, "max_drawdown": 0.0},
         "trade_records": [],
@@ -107,12 +88,12 @@ def test_build_research_run_payload_top_level_keys() -> None:
         variants=[variant],
     )
     assert tuple(payload.keys()) == REQUIRED_TOP
+    assert payload["report_schema_version"] == 2
     assert payload["data_range"] == {"from_open_time_ms": 1, "to_open_time_ms": 2}
     assert payload["variants_count"] == 1
     v0 = payload["variants"][0]
     for k in REQUIRED_VARIANT:
         assert k in v0
-    assert tuple(v0["components"].keys()) == COMPONENT_ROLES
     for k in REQUIRED_METRICS:
         assert k in v0["metrics"]
     raw = json.dumps(json_safe(payload), ensure_ascii=False)
@@ -124,6 +105,7 @@ def test_write_research_results_creates_latest_and_run(tmp_path: Path) -> None:
     payload = {
         "run_id": "2026-05-01T120000Z_ema_pullback_BTCUSDT_1h",
         "created_at": "2026-05-01T12:00:00Z",
+        "report_schema_version": 2,
         "family": "ema_pullback",
         "symbol": "BTCUSDT",
         "timeframe": "1h",
@@ -169,40 +151,18 @@ def test_extract_trade_records_closed_and_open() -> None:
 
 
 def test_variant_payload_from_instance_matches_schema() -> None:
-    pd = pytest.importorskip("pandas")
-    pytest.importorskip("vectorbt")
-    from research.strategies.ema_pullback.execution.backtest import run_strategy_instance
+    from research.strategies.ema_pullback.execution.result_models import VariantMetrics, VariantResult
 
-    n = 400
-    idx = pd.date_range("2024-01-01", periods=n, freq="h", tz="UTC")
-    # Choppy series so the backtest mixes wins and losses (finite profit factor).
-    close = 100.0 + pd.Series([((i % 7) - 3) * 0.8 for i in range(n)], dtype=float, index=idx).cumsum()
-    ohlcv = pd.DataFrame(
-        {
-            "open": close,
-            "high": close + 0.1,
-            "low": close - 0.1,
-            "close": close,
-            "volume": 1.0,
-        },
-        index=idx,
-    )
-    cfg = StrategyConfig(
-        family="ema_pullback",
-        variant="unit_variant",
+    vr = VariantResult(
+        variant="ema_pullback_fast20_anchor200_slow1000",
+        config_id="abc123",
         symbol="BTCUSDT",
         timeframe="1h",
-        db_path=None,
-        ema_fast=5,
-        ema_slow=15,
-        init_cash=10_000.0,
-        fees=0.0001,
-        slippage=0.0001,
-    )
-    instance = StrategyInstance.from_config(cfg)
-    vr = run_strategy_instance(instance, ohlcv).to_payload()
+        strategy_spec={"variant": "ema_pullback_fast20_anchor200_slow1000"},
+        metrics=VariantMetrics(trades=1, sharpe=0.1, profit_factor=1.2, max_drawdown=-0.3),
+        trade_records=[],
+    ).to_payload()
     for k in REQUIRED_VARIANT:
         assert k in vr
-    assert tuple(vr["components"].keys()) == COMPONENT_ROLES
     assert isinstance(vr["trade_records"], list)
     json.dumps(json_safe(vr), ensure_ascii=False)

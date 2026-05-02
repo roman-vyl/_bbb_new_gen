@@ -9,12 +9,10 @@ pytest.importorskip("pandas")
 from data_engine.contracts import Candle
 
 from research.ema_smoke_helpers import (
-    add_ema_columns as legacy_add_ema_columns,
+    add_smoke_ema_columns,
     candles_to_ohlcv_dataframe,
-    ema_crossover_signals as legacy_ema_crossover_signals,
+    smoke_cross_signals,
 )
-from research.strategies.ema_pullback.execution.signals import ema_crossover_signals
-from research.strategies.ema_pullback.features import add_ema_columns
 
 
 def _synthetic_candles(n: int = 120) -> list[Candle]:
@@ -54,27 +52,27 @@ def test_candles_to_ohlcv_preserves_length_and_order() -> None:
 def test_ema_columns_no_nan_on_finite_close() -> None:
     candles = _synthetic_candles(80)
     df = candles_to_ohlcv_dataframe(candles)
-    enriched = add_ema_columns(df, ema_fast=20, ema_slow=50)
+    enriched = add_smoke_ema_columns(df, fast=20, slow=50)
     assert not enriched["ema_20"].isna().any()
     assert not enriched["ema_50"].isna().any()
 
 
-def test_legacy_helpers_delegate_same_as_family() -> None:
+def test_smoke_ema_helpers_are_deterministic() -> None:
     candles = _synthetic_candles(40)
     ohlcv = candles_to_ohlcv_dataframe(candles)
-    fam = add_ema_columns(ohlcv, ema_fast=20, ema_slow=50)
-    leg = legacy_add_ema_columns(ohlcv, fast=20, slow=50)
-    assert fam["ema_20"].equals(leg["ema_20"])
-    e1, x1 = ema_crossover_signals(fam, ema_fast=20, ema_slow=50)
-    e2, x2 = legacy_ema_crossover_signals(leg, "ema_20", "ema_50")
+    first = add_smoke_ema_columns(ohlcv, fast=20, slow=50)
+    second = add_smoke_ema_columns(ohlcv, fast=20, slow=50)
+    assert first["ema_20"].equals(second["ema_20"])
+    e1, x1 = smoke_cross_signals(first, "ema_20", "ema_50")
+    e2, x2 = smoke_cross_signals(second, "ema_20", "ema_50")
     assert e1.equals(e2)
     assert x1.equals(x2)
 
 
 def test_crossover_signals_boolean_aligned() -> None:
     candles = _synthetic_candles(80)
-    df = add_ema_columns(candles_to_ohlcv_dataframe(candles), ema_fast=20, ema_slow=50)
-    entries, exits = ema_crossover_signals(df, ema_fast=20, ema_slow=50)
+    df = add_smoke_ema_columns(candles_to_ohlcv_dataframe(candles), fast=20, slow=50)
+    entries, exits = smoke_cross_signals(df, "ema_20", "ema_50")
     assert entries.dtype == bool or entries.dtype == "bool"
     assert exits.dtype == bool or exits.dtype == "bool"
     assert len(entries) == len(df)
@@ -88,8 +86,8 @@ def test_minimal_vectorbt_portfolio_from_signals() -> None:
 
     candles = _synthetic_candles(100)
     ohlcv = candles_to_ohlcv_dataframe(candles)
-    enriched = add_ema_columns(ohlcv, ema_fast=20, ema_slow=50)
-    entries, exits = ema_crossover_signals(enriched, ema_fast=20, ema_slow=50)
+    enriched = add_smoke_ema_columns(ohlcv, fast=20, slow=50)
+    entries, exits = smoke_cross_signals(enriched, "ema_20", "ema_50")
     close = enriched["close"].astype(float)
     pf = vbt.Portfolio.from_signals(close, entries, exits, freq="1h")
     sharpe = float(pf.sharpe_ratio())

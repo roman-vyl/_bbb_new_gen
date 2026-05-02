@@ -11,11 +11,13 @@ def comparison_row(variant_result: VariantResult | dict[str, Any]) -> dict[str, 
     """Flatten a variant result for the stdout comparison table."""
 
     if isinstance(variant_result, VariantResult):
+        anchor_stack = variant_result.strategy_spec["anchor_stack"]
         return {
             "variant": variant_result.variant,
             "config_id": variant_result.config_id,
-            "ema_fast": variant_result.params["ema_fast"],
-            "ema_slow": variant_result.params["ema_slow"],
+            "fast": anchor_stack["fast"]["period"],
+            "anchor": anchor_stack["anchor"]["period"],
+            "slow": anchor_stack["slow"]["period"],
             "trades": variant_result.metrics.trades,
             "sharpe": variant_result.metrics.sharpe,
             "profit_factor": variant_result.metrics.profit_factor,
@@ -23,12 +25,13 @@ def comparison_row(variant_result: VariantResult | dict[str, Any]) -> dict[str, 
         }
 
     m = variant_result["metrics"]
-    p = variant_result["params"]
+    anchor_stack = variant_result["strategy_spec"]["anchor_stack"]
     return {
         "variant": variant_result["variant"],
         "config_id": variant_result["config_id"],
-        "ema_fast": p["ema_fast"],
-        "ema_slow": p["ema_slow"],
+        "fast": anchor_stack["fast"]["period"],
+        "anchor": anchor_stack["anchor"]["period"],
+        "slow": anchor_stack["slow"]["period"],
         "trades": m["trades"],
         "sharpe": m["sharpe"],
         "profit_factor": m["profit_factor"],
@@ -40,8 +43,9 @@ def print_comparison_table(rows: list[dict[str, float | str]]) -> None:
     headers = (
         "variant",
         "config_id",
-        "ema_fast",
-        "ema_slow",
+        "fast",
+        "anchor",
+        "slow",
         "trades",
         "sharpe",
         "profit_factor",
@@ -53,8 +57,9 @@ def print_comparison_table(rows: list[dict[str, float | str]]) -> None:
             {
                 "variant": str(row["variant"]),
                 "config_id": str(row["config_id"]),
-                "ema_fast": str(row["ema_fast"]),
-                "ema_slow": str(row["ema_slow"]),
+                "fast": str(row["fast"]),
+                "anchor": str(row["anchor"]),
+                "slow": str(row["slow"]),
                 "trades": str(row["trades"]),
                 "sharpe": f"{float(row['sharpe']):.6f}",
                 "profit_factor": f"{float(row['profit_factor']):.6f}",

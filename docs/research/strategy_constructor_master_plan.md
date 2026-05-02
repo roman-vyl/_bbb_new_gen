@@ -387,7 +387,34 @@ research/results/*.json
 
 ---
 
-### Step 10 — Component Grid
+### Step 10 — EMA Pullback StrategySpec / Anchor Stack Refactor
+
+После появления JSON-отчётов перед frontend/grid стабилизируем внутреннюю модель `ema_pullback`.
+
+Цель этапа — уйти от ручной модели `FeatureRelation` как основного способа задания стратегии и перейти к явному `StrategySpec` для конкретного экземпляра `ema_pullback`.
+
+`ema_pullback` остаётся названием strategy family.
+
+Новая модель должна описывать стратегию через параметризуемую anchor-конструкцию:
+
+```text
+fast EMA
+anchor EMA
+slow EMA
+```
+
+Базовая идея стратегии:
+
+торговать pullback к anchor EMA,
+если fast EMA > anchor EMA > slow EMA
+
+`FeatureRelation` может остаться временным legacy/compiled helper, но не должен быть главным местом, где задаётся стратегия.
+
+После этого этапа frontend и будущий grid должны опираться на `StrategySpec`, а не на ручные `intraday_trend` / `swing_trend` relations.
+
+---
+
+### Step 11 — Component Grid
 
 Component Grid запускается только после того, как появятся структурированные результаты research-прогонов: без стабильного хранения результатов массовый прогон вариантов превращается в шумный и плохо сопоставимый `stdout`.
 
@@ -407,7 +434,7 @@ Grid должен:
 
 ---
 
-### Step 11 — Debug Reports / Diagnostics
+### Step 12 — Debug Reports / Diagnostics
 
 Расширение отчётности поверх базового structured artifact: debug counters, сделочная диагностика, причины входов/выходов.
 
@@ -423,7 +450,7 @@ trade_count
 
 ---
 
-### Step 12 — Validation
+### Step 13 — Validation
 
 Добавить защиту от самообмана:
 
@@ -451,7 +478,7 @@ trade_count
 
 Roadmap note:
 
-FeaturesDev keeps indicator calculation out of components. Trade Management keeps SL/TP logic out of runner and entry components. Research Results Artifact is inserted before Component Grid so experiments have stable structured output. Component Grid remains postponed until FeaturesDev, components, Trade Management, and result artifacts are stable.
+FeaturesDev keeps indicator calculation out of components. Trade Management keeps SL/TP logic out of runner and entry components. Research Results Artifact is inserted before Component Grid so experiments have stable structured output. EMA Pullback StrategySpec / anchor stack refactor stabilises the internal instance model after artifacts and before broad grid work. Component Grid remains postponed until FeaturesDev, components, Trade Management, result artifacts, and the family-specific StrategySpec layer are stable.
 
 ---
 
@@ -472,9 +499,10 @@ FeaturesDev keeps indicator calculation out of components. Trade Management keep
 8. first real component variant
 9. trade management / SL-TP
 10. артефакт результатов research
-11. component grid
-12. debug report / diagnostics
-13. validation
+11. ema_pullback StrategySpec / anchor stack refactor
+12. component grid
+13. debug report / diagnostics
+14. validation
 ```
 
 Итоговая цель:

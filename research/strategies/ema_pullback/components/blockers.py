@@ -1,11 +1,11 @@
-"""Blocker gates: whether an entry may be considered at all (no vectorbt)."""
+"""Blocker components for ema_pullback StrategySpec pipeline."""
 
 from __future__ import annotations
 
 import pandas as pd
 
 
-def blockers_ok_baseline(df: pd.DataFrame) -> pd.Series:
-    """Stage 2: no blocking rules — extension point only (all True)."""
+def no_blockers(df: pd.DataFrame) -> pd.Series:
+    """No blockers: pass all rows."""
 
     return pd.Series(True, index=df.index, dtype=bool)

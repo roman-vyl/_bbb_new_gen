@@ -8,11 +8,11 @@ from data_engine.engine.time_grid import tf_ms
 from data_engine.store import Db
 
 from research.ema_smoke_helpers import candles_to_ohlcv_dataframe
-from research.strategies.ema_pullback.config import StrategyConfig
+from research.strategies.ema_pullback.config import ExecutionConfig
 from research.strategies.ema_pullback.execution.result_models import LoadedCandles
 
 
-def load_candles_once(cfg: StrategyConfig) -> LoadedCandles:
+def load_candles_once(cfg: ExecutionConfig) -> LoadedCandles:
     """Load DB candles once and return OHLCV plus range metadata."""
 
     settings = Settings()

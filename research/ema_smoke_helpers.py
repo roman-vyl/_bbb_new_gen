@@ -1,8 +1,6 @@
-"""Pure helpers for EMA smoke backtest (testable without vectorbt).
+"""Pure helpers for EMA smoke tests (testable without vectorbt).
 
 ``candles_to_ohlcv_dataframe`` lives here (list[Candle] -> DataFrame).
-EMA columns and crossover signals delegate to ``ema_pullback`` family
-so there is a single implementation.
 """
 
 from __future__ import annotations
@@ -10,11 +8,6 @@ from __future__ import annotations
 import pandas as pd
 
 from data_engine.contracts import Candle
-
-from research.strategies.ema_pullback.execution.signals import (
-    crossover_from_ema_columns,
-)
-from research.strategies.ema_pullback.features import add_ema_columns as _add_ema
 
 
 def candles_to_ohlcv_dataframe(candles: list[Candle]) -> pd.DataFrame:
@@ -43,17 +36,25 @@ def candles_to_ohlcv_dataframe(candles: list[Candle]) -> pd.DataFrame:
     return df[["open", "high", "low", "close", "volume"]]
 
 
-def add_ema_columns(df: pd.DataFrame, fast: int = 20, slow: int = 50) -> pd.DataFrame:
-    """Append EMA columns; wraps family ``add_ema_columns`` (legacy kw names)."""
+def add_smoke_ema_columns(df: pd.DataFrame, fast: int = 20, slow: int = 50) -> pd.DataFrame:
+    """Append local EMA columns for smoke-helper tests."""
 
-    return _add_ema(df, ema_fast=fast, ema_slow=slow)
+    out = df.copy()
+    close = out["close"].astype(float)
+    for period in sorted({fast, slow}):
+        out[f"ema_{period}"] = close.ewm(span=period, adjust=False).mean()
+    return out
 
 
-def ema_crossover_signals(
+def smoke_cross_signals(
     df: pd.DataFrame,
     fast_col: str = "ema_20",
     slow_col: str = "ema_50",
 ) -> tuple[pd.Series, pd.Series]:
-    """Long/exit crossover using named EMA columns (legacy API)."""
+    """Long/exit crossover using named EMA columns for helper tests."""
 
-    return crossover_from_ema_columns(df, fast_col, slow_col)
+    prev_fast = df[fast_col].shift(1)
+    prev_slow = df[slow_col].shift(1)
+    entries = ((df[fast_col] > df[slow_col]) & (prev_fast <= prev_slow)).fillna(False).astype(bool)
+    exits = ((df[fast_col] < df[slow_col]) & (prev_fast >= prev_slow)).fillna(False).astype(bool)
+    return entries, exits
