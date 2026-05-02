@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from research.strategies.ema_pullback.feature_profile import (
+from research.strategies.ema_pullback.features.profile import (
     FeatureProfile,
     resolve_feature_profile,
 )

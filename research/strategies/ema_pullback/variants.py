@@ -13,12 +13,12 @@ from research.strategies.ema_pullback.components import (
     RECLAIM_ENTRY_ANCHOR_COMPONENT,
 )
 from research.strategies.ema_pullback.config import DEFAULT_CONFIG, StrategyConfig
-from research.strategies.ema_pullback.feature_profile import EMA_PULLBACK_20_200_500_PROFILE_ID
-from research.strategies.ema_pullback.instance import StrategyInstance
-from research.strategies.ema_pullback.trade_management import (
+from research.strategies.ema_pullback.execution.trade_management import (
     FEATURE_DISTANCE_SL_TP_PROFILE,
     FIXED_PCT_SL_TP_PROFILE,
 )
+from research.strategies.ema_pullback.features.profile import EMA_PULLBACK_20_200_500_PROFILE_ID
+from research.strategies.ema_pullback.instance import StrategyInstance
 
 
 def build_manual_variants(base_config: StrategyConfig = DEFAULT_CONFIG) -> list[StrategyInstance]:

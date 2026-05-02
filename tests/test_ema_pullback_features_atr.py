@@ -8,7 +8,7 @@ pytest.importorskip("pandas")
 
 import pandas as pd
 
-from research.strategies.ema_pullback.feature_profile import EMA_PULLBACK_20_200_500_PROFILE_ID
+from research.strategies.ema_pullback.features.profile import EMA_PULLBACK_20_200_500_PROFILE_ID
 from research.strategies.ema_pullback.features import add_feature_columns
 
 

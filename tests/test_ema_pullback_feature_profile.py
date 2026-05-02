@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from research.strategies.ema_pullback.feature_profile import (
+from research.strategies.ema_pullback.features.profile import (
     EMA_PULLBACK_20_200_500_FEATURE_PROFILE,
     EMA_PULLBACK_20_200_500_PROFILE_ID,
     EMA_PULLBACK_DEFAULT_FEATURE_PROFILE,

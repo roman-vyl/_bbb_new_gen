@@ -12,8 +12,8 @@ from research.strategies.ema_pullback.config import (
     identity_payload,
     strategy_config_id,
 )
+from research.strategies.ema_pullback.cli import config_from_args, parse_args
 from research.strategies.ema_pullback.instance import StrategyInstance
-from research.strategies.ema_pullback.run import config_from_args, parse_args
 
 
 def test_same_config_yields_same_config_id() -> None:

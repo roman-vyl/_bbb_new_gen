@@ -11,14 +11,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable
 
-from research.strategies.ema_pullback.blockers import blockers_ok_baseline
-from research.strategies.ema_pullback.direction import (
+from research.strategies.ema_pullback.components.blockers import blockers_ok_baseline
+from research.strategies.ema_pullback.components.direction import (
     intraday_and_swing_trend_long,
     long_allowed_baseline,
 )
-from research.strategies.ema_pullback.exits import ema_bearish_cross_exit
-from research.strategies.ema_pullback.setup import pullback_to_entry_anchor, setup_long_baseline
-from research.strategies.ema_pullback.triggers import (
+from research.strategies.ema_pullback.components.exits import ema_bearish_cross_exit
+from research.strategies.ema_pullback.components.setup import pullback_to_entry_anchor, setup_long_baseline
+from research.strategies.ema_pullback.components.triggers import (
     ema_bullish_cross_entry,
     reclaim_entry_anchor,
 )
@@ -149,3 +149,21 @@ def resolve_component(role: str, component_id: str) -> ComponentDefinition:
             f"known ids: {known_ids}"
         )
     return component
+
+
+__all__ = [
+    "COMPONENT_REGISTRY",
+    "ComponentDefinition",
+    "DEFAULT_BLOCKERS_COMPONENT",
+    "DEFAULT_DIRECTION_COMPONENT",
+    "DEFAULT_EXITS_COMPONENT",
+    "DEFAULT_RISK_COMPONENT",
+    "DEFAULT_SETUP_COMPONENT",
+    "DEFAULT_TRIGGER_COMPONENT",
+    "INTRADAY_AND_SWING_TREND_LONG_COMPONENT",
+    "PULLBACK_TO_ENTRY_ANCHOR_COMPONENT",
+    "RECLAIM_ENTRY_ANCHOR_COMPONENT",
+    "REQUIRED_COMPONENT_ROLES",
+    "no_risk_filter",
+    "resolve_component",
+]

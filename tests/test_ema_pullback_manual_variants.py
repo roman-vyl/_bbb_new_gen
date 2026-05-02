@@ -7,11 +7,11 @@ from research.strategies.ema_pullback.components import (
     PULLBACK_TO_ENTRY_ANCHOR_COMPONENT,
     RECLAIM_ENTRY_ANCHOR_COMPONENT,
 )
-from research.strategies.ema_pullback.feature_profile import EMA_PULLBACK_20_200_500_PROFILE_ID
-from research.strategies.ema_pullback.trade_management import (
+from research.strategies.ema_pullback.execution.trade_management import (
     FEATURE_DISTANCE_SL_TP_PROFILE,
     FIXED_PCT_SL_TP_PROFILE,
 )
+from research.strategies.ema_pullback.features.profile import EMA_PULLBACK_20_200_500_PROFILE_ID
 from research.strategies.ema_pullback.variants import build_manual_variants
 
 

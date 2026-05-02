@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from research.strategies.ema_pullback.run import _print_comparison_table, ensure_finite_metric
+from research.strategies.ema_pullback.execution.backtest import ensure_finite_metric
+from research.strategies.ema_pullback.execution.report_table import print_comparison_table
 
 
 def test_ensure_finite_metric_accepts_finite() -> None:
@@ -24,7 +25,7 @@ def test_ensure_finite_metric_rejects_inf() -> None:
 
 
 def test_comparison_table_includes_trades_column(capsys: pytest.CaptureFixture[str]) -> None:
-    _print_comparison_table(
+    print_comparison_table(
         [
             {
                 "variant": "v",

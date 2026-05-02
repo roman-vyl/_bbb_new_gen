@@ -8,26 +8,26 @@ pytest.importorskip("pandas")
 
 import pandas as pd
 
-from research.strategies.ema_pullback.blockers import blockers_ok_baseline
 from research.strategies.ema_pullback.components import no_risk_filter
-from research.strategies.ema_pullback.config import DEFAULT_CONFIG
-from research.strategies.ema_pullback.direction import (
+from research.strategies.ema_pullback.components.blockers import blockers_ok_baseline
+from research.strategies.ema_pullback.components.direction import (
     intraday_and_swing_trend_long,
     long_allowed_baseline,
     short_allowed_baseline,
 )
-from research.strategies.ema_pullback.exits import ema_bearish_cross_exit
-from research.strategies.ema_pullback.features import add_ema_columns, add_feature_columns
-from research.strategies.ema_pullback.setup import pullback_to_entry_anchor, setup_long_baseline
-from research.strategies.ema_pullback.triggers import ema_bullish_cross_entry, reclaim_entry_anchor
-from research.strategies.ema_pullback.risk import portfolio_risk_from_config
-from research.strategies.ema_pullback.signals import (
+from research.strategies.ema_pullback.components.exits import ema_bearish_cross_exit
+from research.strategies.ema_pullback.components.risk import portfolio_risk_from_config
+from research.strategies.ema_pullback.components.setup import pullback_to_entry_anchor, setup_long_baseline
+from research.strategies.ema_pullback.components.triggers import ema_bullish_cross_entry, reclaim_entry_anchor
+from research.strategies.ema_pullback.config import DEFAULT_CONFIG
+from research.strategies.ema_pullback.execution.signals import (
     compose_final_signals,
     crossover_from_ema_columns,
     ema_crossover_signals,
     ema_pullback_pipeline_signals,
 )
-from research.strategies.ema_pullback.feature_profile import EMA_PULLBACK_20_200_500_PROFILE_ID
+from research.strategies.ema_pullback.features import add_ema_columns, add_feature_columns
+from research.strategies.ema_pullback.features.profile import EMA_PULLBACK_20_200_500_PROFILE_ID
 
 
 
