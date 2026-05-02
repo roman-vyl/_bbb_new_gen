@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from research.strategies.ema_pullback.config import DEFAULT_CONFIG
+from research.strategies.ema_pullback.config import DEFAULT_EXECUTION_CONFIG
 from research.strategies.ema_pullback.execution.results import (
     build_research_run_payload,
     build_run_id,
@@ -20,6 +20,7 @@ from research.strategies.ema_pullback.execution.results import (
 REQUIRED_TOP = (
     "run_id",
     "created_at",
+    "report_schema_version",
     "family",
     "symbol",
     "timeframe",
@@ -60,7 +61,7 @@ def test_json_safe_nan_becomes_null() -> None:
 
 
 def test_build_research_run_payload_top_level_keys() -> None:
-    cfg = DEFAULT_CONFIG
+    cfg = DEFAULT_EXECUTION_CONFIG
     variant = {
         "variant": "ema_pullback_fast20_anchor200_slow1000",
         "config_id": "abc123",
@@ -87,6 +88,7 @@ def test_build_research_run_payload_top_level_keys() -> None:
         variants=[variant],
     )
     assert tuple(payload.keys()) == REQUIRED_TOP
+    assert payload["report_schema_version"] == 2
     assert payload["data_range"] == {"from_open_time_ms": 1, "to_open_time_ms": 2}
     assert payload["variants_count"] == 1
     v0 = payload["variants"][0]
@@ -103,6 +105,7 @@ def test_write_research_results_creates_latest_and_run(tmp_path: Path) -> None:
     payload = {
         "run_id": "2026-05-01T120000Z_ema_pullback_BTCUSDT_1h",
         "created_at": "2026-05-01T12:00:00Z",
+        "report_schema_version": 2,
         "family": "ema_pullback",
         "symbol": "BTCUSDT",
         "timeframe": "1h",

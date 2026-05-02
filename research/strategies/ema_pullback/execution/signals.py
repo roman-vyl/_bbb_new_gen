@@ -61,23 +61,3 @@ def build_signals_from_spec(
         exit_signal=exits,
     )
 
-
-def crossover_from_ema_columns(df: pd.DataFrame, fast_col: str, slow_col: str) -> tuple[pd.Series, pd.Series]:
-    """Legacy helper used by smoke helper tests."""
-
-    prev_fast = df[fast_col].shift(1)
-    prev_slow = df[slow_col].shift(1)
-    entries = ((df[fast_col] > df[slow_col]) & (prev_fast <= prev_slow)).fillna(False).astype(bool)
-    exits = ((df[fast_col] < df[slow_col]) & (prev_fast >= prev_slow)).fillna(False).astype(bool)
-    return entries, exits
-
-
-def ema_crossover_signals(
-    df: pd.DataFrame,
-    *,
-    ema_fast: int,
-    ema_slow: int,
-) -> tuple[pd.Series, pd.Series]:
-    """Legacy wrapper for synthetic helper tests."""
-
-    return crossover_from_ema_columns(df, f"ema_{ema_fast}", f"ema_{ema_slow}")

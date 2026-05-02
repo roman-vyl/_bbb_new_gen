@@ -178,6 +178,7 @@ def build_research_run_payload(
     return {
         "run_id": run_id,
         "created_at": _format_created_at(created_at),
+        "report_schema_version": 2,
         "family": family,
         "symbol": symbol.strip().upper(),
         "timeframe": timeframe.strip(),
