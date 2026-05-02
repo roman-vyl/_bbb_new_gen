@@ -2,22 +2,50 @@ from __future__ import annotations
 
 from research.strategies.ema_pullback.spec_instances import (
     active_strategy_specs,
-    ema_pullback_fast20_anchor200_slow1000_spec,
+    default_ema_pullback_strategy_spec,
+    make_ema_pullback_strategy_spec,
+    variant_from_spec,
 )
 
 
 def test_spec_instance_factory_values() -> None:
-    spec = ema_pullback_fast20_anchor200_slow1000_spec(symbol="ethusdt", base_timeframe="4h")
-    assert spec.variant == "ema_pullback_fast20_anchor200_slow1000"
+    reference = default_ema_pullback_strategy_spec()
+    spec = default_ema_pullback_strategy_spec(symbol="ethusdt", base_timeframe="4h")
+    assert spec.variant == reference.variant
+    assert spec.variant == variant_from_spec(spec)
     assert spec.symbol == "ETHUSDT"
     assert spec.base_timeframe == "4h"
-    assert spec.setup.lookback == 3
+    assert spec.setup.lookback == reference.setup.lookback
+    assert spec.anchor_stack == reference.anchor_stack
+    assert spec.trade_management == reference.trade_management
     assert {r.rule_type for r in spec.trade_management.exit_rules} == {
         "stop_loss_by_distance",
         "take_profit_by_distance",
     }
 
 
-def test_active_strategy_specs_contains_only_single_stage10_spec() -> None:
+def test_active_strategy_specs_matches_default_factory() -> None:
     specs = active_strategy_specs("BTCUSDT", "1h")
-    assert [s.variant for s in specs] == ["ema_pullback_fast20_anchor200_slow1000"]
+    assert len(specs) == 1
+    spec = specs[0]
+    assert spec == default_ema_pullback_strategy_spec(symbol="BTCUSDT", base_timeframe="1h")
+    assert spec.variant == variant_from_spec(spec)
+    assert (
+        spec.anchor_stack.fast.period
+        < spec.anchor_stack.anchor.period
+        < spec.anchor_stack.slow.period
+    )
+    assert spec.components.direction == "ema_anchor_stack_bullish"
+    assert spec.components.blockers == "no_blockers"
+    assert spec.components.setup == "pullback_to_anchor"
+    assert spec.components.trigger == "reclaim_anchor"
+    assert spec.components.exits == "no_signal_exit"
+    assert spec.components.risk == "no_risk_filter"
+
+
+def test_custom_spec_variant_follows_anchor_stack_periods() -> None:
+    spec = make_ema_pullback_strategy_spec(fast_period=7, anchor_period=11, slow_period=13)
+    assert spec.variant == variant_from_spec(spec)
+    assert spec.anchor_stack.fast.period == 7
+    assert spec.anchor_stack.anchor.period == 11
+    assert spec.anchor_stack.slow.period == 13

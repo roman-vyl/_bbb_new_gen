@@ -9,7 +9,7 @@ import pandas as pd
 from research.strategies.ema_pullback.execution.signals import build_signals_from_spec
 from research.strategies.ema_pullback.features.calculations import add_feature_columns_from_plan
 from research.strategies.ema_pullback.features.plan import build_feature_plan_from_strategy_spec
-from research.strategies.ema_pullback.spec_instances import ema_pullback_fast20_anchor200_slow1000_spec
+from research.strategies.ema_pullback.spec_instances import default_ema_pullback_strategy_spec
 
 
 def _ohlcv() -> pd.DataFrame:
@@ -28,7 +28,7 @@ def _ohlcv() -> pd.DataFrame:
 
 
 def test_build_signals_from_spec_uses_component_registry_and_plan_columns() -> None:
-    spec = ema_pullback_fast20_anchor200_slow1000_spec()
+    spec = default_ema_pullback_strategy_spec()
     plan = build_feature_plan_from_strategy_spec(spec)
     df = add_feature_columns_from_plan(_ohlcv(), plan)
 

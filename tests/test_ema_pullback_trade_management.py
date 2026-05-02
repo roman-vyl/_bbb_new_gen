@@ -8,11 +8,11 @@ import pandas as pd
 
 from research.strategies.ema_pullback.execution.trade_management import build_stops_from_trade_management
 from research.strategies.ema_pullback.features.plan import build_feature_plan_from_strategy_spec
-from research.strategies.ema_pullback.spec_instances import ema_pullback_fast20_anchor200_slow1000_spec
+from research.strategies.ema_pullback.spec_instances import default_ema_pullback_strategy_spec
 
 
 def test_build_stops_from_trade_management_uses_exit_distance_columns() -> None:
-    spec = ema_pullback_fast20_anchor200_slow1000_spec()
+    spec = default_ema_pullback_strategy_spec()
     plan = build_feature_plan_from_strategy_spec(spec)
 
     idx = pd.date_range("2024-01-01", periods=4, freq="h", tz="UTC")

@@ -16,6 +16,10 @@ from research.strategies.ema_pullback.execution.results import (
     json_safe,
     write_research_results,
 )
+from research.strategies.ema_pullback.spec_instances import (
+    default_ema_pullback_strategy_spec,
+    variant_from_spec,
+)
 
 REQUIRED_TOP = (
     "run_id",
@@ -62,13 +66,15 @@ def test_json_safe_nan_becomes_null() -> None:
 
 def test_build_research_run_payload_top_level_keys() -> None:
     cfg = DEFAULT_EXECUTION_CONFIG
+    spec = default_ema_pullback_strategy_spec(symbol=cfg.symbol, base_timeframe=cfg.timeframe)
+    assert spec.variant == variant_from_spec(spec)
     variant = {
-        "variant": "ema_pullback_fast20_anchor200_slow1000",
+        "variant": spec.variant,
         "config_id": "abc123",
         "symbol": cfg.symbol,
         "timeframe": cfg.timeframe,
         "strategy_spec": {
-            "variant": "ema_pullback_fast20_anchor200_slow1000",
+            "variant": spec.variant,
             "symbol": cfg.symbol,
             "base_timeframe": cfg.timeframe,
         },
@@ -153,16 +159,19 @@ def test_extract_trade_records_closed_and_open() -> None:
 def test_variant_payload_from_instance_matches_schema() -> None:
     from research.strategies.ema_pullback.execution.result_models import VariantMetrics, VariantResult
 
+    spec = default_ema_pullback_strategy_spec()
+    assert spec.variant == variant_from_spec(spec)
     vr = VariantResult(
-        variant="ema_pullback_fast20_anchor200_slow1000",
+        variant=spec.variant,
         config_id="abc123",
-        symbol="BTCUSDT",
-        timeframe="1h",
-        strategy_spec={"variant": "ema_pullback_fast20_anchor200_slow1000"},
+        symbol=spec.symbol,
+        timeframe=spec.base_timeframe,
+        strategy_spec={"variant": spec.variant},
         metrics=VariantMetrics(trades=1, sharpe=0.1, profit_factor=1.2, max_drawdown=-0.3),
         trade_records=[],
     ).to_payload()
     for k in REQUIRED_VARIANT:
         assert k in vr
+    assert vr["variant"] == vr["strategy_spec"]["variant"]
     assert isinstance(vr["trade_records"], list)
     json.dumps(json_safe(vr), ensure_ascii=False)
