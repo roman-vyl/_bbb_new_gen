@@ -62,9 +62,17 @@ def run_strategy_spec(
 
     freq = pandas_freq_alias(spec.base_timeframe)
     tm_kwargs = build_stops_from_trade_management(enriched, spec, plan)
+    sl_stop = tm_kwargs["sl_stop"]
+    tp_stop = tm_kwargs["tp_stop"]
+    # ATR-based stops are NaN until warmup; opening without finite sl/tp yields no stop exits
+    # and (with no signal exits) a single perpetual open trade in vectorbt.
+    entries_for_portfolio = (
+        entries.fillna(False).astype(bool) & sl_stop.notna() & tp_stop.notna()
+    )
+
     pf = vbt.Portfolio.from_signals(
         close,
-        entries,
+        entries_for_portfolio,
         exits,
         freq=freq,
         init_cash=float(init_cash),
