@@ -15,10 +15,11 @@ from research.strategies.ema_pullback.spec import (
 )
 
 
-def ema_pullback_fast20_anchor200_slow1000_spec(
+def default_ema_pullback_strategy_spec(
     symbol: str = "BTCUSDT",
     base_timeframe: str = "1h",
 ) -> EmaPullbackStrategySpec:
+    """Active Stage-10 default: valid spec with no caller-supplied research parameters."""
     return EmaPullbackStrategySpec(
         variant="ema_pullback_fast100_anchor200_slow1000",
         symbol=symbol.strip().upper(),
@@ -53,5 +54,9 @@ def ema_pullback_fast20_anchor200_slow1000_spec(
     )
 
 
+# Backward-compatible alias (historical name).
+ema_pullback_fast20_anchor200_slow1000_spec = default_ema_pullback_strategy_spec
+
+
 def active_strategy_specs(symbol: str, base_timeframe: str) -> list[EmaPullbackStrategySpec]:
-    return [ema_pullback_fast20_anchor200_slow1000_spec(symbol=symbol, base_timeframe=base_timeframe)]
+    return [default_ema_pullback_strategy_spec(symbol=symbol, base_timeframe=base_timeframe)]
