@@ -11,13 +11,18 @@ from research.strategies.ema_pullback.components.registry import (
     DEFAULT_RISK_COMPONENT,
     DEFAULT_SETUP_COMPONENT,
     DEFAULT_TRIGGER_COMPONENT,
+    FAST_ANCHOR_SLOW_STACK_LONG_COMPONENT,
+    PULLBACK_TO_ANCHOR_COMPONENT,
+    RECLAIM_ANCHOR_COMPONENT,
     resolve_component,
 )
+from research.strategies.ema_pullback.features.plan import ema_feature_id
 from research.strategies.ema_pullback.features.profile import (
     EMA_PULLBACK_DEFAULT_PROFILE_ID,
     relation_columns,
     resolve_feature_profile,
 )
+from research.strategies.ema_pullback.spec import EmaPullbackStrategySpec
 
 
 def compose_final_signals(
@@ -34,6 +39,46 @@ def compose_final_signals(
     final_entry = long_allowed & blockers_ok & setup_long & trigger_long & risk_ok
     final_exit = exit_signal
     return final_entry.astype(bool), final_exit.astype(bool)
+
+
+def ema_pullback_pipeline_signals_from_strategy_spec(
+    df: pd.DataFrame,
+    *,
+    strategy_spec: EmaPullbackStrategySpec,
+    direction_component: str = FAST_ANCHOR_SLOW_STACK_LONG_COMPONENT,
+    blockers_component: str = DEFAULT_BLOCKERS_COMPONENT,
+    setup_component: str = PULLBACK_TO_ANCHOR_COMPONENT,
+    trigger_component: str = RECLAIM_ANCHOR_COMPONENT,
+    exits_component: str = DEFAULT_EXITS_COMPONENT,
+    risk_component: str = DEFAULT_RISK_COMPONENT,
+) -> tuple[pd.Series, pd.Series]:
+    """Pipeline using StrategySpec-resolved EMA column ids (fast / anchor / slow roles)."""
+
+    direction_fn = resolve_component("direction", direction_component).func
+    blockers_fn = resolve_component("blockers", blockers_component).func
+    setup_fn = resolve_component("setup", setup_component).func
+    trigger_fn = resolve_component("trigger", trigger_component).func
+    exits_fn = resolve_component("exits", exits_component).func
+    risk_fn = resolve_component("risk", risk_component).func
+
+    fast_col = ema_feature_id(strategy_spec.anchor_stack.fast)
+    anchor_col = ema_feature_id(strategy_spec.anchor_stack.anchor)
+    slow_col = ema_feature_id(strategy_spec.anchor_stack.slow)
+
+    long_al = direction_fn(df, fast_col=fast_col, anchor_col=anchor_col, slow_col=slow_col)
+    block_ok = blockers_fn(df)
+    setup = setup_fn(df, anchor_col=anchor_col, lookback=strategy_spec.setup.lookback)
+    trig = trigger_fn(df, anchor_col=anchor_col)
+    ex = exits_fn(df, fast_col, anchor_col)
+    risk_ok = risk_fn(df)
+    return compose_final_signals(
+        long_allowed=long_al,
+        blockers_ok=block_ok,
+        setup_long=setup,
+        trigger_long=trig,
+        risk_ok=risk_ok,
+        exit_signal=ex,
+    )
 
 
 def ema_pullback_pipeline_signals(

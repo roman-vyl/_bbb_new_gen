@@ -44,9 +44,10 @@ class VariantResult:
     params: dict[str, int | float]
     metrics: VariantMetrics
     trade_records: list[dict[str, Any]]
+    strategy_spec: dict[str, Any] | None = None
 
     def to_payload(self) -> dict[str, Any]:
-        return {
+        out: dict[str, Any] = {
             "variant": self.variant,
             "config_id": self.config_id,
             "symbol": self.symbol,
@@ -58,3 +59,6 @@ class VariantResult:
             "metrics": self.metrics.to_payload(),
             "trade_records": self.trade_records,
         }
+        if self.strategy_spec is not None:
+            out["strategy_spec"] = self.strategy_spec
+        return out

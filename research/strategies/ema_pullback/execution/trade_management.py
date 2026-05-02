@@ -25,6 +25,7 @@ class TradeManagementProfile:
 NONE_TRADE_MANAGEMENT_PROFILE = "none"
 FIXED_PCT_SL_TP_PROFILE = "fixed_pct_sl_tp"
 FEATURE_DISTANCE_SL_TP_PROFILE = "feature_distance_sl_tp"
+RULE_BASED_DISTANCE_COLUMNS_PROFILE = "rule_based_distance_columns"
 
 TRADE_MANAGEMENT_PROFILES: dict[str, TradeManagementProfile] = {
     NONE_TRADE_MANAGEMENT_PROFILE: TradeManagementProfile(
@@ -44,6 +45,10 @@ TRADE_MANAGEMENT_PROFILES: dict[str, TradeManagementProfile] = {
         stop_distance_binding="trade_stop_distance",
         take_distance_binding="trade_take_distance",
     ),
+    RULE_BASED_DISTANCE_COLUMNS_PROFILE: TradeManagementProfile(
+        profile_id=RULE_BASED_DISTANCE_COLUMNS_PROFILE,
+        portfolio_kwargs={},
+    ),
 }
 
 
@@ -60,6 +65,45 @@ def resolve_trade_management_profile(profile_id: str) -> TradeManagementProfile:
         raise ValueError(
             f"unknown trade management profile: {profile_id!r}; available: {available}"
         ) from exc
+
+
+def prepared_distance_sl_tp_portfolio_kwargs(
+    df: pd.DataFrame,
+    *,
+    close: pd.Series,
+    stop_distance_column: str,
+    take_distance_column: str,
+) -> dict[str, pd.Series]:
+    """Build ``sl_stop`` / ``tp_stop`` from explicit distance columns (price units → ratios)."""
+
+    if stop_distance_column not in df.columns or take_distance_column not in df.columns:
+        missing = [c for c in (stop_distance_column, take_distance_column) if c not in df.columns]
+        raise KeyError(f"enriched frame missing distance column(s): {missing}")
+
+    c = close.astype(float)
+    stop_dist = df[stop_distance_column].astype(float)
+    take_dist = df[take_distance_column].astype(float)
+
+    c_np = np.asarray(c, dtype=np.float64)
+    s_np = np.asarray(stop_dist, dtype=np.float64)
+    t_np = np.asarray(take_dist, dtype=np.float64)
+    mask_np = (
+        np.isfinite(c_np)
+        & (c_np > 0)
+        & np.isfinite(s_np)
+        & np.isfinite(t_np)
+        & (s_np >= 0)
+        & (t_np >= 0)
+    )
+    mask = pd.Series(mask_np, index=c.index)
+
+    sl_stop = (stop_dist / c).replace([np.inf, -np.inf], np.nan)
+    tp_stop = (take_dist / c).replace([np.inf, -np.inf], np.nan)
+    sl_stop = sl_stop.where(mask)
+    tp_stop = tp_stop.where(mask)
+    sl_stop = sl_stop.reindex(c.index)
+    tp_stop = tp_stop.reindex(c.index)
+    return {"sl_stop": sl_stop, "tp_stop": tp_stop}
 
 
 def feature_distance_sl_tp_portfolio_kwargs(
@@ -117,9 +161,23 @@ def resolve_portfolio_kwargs_for_signals(
     df: pd.DataFrame,
     close: pd.Series,
     feature_profile_id: str,
+    stop_distance_column: str | None = None,
+    take_distance_column: str | None = None,
 ) -> dict[str, Any]:
     """Return keyword arguments for ``vectorbt.Portfolio.from_signals`` for this profile."""
 
+    if trade_profile.profile_id == RULE_BASED_DISTANCE_COLUMNS_PROFILE:
+        if not stop_distance_column or not take_distance_column:
+            raise ValueError(
+                "rule_based_distance_columns profile requires stop_distance_column and "
+                "take_distance_column"
+            )
+        return prepared_distance_sl_tp_portfolio_kwargs(
+            df,
+            close=close,
+            stop_distance_column=stop_distance_column,
+            take_distance_column=take_distance_column,
+        )
     if trade_profile.profile_id == FEATURE_DISTANCE_SL_TP_PROFILE:
         return feature_distance_sl_tp_portfolio_kwargs(
             df,

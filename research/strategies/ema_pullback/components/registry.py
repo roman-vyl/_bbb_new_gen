@@ -13,13 +13,19 @@ from typing import Callable
 
 from research.strategies.ema_pullback.components.blockers import blockers_ok_baseline
 from research.strategies.ema_pullback.components.direction import (
+    fast_anchor_slow_stack_long,
     intraday_and_swing_trend_long,
     long_allowed_baseline,
 )
 from research.strategies.ema_pullback.components.exits import ema_bearish_cross_exit
-from research.strategies.ema_pullback.components.setup import pullback_to_entry_anchor, setup_long_baseline
+from research.strategies.ema_pullback.components.setup import (
+    pullback_to_anchor,
+    pullback_to_entry_anchor,
+    setup_long_baseline,
+)
 from research.strategies.ema_pullback.components.triggers import (
     ema_bullish_cross_entry,
+    reclaim_anchor,
     reclaim_entry_anchor,
 )
 
@@ -40,8 +46,11 @@ DEFAULT_TRIGGER_COMPONENT = "ema_cross_up"
 DEFAULT_EXITS_COMPONENT = "ema_cross_down"
 DEFAULT_RISK_COMPONENT = "no_risk_filter"
 INTRADAY_AND_SWING_TREND_LONG_COMPONENT = "intraday_and_swing_trend_long"
+FAST_ANCHOR_SLOW_STACK_LONG_COMPONENT = "fast_anchor_slow_stack_long"
 PULLBACK_TO_ENTRY_ANCHOR_COMPONENT = "pullback_to_entry_anchor"
+PULLBACK_TO_ANCHOR_COMPONENT = "pullback_to_anchor"
 RECLAIM_ENTRY_ANCHOR_COMPONENT = "reclaim_entry_anchor"
+RECLAIM_ANCHOR_COMPONENT = "reclaim_anchor"
 
 
 def no_risk_filter(df: object) -> object:
@@ -77,6 +86,12 @@ COMPONENT_REGISTRY: dict[str, dict[str, ComponentDefinition]] = {
             func=intraday_and_swing_trend_long,
             description="Allow long only when intraday and swing trends are bullish.",
         ),
+        FAST_ANCHOR_SLOW_STACK_LONG_COMPONENT: ComponentDefinition(
+            role="direction",
+            component_id=FAST_ANCHOR_SLOW_STACK_LONG_COMPONENT,
+            func=fast_anchor_slow_stack_long,
+            description="Allow long when fast EMA > anchor EMA > slow EMA.",
+        ),
     },
     "blockers": {
         DEFAULT_BLOCKERS_COMPONENT: ComponentDefinition(
@@ -99,6 +114,12 @@ COMPONENT_REGISTRY: dict[str, dict[str, ComponentDefinition]] = {
             func=pullback_to_entry_anchor,
             description="Recent pullback to entry anchor in rolling window.",
         ),
+        PULLBACK_TO_ANCHOR_COMPONENT: ComponentDefinition(
+            role="setup",
+            component_id=PULLBACK_TO_ANCHOR_COMPONENT,
+            func=pullback_to_anchor,
+            description="Recent pullback to anchor EMA in rolling window.",
+        ),
     },
     "trigger": {
         DEFAULT_TRIGGER_COMPONENT: ComponentDefinition(
@@ -112,6 +133,12 @@ COMPONENT_REGISTRY: dict[str, dict[str, ComponentDefinition]] = {
             component_id=RECLAIM_ENTRY_ANCHOR_COMPONENT,
             func=reclaim_entry_anchor,
             description="Entry when close reclaims entry anchor from below.",
+        ),
+        RECLAIM_ANCHOR_COMPONENT: ComponentDefinition(
+            role="trigger",
+            component_id=RECLAIM_ANCHOR_COMPONENT,
+            func=reclaim_anchor,
+            description="Entry when close reclaims anchor EMA from below.",
         ),
     },
     "exits": {
@@ -160,8 +187,11 @@ __all__ = [
     "DEFAULT_RISK_COMPONENT",
     "DEFAULT_SETUP_COMPONENT",
     "DEFAULT_TRIGGER_COMPONENT",
+    "FAST_ANCHOR_SLOW_STACK_LONG_COMPONENT",
     "INTRADAY_AND_SWING_TREND_LONG_COMPONENT",
+    "PULLBACK_TO_ANCHOR_COMPONENT",
     "PULLBACK_TO_ENTRY_ANCHOR_COMPONENT",
+    "RECLAIM_ANCHOR_COMPONENT",
     "RECLAIM_ENTRY_ANCHOR_COMPONENT",
     "REQUIRED_COMPONENT_ROLES",
     "no_risk_filter",

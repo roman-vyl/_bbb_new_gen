@@ -71,6 +71,12 @@ def test_trade_management_profile_is_included_in_identity_payload() -> None:
     assert identity["trade_management_profile"] == DEFAULT_CONFIG.trade_management_profile
 
 
+def test_identity_payload_includes_strategy_spec_fingerprint() -> None:
+    identity = identity_payload(DEFAULT_CONFIG)
+    assert "strategy_spec" in identity
+    assert identity["strategy_spec"] is None
+
+
 def test_strategy_instance_exposes_config_id() -> None:
     instance = StrategyInstance.from_config(DEFAULT_CONFIG)
     assert instance.config is DEFAULT_CONFIG

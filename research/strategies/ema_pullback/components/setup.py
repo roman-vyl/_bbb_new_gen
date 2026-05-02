@@ -22,3 +22,15 @@ def pullback_to_entry_anchor(
 
     touched = df["low"] <= df[entry_anchor_col]
     return touched.rolling(window=window, min_periods=1).max().astype(bool)
+
+
+def pullback_to_anchor(
+    df: pd.DataFrame,
+    *,
+    anchor_col: str,
+    lookback: int = 3,
+    **_: object,
+) -> pd.Series:
+    """Pullback to anchor: ``low <= anchor`` within ``lookback`` bars (resolved anchor column)."""
+
+    return pullback_to_entry_anchor(df, entry_anchor_col=anchor_col, window=lookback)

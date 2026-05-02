@@ -21,6 +21,20 @@ def short_allowed_baseline(df: pd.DataFrame) -> pd.Series:
     return pd.Series(False, index=df.index, dtype=bool)
 
 
+def fast_anchor_slow_stack_long(
+    df: pd.DataFrame,
+    *,
+    fast_col: str,
+    anchor_col: str,
+    slow_col: str,
+    **_: object,
+) -> pd.Series:
+    """Long direction when ``fast > anchor > slow`` (resolved column names)."""
+
+    ok = (df[fast_col] > df[anchor_col]) & (df[anchor_col] > df[slow_col])
+    return ok.fillna(False).astype(bool)
+
+
 def intraday_and_swing_trend_long(
     df: pd.DataFrame,
     *,

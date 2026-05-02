@@ -21,6 +21,14 @@ from research.strategies.ema_pullback.components import (
     DEFAULT_SETUP_COMPONENT,
     DEFAULT_TRIGGER_COMPONENT,
 )
+from research.strategies.ema_pullback.spec import EmaPullbackStrategySpec, strategy_spec_identity
+
+
+def _strategy_spec_fingerprint(spec: EmaPullbackStrategySpec | None) -> str | None:
+    if spec is None:
+        return None
+    body = strategy_spec_identity(spec)
+    return json.dumps(body, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
 
 
 @dataclass(frozen=True)
@@ -43,6 +51,7 @@ class StrategyConfig:
     risk_component: str = DEFAULT_RISK_COMPONENT
     feature_profile: str = "ema_pullback_default"
     trade_management_profile: str = "none"
+    strategy_spec: EmaPullbackStrategySpec | None = None
 
     def __post_init__(self) -> None:
         if self.family != "ema_pullback":
@@ -79,6 +88,18 @@ class StrategyConfig:
             raise ValueError("feature_profile must be non-empty")
         if not self.trade_management_profile.strip():
             raise ValueError("trade_management_profile must be non-empty")
+        if self.strategy_spec is not None:
+            spec = self.strategy_spec
+            if spec.variant != self.variant:
+                raise ValueError("strategy_spec.variant must match StrategyConfig.variant")
+            if spec.symbol.strip().upper() != self.symbol.strip().upper():
+                raise ValueError("strategy_spec.symbol must match StrategyConfig.symbol")
+            if spec.base_timeframe.strip() != self.timeframe.strip():
+                raise ValueError("strategy_spec.base_timeframe must match StrategyConfig.timeframe")
+            if self.ema_fast != spec.anchor_stack.fast.period:
+                raise ValueError("ema_fast must match strategy_spec.anchor_stack.fast.period")
+            if self.ema_slow != spec.anchor_stack.slow.period:
+                raise ValueError("ema_slow must match strategy_spec.anchor_stack.slow.period")
 
 
 IDENTITY_FIELDS: tuple[str, ...] = (
@@ -99,6 +120,7 @@ IDENTITY_FIELDS: tuple[str, ...] = (
     "risk_component",
     "feature_profile",
     "trade_management_profile",
+    "strategy_spec",
 )
 
 
@@ -148,6 +170,7 @@ def identity_payload(config: StrategyConfig) -> dict[str, Any]:
         "risk_component": config.risk_component,
         "feature_profile": config.feature_profile,
         "trade_management_profile": config.trade_management_profile,
+        "strategy_spec": _strategy_spec_fingerprint(config.strategy_spec),
     }
     return {key: _normalize_value(value) for key, value in raw.items()}
 
