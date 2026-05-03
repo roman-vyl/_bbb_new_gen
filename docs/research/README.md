@@ -89,11 +89,12 @@ features/calculations.py (как посчитать + alignment MTF на base in
 Component Registry (role + component_id → callable)
 ↓
 execution/signals.py
-  entries / exits / short_entries / short_exits
+  entries / short_entries
   blockers: AND по tuple правил
-  signal_exits: OR по tuple правил
 ↓
-execution/trade_management.py (SL/TP distance columns → vectorbt kwargs)
+execution/exits.py
+  components.exits: signal exits OR + ATR stop/take mapping
+  exits / short_exits / sl_stop / tp_stop
 ↓
 vectorbt Portfolio
 ↓
@@ -134,7 +135,7 @@ execution/data_loader.py
 execution/report_table.py
 execution/runner.py
 execution/signals.py
-execution/trade_management.py
+execution/exits.py
 execution/results.py
 execution/result_models.py
 ```
@@ -145,8 +146,8 @@ execution/result_models.py
 StrategySpec — единственный semantic источник для family instance.
 FeaturePlan — декларация нужных колонок (включая RSI и MTF EMA/RSI).
 Components — решают по подготовленным колонкам; RSI не считают внутри себя.
-signals.py — side-aware composer + AND/OR для tuples правил.
-trade_management — SL/TP по distance columns, ортогонально signal exits.
+signals.py — side-aware composer только для entries/short_entries.
+exits.py — единый exit-layer: signal exits OR + ATR distance → sl_stop/tp_stop.
 JSON report — полный strategy_spec внутри variant payload.
 ```
 
@@ -161,8 +162,10 @@ JSON report — полный strategy_spec внутри variant payload.
 Stage 9: JSON run report (schema v2) — research/results/latest.json + runs/<run_id>.json
 Stage 10: EmaPullbackStrategySpec как единственная semantic модель
 Stage 11: TradeSideSpec + long/short wiring в vectorbt
-Stage 12: typed blockers/signal_exits tuples, live components, RSI features,
+Stage 12: typed blockers/signal exit tuples, live components, RSI features,
           MTF resample+alignment для EMA/RSI на base OHLCV
+Stage 13: unified components.exits для signal exits и ATR stop/take,
+          отдельный execution exit-layer перед vectorbt
 ```
 
 Сгенерированные JSON-файлы не должны коммититься.

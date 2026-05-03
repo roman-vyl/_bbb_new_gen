@@ -14,7 +14,7 @@ from research.strategies.ema_pullback.components.direction import (
     ema_anchor_stack_bullish,
 )
 from research.strategies.ema_pullback.components.exits import (
-    exit_on_anchor_lost,
+    atr_distance_exit,
     no_signal_exit,
     rsi_signal_exit,
 )
@@ -45,8 +45,9 @@ PULLBACK_TO_ANCHOR_COMPONENT = "pullback_to_anchor"
 RECLAIM_ANCHOR_COMPONENT = "reclaim_anchor"
 TOUCH_ANCHOR_COMPONENT = "touch_anchor"
 NO_SIGNAL_EXIT_COMPONENT = "no_signal_exit"
-EXIT_ON_ANCHOR_LOST_COMPONENT = "exit_on_anchor_lost"
 RSI_SIGNAL_EXIT_COMPONENT = "rsi_signal_exit"
+ATR_STOP_LOSS_COMPONENT = "atr_stop_loss"
+ATR_TAKE_PROFIT_COMPONENT = "atr_take_profit"
 NO_RISK_FILTER_COMPONENT = "no_risk_filter"
 
 
@@ -116,17 +117,23 @@ COMPONENT_REGISTRY: dict[str, dict[str, ComponentDefinition]] = {
             func=no_signal_exit,
             description="No signal-based exits.",
         ),
-        EXIT_ON_ANCHOR_LOST_COMPONENT: ComponentDefinition(
-            role="exits",
-            component_id=EXIT_ON_ANCHOR_LOST_COMPONENT,
-            func=exit_on_anchor_lost,
-            description="Signal exit when close loses the anchor.",
-        ),
         RSI_SIGNAL_EXIT_COMPONENT: ComponentDefinition(
             role="exits",
             component_id=RSI_SIGNAL_EXIT_COMPONENT,
             func=rsi_signal_exit,
             description="Signal exit on side-aware RSI thresholds.",
+        ),
+        ATR_STOP_LOSS_COMPONENT: ComponentDefinition(
+            role="exits",
+            component_id=ATR_STOP_LOSS_COMPONENT,
+            func=atr_distance_exit,
+            description="ATR distance stop-loss exit.",
+        ),
+        ATR_TAKE_PROFIT_COMPONENT: ComponentDefinition(
+            role="exits",
+            component_id=ATR_TAKE_PROFIT_COMPONENT,
+            func=atr_distance_exit,
+            description="ATR distance take-profit exit.",
         ),
     },
     "risk": {
@@ -160,10 +167,11 @@ def resolve_component(role: str, component_id: str) -> ComponentDefinition:
 
 __all__ = [
     "COMPONENT_REGISTRY",
+    "ATR_STOP_LOSS_COMPONENT",
+    "ATR_TAKE_PROFIT_COMPONENT",
     "ComponentDefinition",
     "COUNTER_CANDLE_BLOCKER_COMPONENT",
     "EMA_ANCHOR_STACK_BULLISH_COMPONENT",
-    "EXIT_ON_ANCHOR_LOST_COMPONENT",
     "NO_BLOCKERS_COMPONENT",
     "NO_SIGNAL_EXIT_COMPONENT",
     "NO_RISK_FILTER_COMPONENT",

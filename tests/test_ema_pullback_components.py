@@ -9,8 +9,8 @@ import pandas as pd
 from research.strategies.ema_pullback.components import resolve_component
 from research.strategies.ema_pullback.spec import (
     BlockerRuleSpec,
+    ExitRuleSpec,
     RsiFeatureSpec,
-    SignalExitRuleSpec,
 )
 
 
@@ -38,8 +38,9 @@ def test_registry_resolves_new_stage10_components() -> None:
     assert callable(resolve_component("trigger", "reclaim_anchor").func)
     assert callable(resolve_component("trigger", "touch_anchor").func)
     assert callable(resolve_component("exits", "no_signal_exit").func)
-    assert callable(resolve_component("exits", "exit_on_anchor_lost").func)
     assert callable(resolve_component("exits", "rsi_signal_exit").func)
+    assert callable(resolve_component("exits", "atr_stop_loss").func)
+    assert callable(resolve_component("exits", "atr_take_profit").func)
     assert callable(resolve_component("risk", "no_risk_filter").func)
 
 
@@ -122,20 +123,6 @@ def test_counter_candle_blocker_supports_long_and_short_sides() -> None:
     assert fn(df, side="short").tolist() == [False, True, True, True]
 
 
-def test_exit_on_anchor_lost_supports_long_and_short_sides() -> None:
-    idx = pd.date_range("2024-01-01", periods=4, freq="h", tz="UTC")
-    df = pd.DataFrame(
-        {
-            "close": [11.0, 9.0, 10.0, 12.0],
-            "ema_close_base_200": [10.0, 10.0, 10.0, 10.0],
-        },
-        index=idx,
-    )
-    fn = resolve_component("exits", "exit_on_anchor_lost").func
-    assert fn(df, anchor_col="ema_close_base_200", side="long").tolist() == [False, True, False, False]
-    assert fn(df, anchor_col="ema_close_base_200", side="short").tolist() == [True, False, False, True]
-
-
 def test_rsi_extreme_blocker_uses_prepared_rsi_column() -> None:
     idx = pd.date_range("2024-01-01", periods=4, freq="h", tz="UTC")
     df = pd.DataFrame({"rsi_close_base_14": [20.0, 40.0, 80.0, 60.0]}, index=idx)
@@ -164,8 +151,9 @@ def test_rsi_extreme_blocker_uses_prepared_rsi_column() -> None:
 def test_rsi_signal_exit_uses_prepared_rsi_column() -> None:
     idx = pd.date_range("2024-01-01", periods=4, freq="h", tz="UTC")
     df = pd.DataFrame({"rsi_close_base_14": [20.0, 40.0, 80.0, 60.0]}, index=idx)
-    rule = SignalExitRuleSpec(
+    rule = ExitRuleSpec(
         component_id="rsi_signal_exit",
+        exit_kind="signal",
         rsi=RsiFeatureSpec(timeframe="base", period=14),
         long_exit_above=70.0,
         short_exit_below=30.0,

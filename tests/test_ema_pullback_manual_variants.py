@@ -18,10 +18,7 @@ def test_spec_instance_factory_values() -> None:
     assert spec.setup.lookback == reference.setup.lookback
     assert spec.anchor_stack == reference.anchor_stack
     assert spec.trade_management == reference.trade_management
-    assert {r.rule_type for r in spec.trade_management.exit_rules} == {
-        "stop_loss_by_distance",
-        "take_profit_by_distance",
-    }
+    assert {r.exit_kind for r in spec.components.exits} == {"stop_loss", "take_profit"}
 
 
 def test_active_strategy_specs_matches_default_factory() -> None:
@@ -39,7 +36,7 @@ def test_active_strategy_specs_matches_default_factory() -> None:
     assert [b.component_id for b in spec.components.blockers] == ["no_blockers"]
     assert spec.components.setup == "pullback_to_anchor"
     assert spec.components.trigger.component_id == "reclaim_anchor"
-    assert [e.component_id for e in spec.components.signal_exits] == ["no_signal_exit"]
+    assert [e.component_id for e in spec.components.exits] == ["atr_stop_loss", "atr_take_profit"]
     assert spec.components.risk == "no_risk_filter"
 
 

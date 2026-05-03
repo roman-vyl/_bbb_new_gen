@@ -13,9 +13,9 @@ EmaPullbackStrategySpec
 → FeaturePlan
 → calculated features
 → Component Registry
-→ direction / blockers / setup / trigger / signal exits / risk
-→ long/short signals composer
-→ trade management
+→ direction / blockers / setup / trigger / exits / risk
+→ entry signals composer
+→ execution exit-layer
 → vectorbt
 → JSON report
 ```
@@ -23,11 +23,10 @@ EmaPullbackStrategySpec
 Текущий active spec создаётся через `default_ema_pullback_strategy_spec(...)`
 и выбирается runner-ом через `active_strategy_specs(...)`.
 
-Step 12 добавил typed rule specs для `blockers` и `signal_exits`, композицию
-нескольких правил (blockers AND, signal exits OR) и расширение FeaturePlan/расчётов
-под RSI и multi-timeframe EMA/RSI (resample base OHLCV + no-lookahead alignment).
-Выбор trigger задаётся только в `components.trigger` (нет второго поля `trigger`
-на верхнем уровне `EmaPullbackStrategySpec`).
+Текущая модель держит все выходы в одном `components.exits`: сигнальные правила
+и ATR stop/take описываются одинаково как `ExitRuleSpec`. `signals.py` собирает
+только входы, а `execution/exits.py` маппит exit rules в `exits/short_exits` и
+`sl_stop/tp_stop`.
 
 `variant` — это identity собранного `StrategySpec`. Имя генерируется из
 фактических периодов `anchor_stack`, а не хранится отдельным ручным литералом:
@@ -52,8 +51,8 @@ ema_pullback_fast{fast.period}_anchor{anchor.period}_slow{slow.period}
 | `execution/report_table.py` | Stdout comparison table с `fast / anchor / slow` |
 | `execution/runner.py` | Orchestration: active specs → backtest → stdout table → JSON artifact |
 | `execution/result_models.py` | Dataclass-контракты `LoadedCandles`, `VariantMetrics`, `VariantResult` |
-| `execution/signals.py` | Композитор `entries/exits/short_entries/short_exits` из spec + plan + Component Registry |
-| `execution/trade_management.py` | SL/TP kwargs из готовых distance columns |
+| `execution/signals.py` | Композитор `entries/short_entries` из spec + plan + Component Registry |
+| `execution/exits.py` | Exit-layer: `components.exits` → `exits/short_exits/sl_stop/tp_stop` |
 | `execution/results.py` | JSON payload schema v2, `latest.json` / `runs/<run_id>.json` |
 
 ## Active StrategySpec
@@ -75,15 +74,17 @@ components:
   blockers  = (BlockerRuleSpec(no_blockers),)
   setup     = pullback_to_anchor
   trigger   = ReclaimTriggerSpec()  # component_id reclaim_anchor
-  signal_exits = (SignalExitRuleSpec(no_signal_exit),)
+  exits     = (
+    ExitRuleSpec(atr_stop_loss, exit_kind=stop_loss, ATR distance from factory params),
+    ExitRuleSpec(atr_take_profit, exit_kind=take_profit, ATR distance from factory params),
+  )
   risk      = no_risk_filter
 
 trade_sides:
   enabled = ("long",)
 
 trade_management:
-  stop_loss_by_distance   = ATR distance from factory params
-  take_profit_by_distance = ATR distance from factory params
+  profile = reserved  # no active SL/TP ownership
 ```
 
 `config_id` считается только из canonical serialization `EmaPullbackStrategySpec`
@@ -110,13 +111,14 @@ short:
               touch_anchor: high touches anchor и close закрепилась ниже anchor
 ```
 
-`execution/signals.py` возвращает `PortfolioSignals` с четырьмя сериями:
-`entries`, `exits`, `short_entries`, `short_exits`. Disabled side заполняется
-`False`, а `execution/backtest.py` передаёт short-серии в
-`vectorbt.Portfolio.from_signals(...)`.
+`execution/signals.py` возвращает только entry-серии: `entries` и
+`short_entries`. Disabled side заполняется `False`. `execution/exits.py`
+отдельно собирает `exits`, `short_exits`, `sl_stop`, `tp_stop`, а
+`execution/backtest.py` передаёт все серии в `vectorbt.Portfolio.from_signals(...)`.
 
-Несколько `blockers` объединяются через AND. Несколько `signal_exits` — через OR.
-Signal exits дополняют trade management SL/TP (vectorbt получает оба источника).
+Несколько `blockers` объединяются через AND. Несколько сигнальных exit rules
+объединяются через OR внутри exit-layer. ATR stop/take остаются такими же
+семантическими exit rules и только в execution-слое становятся `sl_stop/tp_stop`.
 
 ## Live components (Step 12)
 
@@ -127,7 +129,8 @@ direction: ema_anchor_stack_bullish
 setup: pullback_to_anchor
 trigger: reclaim_anchor, touch_anchor
 blockers: no_blockers, counter_candle_blocker, rsi_extreme_blocker
-signal exits: no_signal_exit, exit_on_anchor_lost, rsi_signal_exit
+exits: atr_stop_loss, atr_take_profit, rsi_signal_exit
+future exits: fixed_stop_loss, fixed_take_profit, time_stop
 risk: no_risk_filter
 ```
 

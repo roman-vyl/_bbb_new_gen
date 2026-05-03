@@ -7,15 +7,13 @@ from research.strategies.ema_pullback.spec import (
     AtrDistanceSpec,
     BlockerRuleSpec,
     ComponentStackSpec,
-    DistanceExitRuleSpec,
     EmaPullbackStrategySpec,
     EmaSpec,
+    ExitRuleSpec,
     PullbackSetupSpec,
     ReclaimTriggerSpec,
-    SignalExitRuleSpec,
     TradeSide,
     TradeSideSpec,
-    TradeManagementSpec,
 )
 
 
@@ -63,31 +61,30 @@ def make_ema_pullback_strategy_spec(
             blockers=(BlockerRuleSpec(component_id="no_blockers"),),
             setup="pullback_to_anchor",
             trigger=ReclaimTriggerSpec(),
-            signal_exits=(SignalExitRuleSpec(component_id="no_signal_exit"),),
-            risk="no_risk_filter",
-        ),
-        trade_sides=TradeSideSpec(enabled=enabled_sides),
-        setup=PullbackSetupSpec(lookback=setup_lookback),
-        trade_management=TradeManagementSpec(
-            exit_rules=(
-                DistanceExitRuleSpec(
-                    rule_type="stop_loss_by_distance",
+            exits=(
+                ExitRuleSpec(
+                    component_id="atr_stop_loss",
+                    exit_kind="stop_loss",
                     distance=AtrDistanceSpec(
                         timeframe="base",
                         period=atr_period,
                         multiplier=stop_atr_multiplier,
                     ),
                 ),
-                DistanceExitRuleSpec(
-                    rule_type="take_profit_by_distance",
+                ExitRuleSpec(
+                    component_id="atr_take_profit",
+                    exit_kind="take_profit",
                     distance=AtrDistanceSpec(
                         timeframe="base",
                         period=atr_period,
                         multiplier=take_atr_multiplier,
                     ),
                 ),
-            )
+            ),
+            risk="no_risk_filter",
         ),
+        trade_sides=TradeSideSpec(enabled=enabled_sides),
+        setup=PullbackSetupSpec(lookback=setup_lookback),
     )
 
 

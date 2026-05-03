@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 import hashlib
 import json
 from typing import Any, Literal
@@ -40,7 +40,7 @@ class ComponentStackSpec:
     blockers: tuple["BlockerRuleSpec", ...]
     setup: str
     trigger: "TriggerSpec"
-    signal_exits: tuple["SignalExitRuleSpec", ...]
+    exits: tuple["ExitRuleSpec", ...]
     risk: str
 
     def __post_init__(self) -> None:
@@ -50,8 +50,8 @@ class ComponentStackSpec:
                 raise ValueError(f"components.{field_name} must be non-empty")
         if not self.blockers:
             raise ValueError("components.blockers must contain at least one rule")
-        if not self.signal_exits:
-            raise ValueError("components.signal_exits must contain at least one rule")
+        if not self.exits:
+            raise ValueError("components.exits must contain at least one rule")
 
 
 @dataclass(frozen=True)
@@ -94,23 +94,15 @@ class BlockerRuleSpec:
                 raise ValueError(f"blocker {field_name} must be between 0 and 100")
 
 
-@dataclass(frozen=True)
-class SignalExitRuleSpec:
-    component_id: str
-    rsi: RsiFeatureSpec | None = None
-    long_exit_above: float | None = None
-    short_exit_below: float | None = None
-
-    def __post_init__(self) -> None:
-        if not self.component_id.strip():
-            raise ValueError("signal exit component_id must be non-empty")
-        for field_name in ("long_exit_above", "short_exit_below"):
-            value = getattr(self, field_name)
-            if value is not None and not (0 <= value <= 100):
-                raise ValueError(f"signal exit {field_name} must be between 0 and 100")
-
-
 TradeSide = Literal["long", "short"]
+ExitKind = Literal["signal", "stop_loss", "take_profit"]
+
+_EXIT_COMPONENT_KINDS: dict[str, ExitKind] = {
+    "no_signal_exit": "signal",
+    "rsi_signal_exit": "signal",
+    "atr_stop_loss": "stop_loss",
+    "atr_take_profit": "take_profit",
+}
 
 
 @dataclass(frozen=True)
@@ -163,30 +155,45 @@ class AtrDistanceSpec:
 
 
 @dataclass(frozen=True)
-class DistanceExitRuleSpec:
-    rule_type: str
-    distance: AtrDistanceSpec
+class ExitRuleSpec:
+    component_id: str
+    exit_kind: ExitKind = "signal"
+    rsi: RsiFeatureSpec | None = None
+    long_exit_above: float | None = None
+    short_exit_below: float | None = None
+    distance: AtrDistanceSpec | None = None
 
     def __post_init__(self) -> None:
-        allowed = {"stop_loss_by_distance", "take_profit_by_distance"}
-        if self.rule_type not in allowed:
-            raise ValueError(f"rule_type must be one of {sorted(allowed)}")
+        if not self.component_id.strip():
+            raise ValueError("exit component_id must be non-empty")
+        allowed = {"signal", "stop_loss", "take_profit"}
+        if self.exit_kind not in allowed:
+            raise ValueError(f"exit_kind must be one of {sorted(allowed)}")
+        expected_kind = _EXIT_COMPONENT_KINDS.get(self.component_id)
+        if expected_kind is not None and self.exit_kind != expected_kind:
+            raise ValueError(
+                f"exit component {self.component_id!r} requires exit_kind {expected_kind!r}"
+            )
+        if self.exit_kind == "signal" and self.distance is not None:
+            raise ValueError("signal exit must not define distance")
+        if self.exit_kind in {"stop_loss", "take_profit"} and self.distance is None:
+            raise ValueError(f"{self.exit_kind} exit requires distance")
+        if self.exit_kind in {"stop_loss", "take_profit"}:
+            if self.rsi is not None or self.long_exit_above is not None or self.short_exit_below is not None:
+                raise ValueError(f"{self.exit_kind} exit must not define signal thresholds")
+        for field_name in ("long_exit_above", "short_exit_below"):
+            value = getattr(self, field_name)
+            if value is not None and not (0 <= value <= 100):
+                raise ValueError(f"exit {field_name} must be between 0 and 100")
 
 
 @dataclass(frozen=True)
 class TradeManagementSpec:
-    exit_rules: tuple[DistanceExitRuleSpec, ...]
-    profile: str = "rule_based"
+    profile: str = "reserved"
 
     def __post_init__(self) -> None:
-        if self.profile != "rule_based":
-            raise ValueError("trade management profile must be 'rule_based'")
-        stop_rules = [r for r in self.exit_rules if r.rule_type == "stop_loss_by_distance"]
-        take_rules = [r for r in self.exit_rules if r.rule_type == "take_profit_by_distance"]
-        if len(stop_rules) != 1:
-            raise ValueError("trade management must contain exactly one stop_loss_by_distance rule")
-        if len(take_rules) != 1:
-            raise ValueError("trade management must contain exactly one take_profit_by_distance rule")
+        if not self.profile.strip():
+            raise ValueError("trade management profile must be non-empty")
 
 
 @dataclass(frozen=True)
@@ -198,7 +205,7 @@ class EmaPullbackStrategySpec:
     components: ComponentStackSpec
     trade_sides: TradeSideSpec
     setup: PullbackSetupSpec
-    trade_management: TradeManagementSpec
+    trade_management: TradeManagementSpec = field(default_factory=TradeManagementSpec)
 
     def __post_init__(self) -> None:
         if not self.variant.strip():

@@ -8,12 +8,14 @@ from typing import Any
 from data_engine.contracts import pandas_freq_alias
 
 from research.strategies.ema_pullback.execution.result_models import (
+    OpenTradesBreakdown,
+    SideMetrics,
     VariantMetrics,
     VariantResult,
 )
 from research.strategies.ema_pullback.execution.results import extract_trade_records
+from research.strategies.ema_pullback.execution.exits import build_exit_outputs_from_spec
 from research.strategies.ema_pullback.execution.signals import build_signals_from_spec
-from research.strategies.ema_pullback.execution.trade_management import build_stops_from_trade_management
 from research.strategies.ema_pullback.features.calculations import add_feature_columns_from_plan
 from research.strategies.ema_pullback.features.plan import build_feature_plan_from_strategy_spec
 from research.strategies.ema_pullback.spec import strategy_spec_config_id, strategy_spec_to_dict
@@ -26,6 +28,73 @@ def ensure_finite_metric(name: str, value: float) -> float:
     if not math.isfinite(value):
         return 0.0
     return value
+
+
+def _nullable_finite(value: float) -> float | None:
+    if not math.isfinite(value):
+        return None
+    return value
+
+
+def _build_side_metrics(records: list[dict[str, Any]], init_cash: float) -> SideMetrics:
+    trades = len(records)
+    pnl_values = [float(record.get("pnl") or 0.0) for record in records]
+    pnl = sum(pnl_values)
+    return_pct = pnl / float(init_cash) if float(init_cash) != 0.0 else 0.0
+
+    if trades == 0:
+        return SideMetrics(
+            trades=0,
+            pnl=0.0,
+            return_pct=0.0,
+            profit_factor=None,
+            win_rate=None,
+        )
+
+    gross_profit = sum(value for value in pnl_values if value > 0.0)
+    gross_loss = abs(sum(value for value in pnl_values if value < 0.0))
+    if gross_loss == 0.0:
+        profit_factor = None
+    else:
+        profit_factor = _nullable_finite(gross_profit / gross_loss)
+
+    win_rate = sum(1 for value in pnl_values if value > 0.0) / trades
+    return SideMetrics(
+        trades=trades,
+        pnl=pnl,
+        return_pct=return_pct,
+        profit_factor=profit_factor,
+        win_rate=win_rate,
+    )
+
+
+def build_trade_side_metrics(
+    trade_records: list[dict[str, Any]],
+    init_cash: float,
+    *,
+    sharpe: float,
+    max_drawdown: float,
+) -> VariantMetrics:
+    """Realized PnL / PF / win_rate use ``status == \"closed\"`` only; open rows are counted in ``open_trades``."""
+
+    closed = [record for record in trade_records if record.get("status") == "closed"]
+    open_recs = [record for record in trade_records if record.get("status") == "open"]
+    open_trades = OpenTradesBreakdown(
+        long=sum(1 for record in open_recs if record.get("direction") == "long"),
+        short=sum(1 for record in open_recs if record.get("direction") == "short"),
+        total=len(open_recs),
+    )
+
+    long_closed = [record for record in closed if record.get("direction") == "long"]
+    short_closed = [record for record in closed if record.get("direction") == "short"]
+    return VariantMetrics(
+        long=_build_side_metrics(long_closed, init_cash),
+        short=_build_side_metrics(short_closed, init_cash),
+        total=_build_side_metrics(closed, init_cash),
+        sharpe=ensure_finite_metric("sharpe_ratio", sharpe),
+        max_drawdown=ensure_finite_metric("max_drawdown", max_drawdown),
+        open_trades=open_trades,
+    )
 
 
 def run_strategy_spec(
@@ -48,6 +117,7 @@ def run_strategy_spec(
     plan = build_feature_plan_from_strategy_spec(spec)
     enriched = add_feature_columns_from_plan(ohlcv, plan)
     signals = build_signals_from_spec(enriched, spec, plan)
+    exit_outputs = build_exit_outputs_from_spec(enriched, spec, plan)
 
     close = enriched["close"].astype(float)
     if close.isna().any():
@@ -61,9 +131,9 @@ def run_strategy_spec(
         raise SystemExit("EMA columns contain NaN (unexpected for ewm on finite close).")
 
     freq = pandas_freq_alias(spec.base_timeframe)
-    tm_kwargs = build_stops_from_trade_management(enriched, spec, plan)
-    sl_stop = tm_kwargs["sl_stop"]
-    tp_stop = tm_kwargs["tp_stop"]
+    stop_kwargs = exit_outputs.stop_kwargs()
+    sl_stop = stop_kwargs["sl_stop"]
+    tp_stop = stop_kwargs["tp_stop"]
     # ATR-based stops are NaN until warmup; opening without finite sl/tp yields no stop exits
     # and (with no signal exits) a single perpetual open trade in vectorbt.
     stop_ready = sl_stop.notna() & tp_stop.notna()
@@ -73,24 +143,21 @@ def run_strategy_spec(
     pf = vbt.Portfolio.from_signals(
         close,
         entries_for_portfolio,
-        signals.exits,
+        exit_outputs.exits,
         short_entries=short_entries_for_portfolio,
-        short_exits=signals.short_exits,
+        short_exits=exit_outputs.short_exits,
         freq=freq,
         init_cash=float(init_cash),
         fees=float(fees),
         slippage=float(slippage),
-        **tm_kwargs,
+        **stop_kwargs,
     )
 
-    sharpe = ensure_finite_metric("sharpe_ratio", float(pf.sharpe_ratio()))
-    trades = pf.trades
-    pf_val = trades.profit_factor()
-    profit_factor = float(pf_val) if hasattr(pf_val, "item") else float(pf_val)
-    profit_factor = ensure_finite_metric("profit_factor", profit_factor)
+    trade_records = extract_trade_records(pf, close)
 
-    max_dd = pf.max_drawdown()
-    max_dd_f = float(max_dd) if hasattr(max_dd, "item") else float(max_dd)
+    sharpe = ensure_finite_metric("sharpe_ratio", float(pf.sharpe_ratio()))
+    max_dd_raw = pf.max_drawdown()
+    max_dd_f = float(max_dd_raw) if hasattr(max_dd_raw, "item") else float(max_dd_raw)
     max_dd_f = ensure_finite_metric("max_drawdown", max_dd_f)
 
     return VariantResult(
@@ -99,11 +166,11 @@ def run_strategy_spec(
         symbol=spec.symbol.strip().upper(),
         timeframe=spec.base_timeframe.strip(),
         strategy_spec=strategy_spec_to_dict(spec),
-        metrics=VariantMetrics(
-            trades=int(trades.count()),
+        metrics=build_trade_side_metrics(
+            trade_records,
+            float(init_cash),
             sharpe=sharpe,
-            profit_factor=profit_factor,
             max_drawdown=max_dd_f,
         ),
-        trade_records=extract_trade_records(pf, close),
+        trade_records=trade_records,
     )

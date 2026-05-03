@@ -706,7 +706,7 @@ take = countertrend_ema
 - `research/strategies/ema_pullback/variants.py`
 - `tests/test_strategy_config_instance.py`
 - `tests/test_ema_pullback_manual_variants.py`
-- `tests/test_ema_pullback_trade_management.py` (new)
+- `tests/test_ema_pullback_exits.py` (current name after unified exit-layer refactor)
 
 ### What behavior was preserved
 

@@ -70,7 +70,9 @@ def build_feature_plan_from_strategy_spec(spec: EmaPullbackStrategySpec) -> Feat
         )
 
     exit_columns: dict[str, str] = {}
-    for rule in spec.trade_management.exit_rules:
+    for rule in spec.components.exits:
+        if rule.distance is None:
+            continue
         base_id = _atr_feature_id(rule.distance.period)
         add(
             PlannedFeature(
@@ -95,14 +97,14 @@ def build_feature_plan_from_strategy_spec(spec: EmaPullbackStrategySpec) -> Feat
                 multiplier=float(rule.distance.multiplier),
             )
         )
-        exit_columns[rule.rule_type] = distance_id
+        exit_columns[rule.exit_kind] = distance_id
 
     rsi_columns: dict[tuple[str, int], str] = {}
     rsi_specs = []
     for rule in spec.components.blockers:
         if rule.rsi is not None:
             rsi_specs.append(rule.rsi)
-    for rule in spec.components.signal_exits:
+    for rule in spec.components.exits:
         if rule.rsi is not None:
             rsi_specs.append(rule.rsi)
 

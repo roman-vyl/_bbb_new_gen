@@ -1,5 +1,11 @@
 # Research Stage 10 — EMA Pullback StrategySpec Migration
 
+> Исторический документ. Активная архитектура после рефакторинга exit-layer
+> использует `components.exits` + `ExitRuleSpec` для signal exits и ATR stop/take.
+> Старые упоминания `DistanceExitRuleSpec`, SL/TP в `TradeManagementSpec` и
+> `execution/trade_management.py` описывают прежний Stage 10 дизайн, а не
+> текущий runtime-контракт.
+
 ## Цель этапа
 
 Перевести `ema_pullback` на один активный путь, где стратегия задаётся через `EmaPullbackStrategySpec`, но весь pipeline по-прежнему проходит через компоненты:
