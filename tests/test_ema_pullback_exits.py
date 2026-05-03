@@ -6,6 +6,7 @@ pytest.importorskip("pandas")
 
 import pandas as pd
 
+from research.strategies.ema_pullback.component_builders import exits_atr_default
 from research.strategies.ema_pullback.execution.exits import build_exit_outputs_from_spec
 from research.strategies.ema_pullback.features.plan import build_feature_plan_from_strategy_spec
 from research.strategies.ema_pullback.spec_instances import default_ema_pullback_strategy_spec
@@ -34,3 +35,12 @@ def test_build_exit_outputs_uses_exit_distance_columns_for_stops() -> None:
     pd.testing.assert_series_equal(exits.tp_stop, take_dist / close, check_names=False)
     assert exits.exits.tolist() == [False, False, False, False]
     assert exits.short_exits.tolist() == [False, False, False, False]
+
+
+def test_default_factory_exit_rules_match_atr_shortcut_defaults() -> None:
+    spec = default_ema_pullback_strategy_spec()
+    assert spec.components.exits == exits_atr_default(
+        atr_period=14,
+        stop_atr_multiplier=1.5,
+        take_atr_multiplier=4.0,
+    )

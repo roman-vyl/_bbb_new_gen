@@ -20,6 +20,10 @@ EmaPullbackStrategySpec
 → JSON report
 ```
 
+После parsing/validation внешних параметров typed-construction выполняется через
+`component_builders.py`: это единый слой `params -> spec dataclasses` без работы
+с `DataFrame`, indicator-расчётов или runtime execution.
+
 Текущий active spec создаётся через `default_ema_pullback_strategy_spec(...)`
 и выбирается runner-ом через `active_strategy_specs(...)`.
 
@@ -41,6 +45,7 @@ ema_pullback_fast{fast.period}_anchor{anchor.period}_slow{slow.period}
 |------|------------|
 | `config.py` | Runtime-only `ExecutionConfig` и значения по умолчанию для CLI |
 | `spec.py` | Dataclass-контракты `EmaPullbackStrategySpec` и вложенных spec-частей |
+| `component_builders.py` | Typed builders для `anchor/trigger/blockers/exits/trade_sides/components` |
 | `spec_instances.py` | Factory текущего active spec и `active_strategy_specs(...)` |
 | `run.py` | Тонкая CLI-точка входа для active StrategySpec runner |
 | `features/plan.py` | `FeaturePlan` из `EmaPullbackStrategySpec` без расчёта данных |
@@ -58,8 +63,11 @@ ema_pullback_fast{fast.period}_anchor{anchor.period}_slow{slow.period}
 ## Active StrategySpec
 
 `spec_instances.py` объявляет один active spec через нейтральную default-фабрику.
-Числовые research-параметры задаются в `make_ema_pullback_strategy_spec(...)`,
-а `variant` всегда выводится из фактических `fast / anchor / slow` периодов:
+Числовые research-параметры задаются в `make_ema_pullback_strategy_spec(...)` и
+внутри фабрики собираются через builders (`anchor_stack_from_periods(...)`,
+`component_stack(...)`, `exits_atr_default(...)`, `trade_sides(...)`,
+`pullback_setup(...)`). `variant` всегда выводится из фактических
+`fast / anchor / slow` периодов:
 
 ```text
 variant = ema_pullback_fast{fast.period}_anchor{anchor.period}_slow{slow.period}
@@ -84,7 +92,7 @@ trade_sides:
   enabled = ("long",)
 
 trade_management:
-  profile = reserved  # no active SL/TP ownership
+  profile = reserved  # зарезервировано, не содержит exit_rules
 ```
 
 `config_id` считается только из canonical serialization `EmaPullbackStrategySpec`
@@ -119,6 +127,36 @@ short:
 Несколько `blockers` объединяются через AND. Несколько сигнальных exit rules
 объединяются через OR внутри exit-layer. ATR stop/take остаются такими же
 семантическими exit rules и только в execution-слое становятся `sl_stop/tp_stop`.
+
+SL/TP и signal exits конфигурируются только через `components.exits` (`ExitRuleSpec`).
+`trade_management` остаётся reserved-stub и не владеет exit graph.
+
+## External Params -> Builders -> Spec
+
+Типовой путь для внешнего dict-конфига:
+
+```python
+from research.strategies.ema_pullback.component_builders import exits_atr_default
+from research.strategies.ema_pullback.spec_instances import make_ema_pullback_strategy_spec
+
+params = {
+    "symbol": "BTCUSDT",
+    "base_timeframe": "1h",
+    "fast_period": 100,
+    "anchor_period": 200,
+    "slow_period": 1000,
+    "atr_period": 14,
+    "stop_atr_multiplier": 1.5,
+    "take_atr_multiplier": 4.0,
+}
+
+spec = make_ema_pullback_strategy_spec(**params)
+assert spec.components.exits == exits_atr_default(
+    atr_period=14,
+    stop_atr_multiplier=1.5,
+    take_atr_multiplier=4.0,
+)
+```
 
 ## Live components (Step 12)
 
