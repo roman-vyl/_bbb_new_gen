@@ -155,6 +155,22 @@ def test_extract_trade_records_closed_and_open() -> None:
     assert rec_o[0]["exit_time_ms"] is None
     assert rec_o[0]["exit_price"] is None
 
+    short_entries = pd.Series([False, True, False, False, False], index=idx)
+    short_exits = pd.Series([False, False, False, True, False], index=idx)
+    no_long = pd.Series(False, index=idx)
+    pf_s = vbt.Portfolio.from_signals(
+        close,
+        no_long,
+        no_long,
+        short_entries=short_entries,
+        short_exits=short_exits,
+        freq="1h",
+    )
+    rec_s = extract_trade_records(pf_s, close)
+    assert len(rec_s) == 1
+    assert rec_s[0]["status"] == "closed"
+    assert rec_s[0]["direction"] == "short"
+
 
 def test_variant_payload_from_instance_matches_schema() -> None:
     from research.strategies.ema_pullback.execution.result_models import VariantMetrics, VariantResult

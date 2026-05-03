@@ -1,5 +1,9 @@
 # EMA Pullback — Human README: от торговой идеи до исполнения
 
+Документ описывает текущий `ema_pullback` pipeline после Step 11–12: `StrategySpec`,
+`FeaturePlan`, расчёт признаков (включая RSI и MTF alignment), family-local component
+registry, side-aware composer в `execution/signals.py`, trade management и отчёты.
+
 ## 1. Человеческая формулировка
 
 Идея на обычном языке:
@@ -56,11 +60,14 @@ anchor_stack:
 
 components:
   direction = ema_anchor_stack_bullish
-  blockers = no_blockers
+  blockers = (BlockerRuleSpec(component_id=no_blockers),)
   setup    = pullback_to_anchor
-  trigger  = reclaim_anchor
-  exits    = no_signal_exit
+  trigger  = TriggerSpec(component_id=reclaim_anchor)
+  signal_exits = (SignalExitRuleSpec(component_id=no_signal_exit),)
   risk     = no_risk_filter
+
+trade_sides:
+  enabled = long
 
 setup:
   lookback = 3
@@ -78,8 +85,10 @@ trade_management:
 EMA periods
 fast / anchor / slow roles
 component ids
+trade sides
 setup params
-trigger params
+blocker rule params (например RSI thresholds / lookback)
+signal exit rule params (например RSI thresholds)
 ATR period
 ATR multipliers
 exit rules
@@ -120,6 +129,7 @@ ema_close_base_1000
 atr_close_base_14
 atr_close_base_14_x1_5
 atr_close_base_14_x4_0
+(+ опционально RSI и MTF EMA/RSI, если они нужны rule specs компонентов)
 ```
 
 И mapping ролей:
@@ -133,6 +143,9 @@ anchor_columns:
 exit_distance_columns:
   stop_loss_by_distance -> atr_close_base_14_x1_5
   take_profit_by_distance -> atr_close_base_14_x4_0
+
+rsi_columns:
+  (timeframe, period) -> rsi_close_{timeframe}_{period}
 ```
 
 То есть `FeaturePlan` — это переводчик:
@@ -147,6 +160,13 @@ exit_distance_columns:
 ```text
 вот это надо посчитать
 вот так потом эти колонки будут называться
+```
+
+Для MTF признаков имена колонок включают timeframe, например:
+
+```text
+ema_close_4h_200
+rsi_close_1d_14
 ```
 
 ---
@@ -192,6 +212,21 @@ atr_close_base_14_x1_5 = atr_close_base_14 * 1.5
 atr_close_base_14_x4_0 = atr_close_base_14 * 4.0
 ```
 
+Потом (если нужно компонентам) RSI:
+
+```text
+rsi_close_base_14
+```
+
+И (если rule spec просит MTF) EMA/RSI на старшем таймфрейме:
+
+```text
+1) resample base OHLCV на нужный timeframe (pandas freq из data_engine contracts)
+2) посчитать индикатор на closed bars старшего TF
+3) сдвинуть значение на момент завершения старшей свечи (no-lookahead)
+4) выровнять на base index через forward-fill
+```
+
 Важно:
 
 ```text
@@ -200,6 +235,9 @@ features/calculations.py не решает, что стоп должен быт�
 ```
 
 Множители пришли из `StrategySpec`, а не из хардкода в расчёте.
+
+MTF сейчас строится **внутри research** из уже загруженного base OHLCV (отдельная
+загрузка старших свечей из БД не требуется).
 
 ---
 
@@ -315,9 +353,22 @@ current close > current anchor
 
 То есть цена вернулась выше EMA200.
 
+`touch_anchor` (альтернативный trigger id) проверяет касание anchor со стороны
+сделки и закрепление закрытием:
+
+```text
+long:
+  low <= anchor
+  AND close >= anchor
+
+short:
+  high >= anchor
+  AND close <= anchor
+```
+
 ### Blockers
 
-Пока:
+Базовый noop:
 
 ```text
 no_blockers
@@ -325,12 +376,17 @@ no_blockers
 
 Возвращает `true` для всех баров.
 
-Позже здесь могут быть:
+Дополнительно (Step 12):
 
 ```text
-не торговать при высокой волатильности
-не торговать против старшего фильтра
-не торговать в плохое время
+counter_candle_blocker
+  long: пропускает только bullish свечи (close >= open)
+  short: пропускает только bearish свечи (close <= open)
+
+rsi_extreme_blocker
+  использует подготовленную RSI колонку (rsi_col)
+  long: блокирует вход, если RSI слишком низкий (ниже long_min), опционально с lookback
+  short: блокирует вход, если RSI слишком высокий (выше short_max), опционально с lookback
 ```
 
 ### Risk
@@ -347,50 +403,55 @@ no_risk_filter
 
 ### Exits
 
-Пока:
+Базовый signal exit:
 
 ```text
 no_signal_exit
 ```
 
-То есть signal-based exit не используется.
+То есть signal-based exit не используется (только SL/TP trade management).
 
-Выход сейчас идёт через trade management: stop/take.
-
-Позже можно добавить:
+Дополнительно (Step 12):
 
 ```text
-RSI >= 80
-дошли до старшей EMA
-обратный сигнал
-time stop
+exit_on_anchor_lost
+  long: exit_signal когда close < anchor
+  short: exit_signal когда close > anchor
+
+rsi_signal_exit
+  использует подготовленную RSI колонку (rsi_col)
+  long: exit_signal когда RSI выше long_exit_above
+  short: exit_signal когда RSI ниже short_exit_below
 ```
+
+Выходы в vectorbt комбинируются: signal exits идут в `exits/short_exits`, а SL/TP
+задаются отдельно через `trade_management` kwargs.
 
 ---
 
-## 7. signals.py — сборка итогового входа
+## 7. signals.py — сборка итоговых входов
 
 `execution/signals.py` отвечает за вопрос:
 
 ```text
-Как из компонентов собрать финальный entry/exit signal?
+Как из компонентов собрать финальные long/short entry/exit signals?
 ```
 
-Он делает:
+Он делает один и тот же side-aware проход по текущим component ids:
 
 ```text
-direction = ema_anchor_stack_bullish(...)
-blockers  = no_blockers(...)
-setup     = pullback_to_anchor(...)
-trigger   = reclaim_anchor(...)
-risk      = no_risk_filter(...)
-exits     = no_signal_exit(...)
+direction = ema_anchor_stack_bullish(..., side)
+blockers  = AND(blocker_i(..., side, rule=..., rsi_col=...))
+setup     = pullback_to_anchor(..., side)
+trigger   = resolve(components.trigger.component_id)(..., side)
+risk      = no_risk_filter(..., side)
+signal_exits = OR(exit_j(..., side, rule=..., rsi_col=..., anchor_col=...))
 ```
 
-Потом собирает entry:
+Потом собирает side entry:
 
 ```text
-entries =
+side_entries =
   direction
   AND blockers
   AND setup
@@ -401,21 +462,34 @@ entries =
 В человеческом виде:
 
 ```text
-Покупаем, если:
+Long покупаем, если:
   EMA20 > EMA200 > EMA1000
-  и не сработали блокеры
+  и все blockers разрешили вход (AND)
   и был откат к EMA200
-  и цена вернулась выше EMA200
+  и сработал выбранный trigger (reclaim/touch/…)
+  и risk filter разрешает сделку
+
+Short продаём, если:
+  EMA20 < EMA200 < EMA1000
+  и все blockers разрешили вход (AND)
+  и был откат к EMA200 (зеркально)
+  и сработал выбранный trigger (зеркально)
   и risk filter разрешает сделку
 ```
 
-Exit signal сейчас:
+`build_signals_from_spec(...)` возвращает:
 
 ```text
-exits = no_signal_exit
+PortfolioSignals:
+  entries
+  exits
+  short_entries
+  short_exits
 ```
 
-То есть signal exit пустой, но stop/take будут добавлены отдельно.
+Если сторона отключена в `trade_sides`, соответствующие серии заполняются `False`.
+По умолчанию signal exits пустые (`no_signal_exit`), но при добавлении правил
+они OR-ятся; stop/take добавляются отдельно через trade management.
 
 ---
 
@@ -488,7 +562,7 @@ spec
 → add_feature_columns_from_plan(ohlcv, plan)
 → build_signals_from_spec(df, spec, plan)
 → build_stops_from_trade_management(df, spec, plan)
-→ vectorbt.Portfolio.from_signals(...)
+→ vectorbt.Portfolio.from_signals(entries, exits, short_entries, short_exits, ...)
 → VariantResult
 ```
 
@@ -618,6 +692,7 @@ FeaturePlan:
   atr_close_base_14
   atr_close_base_14_x1_5
   atr_close_base_14_x4_0
+  (+ опционально rsi_close_* и MTF ema_close_* / rsi_close_*)
 
 ↓ считается в
 
@@ -629,14 +704,16 @@ features/calculations.py:
 components:
   direction: fast > anchor > slow
   setup: pullback to anchor
-  trigger: reclaim anchor
-  blockers/risk/exits
+  trigger: reclaim/touch/…
+  blockers/risk/signal exits
 
 ↓ собирается в
 
 signals.py:
   entries = direction AND blockers AND setup AND trigger AND risk
-  exits = signal exits
+  exits = OR(signal exits)
+  short_entries = mirrored direction/setup/trigger path
+  short_exits = OR(short signal exits)
 
 ↓ stop/take через
 
@@ -647,7 +724,7 @@ trade_management.py:
 ↓ исполняется в
 
 vectorbt:
-  Portfolio.from_signals(...)
+  Portfolio.from_signals(entries, exits, short_entries, short_exits, ...)
 
 ↓ сохраняется в
 
@@ -731,7 +808,7 @@ Report — как сохранить
 `signals.py` отвечает:
 
 ```text
-Как собрать компоненты в entries/exits?
+Как собрать компоненты в entries/exits/short_entries/short_exits?
 ```
 
 `trade_management.py` отвечает:

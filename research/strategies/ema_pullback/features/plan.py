@@ -18,8 +18,8 @@ class PlannedFeature:
     multiplier: float | None
 
     def __post_init__(self) -> None:
-        if self.kind not in {"ema", "atr", "atr_distance"}:
-            raise ValueError("planned feature kind must be ema|atr|atr_distance")
+        if self.kind not in {"ema", "atr", "atr_distance", "rsi"}:
+            raise ValueError("planned feature kind must be ema|atr|atr_distance|rsi")
 
 
 @dataclass(frozen=True)
@@ -27,14 +27,19 @@ class FeaturePlan:
     features: tuple[PlannedFeature, ...]
     anchor_columns: dict[str, str]
     exit_distance_columns: dict[str, str]
+    rsi_columns: dict[tuple[str, int], str]
 
 
-def _ema_feature_id(period: int) -> str:
-    return f"ema_close_base_{period}"
+def _ema_feature_id(timeframe: str, period: int) -> str:
+    return f"ema_close_{timeframe}_{period}"
 
 
 def _atr_feature_id(period: int) -> str:
     return f"atr_close_base_{period}"
+
+
+def _rsi_feature_id(timeframe: str, period: int) -> str:
+    return f"rsi_close_{timeframe}_{period}"
 
 
 def _multiplier_token(multiplier: float) -> str:
@@ -54,7 +59,7 @@ def build_feature_plan_from_strategy_spec(spec: EmaPullbackStrategySpec) -> Feat
     for ema in (spec.anchor_stack.fast, spec.anchor_stack.anchor, spec.anchor_stack.slow):
         add(
             PlannedFeature(
-                feature_id=_ema_feature_id(ema.period),
+                feature_id=_ema_feature_id(ema.timeframe, ema.period),
                 kind="ema",
                 source=ema.source,
                 timeframe=ema.timeframe,
@@ -92,12 +97,37 @@ def build_feature_plan_from_strategy_spec(spec: EmaPullbackStrategySpec) -> Feat
         )
         exit_columns[rule.rule_type] = distance_id
 
+    rsi_columns: dict[tuple[str, int], str] = {}
+    rsi_specs = []
+    for rule in spec.components.blockers:
+        if rule.rsi is not None:
+            rsi_specs.append(rule.rsi)
+    for rule in spec.components.signal_exits:
+        if rule.rsi is not None:
+            rsi_specs.append(rule.rsi)
+
+    for rsi in rsi_specs:
+        feature_id = _rsi_feature_id(rsi.timeframe, rsi.period)
+        add(
+            PlannedFeature(
+                feature_id=feature_id,
+                kind="rsi",
+                source="close",
+                timeframe=rsi.timeframe,
+                period=rsi.period,
+                base_feature_id=None,
+                multiplier=None,
+            )
+        )
+        rsi_columns[(rsi.timeframe, rsi.period)] = feature_id
+
     return FeaturePlan(
         features=tuple(features),
         anchor_columns={
-            "fast": _ema_feature_id(spec.anchor_stack.fast.period),
-            "anchor": _ema_feature_id(spec.anchor_stack.anchor.period),
-            "slow": _ema_feature_id(spec.anchor_stack.slow.period),
+            "fast": _ema_feature_id(spec.anchor_stack.fast.timeframe, spec.anchor_stack.fast.period),
+            "anchor": _ema_feature_id(spec.anchor_stack.anchor.timeframe, spec.anchor_stack.anchor.period),
+            "slow": _ema_feature_id(spec.anchor_stack.slow.timeframe, spec.anchor_stack.slow.period),
         },
         exit_distance_columns=exit_columns,
+        rsi_columns=rsi_columns,
     )

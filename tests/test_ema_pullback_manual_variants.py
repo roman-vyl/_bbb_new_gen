@@ -36,10 +36,10 @@ def test_active_strategy_specs_matches_default_factory() -> None:
         < spec.anchor_stack.slow.period
     )
     assert spec.components.direction == "ema_anchor_stack_bullish"
-    assert spec.components.blockers == "no_blockers"
+    assert [b.component_id for b in spec.components.blockers] == ["no_blockers"]
     assert spec.components.setup == "pullback_to_anchor"
-    assert spec.components.trigger == "reclaim_anchor"
-    assert spec.components.exits == "no_signal_exit"
+    assert spec.components.trigger.component_id == "reclaim_anchor"
+    assert [e.component_id for e in spec.components.signal_exits] == ["no_signal_exit"]
     assert spec.components.risk == "no_risk_filter"
 
 

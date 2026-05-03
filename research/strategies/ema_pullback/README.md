@@ -1,6 +1,6 @@
 # ema_pullback
 
-Исследовательская strategy family для EMA pullback после Stage 10.
+Исследовательская strategy family для EMA pullback после Step 11 и Step 12.
 
 Единственная semantic-модель стратегии — `EmaPullbackStrategySpec`. Runtime-конфиг
 содержит только технические настройки запуска (`ExecutionConfig`): `family`, `symbol`,
@@ -13,8 +13,8 @@ EmaPullbackStrategySpec
 → FeaturePlan
 → calculated features
 → Component Registry
-→ direction / blockers / setup / trigger / exits / risk
-→ signals composer
+→ direction / blockers / setup / trigger / signal exits / risk
+→ long/short signals composer
 → trade management
 → vectorbt
 → JSON report
@@ -22,6 +22,12 @@ EmaPullbackStrategySpec
 
 Текущий active spec создаётся через `default_ema_pullback_strategy_spec(...)`
 и выбирается runner-ом через `active_strategy_specs(...)`.
+
+Step 12 добавил typed rule specs для `blockers` и `signal_exits`, композицию
+нескольких правил (blockers AND, signal exits OR) и расширение FeaturePlan/расчётов
+под RSI и multi-timeframe EMA/RSI (resample base OHLCV + no-lookahead alignment).
+Выбор trigger задаётся только в `components.trigger` (нет второго поля `trigger`
+на верхнем уровне `EmaPullbackStrategySpec`).
 
 `variant` — это identity собранного `StrategySpec`. Имя генерируется из
 фактических периодов `anchor_stack`, а не хранится отдельным ручным литералом:
@@ -46,7 +52,7 @@ ema_pullback_fast{fast.period}_anchor{anchor.period}_slow{slow.period}
 | `execution/report_table.py` | Stdout comparison table с `fast / anchor / slow` |
 | `execution/runner.py` | Orchestration: active specs → backtest → stdout table → JSON artifact |
 | `execution/result_models.py` | Dataclass-контракты `LoadedCandles`, `VariantMetrics`, `VariantResult` |
-| `execution/signals.py` | Композитор signals из spec + plan + Component Registry |
+| `execution/signals.py` | Композитор `entries/exits/short_entries/short_exits` из spec + plan + Component Registry |
 | `execution/trade_management.py` | SL/TP kwargs из готовых distance columns |
 | `execution/results.py` | JSON payload schema v2, `latest.json` / `runs/<run_id>.json` |
 
@@ -66,11 +72,14 @@ anchor_stack:
 
 components:
   direction = ema_anchor_stack_bullish
-  blockers  = no_blockers
+  blockers  = (BlockerRuleSpec(no_blockers),)
   setup     = pullback_to_anchor
-  trigger   = reclaim_anchor
-  exits     = no_signal_exit
+  trigger   = ReclaimTriggerSpec()  # component_id reclaim_anchor
+  signal_exits = (SignalExitRuleSpec(no_signal_exit),)
   risk      = no_risk_filter
+
+trade_sides:
+  enabled = ("long",)
 
 trade_management:
   stop_loss_by_distance   = ATR distance from factory params
@@ -78,7 +87,52 @@ trade_management:
 ```
 
 `config_id` считается только из canonical serialization `EmaPullbackStrategySpec`
-через `strategy_spec_config_id(spec)`.
+через `strategy_spec_config_id(spec)`. `trade_sides` входит в serialization, поэтому
+long-only и long+short specs получают разные `config_id`.
+
+## Side Semantics
+
+Default active spec остаётся long-only. Если factory получает
+`enabled_sides=("long", "short")`, текущие component ids исполняются с `side`
+context:
+
+```text
+long:
+  direction = fast > anchor > slow
+  setup     = low touches anchor
+  trigger   = reclaim_anchor: close crosses above anchor
+              touch_anchor: low touches anchor и close закрепилась выше anchor
+
+short:
+  direction = fast < anchor < slow
+  setup     = high touches anchor
+  trigger   = reclaim_anchor: close crosses below anchor
+              touch_anchor: high touches anchor и close закрепилась ниже anchor
+```
+
+`execution/signals.py` возвращает `PortfolioSignals` с четырьмя сериями:
+`entries`, `exits`, `short_entries`, `short_exits`. Disabled side заполняется
+`False`, а `execution/backtest.py` передаёт short-серии в
+`vectorbt.Portfolio.from_signals(...)`.
+
+Несколько `blockers` объединяются через AND. Несколько `signal_exits` — через OR.
+Signal exits дополняют trade management SL/TP (vectorbt получает оба источника).
+
+## Live components (Step 12)
+
+Family-local registry (`components/registry.py`) включает, среди прочего:
+
+```text
+direction: ema_anchor_stack_bullish
+setup: pullback_to_anchor
+trigger: reclaim_anchor, touch_anchor
+blockers: no_blockers, counter_candle_blocker, rsi_extreme_blocker
+signal exits: no_signal_exit, exit_on_anchor_lost, rsi_signal_exit
+risk: no_risk_filter
+```
+
+RSI считается в `features/calculations.py` по `FeaturePlan`; компоненты получают
+готовую колонку через `rsi_col` (см. `execution/signals.py`).
 
 ## Запуск
 
@@ -97,11 +151,16 @@ Smoke entrypoint использует тот же active StrategySpec runner:
 python research/ema_smoke.py
 ```
 
-Успешный `run.py` печатает одну строку active variant и stdout table:
+Успешный `run.py` печатает summary-строку (`family`, `symbol`, `timeframe`,
+`candles`, `variants`), затем stdout comparison table и пути артефактов:
 
 ```text
 variant | config_id | fast | anchor | slow | trades | sharpe | profit_factor | max_drawdown
 ```
+
+Колонки `fast | anchor | slow` — это периоды из `strategy_spec["anchor_stack"]`
+в stdout-таблице; полный spec (включая tuples компонентов и RSI rules) лежит
+только в JSON.
 
 ## JSON-отчёт
 
@@ -121,6 +180,9 @@ strategy_spec
 metrics
 trade_records
 ```
+
+Top-level также содержит `run_id`, `created_at`, `candles`, `data_range`,
+`variants_count`, `variants`.
 
 При успехе `run.py` печатает пути `results_artifact=` и `run_artifact=`, затем
 `status=ok`.

@@ -5,12 +5,16 @@ from __future__ import annotations
 from research.strategies.ema_pullback.spec import (
     AnchorStackSpec,
     AtrDistanceSpec,
+    BlockerRuleSpec,
     ComponentStackSpec,
     DistanceExitRuleSpec,
     EmaPullbackStrategySpec,
     EmaSpec,
     PullbackSetupSpec,
     ReclaimTriggerSpec,
+    SignalExitRuleSpec,
+    TradeSide,
+    TradeSideSpec,
     TradeManagementSpec,
 )
 
@@ -43,6 +47,7 @@ def make_ema_pullback_strategy_spec(
     atr_period: int = 14,
     stop_atr_multiplier: float = 1.5,
     take_atr_multiplier: float = 4.0,
+    enabled_sides: tuple[TradeSide, ...] = ("long",),
 ) -> EmaPullbackStrategySpec:
     return EmaPullbackStrategySpec(
         variant=_variant_from_periods(fast_period, anchor_period, slow_period),
@@ -55,14 +60,14 @@ def make_ema_pullback_strategy_spec(
         ),
         components=ComponentStackSpec(
             direction="ema_anchor_stack_bullish",
-            blockers="no_blockers",
+            blockers=(BlockerRuleSpec(component_id="no_blockers"),),
             setup="pullback_to_anchor",
-            trigger="reclaim_anchor",
-            exits="no_signal_exit",
+            trigger=ReclaimTriggerSpec(),
+            signal_exits=(SignalExitRuleSpec(component_id="no_signal_exit"),),
             risk="no_risk_filter",
         ),
+        trade_sides=TradeSideSpec(enabled=enabled_sides),
         setup=PullbackSetupSpec(lookback=setup_lookback),
-        trigger=ReclaimTriggerSpec(),
         trade_management=TradeManagementSpec(
             exit_rules=(
                 DistanceExitRuleSpec(

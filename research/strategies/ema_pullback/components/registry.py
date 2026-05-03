@@ -5,17 +5,26 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable
 
-from research.strategies.ema_pullback.components.blockers import no_blockers
+from research.strategies.ema_pullback.components.blockers import (
+    counter_candle_blocker,
+    no_blockers,
+    rsi_extreme_blocker,
+)
 from research.strategies.ema_pullback.components.direction import (
     ema_anchor_stack_bullish,
 )
-from research.strategies.ema_pullback.components.exits import no_signal_exit
+from research.strategies.ema_pullback.components.exits import (
+    exit_on_anchor_lost,
+    no_signal_exit,
+    rsi_signal_exit,
+)
 from research.strategies.ema_pullback.components.risk import no_risk_filter
 from research.strategies.ema_pullback.components.setup import (
     pullback_to_anchor,
 )
 from research.strategies.ema_pullback.components.triggers import (
     reclaim_anchor,
+    touch_anchor,
 )
 
 
@@ -30,9 +39,14 @@ REQUIRED_COMPONENT_ROLES: tuple[str, ...] = (
 
 EMA_ANCHOR_STACK_BULLISH_COMPONENT = "ema_anchor_stack_bullish"
 NO_BLOCKERS_COMPONENT = "no_blockers"
+COUNTER_CANDLE_BLOCKER_COMPONENT = "counter_candle_blocker"
+RSI_EXTREME_BLOCKER_COMPONENT = "rsi_extreme_blocker"
 PULLBACK_TO_ANCHOR_COMPONENT = "pullback_to_anchor"
 RECLAIM_ANCHOR_COMPONENT = "reclaim_anchor"
+TOUCH_ANCHOR_COMPONENT = "touch_anchor"
 NO_SIGNAL_EXIT_COMPONENT = "no_signal_exit"
+EXIT_ON_ANCHOR_LOST_COMPONENT = "exit_on_anchor_lost"
+RSI_SIGNAL_EXIT_COMPONENT = "rsi_signal_exit"
 NO_RISK_FILTER_COMPONENT = "no_risk_filter"
 
 
@@ -50,7 +64,7 @@ COMPONENT_REGISTRY: dict[str, dict[str, ComponentDefinition]] = {
             role="direction",
             component_id=EMA_ANCHOR_STACK_BULLISH_COMPONENT,
             func=ema_anchor_stack_bullish,
-            description="Allow long when fast > anchor > slow.",
+            description="Allow long when fast > anchor > slow; short mirrors the stack.",
         ),
     },
     "blockers": {
@@ -59,6 +73,18 @@ COMPONENT_REGISTRY: dict[str, dict[str, ComponentDefinition]] = {
             component_id=NO_BLOCKERS_COMPONENT,
             func=no_blockers,
             description="No blocker constraints (all True).",
+        ),
+        COUNTER_CANDLE_BLOCKER_COMPONENT: ComponentDefinition(
+            role="blockers",
+            component_id=COUNTER_CANDLE_BLOCKER_COMPONENT,
+            func=counter_candle_blocker,
+            description="Block long on bearish candles and short on bullish candles.",
+        ),
+        RSI_EXTREME_BLOCKER_COMPONENT: ComponentDefinition(
+            role="blockers",
+            component_id=RSI_EXTREME_BLOCKER_COMPONENT,
+            func=rsi_extreme_blocker,
+            description="Block entries on side-aware RSI extremes.",
         ),
     },
     "setup": {
@@ -76,6 +102,12 @@ COMPONENT_REGISTRY: dict[str, dict[str, ComponentDefinition]] = {
             func=reclaim_anchor,
             description="Entry when close reclaims anchor from below.",
         ),
+        TOUCH_ANCHOR_COMPONENT: ComponentDefinition(
+            role="trigger",
+            component_id=TOUCH_ANCHOR_COMPONENT,
+            func=touch_anchor,
+            description="Entry when price touches the anchor.",
+        ),
     },
     "exits": {
         NO_SIGNAL_EXIT_COMPONENT: ComponentDefinition(
@@ -83,6 +115,18 @@ COMPONENT_REGISTRY: dict[str, dict[str, ComponentDefinition]] = {
             component_id=NO_SIGNAL_EXIT_COMPONENT,
             func=no_signal_exit,
             description="No signal-based exits.",
+        ),
+        EXIT_ON_ANCHOR_LOST_COMPONENT: ComponentDefinition(
+            role="exits",
+            component_id=EXIT_ON_ANCHOR_LOST_COMPONENT,
+            func=exit_on_anchor_lost,
+            description="Signal exit when close loses the anchor.",
+        ),
+        RSI_SIGNAL_EXIT_COMPONENT: ComponentDefinition(
+            role="exits",
+            component_id=RSI_SIGNAL_EXIT_COMPONENT,
+            func=rsi_signal_exit,
+            description="Signal exit on side-aware RSI thresholds.",
         ),
     },
     "risk": {
@@ -117,13 +161,18 @@ def resolve_component(role: str, component_id: str) -> ComponentDefinition:
 __all__ = [
     "COMPONENT_REGISTRY",
     "ComponentDefinition",
+    "COUNTER_CANDLE_BLOCKER_COMPONENT",
     "EMA_ANCHOR_STACK_BULLISH_COMPONENT",
+    "EXIT_ON_ANCHOR_LOST_COMPONENT",
     "NO_BLOCKERS_COMPONENT",
     "NO_SIGNAL_EXIT_COMPONENT",
     "NO_RISK_FILTER_COMPONENT",
     "PULLBACK_TO_ANCHOR_COMPONENT",
     "RECLAIM_ANCHOR_COMPONENT",
     "REQUIRED_COMPONENT_ROLES",
+    "RSI_EXTREME_BLOCKER_COMPONENT",
+    "RSI_SIGNAL_EXIT_COMPONENT",
+    "TOUCH_ANCHOR_COMPONENT",
     "no_risk_filter",
     "resolve_component",
 ]

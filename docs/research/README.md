@@ -75,25 +75,35 @@ frontend logic
 
 ## Текущий pipeline
 
-Текущая целевая цепочка research-слоя:
+Актуальный контур для первой family `ema_pullback`:
 
 ```text
-clean candles
+clean candles (SQLite → OHLCV DataFrame)
 ↓
-FeaturesDev
+EmaPullbackStrategySpec (semantic model)
 ↓
-FeatureProfile
+FeaturePlan (что посчитать: EMA/ATR/distance/RSI, при необходимости MTF)
 ↓
-Component Registry
+features/calculations.py (как посчитать + alignment MTF на base index)
 ↓
-StrategyConfig / StrategyInstance
+Component Registry (role + component_id → callable)
 ↓
-signals.py composer
+execution/signals.py
+  entries / exits / short_entries / short_exits
+  blockers: AND по tuple правил
+  signal_exits: OR по tuple правил
+↓
+execution/trade_management.py (SL/TP distance columns → vectorbt kwargs)
 ↓
 vectorbt Portfolio
 ↓
-stdout table + JSON report
+stdout table + JSON report (schema v2)
 ```
+
+Исторические stage-документы (`05_featuresdev_layer.md`, …) остаются полезными
+как roadmap-контекст, но **фактическая реализация** сейчас опирается на
+`StrategySpec + FeaturePlan`, а не на отдельный `feature_profile.py` внутри
+family.
 
 ---
 
@@ -107,178 +117,52 @@ research/strategies/ema_pullback/
 
 Её задача — быть первым полигоном для Strategy Constructor.
 
-Основные файлы:
+Основные файлы (фактическая структура каталога):
 
 ```text
-config.py             # StrategyConfig / StrategyInstance / config_id
-features.py           # подготовка feature columns
-feature_profile.py    # FeatureProfile / FeatureRelations
-components.py         # registry компонентов
-direction.py          # direction components
-blockers.py           # blocker components
-setup.py              # setup components
-triggers.py           # trigger components
-exits.py              # exit components
-risk.py               # risk gate components
-trade_management.py   # SL/TP profiles
-signals.py            # composer итоговых entry/exit signals
-variants.py           # manual variants
-run.py                # research runner
-results.py            # JSON report artifact
+README.md
+config.py
+spec.py
+spec_instances.py
+run.py
+features/plan.py
+features/calculations.py
+components/*.py
+components/registry.py
+execution/backtest.py
+execution/data_loader.py
+execution/report_table.py
+execution/runner.py
+execution/signals.py
+execution/trade_management.py
+execution/results.py
+execution/result_models.py
+```
+
+Ключевые идеи Stage 10–12 (как это живёт в коде сейчас):
+
+```text
+StrategySpec — единственный semantic источник для family instance.
+FeaturePlan — декларация нужных колонок (включая RSI и MTF EMA/RSI).
+Components — решают по подготовленным колонкам; RSI не считают внутри себя.
+signals.py — side-aware composer + AND/OR для tuples правил.
+trade_management — SL/TP по distance columns, ортогонально signal exits.
+JSON report — полный strategy_spec внутри variant payload.
 ```
 
 ---
 
-## Реализованные этапы
+## Реализованные этапы (сводка по коду)
 
-### Stage 4 — Manual Variants
-
-Добавлены ручные variants:
-
-```text
-ema_pullback_baseline
-ema_pullback_conservative
-ema_pullback_aggressive
-```
-
-Их задача — контрольная группа и проверка multi-variant runner.
-
----
-
-### Stage 5 — FeaturesDev Layer
-
-Добавлен слой подготовки признаков.
-
-Главная идея:
+Ниже — не дословное воспроизведение старых stage-доков, а **что реально есть**
+в репозитории на момент Step 12:
 
 ```text
-features.py считает признаки рынка.
-feature_profile.py задаёт смысловые роли и relations.
-components используют подготовленные features/bindings/relations.
-```
-
-Введены понятия:
-
-```text
-FeatureSeries
-FeatureBinding
-FeatureRelation
-FeatureProfile
-```
-
-Важный принцип:
-
-```text
-fast / slow — это роли внутри relation, а не свойства самой EMA.
-intraday / swing / daily — смысловые роли, а не жёсткие имена индикаторов.
-```
-
----
-
-### Stage 6 — Component Registry
-
-Добавлен family-local registry компонентов:
-
-```text
-direction
-blockers
-setup
-trigger
-exits
-risk
-```
-
-Каждая роль выбирается через `component_id` в `StrategyConfig`.
-
-Component ids входят в `config_id`.
-
----
-
-### Stage 7 — First Real Component Variant
-
-Добавлена первая осмысленная component-based торговая логика:
-
-```text
-Long от EMA200
-при EMA20 > EMA200
-и EMA200 > EMA500
-после отката к EMA200
-и возврата цены выше EMA200
-```
-
-Основной variant:
-
-```text
-ema_pullback_20_200_500_reclaim
-```
-
-Смысловые relations:
-
-```text
-intraday_trend:
-  fast = EMA20
-  slow = EMA200
-
-swing_trend:
-  fast = EMA200
-  slow = EMA500
-
-entry_anchor:
-  ema = EMA200
-```
-
----
-
-### Stage 8 — Trade Management / SL-TP
-
-Добавлен отдельный слой управления открытой сделкой:
-
-```text
-trade_management.py
-```
-
-Первый профиль:
-
-```text
-fixed_pct_sl_tp
-```
-
-Trade Management отделён от entry logic.
-
-Граница:
-
-```text
-entry components дают вход
-exit components дают signal-based выход
-trade management задаёт SL/TP rules
-```
-
----
-
-### Stage 9 — JSON Run Report
-
-Runner теперь сохраняет структурированный JSON-отчёт запуска.
-
-Файлы результата:
-
-```text
-research/results/latest.json
-research/results/runs/<run_id>.json
-```
-
-JSON содержит:
-
-```text
-run_id
-created_at
-family
-symbol
-timeframe
-candles
-data_range
-variants
-metrics
-trade_records
+Stage 9: JSON run report (schema v2) — research/results/latest.json + runs/<run_id>.json
+Stage 10: EmaPullbackStrategySpec как единственная semantic модель
+Stage 11: TradeSideSpec + long/short wiring в vectorbt
+Stage 12: typed blockers/signal_exits tuples, live components, RSI features,
+          MTF resample+alignment для EMA/RSI на base OHLCV
 ```
 
 Сгенерированные JSON-файлы не должны коммититься.
@@ -320,13 +204,21 @@ Runner печатает comparison table по variants:
 ```text
 variant
 config_id
-ema_fast
-ema_slow
+fast
+anchor
+slow
 trades
 sharpe
 profit_factor
 max_drawdown
 ```
+
+Колонки `fast | anchor | slow` берутся из `strategy_spec["anchor_stack"]` только
+для компактной stdout-таблицы. Полный spec (components tuples, RSI rules, MTF)
+смотри в JSON (`strategy_spec`).
+
+Перед таблицей печатается строка summary: `family`, `symbol`, `timeframe`,
+`candles`, `variants`.
 
 В конце ожидается:
 
@@ -343,6 +235,33 @@ status=ok
 `latest.json` — последний запуск.
 
 `runs/<run_id>.json` — исторический артефакт конкретного запуска.
+
+Top-level payload (schema v2) содержит:
+
+```text
+run_id
+created_at
+report_schema_version
+family
+symbol
+timeframe
+candles
+data_range
+variants_count
+variants
+```
+
+Каждый элемент `variants[]` содержит:
+
+```text
+variant
+config_id
+symbol
+timeframe
+strategy_spec
+metrics
+trade_records
+```
 
 JSON нужен для будущих слоёв:
 
@@ -427,16 +346,18 @@ global framework без необходимости
 
 ## Текущий статус
 
-Research-слой дошёл до структурированного JSON-отчёта запуска.
+Research-слой для `ema_pullback` включает bidirectional side semantics (Step 11)
+и первые side-aware live компоненты + RSI + MTF alignment на base OHLCV (Step 12).
 
 Текущий практически полезный контур:
 
 ```text
 clean candles
-→ feature profile
-→ components
-→ manual variants
+→ StrategySpec + trade_sides
+→ FeaturePlan + feature calculations
+→ components + registry
 → trade management
+→ long/short signals
 → vectorbt
 → stdout + JSON report
 ```
@@ -445,12 +366,14 @@ clean candles
 
 ```text
 Research:
+  external instance config MVP (Step 13)
   component grid
   debug diagnostics
   validation
 
 Data Engine:
-  multi-timeframe data availability
+  при необходимости: native multi-timeframe candle storage/API
+  (сейчас MTF в research строится через resample загруженного base OHLCV)
 
 Frontend:
   read-only API

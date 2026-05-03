@@ -6,13 +6,8 @@ import pytest
 
 from research.strategies.ema_pullback.spec import (
     AnchorStackSpec,
-    AtrDistanceSpec,
-    ComponentStackSpec,
     DistanceExitRuleSpec,
-    EmaPullbackStrategySpec,
     EmaSpec,
-    PullbackSetupSpec,
-    ReclaimTriggerSpec,
     TradeManagementSpec,
     strategy_spec_config_id,
 )
@@ -32,7 +27,9 @@ def test_default_spec_factory_is_valid_strategy_spec() -> None:
     assert stack.fast.period < stack.anchor.period < stack.slow.period
     assert spec.components.direction == "ema_anchor_stack_bullish"
     assert spec.components.setup == "pullback_to_anchor"
-    assert spec.components.trigger == "reclaim_anchor"
+    assert spec.components.trigger.component_id == "reclaim_anchor"
+    assert [b.component_id for b in spec.components.blockers] == ["no_blockers"]
+    assert [e.component_id for e in spec.components.signal_exits] == ["no_signal_exit"]
     stop = [r for r in spec.trade_management.exit_rules if r.rule_type == "stop_loss_by_distance"]
     take = [r for r in spec.trade_management.exit_rules if r.rule_type == "take_profit_by_distance"]
     assert len(stop) == 1 and len(take) == 1
@@ -67,6 +64,15 @@ def test_trade_management_requires_both_distance_rules() -> None:
                 ),
             )
         )
+
+
+def test_component_stack_uses_typed_rule_specs() -> None:
+    spec = default_ema_pullback_strategy_spec()
+    assert spec.components.trigger.component_id == "reclaim_anchor"
+    assert isinstance(spec.components.blockers, tuple)
+    assert isinstance(spec.components.signal_exits, tuple)
+    assert spec.components.blockers[0].component_id == "no_blockers"
+    assert spec.components.signal_exits[0].component_id == "no_signal_exit"
 
 
 def test_strategy_spec_requires_non_empty_identity_fields() -> None:

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
 import pytest
 
 pytest.importorskip("pandas")
@@ -7,7 +9,16 @@ pytest.importorskip("pandas")
 import pandas as pd
 
 from research.strategies.ema_pullback.features.calculations import add_feature_columns_from_plan
-from research.strategies.ema_pullback.features.plan import build_feature_plan_from_strategy_spec
+from research.strategies.ema_pullback.features.plan import (
+    FeaturePlan,
+    PlannedFeature,
+    build_feature_plan_from_strategy_spec,
+)
+from research.strategies.ema_pullback.spec import (
+    BlockerRuleSpec,
+    RsiFeatureSpec,
+    SignalExitRuleSpec,
+)
 from research.strategies.ema_pullback.spec_instances import default_ema_pullback_strategy_spec
 
 
@@ -73,3 +84,88 @@ def test_atr_distance_columns_follow_plan_multipliers() -> None:
         col = df[f.feature_id].astype(float)
         m = float(f.multiplier)
         pd.testing.assert_series_equal(col.where(valid), (m * atr).where(valid), check_names=False)
+
+
+def test_base_rsi_feature_plan_and_calculation() -> None:
+    base = default_ema_pullback_strategy_spec()
+    spec = replace(
+        base,
+        components=replace(
+            base.components,
+            blockers=(
+                BlockerRuleSpec(
+                    component_id="rsi_extreme_blocker",
+                    rsi=RsiFeatureSpec(timeframe="base", period=3),
+                    long_min=30.0,
+                    short_max=70.0,
+                ),
+            ),
+            signal_exits=(
+                SignalExitRuleSpec(
+                    component_id="rsi_signal_exit",
+                    rsi=RsiFeatureSpec(timeframe="base", period=3),
+                    long_exit_above=70.0,
+                    short_exit_below=30.0,
+                ),
+            ),
+        ),
+    )
+    plan = build_feature_plan_from_strategy_spec(spec)
+    rsi_col = plan.rsi_columns[("base", 3)]
+    assert rsi_col == "rsi_close_base_3"
+    assert any(f.kind == "rsi" and f.feature_id == rsi_col for f in plan.features)
+
+    df = add_feature_columns_from_plan(_ohlcv(8), plan)
+    assert rsi_col in df.columns
+    assert df[rsi_col].iloc[:3].isna().all()
+    assert df[rsi_col].iloc[3:].notna().all()
+    assert (df[rsi_col].iloc[3:] == 100.0).all()
+
+
+def test_mtf_ema_and_rsi_align_only_after_completed_candle() -> None:
+    idx = pd.date_range("2024-01-01", periods=12, freq="h", tz="UTC")
+    close = pd.Series([float(i) for i in range(1, 13)], index=idx)
+    df = pd.DataFrame(
+        {
+            "open": close,
+            "high": close,
+            "low": close,
+            "close": close,
+            "volume": 1.0,
+        },
+        index=idx,
+    )
+    plan = FeaturePlan(
+        features=(
+            PlannedFeature(
+                feature_id="ema_close_4h_2",
+                kind="ema",
+                source="close",
+                timeframe="4h",
+                period=2,
+                base_feature_id=None,
+                multiplier=None,
+            ),
+            PlannedFeature(
+                feature_id="rsi_close_4h_1",
+                kind="rsi",
+                source="close",
+                timeframe="4h",
+                period=1,
+                base_feature_id=None,
+                multiplier=None,
+            ),
+        ),
+        anchor_columns={},
+        exit_distance_columns={},
+        rsi_columns={("4h", 1): "rsi_close_4h_1"},
+    )
+
+    out = add_feature_columns_from_plan(df, plan)
+
+    assert out["ema_close_4h_2"].iloc[:4].isna().all()
+    assert out["ema_close_4h_2"].iloc[4:8].tolist() == [4.0, 4.0, 4.0, 4.0]
+    assert out["ema_close_4h_2"].iloc[8] == pytest.approx(20.0 / 3.0)
+
+    assert out["rsi_close_4h_1"].iloc[:8].isna().all()
+    assert out["rsi_close_4h_1"].iloc[8:].tolist() == [100.0, 100.0, 100.0, 100.0]
