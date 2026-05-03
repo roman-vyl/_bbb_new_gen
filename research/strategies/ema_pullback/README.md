@@ -129,7 +129,8 @@ direction: ema_anchor_stack_bullish
 setup: pullback_to_anchor
 trigger: reclaim_anchor, touch_anchor
 blockers: no_blockers, counter_candle_blocker, rsi_extreme_blocker
-exits: no_signal_exit, exit_on_anchor_lost, rsi_signal_exit, atr_stop_loss, atr_take_profit
+exits: atr_stop_loss, atr_take_profit, rsi_signal_exit
+future exits: fixed_stop_loss, fixed_take_profit, time_stop
 risk: no_risk_filter
 ```
 

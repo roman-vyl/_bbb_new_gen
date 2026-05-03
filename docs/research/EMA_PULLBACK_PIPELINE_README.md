@@ -418,10 +418,6 @@ no_signal_exit
 Текущие exit-компоненты:
 
 ```text
-exit_on_anchor_lost
-  long: exit_signal когда close < anchor
-  short: exit_signal когда close > anchor
-
 rsi_signal_exit
   использует подготовленную RSI колонку (rsi_col)
   long: exit_signal когда RSI выше long_exit_above
@@ -432,6 +428,11 @@ atr_stop_loss
 
 atr_take_profit
   возвращает подготовленную ATR distance series для take_profit
+
+planned later:
+  fixed_stop_loss
+  fixed_take_profit
+  time_stop
 ```
 
 Выходы в vectorbt комбинируются уже в `execution/exits.py`: signal exits идут в

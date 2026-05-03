@@ -97,6 +97,13 @@ class BlockerRuleSpec:
 TradeSide = Literal["long", "short"]
 ExitKind = Literal["signal", "stop_loss", "take_profit"]
 
+_EXIT_COMPONENT_KINDS: dict[str, ExitKind] = {
+    "no_signal_exit": "signal",
+    "rsi_signal_exit": "signal",
+    "atr_stop_loss": "stop_loss",
+    "atr_take_profit": "take_profit",
+}
+
 
 @dataclass(frozen=True)
 class TradeSideSpec:
@@ -162,8 +169,18 @@ class ExitRuleSpec:
         allowed = {"signal", "stop_loss", "take_profit"}
         if self.exit_kind not in allowed:
             raise ValueError(f"exit_kind must be one of {sorted(allowed)}")
+        expected_kind = _EXIT_COMPONENT_KINDS.get(self.component_id)
+        if expected_kind is not None and self.exit_kind != expected_kind:
+            raise ValueError(
+                f"exit component {self.component_id!r} requires exit_kind {expected_kind!r}"
+            )
+        if self.exit_kind == "signal" and self.distance is not None:
+            raise ValueError("signal exit must not define distance")
         if self.exit_kind in {"stop_loss", "take_profit"} and self.distance is None:
             raise ValueError(f"{self.exit_kind} exit requires distance")
+        if self.exit_kind in {"stop_loss", "take_profit"}:
+            if self.rsi is not None or self.long_exit_above is not None or self.short_exit_below is not None:
+                raise ValueError(f"{self.exit_kind} exit must not define signal thresholds")
         for field_name in ("long_exit_above", "short_exit_below"):
             value = getattr(self, field_name)
             if value is not None and not (0 <= value <= 100):

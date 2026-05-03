@@ -15,7 +15,6 @@ from research.strategies.ema_pullback.components.direction import (
 )
 from research.strategies.ema_pullback.components.exits import (
     atr_distance_exit,
-    exit_on_anchor_lost,
     no_signal_exit,
     rsi_signal_exit,
 )
@@ -46,7 +45,6 @@ PULLBACK_TO_ANCHOR_COMPONENT = "pullback_to_anchor"
 RECLAIM_ANCHOR_COMPONENT = "reclaim_anchor"
 TOUCH_ANCHOR_COMPONENT = "touch_anchor"
 NO_SIGNAL_EXIT_COMPONENT = "no_signal_exit"
-EXIT_ON_ANCHOR_LOST_COMPONENT = "exit_on_anchor_lost"
 RSI_SIGNAL_EXIT_COMPONENT = "rsi_signal_exit"
 ATR_STOP_LOSS_COMPONENT = "atr_stop_loss"
 ATR_TAKE_PROFIT_COMPONENT = "atr_take_profit"
@@ -119,12 +117,6 @@ COMPONENT_REGISTRY: dict[str, dict[str, ComponentDefinition]] = {
             func=no_signal_exit,
             description="No signal-based exits.",
         ),
-        EXIT_ON_ANCHOR_LOST_COMPONENT: ComponentDefinition(
-            role="exits",
-            component_id=EXIT_ON_ANCHOR_LOST_COMPONENT,
-            func=exit_on_anchor_lost,
-            description="Signal exit when close loses the anchor.",
-        ),
         RSI_SIGNAL_EXIT_COMPONENT: ComponentDefinition(
             role="exits",
             component_id=RSI_SIGNAL_EXIT_COMPONENT,
@@ -180,7 +172,6 @@ __all__ = [
     "ComponentDefinition",
     "COUNTER_CANDLE_BLOCKER_COMPONENT",
     "EMA_ANCHOR_STACK_BULLISH_COMPONENT",
-    "EXIT_ON_ANCHOR_LOST_COMPONENT",
     "NO_BLOCKERS_COMPONENT",
     "NO_SIGNAL_EXIT_COMPONENT",
     "NO_RISK_FILTER_COMPONENT",

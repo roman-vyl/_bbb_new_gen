@@ -94,7 +94,7 @@ isProject: false
 Существующие тесты, которые почти наверняка потребуют адаптации:
 - [`tests/test_ema_pullback_pipeline.py`](tests/test_ema_pullback_pipeline.py): должен ожидать entry-only `PortfolioSignals(entries, short_entries)` и отдельный exit-layer для `exits/short_exits`.
 - [`tests/test_ema_pullback_components.py`](tests/test_ema_pullback_components.py): текущие вызовы компонентов без `side` нужно сохранить через default `side="long"` или обновить на явный `side`.
-- [`tests/test_ema_pullback_trade_management.py`](tests/test_ema_pullback_trade_management.py): оставить как guardrail, что `sl_stop/tp_stop` остаются distance/close и не зависят от side.
+- [`tests/test_ema_pullback_exits.py`](tests/test_ema_pullback_exits.py): оставить как guardrail, что `sl_stop/tp_stop` остаются distance/close и не зависят от side.
 - [`tests/test_strategy_config_instance.py`](tests/test_strategy_config_instance.py): расширить проверками `TradeSideSpec`, default long-only и влияния side spec на `config_id`.
 - [`tests/test_ema_pullback_results_artifact.py`](tests/test_ema_pullback_results_artifact.py): не ломать текущий schema payload; при наличии vectorbt добавить проверку short trade normalization.
 - [`tests/test_ema_pullback_run_metrics.py`](tests/test_ema_pullback_run_metrics.py): если stdout table остаётся прежним, менять минимум; если добавляем колонку sides, отдельно проверить вывод.
@@ -129,7 +129,7 @@ isProject: false
   - extend existing optional test to create one short trade and assert `extract_trade_records(...)` emits `direction == "short"`.
 
 Команды проверки после реализации:
-- `pytest tests/test_strategy_config_instance.py tests/test_ema_pullback_components.py tests/test_ema_pullback_pipeline.py tests/test_ema_pullback_trade_management.py tests/test_ema_pullback_run_metrics.py`
+- `pytest tests/test_strategy_config_instance.py tests/test_ema_pullback_components.py tests/test_ema_pullback_pipeline.py tests/test_ema_pullback_exits.py tests/test_ema_pullback_run_metrics.py`
 - `pytest tests/test_ema_pullback_results_artifact.py`
 - Если установлен `vectorbt`: `pytest -m optional_vectorbt`
 

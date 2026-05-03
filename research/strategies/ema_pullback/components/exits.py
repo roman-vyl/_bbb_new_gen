@@ -21,27 +21,6 @@ def no_signal_exit(
     return pd.Series(False, index=df.index, dtype=bool)
 
 
-def exit_on_anchor_lost(
-    df: pd.DataFrame,
-    anchor_col: str | None = None,
-    side: TradeSide = "long",
-    **_: object,
-) -> pd.Series:
-    """Exit when close moves back through the anchor against the position."""
-
-    if anchor_col is None:
-        raise ValueError("anchor_col is required")
-    close = df["close"].astype(float)
-    anchor = df[anchor_col].astype(float)
-    if side == "long":
-        out = close < anchor
-    elif side == "short":
-        out = close > anchor
-    else:
-        raise ValueError("side must be 'long' or 'short'")
-    return out.fillna(False).astype(bool)
-
-
 def rsi_signal_exit(
     df: pd.DataFrame,
     anchor_col: str | None = None,
