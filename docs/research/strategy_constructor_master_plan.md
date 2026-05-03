@@ -420,9 +420,15 @@ slow EMA
 
 ---
 
-### Step 12 — Side-aware live components (blocker / risk / exit / trigger)
+### Step 12 — Side-aware компоненты и единая архитектура выходов
 
-Компоненты должны учитывать направление: одна и та же торговая идея зеркально для long и short — например, один и тот же блокер может использовать противоположные пороги для long и для short.
+**Компонентный слой:** blocker / risk / exit / trigger остаются **side-aware** — одна и та же идея зеркально для long и short.
+
+**Spec:** вместо раздельных «signal exits» на стеке и rich **trade management** с distance-rules на корне стратегии — **один список `components.exits`** (`ExitRuleSpec`: signal / stop_loss / take_profit и при необходимости ATR-distance). **`TradeManagementSpec`** на `EmaPullbackStrategySpec` — зарезервированный профиль без списка правил; SL/TP и сигнальные выходы задаются только через **`exits`**.
+
+**Execution:** применение выходов сосредоточено в отдельном слое исполнения (orchestration + exits), а не размазано по runner и только входным компонентам.
+
+**Construction (тот же шаг по охвату roadmap):** typed **`component_builders.py`** и миграция **`spec_instances`** на единый pure-builder путь сборки spec-объектов — мост к Step 13 (внешний instance dict без второго способа ручной сборки dataclass-ов).
 
 ---
 
@@ -512,7 +518,7 @@ trade_count
 
 Roadmap note:
 
-FeaturesDev keeps indicator calculation out of components. Trade Management keeps SL/TP logic out of runner and entry components. Research Results Artifact is inserted before Component Grid so experiments have stable structured output. EMA Pullback StrategySpec / anchor stack refactor stabilises the internal instance model after artifacts. Bidirectional Side Semantics (`TradeSideSpec`, long/short vectorbt wiring) follows StrategySpec so `ema_pullback` is not long-only. Step 12 adds side-aware live blocker / risk / signal-exit / trigger components so grid-scale experiments are not long-only placeholders. Step 13 adds an external instance config MVP so one `EmaPullbackStrategySpec` can be built from a small typed dict without file IO or CLI. Component Grid remains postponed until FeaturesDev, components, Trade Management, result artifacts, StrategySpec, side-aware specs, those live components, and external instance config are stable.
+FeaturesDev keeps indicator calculation out of components. Exit rules (signal and ATR-based SL/TP) live in `StrategySpec` under `components.exits` and are evaluated via a dedicated execution exits path, so runner and entry-side code stay orchestration-focused. Research Results Artifact is inserted before Component Grid so experiments have stable structured output. EMA Pullback StrategySpec / anchor stack refactor stabilises the internal instance model after artifacts. Bidirectional Side Semantics (`TradeSideSpec`, long/short vectorbt wiring) follows StrategySpec so `ema_pullback` is not long-only. Step 12 completes side-aware blocker / risk / exit / trigger wiring and this **unified exits + reserved root trade_management** architecture, plus typed `component_builders` as the single construction layer ahead of external config. Step 13 adds an external instance config MVP so one `EmaPullbackStrategySpec` can be built from a small typed dict without file IO or CLI. Component Grid remains postponed until FeaturesDev, components, result artifacts, StrategySpec, side-aware specs, live components, builders, and external instance config are stable.
 
 ---
 
@@ -535,7 +541,7 @@ FeaturesDev keeps indicator calculation out of components. Trade Management keep
 9. research results artifact
 10. ema_pullback StrategySpec / anchor stack refactor
 11. bidirectional side semantics (TradeSideSpec, long / short)
-12. side-aware live blocker / risk / signal-exit / trigger components
+12. side-aware blocker / risk / exit / trigger + unified `exits` spec, execution exits layer, `component_builders`
 13. external instance config MVP
 14. component grid
 15. debug report / diagnostics
