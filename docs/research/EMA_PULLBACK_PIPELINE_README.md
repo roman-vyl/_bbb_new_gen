@@ -62,6 +62,9 @@ components:
   exits    = no_signal_exit
   risk     = no_risk_filter
 
+trade_sides:
+  enabled = long
+
 setup:
   lookback = 3
 
@@ -78,6 +81,7 @@ trade_management:
 EMA periods
 fast / anchor / slow roles
 component ids
+trade sides
 setup params
 trigger params
 ATR period
@@ -368,29 +372,29 @@ time stop
 
 ---
 
-## 7. signals.py — сборка итогового входа
+## 7. signals.py — сборка итоговых входов
 
 `execution/signals.py` отвечает за вопрос:
 
 ```text
-Как из компонентов собрать финальный entry/exit signal?
+Как из компонентов собрать финальные long/short entry/exit signals?
 ```
 
-Он делает:
+Он делает один и тот же side-aware проход по текущим component ids:
 
 ```text
-direction = ema_anchor_stack_bullish(...)
-blockers  = no_blockers(...)
-setup     = pullback_to_anchor(...)
-trigger   = reclaim_anchor(...)
-risk      = no_risk_filter(...)
-exits     = no_signal_exit(...)
+direction = ema_anchor_stack_bullish(..., side)
+blockers  = no_blockers(..., side)
+setup     = pullback_to_anchor(..., side)
+trigger   = reclaim_anchor(..., side)
+risk      = no_risk_filter(..., side)
+exits     = no_signal_exit(..., side)
 ```
 
-Потом собирает entry:
+Потом собирает side entry:
 
 ```text
-entries =
+side_entries =
   direction
   AND blockers
   AND setup
@@ -401,21 +405,33 @@ entries =
 В человеческом виде:
 
 ```text
-Покупаем, если:
+Long покупаем, если:
   EMA20 > EMA200 > EMA1000
   и не сработали блокеры
   и был откат к EMA200
   и цена вернулась выше EMA200
   и risk filter разрешает сделку
+
+Short продаём, если:
+  EMA20 < EMA200 < EMA1000
+  и не сработали блокеры
+  и был откат к EMA200 снизу-вверх по цене
+  и цена вернулась ниже EMA200
+  и risk filter разрешает сделку
 ```
 
-Exit signal сейчас:
+`build_signals_from_spec(...)` возвращает:
 
 ```text
-exits = no_signal_exit
+PortfolioSignals:
+  entries
+  exits
+  short_entries
+  short_exits
 ```
 
-То есть signal exit пустой, но stop/take будут добавлены отдельно.
+Если сторона отключена в `trade_sides`, соответствующие серии заполняются `False`.
+Signal exit сейчас пустой (`no_signal_exit`), но stop/take добавляются отдельно.
 
 ---
 
@@ -488,7 +504,7 @@ spec
 → add_feature_columns_from_plan(ohlcv, plan)
 → build_signals_from_spec(df, spec, plan)
 → build_stops_from_trade_management(df, spec, plan)
-→ vectorbt.Portfolio.from_signals(...)
+→ vectorbt.Portfolio.from_signals(entries, exits, short_entries, short_exits, ...)
 → VariantResult
 ```
 
@@ -637,6 +653,8 @@ components:
 signals.py:
   entries = direction AND blockers AND setup AND trigger AND risk
   exits = signal exits
+  short_entries = mirrored direction/setup/trigger path
+  short_exits = short signal exits
 
 ↓ stop/take через
 
@@ -647,7 +665,7 @@ trade_management.py:
 ↓ исполняется в
 
 vectorbt:
-  Portfolio.from_signals(...)
+  Portfolio.from_signals(entries, exits, short_entries, short_exits, ...)
 
 ↓ сохраняется в
 
@@ -731,7 +749,7 @@ Report — как сохранить
 `signals.py` отвечает:
 
 ```text
-Как собрать компоненты в entries/exits?
+Как собрать компоненты в entries/exits/short_entries/short_exits?
 ```
 
 `trade_management.py` отвечает:

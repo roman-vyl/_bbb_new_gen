@@ -50,7 +50,7 @@ COMPONENT_REGISTRY: dict[str, dict[str, ComponentDefinition]] = {
             role="direction",
             component_id=EMA_ANCHOR_STACK_BULLISH_COMPONENT,
             func=ema_anchor_stack_bullish,
-            description="Allow long when fast > anchor > slow.",
+            description="Allow long when fast > anchor > slow; short mirrors the stack.",
         ),
     },
     "blockers": {

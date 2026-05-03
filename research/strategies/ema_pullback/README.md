@@ -1,6 +1,6 @@
 # ema_pullback
 
-Исследовательская strategy family для EMA pullback после Stage 10.
+Исследовательская strategy family для EMA pullback после Step 11.
 
 Единственная semantic-модель стратегии — `EmaPullbackStrategySpec`. Runtime-конфиг
 содержит только технические настройки запуска (`ExecutionConfig`): `family`, `symbol`,
@@ -14,7 +14,7 @@ EmaPullbackStrategySpec
 → calculated features
 → Component Registry
 → direction / blockers / setup / trigger / exits / risk
-→ signals composer
+→ long/short signals composer
 → trade management
 → vectorbt
 → JSON report
@@ -46,7 +46,7 @@ ema_pullback_fast{fast.period}_anchor{anchor.period}_slow{slow.period}
 | `execution/report_table.py` | Stdout comparison table с `fast / anchor / slow` |
 | `execution/runner.py` | Orchestration: active specs → backtest → stdout table → JSON artifact |
 | `execution/result_models.py` | Dataclass-контракты `LoadedCandles`, `VariantMetrics`, `VariantResult` |
-| `execution/signals.py` | Композитор signals из spec + plan + Component Registry |
+| `execution/signals.py` | Композитор `entries/exits/short_entries/short_exits` из spec + plan + Component Registry |
 | `execution/trade_management.py` | SL/TP kwargs из готовых distance columns |
 | `execution/results.py` | JSON payload schema v2, `latest.json` / `runs/<run_id>.json` |
 
@@ -72,13 +72,40 @@ components:
   exits     = no_signal_exit
   risk      = no_risk_filter
 
+trade_sides:
+  enabled = ("long",)
+
 trade_management:
   stop_loss_by_distance   = ATR distance from factory params
   take_profit_by_distance = ATR distance from factory params
 ```
 
 `config_id` считается только из canonical serialization `EmaPullbackStrategySpec`
-через `strategy_spec_config_id(spec)`.
+через `strategy_spec_config_id(spec)`. `trade_sides` входит в serialization, поэтому
+long-only и long+short specs получают разные `config_id`.
+
+## Side Semantics
+
+Default active spec остаётся long-only. Если factory получает
+`enabled_sides=("long", "short")`, текущие component ids исполняются с `side`
+context:
+
+```text
+long:
+  direction = fast > anchor > slow
+  setup     = low touches anchor
+  trigger   = close crosses above anchor
+
+short:
+  direction = fast < anchor < slow
+  setup     = high touches anchor
+  trigger   = close crosses below anchor
+```
+
+`execution/signals.py` возвращает `PortfolioSignals` с четырьмя сериями:
+`entries`, `exits`, `short_entries`, `short_exits`. Disabled side заполняется
+`False`, а `execution/backtest.py` передаёт short-серии в
+`vectorbt.Portfolio.from_signals(...)`.
 
 ## Запуск
 

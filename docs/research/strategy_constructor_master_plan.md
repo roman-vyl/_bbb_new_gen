@@ -414,11 +414,45 @@ slow EMA
 
 ---
 
-### Step 11 — Component Grid
+### Step 11 — Bidirectional Side Semantics
+
+На шаге 11 вводится семантика учёта направления сделки (long/short) и подготовка исполнения компонентов к этому контексту; подробные контракты вызова компонентов зафиксированы в отдельном плане реализации шага 11.
+
+---
+
+### Step 12 — Side-aware live components (blocker / risk / exit / trigger)
+
+Компоненты должны учитывать направление: одна и та же торговая идея зеркально для long и short — например, один и тот же блокер может использовать противоположные пороги для long и для short.
+
+---
+
+### Step 13 — External Instance Config MVP
+
+После side-aware компонентов вводится тонкий внешний слой конфигурации одного экземпляра стратегии: маленький typed instance dict → один pure builder → существующий `EmaPullbackStrategySpec` → старый pipeline без изменений.
+
+**Цель:**
+
+- сделать параметры одного экземпляра `ema_pullback` задаваемыми снаружи строго типизированным dict-ом;
+- ручная сборка dataclass-ов уходит из `spec_instances`: единственный путь сборки spec — через builder.
+
+**Non-goals:**
+
+- нет JSON-файлов;
+- нет CLI / `--config` / `--config-dir`;
+- нет перечисления каталога;
+- нет внешнего конфига для шести component roles (component ids, EMA source/timeframe, ATR timeframe, trade management profile остаются захардкоженными внутри builder-а);
+- нет Grid / optimizer / parameter sweep;
+- нет frontend.
+
+Подробный контракт и подшаги — в отдельном плане Step 13.
+
+---
+
+### Step 14 — Component Grid
 
 Component Grid запускается только после того, как появятся структурированные результаты research-прогонов: без стабильного хранения результатов массовый прогон вариантов превращается в шумный и плохо сопоставимый `stdout`.
 
-После появления нескольких реальных компонентов добавить ограниченный перебор комбинаций.
+После появления нескольких реальных компонентов (включая side-aware blocker / risk / exit / trigger из Step 12) добавить ограниченный перебор комбинаций.
 
 Grid должен:
 
@@ -434,7 +468,7 @@ Grid должен:
 
 ---
 
-### Step 12 — Debug Reports / Diagnostics
+### Step 15 — Debug Reports / Diagnostics
 
 Расширение отчётности поверх базового structured artifact: debug counters, сделочная диагностика, причины входов/выходов.
 
@@ -450,7 +484,7 @@ trade_count
 
 ---
 
-### Step 13 — Validation
+### Step 16 — Validation
 
 Добавить защиту от самообмана:
 
@@ -478,7 +512,7 @@ trade_count
 
 Roadmap note:
 
-FeaturesDev keeps indicator calculation out of components. Trade Management keeps SL/TP logic out of runner and entry components. Research Results Artifact is inserted before Component Grid so experiments have stable structured output. EMA Pullback StrategySpec / anchor stack refactor stabilises the internal instance model after artifacts and before broad grid work. Component Grid remains postponed until FeaturesDev, components, Trade Management, result artifacts, and the family-specific StrategySpec layer are stable.
+FeaturesDev keeps indicator calculation out of components. Trade Management keeps SL/TP logic out of runner and entry components. Research Results Artifact is inserted before Component Grid so experiments have stable structured output. EMA Pullback StrategySpec / anchor stack refactor stabilises the internal instance model after artifacts. Bidirectional Side Semantics (`TradeSideSpec`, long/short vectorbt wiring) follows StrategySpec so `ema_pullback` is not long-only. Step 12 adds side-aware live blocker / risk / signal-exit / trigger components so grid-scale experiments are not long-only placeholders. Step 13 adds an external instance config MVP so one `EmaPullbackStrategySpec` can be built from a small typed dict without file IO or CLI. Component Grid remains postponed until FeaturesDev, components, Trade Management, result artifacts, StrategySpec, side-aware specs, those live components, and external instance config are stable.
 
 ---
 
@@ -489,20 +523,23 @@ FeaturesDev keeps indicator calculation out of components. Trade Management keep
 Порядок:
 
 ```text
-1. dumb EMA smoke
-2. one strategy family
-3. config
-4. instance
-5. manual variants
-6. featuresdev layer
-7. component registry
-8. first real component variant
-9. trade management / SL-TP
-10. артефакт результатов research
-11. ema_pullback StrategySpec / anchor stack refactor
-12. component grid
-13. debug report / diagnostics
-14. validation
+0. dumb EMA smoke
+1. strategy family skeleton
+2. pipeline decomposition
+3. strategy config / instance
+4. manual variants
+5. featuresdev layer
+6. component registry
+7. first real component variant
+8. trade management / SL-TP
+9. research results artifact
+10. ema_pullback StrategySpec / anchor stack refactor
+11. bidirectional side semantics (TradeSideSpec, long / short)
+12. side-aware live blocker / risk / signal-exit / trigger components
+13. external instance config MVP
+14. component grid
+15. debug report / diagnostics
+16. validation
 ```
 
 Итоговая цель:

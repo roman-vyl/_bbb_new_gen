@@ -47,7 +47,7 @@ def run_strategy_spec(
 
     plan = build_feature_plan_from_strategy_spec(spec)
     enriched = add_feature_columns_from_plan(ohlcv, plan)
-    entries, exits = build_signals_from_spec(enriched, spec, plan)
+    signals = build_signals_from_spec(enriched, spec, plan)
 
     close = enriched["close"].astype(float)
     if close.isna().any():
@@ -66,14 +66,16 @@ def run_strategy_spec(
     tp_stop = tm_kwargs["tp_stop"]
     # ATR-based stops are NaN until warmup; opening without finite sl/tp yields no stop exits
     # and (with no signal exits) a single perpetual open trade in vectorbt.
-    entries_for_portfolio = (
-        entries.fillna(False).astype(bool) & sl_stop.notna() & tp_stop.notna()
-    )
+    stop_ready = sl_stop.notna() & tp_stop.notna()
+    entries_for_portfolio = signals.entries.fillna(False).astype(bool) & stop_ready
+    short_entries_for_portfolio = signals.short_entries.fillna(False).astype(bool) & stop_ready
 
     pf = vbt.Portfolio.from_signals(
         close,
         entries_for_portfolio,
-        exits,
+        signals.exits,
+        short_entries=short_entries_for_portfolio,
+        short_exits=signals.short_exits,
         freq=freq,
         init_cash=float(init_cash),
         fees=float(fees),

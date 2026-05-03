@@ -89,6 +89,7 @@ Component Registry
 StrategyConfig / StrategyInstance
 ↓
 signals.py composer
+  entries / exits / short_entries / short_exits
 ↓
 vectorbt Portfolio
 ↓
@@ -121,7 +122,7 @@ triggers.py           # trigger components
 exits.py              # exit components
 risk.py               # risk gate components
 trade_management.py   # SL/TP profiles
-signals.py            # composer итоговых entry/exit signals
+signals.py            # composer итоговых long/short entry/exit signals
 variants.py           # manual variants
 run.py                # research runner
 results.py            # JSON report artifact
@@ -427,16 +428,18 @@ global framework без необходимости
 
 ## Текущий статус
 
-Research-слой дошёл до структурированного JSON-отчёта запуска.
+Research-слой дошёл до bidirectional side semantics для `ema_pullback`.
 
 Текущий практически полезный контур:
 
 ```text
 clean candles
+→ StrategySpec + trade_sides
 → feature profile
 → components
 → manual variants
 → trade management
+→ long/short signals
 → vectorbt
 → stdout + JSON report
 ```
@@ -445,6 +448,8 @@ clean candles
 
 ```text
 Research:
+  side-aware live blocker / risk / exit / trigger components
+  external instance config MVP
   component grid
   debug diagnostics
   validation

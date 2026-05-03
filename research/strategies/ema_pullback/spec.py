@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 import hashlib
 import json
-from typing import Any
+from typing import Any, Literal
 
 
 @dataclass(frozen=True)
@@ -48,6 +48,29 @@ class ComponentStackSpec:
             value = getattr(self, field_name)
             if not value.strip():
                 raise ValueError(f"components.{field_name} must be non-empty")
+
+
+TradeSide = Literal["long", "short"]
+
+
+@dataclass(frozen=True)
+class TradeSideSpec:
+    enabled: tuple[TradeSide, ...] = ("long",)
+
+    def __post_init__(self) -> None:
+        if not self.enabled:
+            raise ValueError("trade_sides.enabled must be non-empty")
+        allowed = {"long", "short"}
+        seen: set[str] = set()
+        for side in self.enabled:
+            if side not in allowed:
+                raise ValueError(f"trade side must be one of {sorted(allowed)}")
+            if side in seen:
+                raise ValueError("trade_sides.enabled must not contain duplicates")
+            seen.add(side)
+
+    def includes(self, side: TradeSide) -> bool:
+        return side in self.enabled
 
 
 @dataclass(frozen=True)
@@ -113,6 +136,7 @@ class EmaPullbackStrategySpec:
     base_timeframe: str
     anchor_stack: AnchorStackSpec
     components: ComponentStackSpec
+    trade_sides: TradeSideSpec
     setup: PullbackSetupSpec
     trigger: ReclaimTriggerSpec
     trade_management: TradeManagementSpec
