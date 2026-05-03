@@ -30,7 +30,7 @@ def _frame() -> pd.DataFrame:
 
 
 def test_registry_resolves_new_stage10_components() -> None:
-    assert callable(resolve_component("direction", "ema_anchor_stack_bullish").func)
+    assert callable(resolve_component("direction", "ema_anchor_stack_trend").func)
     assert callable(resolve_component("blockers", "no_blockers").func)
     assert callable(resolve_component("blockers", "counter_candle_blocker").func)
     assert callable(resolve_component("blockers", "rsi_extreme_blocker").func)
@@ -46,14 +46,14 @@ def test_registry_resolves_new_stage10_components() -> None:
 
 def test_direction_component_uses_columns_not_period_constants() -> None:
     df = _frame()
-    fn = resolve_component("direction", "ema_anchor_stack_bullish").func
+    fn = resolve_component("direction", "ema_anchor_stack_trend").func
     out = fn(df, "ema_close_base_20", "ema_close_base_200", "ema_close_base_1000")
     assert out.tolist() == [True, True, False, True]
 
 
 def test_direction_component_supports_short_side() -> None:
     df = _frame()
-    fn = resolve_component("direction", "ema_anchor_stack_bullish").func
+    fn = resolve_component("direction", "ema_anchor_stack_trend").func
     out = fn(df, "ema_close_base_1000", "ema_close_base_200", "ema_close_base_20", side="short")
     assert out.tolist() == [True, True, False, True]
 

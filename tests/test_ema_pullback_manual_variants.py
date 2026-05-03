@@ -2,8 +2,14 @@ from __future__ import annotations
 
 from research.strategies.ema_pullback.component_builders import (
     anchor_stack_from_periods,
+    blocker_counter_candle,
+    component_stack,
+    exit_no_signal,
+    exit_rsi,
     exits_atr_default,
+    trigger_touch_anchor,
 )
+from research.strategies.ema_pullback.spec import strategy_spec_config_id
 from research.strategies.ema_pullback.spec_instances import (
     active_strategy_specs,
     default_ema_pullback_strategy_spec,
@@ -36,7 +42,7 @@ def test_active_strategy_specs_matches_default_factory() -> None:
         < spec.anchor_stack.anchor.period
         < spec.anchor_stack.slow.period
     )
-    assert spec.components.direction == "ema_anchor_stack_bullish"
+    assert spec.components.direction == "ema_anchor_stack_trend"
     assert [b.component_id for b in spec.components.blockers] == ["no_blockers"]
     assert spec.components.setup == "pullback_to_anchor"
     assert spec.components.trigger.component_id == "reclaim_anchor"
@@ -70,3 +76,50 @@ def test_factory_uses_default_atr_exit_shortcuts_in_expected_order() -> None:
         take_atr_multiplier=5.0,
     )
     assert spec.components.exits == expected_exits
+
+
+def test_factory_accepts_custom_components_as_source_of_truth() -> None:
+    custom_components = component_stack(
+        trigger=trigger_touch_anchor(),
+        blockers=(blocker_counter_candle(),),
+        exits=(exit_no_signal(), exit_rsi(long_exit_above=75.0, short_exit_below=25.0)),
+    )
+    spec = make_ema_pullback_strategy_spec(
+        atr_period=99,
+        stop_atr_multiplier=9.9,
+        take_atr_multiplier=9.8,
+        components=custom_components,
+    )
+    assert spec.components == custom_components
+    assert spec.components.trigger.component_id == "touch_anchor"
+    assert [b.component_id for b in spec.components.blockers] == ["counter_candle_blocker"]
+    assert [e.component_id for e in spec.components.exits] == ["no_signal_exit", "rsi_signal_exit"]
+
+
+def test_factory_does_not_override_custom_exits_with_atr_defaults() -> None:
+    custom_components = component_stack(exits=(exit_no_signal(),))
+    spec = make_ema_pullback_strategy_spec(
+        atr_period=14,
+        stop_atr_multiplier=1.5,
+        take_atr_multiplier=4.0,
+        components=custom_components,
+    )
+    assert [e.component_id for e in spec.components.exits] == ["no_signal_exit"]
+
+
+def test_factory_baseline_components_remain_default_without_custom_override() -> None:
+    spec = make_ema_pullback_strategy_spec()
+    assert spec.components == component_stack()
+
+
+def test_factory_custom_and_baseline_components_produce_different_config_ids() -> None:
+    baseline = make_ema_pullback_strategy_spec()
+    custom = make_ema_pullback_strategy_spec(
+        components=component_stack(
+            trigger=trigger_touch_anchor(),
+            blockers=(blocker_counter_candle(),),
+            exits=(exit_no_signal(),),
+        )
+    )
+    assert baseline.variant == custom.variant
+    assert strategy_spec_config_id(baseline) != strategy_spec_config_id(custom)

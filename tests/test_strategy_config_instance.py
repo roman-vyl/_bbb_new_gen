@@ -95,6 +95,11 @@ def test_trade_sides_are_part_of_strategy_spec_config_id() -> None:
     assert strategy_spec_config_id(long_only) != strategy_spec_config_id(bidirectional)
 
 
+def test_factory_accepts_sequence_for_enabled_sides() -> None:
+    spec = make_ema_pullback_strategy_spec(enabled_sides=["long", "short"])
+    assert spec.trade_sides.enabled == ("long", "short")
+
+
 def test_cli_overrides_build_final_execution_config() -> None:
     args = parse_args(
         [
@@ -147,7 +152,7 @@ def test_exits_atr_default_builds_two_distance_exit_rules() -> None:
 
 def test_component_stack_default_matches_baseline_defaults() -> None:
     stack = component_stack()
-    assert stack.direction == "ema_anchor_stack_bullish"
+    assert stack.direction == "ema_anchor_stack_trend"
     assert [b.component_id for b in stack.blockers] == ["no_blockers"]
     assert stack.setup == "pullback_to_anchor"
     assert stack.trigger.component_id == "reclaim_anchor"

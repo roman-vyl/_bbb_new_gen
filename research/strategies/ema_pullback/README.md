@@ -78,7 +78,7 @@ anchor_stack:
   slow   = EMA close/base/{slow.period}
 
 components:
-  direction = ema_anchor_stack_bullish
+  direction = ema_anchor_stack_trend
   blockers  = (BlockerRuleSpec(no_blockers),)
   setup     = pullback_to_anchor
   trigger   = ReclaimTriggerSpec()  # component_id reclaim_anchor
@@ -163,7 +163,7 @@ assert spec.components.exits == exits_atr_default(
 Family-local registry (`components/registry.py`) включает, среди прочего:
 
 ```text
-direction: ema_anchor_stack_bullish
+direction: ema_anchor_stack_trend
 setup: pullback_to_anchor
 trigger: reclaim_anchor, touch_anchor
 blockers: no_blockers, counter_candle_blocker, rsi_extreme_blocker

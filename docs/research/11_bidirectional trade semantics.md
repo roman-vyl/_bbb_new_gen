@@ -106,7 +106,7 @@ isProject: false
   - пустой список, неизвестная side и дубли rejected;
   - long-only и long+short дают разные `strategy_spec_config_id(...)`.
 - Component semantics:
-  - `ema_anchor_stack_bullish(..., side="long")`: `fast > anchor > slow`;
+  - `ema_anchor_stack_trend(..., side="long")`: `fast > anchor > slow`;
   - тот же component с `side="short"`: `fast < anchor < slow`;
   - `pullback_to_anchor(..., side="long")`: `low <= anchor`;
   - `pullback_to_anchor(..., side="short")`: `high >= anchor`;

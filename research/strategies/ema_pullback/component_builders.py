@@ -11,7 +11,7 @@ from research.strategies.ema_pullback.components.registry import (
     ATR_STOP_LOSS_COMPONENT,
     ATR_TAKE_PROFIT_COMPONENT,
     COUNTER_CANDLE_BLOCKER_COMPONENT,
-    EMA_ANCHOR_STACK_BULLISH_COMPONENT,
+    EMA_ANCHOR_STACK_TREND_COMPONENT,
     NO_BLOCKERS_COMPONENT,
     NO_RISK_FILTER_COMPONENT,
     NO_SIGNAL_EXIT_COMPONENT,
@@ -77,7 +77,7 @@ def trigger_reclaim_anchor() -> TriggerSpec:
 
 
 def direction_ema_anchor_stack() -> str:
-    return EMA_ANCHOR_STACK_BULLISH_COMPONENT
+    return EMA_ANCHOR_STACK_TREND_COMPONENT
 
 
 def setup_pullback_to_anchor() -> str:

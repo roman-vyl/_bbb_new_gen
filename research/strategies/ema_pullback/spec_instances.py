@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Sequence
+
 from research.strategies.ema_pullback.component_builders import (
     anchor_stack_from_periods,
     blocker_none,
@@ -14,7 +16,11 @@ from research.strategies.ema_pullback.component_builders import (
     trade_sides,
     trigger_reclaim_anchor,
 )
-from research.strategies.ema_pullback.spec import EmaPullbackStrategySpec, TradeSide
+from research.strategies.ema_pullback.spec import (
+    ComponentStackSpec,
+    EmaPullbackStrategySpec,
+    TradeSide,
+)
 
 
 def _variant_from_periods(fast_period: int, anchor_period: int, slow_period: int) -> str:
@@ -45,18 +51,11 @@ def make_ema_pullback_strategy_spec(
     atr_period: int = 14,
     stop_atr_multiplier: float = 1.5,
     take_atr_multiplier: float = 4.0,
-    enabled_sides: tuple[TradeSide, ...] = ("long",),
+    enabled_sides: Sequence[TradeSide] = ("long",),
+    components: ComponentStackSpec | None = None,
 ) -> EmaPullbackStrategySpec:
-    return EmaPullbackStrategySpec(
-        variant=_variant_from_periods(fast_period, anchor_period, slow_period),
-        symbol=symbol.strip().upper(),
-        base_timeframe=base_timeframe.strip(),
-        anchor_stack=anchor_stack_from_periods(
-            fast=fast_period,
-            anchor=anchor_period,
-            slow=slow_period,
-        ),
-        components=component_stack(
+    resolved_components = (
+        component_stack(
             direction=direction_ema_anchor_stack(),
             blockers=(blocker_none(),),
             setup=setup_pullback_to_anchor(),
@@ -67,7 +66,21 @@ def make_ema_pullback_strategy_spec(
                 take_atr_multiplier=take_atr_multiplier,
             ),
             risk=risk_no_filter(),
+        )
+        if components is None
+        else components
+    )
+
+    return EmaPullbackStrategySpec(
+        variant=_variant_from_periods(fast_period, anchor_period, slow_period),
+        symbol=symbol.strip().upper(),
+        base_timeframe=base_timeframe.strip(),
+        anchor_stack=anchor_stack_from_periods(
+            fast=fast_period,
+            anchor=anchor_period,
+            slow=slow_period,
         ),
+        components=resolved_components,
         trade_sides=trade_sides(enabled_sides),
         setup=pullback_setup(lookback=setup_lookback),
     )

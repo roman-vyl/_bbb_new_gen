@@ -102,7 +102,7 @@ risk: str
 Для первого spec:
 
 ```text
-direction = "ema_anchor_stack_bullish"
+direction = "ema_anchor_stack_trend"
 blockers = "no_blockers"
 setup = "pullback_to_anchor"
 trigger = "reclaim_anchor"
@@ -242,7 +242,7 @@ anchor_stack:
   slow   = EMA close/base/1000
 
 components:
-  direction = "ema_anchor_stack_bullish"
+  direction = "ema_anchor_stack_trend"
   blockers = "no_blockers"
   setup    = "pullback_to_anchor"
   trigger  = "reclaim_anchor"
@@ -432,7 +432,7 @@ research/strategies/ema_pullback/components/direction.py
 Добавить или оставить clean function:
 
 ```text
-ema_anchor_stack_bullish(df, fast_col, anchor_col, slow_col)
+ema_anchor_stack_trend(df, fast_col, anchor_col, slow_col)
 ```
 
 Логика:
@@ -548,7 +548,7 @@ Registry должен поддерживать role ids:
 
 ```text
 direction:
-  ema_anchor_stack_bullish
+  ema_anchor_stack_trend
 
 blockers:
   no_blockers
