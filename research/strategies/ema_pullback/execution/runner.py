@@ -42,9 +42,7 @@ def run_single_config(cfg: ExecutionConfig) -> None:
         f"symbol={result.symbol} timeframe={result.timeframe} "
         f"candles={loaded.candles_count}"
     )
-    print("vectorbt_portfolio.sharpe_ratio (freq-aware):", result.metrics.sharpe)
-    print("vectorbt_portfolio.trades.profit_factor:", result.metrics.profit_factor)
-    print("vectorbt_portfolio.max_drawdown:", result.metrics.max_drawdown)
+    print_comparison_table([comparison_row(result)])
     print("status=ok")
 
 

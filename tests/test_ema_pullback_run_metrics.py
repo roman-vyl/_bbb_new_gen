@@ -12,7 +12,7 @@ pytest.importorskip("pandas")
 import pandas as pd
 
 from research.strategies.ema_pullback.execution import backtest
-from research.strategies.ema_pullback.execution.backtest import ensure_finite_metric
+from research.strategies.ema_pullback.execution.backtest import build_trade_side_metrics, ensure_finite_metric
 from research.strategies.ema_pullback.execution.exits import PortfolioExitOutputs
 from research.strategies.ema_pullback.execution.report_table import print_comparison_table
 from research.strategies.ema_pullback.execution.signals import PortfolioSignals
@@ -33,7 +33,7 @@ def test_ensure_finite_metric_rejects_inf() -> None:
     assert ensure_finite_metric("max_drawdown", float("inf")) == 0.0
 
 
-def test_comparison_table_includes_trades_column(capsys: pytest.CaptureFixture[str]) -> None:
+def test_comparison_table_includes_side_and_total_columns(capsys: pytest.CaptureFixture[str]) -> None:
     print_comparison_table(
         [
             {
@@ -42,18 +42,67 @@ def test_comparison_table_includes_trades_column(capsys: pytest.CaptureFixture[s
                 "fast": 20,
                 "anchor": 200,
                 "slow": 1000,
-                "trades": 7,
-                "sharpe": 0.1,
-                "profit_factor": 1.2,
-                "max_drawdown": -0.3,
+                "long_trades": 2,
+                "long_pnl": 10.0,
+                "long_return_pct": 0.1,
+                "long_profit_factor": 2.0,
+                "long_win_rate": 0.5,
+                "short_trades": 0,
+                "short_pnl": 0.0,
+                "short_return_pct": 0.0,
+                "short_profit_factor": None,
+                "short_win_rate": None,
+                "total_trades": 2,
+                "total_pnl": 10.0,
+                "total_return_pct": 0.1,
+                "total_profit_factor": 2.0,
+                "total_win_rate": 0.5,
             }
         ]
     )
     out = capsys.readouterr().out
-    assert "trades" in out
+    assert "long_trades" in out
+    assert "short_trades" in out
+    assert "total_trades" in out
+    assert "null" in out
     assert "fast" in out
     assert "anchor" in out
     assert "slow" in out
+
+
+def test_build_trade_side_metrics_aggregates_normalized_records() -> None:
+    metrics = build_trade_side_metrics(
+        [
+            {"direction": "long", "pnl": 30.0},
+            {"direction": "long", "pnl": -10.0},
+        ],
+        init_cash=100.0,
+    )
+
+    assert metrics.long.trades == 2
+    assert metrics.long.pnl == 20.0
+    assert metrics.long.return_pct == 0.2
+    assert metrics.long.profit_factor == 3.0
+    assert metrics.long.win_rate == 0.5
+    assert metrics.short.trades == 0
+    assert metrics.short.pnl == 0.0
+    assert metrics.short.return_pct == 0.0
+    assert metrics.short.profit_factor is None
+    assert metrics.short.win_rate is None
+    assert metrics.total.trades == 2
+    assert metrics.total.pnl == 20.0
+    assert metrics.total.return_pct == 0.2
+
+
+def test_build_trade_side_metrics_non_finite_profit_factor_is_null() -> None:
+    metrics = build_trade_side_metrics(
+        [{"direction": "long", "pnl": 5.0}],
+        init_cash=100.0,
+    )
+
+    assert metrics.long.profit_factor is None
+    assert metrics.long.win_rate == 1.0
+    assert metrics.total.profit_factor is None
 
 
 def test_run_strategy_spec_wires_short_signals_and_masks_warmup(monkeypatch: pytest.MonkeyPatch) -> None:
