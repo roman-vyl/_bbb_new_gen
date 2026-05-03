@@ -63,7 +63,10 @@ components:
   blockers = (BlockerRuleSpec(component_id=no_blockers),)
   setup    = pullback_to_anchor
   trigger  = TriggerSpec(component_id=reclaim_anchor)
-  signal_exits = (SignalExitRuleSpec(component_id=no_signal_exit),)
+  exits    = (
+    ExitRuleSpec(component_id=atr_stop_loss, exit_kind=stop_loss, distance=ATR14 * 1.5),
+    ExitRuleSpec(component_id=atr_take_profit, exit_kind=take_profit, distance=ATR14 * 4.0),
+  )
   risk     = no_risk_filter
 
 trade_sides:
@@ -73,10 +76,7 @@ setup:
   lookback = 3
 
 trade_management:
-  profile = rule_based
-  exit_rules:
-    stop_loss_by_distance = ATR14 * 1.5
-    take_profit_by_distance = ATR14 * 4.0
+  profile = reserved
 ```
 
 Важно: здесь живут все смысловые параметры стратегии:
@@ -88,7 +88,7 @@ component ids
 trade sides
 setup params
 blocker rule params (например RSI thresholds / lookback)
-signal exit rule params (например RSI thresholds)
+exit rule params (например RSI thresholds или ATR distance)
 ATR period
 ATR multipliers
 exit rules
@@ -141,8 +141,8 @@ anchor_columns:
   slow   -> ema_close_base_1000
 
 exit_distance_columns:
-  stop_loss_by_distance -> atr_close_base_14_x1_5
-  take_profit_by_distance -> atr_close_base_14_x4_0
+  stop_loss -> atr_close_base_14_x1_5
+  take_profit -> atr_close_base_14_x4_0
 
 rsi_columns:
   (timeframe, period) -> rsi_close_{timeframe}_{period}
@@ -403,15 +403,19 @@ no_risk_filter
 
 ### Exits
 
-Базовый signal exit:
+Exit rules живут в `components.exits`. Сигнальные правила дают boolean-серии,
+а ATR stop/take дают distance-серии, которые execution-layer позже переводит в
+`sl_stop/tp_stop`.
+
+Базовый no-op signal exit:
 
 ```text
 no_signal_exit
 ```
 
-То есть signal-based exit не используется (только SL/TP trade management).
+Он нужен только если стратегия явно хочет отсутствие signal-based exit.
 
-Дополнительно (Step 12):
+Текущие exit-компоненты:
 
 ```text
 exit_on_anchor_lost
@@ -422,10 +426,16 @@ rsi_signal_exit
   использует подготовленную RSI колонку (rsi_col)
   long: exit_signal когда RSI выше long_exit_above
   short: exit_signal когда RSI ниже short_exit_below
+
+atr_stop_loss
+  возвращает подготовленную ATR distance series для stop_loss
+
+atr_take_profit
+  возвращает подготовленную ATR distance series для take_profit
 ```
 
-Выходы в vectorbt комбинируются: signal exits идут в `exits/short_exits`, а SL/TP
-задаются отдельно через `trade_management` kwargs.
+Выходы в vectorbt комбинируются уже в `execution/exits.py`: signal exits идут в
+`exits/short_exits`, а ATR distance rules маппятся в `sl_stop/tp_stop`.
 
 ---
 
@@ -434,7 +444,7 @@ rsi_signal_exit
 `execution/signals.py` отвечает за вопрос:
 
 ```text
-Как из компонентов собрать финальные long/short entry/exit signals?
+Как из компонентов собрать финальные long/short entry signals?
 ```
 
 Он делает один и тот же side-aware проход по текущим component ids:
@@ -445,7 +455,6 @@ blockers  = AND(blocker_i(..., side, rule=..., rsi_col=...))
 setup     = pullback_to_anchor(..., side)
 trigger   = resolve(components.trigger.component_id)(..., side)
 risk      = no_risk_filter(..., side)
-signal_exits = OR(exit_j(..., side, rule=..., rsi_col=..., anchor_col=...))
 ```
 
 Потом собирает side entry:
@@ -482,35 +491,32 @@ Short продаём, если:
 ```text
 PortfolioSignals:
   entries
-  exits
   short_entries
-  short_exits
 ```
 
 Если сторона отключена в `trade_sides`, соответствующие серии заполняются `False`.
-По умолчанию signal exits пустые (`no_signal_exit`), но при добавлении правил
-они OR-ятся; stop/take добавляются отдельно через trade management.
+Выходы собираются не здесь, а в `execution/exits.py`.
 
 ---
 
-## 8. Trade Management — применение правил выхода
+## 8. execution/exits.py — применение правил выхода
 
 `StrategySpec` говорит:
 
 ```text
-exit_rules:
-  stop_loss_by_distance = ATR14 * 1.5
-  take_profit_by_distance = ATR14 * 4.0
+components.exits:
+  ExitRuleSpec(atr_stop_loss, exit_kind=stop_loss, distance=ATR14 * 1.5)
+  ExitRuleSpec(atr_take_profit, exit_kind=take_profit, distance=ATR14 * 4.0)
 ```
 
 `FeaturePlan` уже превратил это в колонки:
 
 ```text
-stop_loss_by_distance -> atr_close_base_14_x1_5
-take_profit_by_distance -> atr_close_base_14_x4_0
+stop_loss -> atr_close_base_14_x1_5
+take_profit -> atr_close_base_14_x4_0
 ```
 
-`trade_management.py` берёт готовые distance columns:
+`execution/exits.py` берёт готовые distance columns:
 
 ```text
 stop_col = atr_close_base_14_x1_5
@@ -545,8 +551,8 @@ tp_stop = 4000 / 100000 = 0.04
 Важно:
 
 ```text
-trade_management.py не знает, что это ATR14.
-trade_management.py не знает множители 1.5 и 4.0.
+execution/exits.py не знает, что это ATR14.
+execution/exits.py не знает множители 1.5 и 4.0.
 Он просто применяет готовые distance columns.
 ```
 
@@ -561,7 +567,7 @@ spec
 → build_feature_plan_from_strategy_spec(spec)
 → add_feature_columns_from_plan(ohlcv, plan)
 → build_signals_from_spec(df, spec, plan)
-→ build_stops_from_trade_management(df, spec, plan)
+→ build_exit_outputs_from_spec(df, spec, plan)
 → vectorbt.Portfolio.from_signals(entries, exits, short_entries, short_exits, ...)
 → VariantResult
 ```
@@ -711,13 +717,13 @@ components:
 
 signals.py:
   entries = direction AND blockers AND setup AND trigger AND risk
-  exits = OR(signal exits)
   short_entries = mirrored direction/setup/trigger path
+
+↓ exit rules через
+
+execution/exits.py:
+  exits = OR(long signal exits)
   short_exits = OR(short signal exits)
-
-↓ stop/take через
-
-trade_management.py:
   sl_stop = stop_distance / close
   tp_stop = take_distance / close
 
@@ -771,8 +777,8 @@ StrategySpec — единственный источник смысла стра
 FeaturePlan — что посчитать
 Features — как посчитать
 Components — как принять решение
-Signals — как собрать entry/exit
-TradeManagement — как применить exit rules
+Signals — как собрать entries/short_entries
+ExitLayer — как собрать exits/short_exits и применить stop/take exit rules
 Backtest — как прогнать
 Report — как сохранить
 ```
@@ -808,13 +814,13 @@ Report — как сохранить
 `signals.py` отвечает:
 
 ```text
-Как собрать компоненты в entries/exits/short_entries/short_exits?
+Как собрать entry-компоненты в entries/short_entries?
 ```
 
-`trade_management.py` отвечает:
+`execution/exits.py` отвечает:
 
 ```text
-Как применить готовые exit distance columns?
+Как собрать components.exits в exits/short_exits/sl_stop/tp_stop?
 ```
 
 `backtest.py` отвечает:

@@ -78,8 +78,9 @@ isProject: false
 
 5. Подключить short wiring в [`research/strategies/ema_pullback/execution/backtest.py`](research/strategies/ema_pullback/execution/backtest.py):
    - получить `signals = build_signals_from_spec(...)`.
+   - получить `exit_outputs = build_exit_outputs_from_spec(...)`.
    - применить ATR warmup mask отдельно к `signals.entries` и `signals.short_entries`.
-   - вызвать `vbt.Portfolio.from_signals(...)` с `entries`, `exits`, `short_entries`, `short_exits`.
+   - вызвать `vbt.Portfolio.from_signals(...)` с `entries`, `exit_outputs.exits`, `short_entries`, `exit_outputs.short_exits`.
    - оставить `sl_stop/tp_stop` прежними: это процентные distance series, они подходят для обеих сторон.
 
 6. Обновить отчётность только там, где уже есть side-поля:
@@ -91,7 +92,7 @@ isProject: false
 Тестовый scope не должен быть только "добавить пару новых проверок". Step 11 меняет контракт signals и spec, поэтому нужно пройтись по существующим тестам и добавить side-specific coverage.
 
 Существующие тесты, которые почти наверняка потребуют адаптации:
-- [`tests/test_ema_pullback_pipeline.py`](tests/test_ema_pullback_pipeline.py): сейчас ожидает `(entries, exits)`. После Step 11 должен ожидать `PortfolioSignals(entries, exits, short_entries, short_exits)`.
+- [`tests/test_ema_pullback_pipeline.py`](tests/test_ema_pullback_pipeline.py): должен ожидать entry-only `PortfolioSignals(entries, short_entries)` и отдельный exit-layer для `exits/short_exits`.
 - [`tests/test_ema_pullback_components.py`](tests/test_ema_pullback_components.py): текущие вызовы компонентов без `side` нужно сохранить через default `side="long"` или обновить на явный `side`.
 - [`tests/test_ema_pullback_trade_management.py`](tests/test_ema_pullback_trade_management.py): оставить как guardrail, что `sl_stop/tp_stop` остаются distance/close и не зависят от side.
 - [`tests/test_strategy_config_instance.py`](tests/test_strategy_config_instance.py): расширить проверками `TradeSideSpec`, default long-only и влияния side spec на `config_id`.
@@ -113,10 +114,14 @@ isProject: false
   - `reclaim_anchor(..., side="short")`: close crosses below anchor;
   - neutral components accept side and preserve all-True/all-False behavior.
 - Signal composer:
-  - disabled short side returns all-False `short_entries` and `short_exits`;
+  - disabled short side returns all-False `short_entries`;
   - enabled short side can produce `short_entries`;
   - long side output stays identical for default spec on deterministic fixture;
   - all returned series are bool, same index, no NaN.
+- Exit-layer:
+  - disabled short side returns all-False `short_exits`;
+  - signal exits OR-ятся отдельно от entry composer;
+  - ATR stop/take rules маппятся в `sl_stop/tp_stop`.
 - Backtest wiring:
   - unit-level test with monkeypatched/fake `Portfolio.from_signals` if practical, verifying `entries`, `exits`, `short_entries`, `short_exits` are passed;
   - ATR warmup mask applies to both long and short entries.

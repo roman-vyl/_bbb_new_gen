@@ -6,10 +6,13 @@ pytest.importorskip("pandas")
 
 import pandas as pd
 
+from research.strategies.ema_pullback.execution.exits import (
+    build_exit_outputs_from_spec,
+    compose_exit_signals,
+)
 from research.strategies.ema_pullback.execution.signals import (
     build_signals_from_spec,
     compose_blocker_signals,
-    compose_signal_exit_signals,
 )
 from research.strategies.ema_pullback.features.calculations import add_feature_columns_from_plan
 from research.strategies.ema_pullback.features.plan import build_feature_plan_from_strategy_spec
@@ -46,17 +49,33 @@ def test_build_signals_from_spec_uses_component_registry_and_plan_columns() -> N
 
     signals = build_signals_from_spec(df, spec, plan)
     assert signals.entries.dtype == bool
-    assert signals.exits.dtype == bool
     assert signals.short_entries.dtype == bool
-    assert signals.short_exits.dtype == bool
     assert len(signals.entries) == len(df)
-    assert len(signals.exits) == len(df)
     assert len(signals.short_entries) == len(df)
-    assert len(signals.short_exits) == len(df)
-    assert bool(signals.exits.any()) is False
     assert bool(signals.short_entries.any()) is False
-    assert bool(signals.short_exits.any()) is False
     assert bool(signals.entries.isna().any()) is False
+
+
+def test_build_exit_outputs_from_spec_uses_unified_exit_rules() -> None:
+    spec = default_ema_pullback_strategy_spec()
+    plan = build_feature_plan_from_strategy_spec(spec)
+    idx = pd.date_range("2024-01-01", periods=30, freq="h", tz="UTC")
+    ohlcv = _ohlcv().reindex(idx).ffill()
+    df = add_feature_columns_from_plan(ohlcv, plan)
+
+    df[plan.anchor_columns["anchor"]] = df["close"]
+    exit_outputs = build_exit_outputs_from_spec(df, spec, plan)
+
+    assert exit_outputs.exits.dtype == bool
+    assert exit_outputs.short_exits.dtype == bool
+    assert len(exit_outputs.exits) == len(df)
+    assert len(exit_outputs.short_exits) == len(df)
+    assert bool(exit_outputs.exits.any()) is False
+    assert bool(exit_outputs.short_exits.any()) is False
+    assert "stop_loss" in plan.exit_distance_columns
+    assert "take_profit" in plan.exit_distance_columns
+    assert exit_outputs.sl_stop.notna().any()
+    assert exit_outputs.tp_stop.notna().any()
 
 
 def test_build_signals_from_spec_can_emit_short_entries_when_enabled() -> None:
@@ -82,7 +101,7 @@ def test_blocker_and_signal_exit_composition_semantics() -> None:
     right = pd.Series([True, False, True, True], index=idx)
 
     blockers = compose_blocker_signals((left, right))
-    exits = compose_signal_exit_signals((left, right))
+    exits = compose_exit_signals((left, right), index=idx)
 
     assert blockers.tolist() == [True, False, False, True]
     assert exits.tolist() == [True, True, True, True]

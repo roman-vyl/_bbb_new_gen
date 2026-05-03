@@ -1,1 +1,1 @@
-"""Backtest wiring: signal composition, trade management, JSON run artifacts."""
+"""Backtest wiring: entry/exit composition and JSON run artifacts."""

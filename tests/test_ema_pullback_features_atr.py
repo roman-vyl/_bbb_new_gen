@@ -16,8 +16,8 @@ from research.strategies.ema_pullback.features.plan import (
 )
 from research.strategies.ema_pullback.spec import (
     BlockerRuleSpec,
+    ExitRuleSpec,
     RsiFeatureSpec,
-    SignalExitRuleSpec,
 )
 from research.strategies.ema_pullback.spec_instances import default_ema_pullback_strategy_spec
 
@@ -51,16 +51,18 @@ def test_feature_plan_ids_follow_strategy_spec() -> None:
 
     atr_feats = [f for f in plan.features if f.kind == "atr"]
     assert len(atr_feats) == 1
-    atr_periods = {r.distance.period for r in spec.trade_management.exit_rules}
+    atr_periods = {r.distance.period for r in spec.components.exits if r.distance is not None}
     assert atr_feats[0].period in atr_periods
     assert atr_feats[0].feature_id == f"atr_close_base_{atr_feats[0].period}"
 
     dist_feats = [f for f in plan.features if f.kind == "atr_distance"]
-    assert len(dist_feats) == len(spec.trade_management.exit_rules)
+    distance_rules = [r for r in spec.components.exits if r.distance is not None]
+    assert len(dist_feats) == len(distance_rules)
     by_mult = {f.multiplier: f.feature_id for f in dist_feats}
-    for rule in spec.trade_management.exit_rules:
+    for rule in distance_rules:
+        assert rule.distance is not None
         assert rule.distance.multiplier in by_mult
-        assert by_mult[rule.distance.multiplier] == plan.exit_distance_columns[rule.rule_type]
+        assert by_mult[rule.distance.multiplier] == plan.exit_distance_columns[rule.exit_kind]
 
 
 def test_add_feature_columns_from_plan_creates_expected_columns() -> None:
@@ -100,13 +102,15 @@ def test_base_rsi_feature_plan_and_calculation() -> None:
                     short_max=70.0,
                 ),
             ),
-            signal_exits=(
-                SignalExitRuleSpec(
+            exits=(
+                ExitRuleSpec(
                     component_id="rsi_signal_exit",
+                    exit_kind="signal",
                     rsi=RsiFeatureSpec(timeframe="base", period=3),
                     long_exit_above=70.0,
                     short_exit_below=30.0,
                 ),
+                *base.components.exits,
             ),
         ),
     )

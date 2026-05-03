@@ -12,8 +12,8 @@ from research.strategies.ema_pullback.execution.result_models import (
     VariantResult,
 )
 from research.strategies.ema_pullback.execution.results import extract_trade_records
+from research.strategies.ema_pullback.execution.exits import build_exit_outputs_from_spec
 from research.strategies.ema_pullback.execution.signals import build_signals_from_spec
-from research.strategies.ema_pullback.execution.trade_management import build_stops_from_trade_management
 from research.strategies.ema_pullback.features.calculations import add_feature_columns_from_plan
 from research.strategies.ema_pullback.features.plan import build_feature_plan_from_strategy_spec
 from research.strategies.ema_pullback.spec import strategy_spec_config_id, strategy_spec_to_dict
@@ -48,6 +48,7 @@ def run_strategy_spec(
     plan = build_feature_plan_from_strategy_spec(spec)
     enriched = add_feature_columns_from_plan(ohlcv, plan)
     signals = build_signals_from_spec(enriched, spec, plan)
+    exit_outputs = build_exit_outputs_from_spec(enriched, spec, plan)
 
     close = enriched["close"].astype(float)
     if close.isna().any():
@@ -61,9 +62,9 @@ def run_strategy_spec(
         raise SystemExit("EMA columns contain NaN (unexpected for ewm on finite close).")
 
     freq = pandas_freq_alias(spec.base_timeframe)
-    tm_kwargs = build_stops_from_trade_management(enriched, spec, plan)
-    sl_stop = tm_kwargs["sl_stop"]
-    tp_stop = tm_kwargs["tp_stop"]
+    stop_kwargs = exit_outputs.stop_kwargs()
+    sl_stop = stop_kwargs["sl_stop"]
+    tp_stop = stop_kwargs["tp_stop"]
     # ATR-based stops are NaN until warmup; opening without finite sl/tp yields no stop exits
     # and (with no signal exits) a single perpetual open trade in vectorbt.
     stop_ready = sl_stop.notna() & tp_stop.notna()
@@ -73,14 +74,14 @@ def run_strategy_spec(
     pf = vbt.Portfolio.from_signals(
         close,
         entries_for_portfolio,
-        signals.exits,
+        exit_outputs.exits,
         short_entries=short_entries_for_portfolio,
-        short_exits=signals.short_exits,
+        short_exits=exit_outputs.short_exits,
         freq=freq,
         init_cash=float(init_cash),
         fees=float(fees),
         slippage=float(slippage),
-        **tm_kwargs,
+        **stop_kwargs,
     )
 
     sharpe = ensure_finite_metric("sharpe_ratio", float(pf.sharpe_ratio()))

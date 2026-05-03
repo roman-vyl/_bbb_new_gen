@@ -6,12 +6,12 @@ pytest.importorskip("pandas")
 
 import pandas as pd
 
-from research.strategies.ema_pullback.execution.trade_management import build_stops_from_trade_management
+from research.strategies.ema_pullback.execution.exits import build_exit_outputs_from_spec
 from research.strategies.ema_pullback.features.plan import build_feature_plan_from_strategy_spec
 from research.strategies.ema_pullback.spec_instances import default_ema_pullback_strategy_spec
 
 
-def test_build_stops_from_trade_management_uses_exit_distance_columns() -> None:
+def test_build_exit_outputs_uses_exit_distance_columns_for_stops() -> None:
     spec = default_ema_pullback_strategy_spec()
     plan = build_feature_plan_from_strategy_spec(spec)
 
@@ -22,12 +22,15 @@ def test_build_stops_from_trade_management_uses_exit_distance_columns() -> None:
     df = pd.DataFrame(
         {
             "close": close,
-            plan.exit_distance_columns["stop_loss_by_distance"]: stop_dist,
-            plan.exit_distance_columns["take_profit_by_distance"]: take_dist,
+            "ema_close_base_200": close,
+            plan.exit_distance_columns["stop_loss"]: stop_dist,
+            plan.exit_distance_columns["take_profit"]: take_dist,
         },
         index=idx,
     )
 
-    kwargs = build_stops_from_trade_management(df, spec, plan)
-    pd.testing.assert_series_equal(kwargs["sl_stop"], stop_dist / close, check_names=False)
-    pd.testing.assert_series_equal(kwargs["tp_stop"], take_dist / close, check_names=False)
+    exits = build_exit_outputs_from_spec(df, spec, plan)
+    pd.testing.assert_series_equal(exits.sl_stop, stop_dist / close, check_names=False)
+    pd.testing.assert_series_equal(exits.tp_stop, take_dist / close, check_names=False)
+    assert exits.exits.tolist() == [False, False, False, False]
+    assert exits.short_exits.tolist() == [False, False, False, False]

@@ -13,6 +13,7 @@ import pandas as pd
 
 from research.strategies.ema_pullback.execution import backtest
 from research.strategies.ema_pullback.execution.backtest import ensure_finite_metric
+from research.strategies.ema_pullback.execution.exits import PortfolioExitOutputs
 from research.strategies.ema_pullback.execution.report_table import print_comparison_table
 from research.strategies.ema_pullback.execution.signals import PortfolioSignals
 from research.strategies.ema_pullback.spec_instances import default_ema_pullback_strategy_spec
@@ -89,21 +90,26 @@ def test_run_strategy_spec_wires_short_signals_and_masks_warmup(monkeypatch: pyt
 
     def fake_build_signals_from_spec(df: pd.DataFrame, spec: object, plan: object) -> PortfolioSignals:
         values = pd.Series([True, True, True, True], index=df.index, dtype=bool)
-        exits = pd.Series(False, index=df.index, dtype=bool)
         return PortfolioSignals(
             entries=values,
-            exits=exits,
             short_entries=values,
-            short_exits=exits,
         )
 
-    def fake_build_stops_from_trade_management(df: pd.DataFrame, spec: object, plan: object) -> dict[str, pd.Series]:
+    def fake_build_exit_outputs_from_spec(
+        df: pd.DataFrame, spec: object, plan: object
+    ) -> PortfolioExitOutputs:
+        exits = pd.Series(False, index=df.index, dtype=bool)
         sl_stop = pd.Series([float("nan"), 0.01, 0.01, 0.01], index=df.index)
         tp_stop = pd.Series([float("nan"), 0.02, 0.02, 0.02], index=df.index)
-        return {"sl_stop": sl_stop, "tp_stop": tp_stop}
+        return PortfolioExitOutputs(
+            exits=exits,
+            short_exits=exits,
+            sl_stop=sl_stop,
+            tp_stop=tp_stop,
+        )
 
     monkeypatch.setattr(backtest, "build_signals_from_spec", fake_build_signals_from_spec)
-    monkeypatch.setattr(backtest, "build_stops_from_trade_management", fake_build_stops_from_trade_management)
+    monkeypatch.setattr(backtest, "build_exit_outputs_from_spec", fake_build_exit_outputs_from_spec)
 
     idx = pd.date_range("2024-01-01", periods=4, freq="h", tz="UTC")
     close = pd.Series([100.0, 101.0, 102.0, 103.0], index=idx)
