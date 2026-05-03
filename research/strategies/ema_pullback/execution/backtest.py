@@ -8,6 +8,7 @@ from typing import Any
 from data_engine.contracts import pandas_freq_alias
 
 from research.strategies.ema_pullback.execution.result_models import (
+    OpenTradesBreakdown,
     SideMetrics,
     VariantMetrics,
     VariantResult,
@@ -67,15 +68,32 @@ def _build_side_metrics(records: list[dict[str, Any]], init_cash: float) -> Side
     )
 
 
-def build_trade_side_metrics(trade_records: list[dict[str, Any]], init_cash: float) -> VariantMetrics:
-    """Aggregate report metrics from normalized long/short trade records."""
+def build_trade_side_metrics(
+    trade_records: list[dict[str, Any]],
+    init_cash: float,
+    *,
+    sharpe: float,
+    max_drawdown: float,
+) -> VariantMetrics:
+    """Realized PnL / PF / win_rate use ``status == \"closed\"`` only; open rows are counted in ``open_trades``."""
 
-    long_records = [record for record in trade_records if record.get("direction") == "long"]
-    short_records = [record for record in trade_records if record.get("direction") == "short"]
+    closed = [record for record in trade_records if record.get("status") == "closed"]
+    open_recs = [record for record in trade_records if record.get("status") == "open"]
+    open_trades = OpenTradesBreakdown(
+        long=sum(1 for record in open_recs if record.get("direction") == "long"),
+        short=sum(1 for record in open_recs if record.get("direction") == "short"),
+        total=len(open_recs),
+    )
+
+    long_closed = [record for record in closed if record.get("direction") == "long"]
+    short_closed = [record for record in closed if record.get("direction") == "short"]
     return VariantMetrics(
-        long=_build_side_metrics(long_records, init_cash),
-        short=_build_side_metrics(short_records, init_cash),
-        total=_build_side_metrics(trade_records, init_cash),
+        long=_build_side_metrics(long_closed, init_cash),
+        short=_build_side_metrics(short_closed, init_cash),
+        total=_build_side_metrics(closed, init_cash),
+        sharpe=ensure_finite_metric("sharpe_ratio", sharpe),
+        max_drawdown=ensure_finite_metric("max_drawdown", max_drawdown),
+        open_trades=open_trades,
     )
 
 
@@ -137,12 +155,22 @@ def run_strategy_spec(
 
     trade_records = extract_trade_records(pf, close)
 
+    sharpe = ensure_finite_metric("sharpe_ratio", float(pf.sharpe_ratio()))
+    max_dd_raw = pf.max_drawdown()
+    max_dd_f = float(max_dd_raw) if hasattr(max_dd_raw, "item") else float(max_dd_raw)
+    max_dd_f = ensure_finite_metric("max_drawdown", max_dd_f)
+
     return VariantResult(
         variant=spec.variant,
         config_id=strategy_spec_config_id(spec),
         symbol=spec.symbol.strip().upper(),
         timeframe=spec.base_timeframe.strip(),
         strategy_spec=strategy_spec_to_dict(spec),
-        metrics=build_trade_side_metrics(trade_records, float(init_cash)),
+        metrics=build_trade_side_metrics(
+            trade_records,
+            float(init_cash),
+            sharpe=sharpe,
+            max_drawdown=max_dd_f,
+        ),
         trade_records=trade_records,
     )

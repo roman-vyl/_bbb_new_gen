@@ -36,9 +36,13 @@ REQUIRED_TOP = (
 
 REQUIRED_VARIANT = ("variant", "config_id", "symbol", "timeframe", "strategy_spec", "metrics", "trade_records")
 
-REQUIRED_METRICS = ("long", "short", "total")
+REQUIRED_METRICS = ("long", "short", "total", "open_trades")
 
 REQUIRED_SIDE_METRICS = ("trades", "pnl", "return_pct", "profit_factor", "win_rate")
+
+REQUIRED_TOTAL_EXTRAS = ("sharpe", "max_drawdown")
+
+REQUIRED_OPEN_TRADES = ("long", "short", "total")
 
 REQUIRED_TRADE_FIELDS = (
     "trade_id",
@@ -83,7 +87,16 @@ def test_build_research_run_payload_top_level_keys() -> None:
         "metrics": {
             "long": {"trades": 0, "pnl": 0.0, "return_pct": 0.0, "profit_factor": None, "win_rate": None},
             "short": {"trades": 0, "pnl": 0.0, "return_pct": 0.0, "profit_factor": None, "win_rate": None},
-            "total": {"trades": 0, "pnl": 0.0, "return_pct": 0.0, "profit_factor": None, "win_rate": None},
+            "total": {
+                "trades": 0,
+                "pnl": 0.0,
+                "return_pct": 0.0,
+                "profit_factor": None,
+                "win_rate": None,
+                "sharpe": 0.0,
+                "max_drawdown": 0.0,
+            },
+            "open_trades": {"long": 0, "short": 0, "total": 0},
         },
         "trade_records": [],
     }
@@ -108,8 +121,14 @@ def test_build_research_run_payload_top_level_keys() -> None:
         assert k in v0
     for k in REQUIRED_METRICS:
         assert k in v0["metrics"]
-        for side_k in REQUIRED_SIDE_METRICS:
-            assert side_k in v0["metrics"][k]
+    for side_k in REQUIRED_SIDE_METRICS:
+        assert side_k in v0["metrics"]["long"]
+        assert side_k in v0["metrics"]["short"]
+        assert side_k in v0["metrics"]["total"]
+    for extra in REQUIRED_TOTAL_EXTRAS:
+        assert extra in v0["metrics"]["total"]
+    for ok in REQUIRED_OPEN_TRADES:
+        assert ok in v0["metrics"]["open_trades"]
     raw = json.dumps(json_safe(payload), ensure_ascii=False)
     assert "ema_pullback" in raw
 
@@ -181,7 +200,12 @@ def test_extract_trade_records_closed_and_open() -> None:
 
 
 def test_variant_payload_from_instance_matches_schema() -> None:
-    from research.strategies.ema_pullback.execution.result_models import SideMetrics, VariantMetrics, VariantResult
+    from research.strategies.ema_pullback.execution.result_models import (
+        OpenTradesBreakdown,
+        SideMetrics,
+        VariantMetrics,
+        VariantResult,
+    )
 
     spec = default_ema_pullback_strategy_spec()
     assert spec.variant == variant_from_spec(spec)
@@ -195,6 +219,9 @@ def test_variant_payload_from_instance_matches_schema() -> None:
             long=SideMetrics(trades=1, pnl=2.0, return_pct=0.02, profit_factor=None, win_rate=1.0),
             short=SideMetrics(trades=0, pnl=0.0, return_pct=0.0, profit_factor=None, win_rate=None),
             total=SideMetrics(trades=1, pnl=2.0, return_pct=0.02, profit_factor=None, win_rate=1.0),
+            sharpe=0.1,
+            max_drawdown=-0.05,
+            open_trades=OpenTradesBreakdown(long=0, short=1, total=1),
         ),
         trade_records=[],
     ).to_payload()
@@ -204,4 +231,7 @@ def test_variant_payload_from_instance_matches_schema() -> None:
     assert isinstance(vr["trade_records"], list)
     assert tuple(vr["metrics"].keys()) == REQUIRED_METRICS
     assert vr["metrics"]["short"]["profit_factor"] is None
+    assert vr["metrics"]["total"]["sharpe"] == 0.1
+    assert vr["metrics"]["total"]["max_drawdown"] == -0.05
+    assert vr["metrics"]["open_trades"] == {"long": 0, "short": 1, "total": 1}
     json.dumps(json_safe(vr), ensure_ascii=False)

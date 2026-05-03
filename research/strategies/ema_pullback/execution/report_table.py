@@ -30,6 +30,7 @@ def comparison_row(variant_result: VariantResult | dict[str, Any]) -> dict[str, 
 
     if isinstance(variant_result, VariantResult):
         anchor_stack = variant_result.strategy_spec["anchor_stack"]
+        ot = variant_result.metrics.open_trades
         return {
             "variant": variant_result.variant,
             "config_id": variant_result.config_id,
@@ -39,10 +40,17 @@ def comparison_row(variant_result: VariantResult | dict[str, Any]) -> dict[str, 
             **_flatten_metrics("long", variant_result.metrics.long),
             **_flatten_metrics("short", variant_result.metrics.short),
             **_flatten_metrics("total", variant_result.metrics.total),
+            "total_sharpe": variant_result.metrics.sharpe,
+            "total_max_drawdown": variant_result.metrics.max_drawdown,
+            "open_trades_long": ot.long,
+            "open_trades_short": ot.short,
+            "open_trades_total": ot.total,
         }
 
     m = variant_result["metrics"]
     anchor_stack = variant_result["strategy_spec"]["anchor_stack"]
+    total_block = m["total"]
+    ot = m["open_trades"]
     return {
         "variant": variant_result["variant"],
         "config_id": variant_result["config_id"],
@@ -51,7 +59,15 @@ def comparison_row(variant_result: VariantResult | dict[str, Any]) -> dict[str, 
         "slow": anchor_stack["slow"]["period"],
         **_flatten_metrics("long", m["long"]),
         **_flatten_metrics("short", m["short"]),
-        **_flatten_metrics("total", m["total"]),
+        **_flatten_metrics(
+            "total",
+            {k: total_block[k] for k in ("trades", "pnl", "return_pct", "profit_factor", "win_rate")},
+        ),
+        "total_sharpe": total_block["sharpe"],
+        "total_max_drawdown": total_block["max_drawdown"],
+        "open_trades_long": ot["long"],
+        "open_trades_short": ot["short"],
+        "open_trades_total": ot["total"],
     }
 
 
@@ -85,6 +101,11 @@ def print_comparison_table(rows: list[dict[str, float | int | str | None]]) -> N
         "total_return_pct",
         "total_profit_factor",
         "total_win_rate",
+        "total_sharpe",
+        "total_max_drawdown",
+        "open_trades_long",
+        "open_trades_short",
+        "open_trades_total",
     )
     rendered: list[dict[str, str]] = []
     for row in rows:

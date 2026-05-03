@@ -57,6 +57,11 @@ def test_comparison_table_includes_side_and_total_columns(capsys: pytest.Capture
                 "total_return_pct": 0.1,
                 "total_profit_factor": 2.0,
                 "total_win_rate": 0.5,
+                "total_sharpe": 0.1,
+                "total_max_drawdown": -0.2,
+                "open_trades_long": 0,
+                "open_trades_short": 1,
+                "open_trades_total": 1,
             }
         ]
     )
@@ -64,6 +69,8 @@ def test_comparison_table_includes_side_and_total_columns(capsys: pytest.Capture
     assert "long_trades" in out
     assert "short_trades" in out
     assert "total_trades" in out
+    assert "total_sharpe" in out
+    assert "open_trades_total" in out
     assert "null" in out
     assert "fast" in out
     assert "anchor" in out
@@ -73,10 +80,12 @@ def test_comparison_table_includes_side_and_total_columns(capsys: pytest.Capture
 def test_build_trade_side_metrics_aggregates_normalized_records() -> None:
     metrics = build_trade_side_metrics(
         [
-            {"direction": "long", "pnl": 30.0},
-            {"direction": "long", "pnl": -10.0},
+            {"direction": "long", "status": "closed", "pnl": 30.0},
+            {"direction": "long", "status": "closed", "pnl": -10.0},
         ],
         init_cash=100.0,
+        sharpe=0.5,
+        max_drawdown=-0.1,
     )
 
     assert metrics.long.trades == 2
@@ -92,17 +101,42 @@ def test_build_trade_side_metrics_aggregates_normalized_records() -> None:
     assert metrics.total.trades == 2
     assert metrics.total.pnl == 20.0
     assert metrics.total.return_pct == 0.2
+    assert metrics.sharpe == 0.5
+    assert metrics.max_drawdown == -0.1
+    assert metrics.open_trades.total == 0
 
 
 def test_build_trade_side_metrics_non_finite_profit_factor_is_null() -> None:
     metrics = build_trade_side_metrics(
-        [{"direction": "long", "pnl": 5.0}],
+        [{"direction": "long", "status": "closed", "pnl": 5.0}],
         init_cash=100.0,
+        sharpe=0.0,
+        max_drawdown=0.0,
     )
 
     assert metrics.long.profit_factor is None
     assert metrics.long.win_rate == 1.0
     assert metrics.total.profit_factor is None
+
+
+def test_build_trade_side_metrics_ignores_open_trades_for_realized() -> None:
+    metrics = build_trade_side_metrics(
+        [
+            {"direction": "long", "status": "closed", "pnl": 10.0},
+            {"direction": "long", "status": "open", "pnl": 999.0},
+            {"direction": "short", "status": "open", "pnl": -500.0},
+        ],
+        init_cash=100.0,
+        sharpe=0.0,
+        max_drawdown=0.0,
+    )
+
+    assert metrics.long.trades == 1
+    assert metrics.long.pnl == 10.0
+    assert metrics.total.pnl == 10.0
+    assert metrics.open_trades.long == 1
+    assert metrics.open_trades.short == 1
+    assert metrics.open_trades.total == 2
 
 
 def test_run_strategy_spec_wires_short_signals_and_masks_warmup(monkeypatch: pytest.MonkeyPatch) -> None:

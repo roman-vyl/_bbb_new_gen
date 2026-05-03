@@ -35,16 +35,35 @@ class SideMetrics:
 
 
 @dataclass(frozen=True)
+class OpenTradesBreakdown:
+    """Counts of open (not yet closed) positions by side; separate from realized metrics."""
+
+    long: int
+    short: int
+    total: int
+
+    def to_payload(self) -> dict[str, int]:
+        return {"long": self.long, "short": self.short, "total": self.total}
+
+
+@dataclass(frozen=True)
 class VariantMetrics:
     long: SideMetrics
     short: SideMetrics
     total: SideMetrics
+    sharpe: float
+    max_drawdown: float
+    open_trades: OpenTradesBreakdown
 
-    def to_payload(self) -> dict[str, dict[str, int | float | None]]:
+    def to_payload(self) -> dict[str, Any]:
+        total_payload = self.total.to_payload()
+        total_payload["sharpe"] = self.sharpe
+        total_payload["max_drawdown"] = self.max_drawdown
         return {
             "long": self.long.to_payload(),
             "short": self.short.to_payload(),
-            "total": self.total.to_payload(),
+            "total": total_payload,
+            "open_trades": self.open_trades.to_payload(),
         }
 
 
