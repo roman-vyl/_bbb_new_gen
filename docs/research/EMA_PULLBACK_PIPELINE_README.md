@@ -59,7 +59,7 @@ anchor_stack:
   slow   = EMA close/base/1000
 
 components:
-  direction = ema_anchor_stack_bullish
+  direction = ema_anchor_stack_trend
   blockers = (BlockerRuleSpec(component_id=no_blockers),)
   setup    = pullback_to_anchor
   trigger  = TriggerSpec(component_id=reclaim_anchor)
@@ -246,7 +246,7 @@ MTF сейчас строится **внутри research** из уже загр
 В `StrategySpec` написано:
 
 ```text
-direction = ema_anchor_stack_bullish
+direction = ema_anchor_stack_trend
 setup    = pullback_to_anchor
 trigger  = reclaim_anchor
 ```
@@ -263,8 +263,8 @@ Registry отвечает на вопрос:
 
 ```text
 role = direction
-component_id = ema_anchor_stack_bullish
-→ components/direction.py::ema_anchor_stack_bullish
+component_id = ema_anchor_stack_trend
+→ components/direction.py::ema_anchor_stack_trend
 ```
 
 Registry не знает весь `StrategySpec`.
@@ -289,7 +289,7 @@ role + id -> callable
 
 ### Direction
 
-`ema_anchor_stack_bullish` получает:
+`ema_anchor_stack_trend` получает:
 
 ```text
 fast_col   = ema_close_base_20
@@ -451,7 +451,7 @@ planned later:
 Он делает один и тот же side-aware проход по текущим component ids:
 
 ```text
-direction = ema_anchor_stack_bullish(..., side)
+direction = ema_anchor_stack_trend(..., side)
 blockers  = AND(blocker_i(..., side, rule=..., rsi_col=...))
 setup     = pullback_to_anchor(..., side)
 trigger   = resolve(components.trigger.component_id)(..., side)

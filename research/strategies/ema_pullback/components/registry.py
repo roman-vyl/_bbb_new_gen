@@ -11,7 +11,7 @@ from research.strategies.ema_pullback.components.blockers import (
     rsi_extreme_blocker,
 )
 from research.strategies.ema_pullback.components.direction import (
-    ema_anchor_stack_bullish,
+    ema_anchor_stack_trend,
 )
 from research.strategies.ema_pullback.components.exits import (
     atr_distance_exit,
@@ -37,7 +37,7 @@ REQUIRED_COMPONENT_ROLES: tuple[str, ...] = (
     "risk",
 )
 
-EMA_ANCHOR_STACK_BULLISH_COMPONENT = "ema_anchor_stack_bullish"
+EMA_ANCHOR_STACK_TREND_COMPONENT = "ema_anchor_stack_trend"
 NO_BLOCKERS_COMPONENT = "no_blockers"
 COUNTER_CANDLE_BLOCKER_COMPONENT = "counter_candle_blocker"
 RSI_EXTREME_BLOCKER_COMPONENT = "rsi_extreme_blocker"
@@ -61,10 +61,10 @@ class ComponentDefinition:
 
 COMPONENT_REGISTRY: dict[str, dict[str, ComponentDefinition]] = {
     "direction": {
-        EMA_ANCHOR_STACK_BULLISH_COMPONENT: ComponentDefinition(
+        EMA_ANCHOR_STACK_TREND_COMPONENT: ComponentDefinition(
             role="direction",
-            component_id=EMA_ANCHOR_STACK_BULLISH_COMPONENT,
-            func=ema_anchor_stack_bullish,
+            component_id=EMA_ANCHOR_STACK_TREND_COMPONENT,
+            func=ema_anchor_stack_trend,
             description="Allow long when fast > anchor > slow; short mirrors the stack.",
         ),
     },
@@ -171,7 +171,7 @@ __all__ = [
     "ATR_TAKE_PROFIT_COMPONENT",
     "ComponentDefinition",
     "COUNTER_CANDLE_BLOCKER_COMPONENT",
-    "EMA_ANCHOR_STACK_BULLISH_COMPONENT",
+    "EMA_ANCHOR_STACK_TREND_COMPONENT",
     "NO_BLOCKERS_COMPONENT",
     "NO_SIGNAL_EXIT_COMPONENT",
     "NO_RISK_FILTER_COMPONENT",

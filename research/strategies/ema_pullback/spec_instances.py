@@ -2,18 +2,24 @@
 
 from __future__ import annotations
 
+from typing import Sequence
+
+from research.strategies.ema_pullback.component_builders import (
+    anchor_stack_from_periods,
+    blocker_none,
+    component_stack,
+    direction_ema_anchor_stack,
+    exits_atr_default,
+    pullback_setup,
+    risk_no_filter,
+    setup_pullback_to_anchor,
+    trade_sides,
+    trigger_reclaim_anchor,
+)
 from research.strategies.ema_pullback.spec import (
-    AnchorStackSpec,
-    AtrDistanceSpec,
-    BlockerRuleSpec,
     ComponentStackSpec,
     EmaPullbackStrategySpec,
-    EmaSpec,
-    ExitRuleSpec,
-    PullbackSetupSpec,
-    ReclaimTriggerSpec,
     TradeSide,
-    TradeSideSpec,
 )
 
 
@@ -45,46 +51,38 @@ def make_ema_pullback_strategy_spec(
     atr_period: int = 14,
     stop_atr_multiplier: float = 1.5,
     take_atr_multiplier: float = 4.0,
-    enabled_sides: tuple[TradeSide, ...] = ("long",),
+    enabled_sides: Sequence[TradeSide] = ("long",),
+    components: ComponentStackSpec | None = None,
 ) -> EmaPullbackStrategySpec:
+    resolved_components = (
+        component_stack(
+            direction=direction_ema_anchor_stack(),
+            blockers=(blocker_none(),),
+            setup=setup_pullback_to_anchor(),
+            trigger=trigger_reclaim_anchor(),
+            exits=exits_atr_default(
+                atr_period=atr_period,
+                stop_atr_multiplier=stop_atr_multiplier,
+                take_atr_multiplier=take_atr_multiplier,
+            ),
+            risk=risk_no_filter(),
+        )
+        if components is None
+        else components
+    )
+
     return EmaPullbackStrategySpec(
         variant=_variant_from_periods(fast_period, anchor_period, slow_period),
         symbol=symbol.strip().upper(),
         base_timeframe=base_timeframe.strip(),
-        anchor_stack=AnchorStackSpec(
-            fast=EmaSpec(source="close", timeframe="base", period=fast_period),
-            anchor=EmaSpec(source="close", timeframe="base", period=anchor_period),
-            slow=EmaSpec(source="close", timeframe="base", period=slow_period),
+        anchor_stack=anchor_stack_from_periods(
+            fast=fast_period,
+            anchor=anchor_period,
+            slow=slow_period,
         ),
-        components=ComponentStackSpec(
-            direction="ema_anchor_stack_bullish",
-            blockers=(BlockerRuleSpec(component_id="no_blockers"),),
-            setup="pullback_to_anchor",
-            trigger=ReclaimTriggerSpec(),
-            exits=(
-                ExitRuleSpec(
-                    component_id="atr_stop_loss",
-                    exit_kind="stop_loss",
-                    distance=AtrDistanceSpec(
-                        timeframe="base",
-                        period=atr_period,
-                        multiplier=stop_atr_multiplier,
-                    ),
-                ),
-                ExitRuleSpec(
-                    component_id="atr_take_profit",
-                    exit_kind="take_profit",
-                    distance=AtrDistanceSpec(
-                        timeframe="base",
-                        period=atr_period,
-                        multiplier=take_atr_multiplier,
-                    ),
-                ),
-            ),
-            risk="no_risk_filter",
-        ),
-        trade_sides=TradeSideSpec(enabled=enabled_sides),
-        setup=PullbackSetupSpec(lookback=setup_lookback),
+        components=resolved_components,
+        trade_sides=trade_sides(enabled_sides),
+        setup=pullback_setup(lookback=setup_lookback),
     )
 
 

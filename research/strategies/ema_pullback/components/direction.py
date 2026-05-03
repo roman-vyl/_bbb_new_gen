@@ -7,7 +7,7 @@ import pandas as pd
 from research.strategies.ema_pullback.spec import TradeSide
 
 
-def ema_anchor_stack_bullish(
+def ema_anchor_stack_trend(
     df: pd.DataFrame,
     fast_col: str,
     anchor_col: str,
