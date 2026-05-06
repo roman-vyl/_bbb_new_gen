@@ -127,6 +127,7 @@ def test_rsi_extreme_blocker_uses_prepared_rsi_column() -> None:
     idx = pd.date_range("2024-01-01", periods=4, freq="h", tz="UTC")
     df = pd.DataFrame({"rsi_close_base_14": [20.0, 40.0, 80.0, 60.0]}, index=idx)
     rule = BlockerRuleSpec(
+        instance_id="rsi_base",
         component_id="rsi_extreme_blocker",
         rsi=RsiFeatureSpec(timeframe="base", period=14),
         lookback=2,
@@ -152,6 +153,7 @@ def test_rsi_signal_exit_uses_prepared_rsi_column() -> None:
     idx = pd.date_range("2024-01-01", periods=4, freq="h", tz="UTC")
     df = pd.DataFrame({"rsi_close_base_14": [20.0, 40.0, 80.0, 60.0]}, index=idx)
     rule = ExitRuleSpec(
+        instance_id="rsi_exit_base",
         component_id="rsi_signal_exit",
         exit_kind="signal",
         rsi=RsiFeatureSpec(timeframe="base", period=14),

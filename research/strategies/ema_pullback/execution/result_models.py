@@ -75,6 +75,7 @@ class VariantResult:
     timeframe: str
     strategy_spec: dict[str, Any]
     metrics: VariantMetrics
+    component_counters: list[dict[str, Any]]
     trade_records: list[dict[str, Any]]
 
     def to_payload(self) -> dict[str, Any]:
@@ -85,5 +86,6 @@ class VariantResult:
             "timeframe": self.timeframe,
             "strategy_spec": self.strategy_spec,
             "metrics": self.metrics.to_payload(),
+            "component_counters": self.component_counters,
             "trade_records": self.trade_records,
         }

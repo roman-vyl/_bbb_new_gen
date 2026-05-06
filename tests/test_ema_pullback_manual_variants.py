@@ -82,7 +82,10 @@ def test_factory_accepts_custom_components_as_source_of_truth() -> None:
     custom_components = component_stack(
         trigger=trigger_touch_anchor(),
         blockers=(blocker_counter_candle(),),
-        exits=(exit_no_signal(), exit_rsi(long_exit_above=75.0, short_exit_below=25.0)),
+        exits=(
+            exit_no_signal(),
+            exit_rsi(instance_id="rsi_exit_base", long_exit_above=75.0, short_exit_below=25.0),
+        ),
     )
     spec = make_ema_pullback_strategy_spec(
         atr_period=99,

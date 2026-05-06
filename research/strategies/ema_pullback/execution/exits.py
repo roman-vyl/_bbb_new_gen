@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Callable
+from dataclasses import dataclass, field
+from typing import Any, Callable
 
 import pandas as pd
 
@@ -21,6 +21,7 @@ class PortfolioExitOutputs:
     short_exits: pd.Series
     sl_stop: pd.Series
     tp_stop: pd.Series
+    output_counters: tuple[dict[str, Any], ...] = field(default_factory=tuple)
 
     def stop_kwargs(self) -> dict[str, pd.Series]:
         return {
@@ -51,7 +52,7 @@ def _rsi_column(plan: FeaturePlan, rsi: RsiFeatureSpec | None) -> str | None:
 
 
 def _distance_column(plan: FeaturePlan, rule: ExitRuleSpec) -> str:
-    return plan.exit_distance_columns[rule.exit_kind]
+    return plan.exit_distance_columns[rule.instance_id]
 
 
 def _build_boolean_exits_for_side(
@@ -62,9 +63,9 @@ def _build_boolean_exits_for_side(
     plan: FeaturePlan,
     anchor_col: str,
     signal_rules: tuple[tuple[Callable[..., pd.Series], ExitRuleSpec], ...],
-) -> pd.Series:
+) -> tuple[pd.Series, tuple[dict[str, Any], ...]]:
     if not spec.trade_sides.includes(side):
-        return _false_series(df)
+        return _false_series(df), ()
     signals = tuple(
         exit_fn(
             df,
@@ -75,22 +76,51 @@ def _build_boolean_exits_for_side(
         )
         for exit_fn, rule in signal_rules
     )
-    return compose_exit_signals(signals, index=df.index)
+    counters = tuple(
+        {
+            "role": "exits",
+            "component_id": rule.component_id,
+            "instance_id": rule.instance_id,
+            "exit_kind": rule.exit_kind,
+            "side": side,
+            "output_type": "boolean",
+            "counters": {
+                "signal_count": int(signal.fillna(False).astype(bool).sum()),
+            },
+        }
+        for (_, rule), signal in zip(signal_rules, signals, strict=True)
+    )
+    return compose_exit_signals(signals, index=df.index), counters
 
 
 def _build_stop_outputs(
     df: pd.DataFrame,
     plan: FeaturePlan,
     distance_rules: tuple[tuple[Callable[..., pd.Series], ExitRuleSpec], ...],
-) -> dict[str, pd.Series]:
-    distances: dict[str, pd.Series] = {}
+) -> tuple[dict[str, pd.Series], tuple[dict[str, Any], ...]]:
+    distances: dict[str, list[pd.Series]] = {}
+    counters: list[dict[str, Any]] = []
     for exit_fn, rule in distance_rules:
-        if rule.exit_kind in distances:
-            raise ValueError(f"duplicate {rule.exit_kind} exit rule")
-        distances[rule.exit_kind] = exit_fn(
+        distance = exit_fn(
             df,
             rule=rule,
             distance_col=_distance_column(plan, rule),
+        )
+        distances.setdefault(rule.exit_kind, []).append(distance)
+        non_null_count = int(distance.notna().sum())
+        counters.append(
+            {
+                "role": "exits",
+                "component_id": rule.component_id,
+                "instance_id": rule.instance_id,
+                "exit_kind": rule.exit_kind,
+                "side": None,
+                "output_type": "distance",
+                "counters": {
+                    "ready_count": non_null_count,
+                    "non_null_distance_count": non_null_count,
+                },
+            }
         )
 
     missing = {"stop_loss", "take_profit"} - set(distances)
@@ -99,10 +129,12 @@ def _build_stop_outputs(
         raise ValueError(f"missing required distance exit rules: {missing_names}")
 
     close = df["close"].astype(float)
+    stop_loss = pd.concat(distances["stop_loss"], axis=1).min(axis=1)
+    take_profit = pd.concat(distances["take_profit"], axis=1).min(axis=1)
     return {
-        "sl_stop": distances["stop_loss"].astype(float) / close,
-        "tp_stop": distances["take_profit"].astype(float) / close,
-    }
+        "sl_stop": stop_loss.astype(float) / close,
+        "tp_stop": take_profit.astype(float) / close,
+    }, tuple(counters)
 
 
 def build_exit_outputs_from_spec(
@@ -119,25 +151,28 @@ def build_exit_outputs_from_spec(
     distance_rules = tuple((fn, rule) for fn, rule in resolved_rules if rule.exit_kind != "signal")
 
     anchor_col = plan.anchor_columns["anchor"]
-    stop_kwargs = _build_stop_outputs(df, plan, distance_rules)
+    stop_kwargs, distance_counters = _build_stop_outputs(df, plan, distance_rules)
+    long_exits, long_counters = _build_boolean_exits_for_side(
+        df=df,
+        side="long",
+        spec=spec,
+        plan=plan,
+        anchor_col=anchor_col,
+        signal_rules=signal_rules,
+    )
+    short_exits, short_counters = _build_boolean_exits_for_side(
+        df=df,
+        side="short",
+        spec=spec,
+        plan=plan,
+        anchor_col=anchor_col,
+        signal_rules=signal_rules,
+    )
 
     return PortfolioExitOutputs(
-        exits=_build_boolean_exits_for_side(
-            df=df,
-            side="long",
-            spec=spec,
-            plan=plan,
-            anchor_col=anchor_col,
-            signal_rules=signal_rules,
-        ),
-        short_exits=_build_boolean_exits_for_side(
-            df=df,
-            side="short",
-            spec=spec,
-            plan=plan,
-            anchor_col=anchor_col,
-            signal_rules=signal_rules,
-        ),
+        exits=long_exits,
+        short_exits=short_exits,
         sl_stop=stop_kwargs["sl_stop"],
         tp_stop=stop_kwargs["tp_stop"],
+        output_counters=long_counters + short_counters + distance_counters,
     )

@@ -53,13 +53,14 @@ def test_invalid_anchor_stack_order_rejected() -> None:
 
 def test_exit_distance_rules_require_distance() -> None:
     with pytest.raises(ValueError, match="stop_loss exit requires distance"):
-        ExitRuleSpec(component_id="atr_stop_loss", exit_kind="stop_loss")
+        ExitRuleSpec(instance_id="atr_stop_loss", component_id="atr_stop_loss", exit_kind="stop_loss")
 
 
 def test_exit_rule_rejects_component_kind_mismatch() -> None:
     distance = AtrDistanceSpec(timeframe="base", period=14, multiplier=1.5)
     with pytest.raises(ValueError, match="rsi_signal_exit.*exit_kind 'signal'"):
         ExitRuleSpec(
+            instance_id="rsi_exit",
             component_id="rsi_signal_exit",
             exit_kind="stop_loss",
             distance=distance,
@@ -70,6 +71,7 @@ def test_signal_exit_rules_reject_distance_payload() -> None:
     distance = AtrDistanceSpec(timeframe="base", period=14, multiplier=1.5)
     with pytest.raises(ValueError, match="signal exit must not define distance"):
         ExitRuleSpec(
+            instance_id="rsi_exit",
             component_id="rsi_signal_exit",
             exit_kind="signal",
             distance=distance,
@@ -80,6 +82,7 @@ def test_distance_exit_rules_reject_signal_thresholds() -> None:
     distance = AtrDistanceSpec(timeframe="base", period=14, multiplier=1.5)
     with pytest.raises(ValueError, match="stop_loss exit must not define signal thresholds"):
         ExitRuleSpec(
+            instance_id="atr_stop_loss",
             component_id="atr_stop_loss",
             exit_kind="stop_loss",
             distance=distance,

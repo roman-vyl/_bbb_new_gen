@@ -1,11 +1,19 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
 import pytest
 
 pytest.importorskip("pandas")
 
 import pandas as pd
 
+from research.strategies.ema_pullback.component_builders import (
+    component_stack,
+    exit_atr_stop_loss,
+    exit_atr_take_profit,
+    exit_rsi,
+)
 from research.strategies.ema_pullback.execution.exits import (
     build_exit_outputs_from_spec,
     compose_exit_signals,
@@ -54,6 +62,12 @@ def test_build_signals_from_spec_uses_component_registry_and_plan_columns() -> N
     assert len(signals.short_entries) == len(df)
     assert bool(signals.short_entries.any()) is False
     assert bool(signals.entries.isna().any()) is False
+    assert signals.output_counters[0]["role"] == "blockers"
+    assert signals.output_counters[0]["instance_id"] == "no_blockers"
+    assert signals.output_counters[0]["counters"] == {
+        "allowed_count": len(df),
+        "blocked_count": 0,
+    }
 
 
 def test_build_exit_outputs_from_spec_uses_unified_exit_rules() -> None:
@@ -74,8 +88,45 @@ def test_build_exit_outputs_from_spec_uses_unified_exit_rules() -> None:
     assert bool(exit_outputs.short_exits.any()) is False
     assert "stop_loss" in plan.exit_distance_columns
     assert "take_profit" in plan.exit_distance_columns
+    assert "atr_stop_loss" in plan.exit_distance_columns
+    assert "atr_take_profit" in plan.exit_distance_columns
     assert exit_outputs.sl_stop.notna().any()
     assert exit_outputs.tp_stop.notna().any()
+    assert [counter["instance_id"] for counter in exit_outputs.output_counters] == [
+        "atr_stop_loss",
+        "atr_take_profit",
+    ]
+    assert all(
+        counter["counters"]["ready_count"] == counter["counters"]["non_null_distance_count"]
+        for counter in exit_outputs.output_counters
+    )
+
+
+def test_exit_outputs_include_boolean_and_distance_instance_counters() -> None:
+    base = default_ema_pullback_strategy_spec()
+    spec = replace(
+        base,
+        components=component_stack(
+            exits=(
+                exit_rsi(instance_id="rsi_exit_base", period=3, long_exit_above=60.0),
+                exit_atr_stop_loss(atr_period=14, atr_multiplier=1.5),
+                exit_atr_take_profit(atr_period=14, atr_multiplier=4.0),
+            )
+        ),
+    )
+    plan = build_feature_plan_from_strategy_spec(spec)
+    idx = pd.date_range("2024-01-01", periods=30, freq="h", tz="UTC")
+    ohlcv = _ohlcv().reindex(idx).ffill()
+    df = add_feature_columns_from_plan(ohlcv, plan)
+    df[plan.anchor_columns["anchor"]] = df["close"]
+    df[plan.rsi_columns[("base", 3)]] = [50.0, 70.0] * 15
+
+    exit_outputs = build_exit_outputs_from_spec(df, spec, plan)
+    counters = {(item["instance_id"], item["output_type"]): item for item in exit_outputs.output_counters}
+
+    assert counters[("rsi_exit_base", "boolean")]["counters"]["signal_count"] == 15
+    assert counters[("atr_stop_loss", "distance")]["counters"]["non_null_distance_count"] > 0
+    assert counters[("atr_take_profit", "distance")]["counters"]["ready_count"] > 0
 
 
 def test_build_signals_from_spec_can_emit_short_entries_when_enabled() -> None:

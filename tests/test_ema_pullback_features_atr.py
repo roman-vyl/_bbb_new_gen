@@ -96,6 +96,7 @@ def test_base_rsi_feature_plan_and_calculation() -> None:
             base.components,
             blockers=(
                 BlockerRuleSpec(
+                    instance_id="rsi_base",
                     component_id="rsi_extreme_blocker",
                     rsi=RsiFeatureSpec(timeframe="base", period=3),
                     long_min=30.0,
@@ -104,6 +105,7 @@ def test_base_rsi_feature_plan_and_calculation() -> None:
             ),
             exits=(
                 ExitRuleSpec(
+                    instance_id="rsi_exit_base",
                     component_id="rsi_signal_exit",
                     exit_kind="signal",
                     rsi=RsiFeatureSpec(timeframe="base", period=3),

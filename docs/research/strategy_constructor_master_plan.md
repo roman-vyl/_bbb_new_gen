@@ -336,9 +336,10 @@ risk_component = существующий/дефолтный no_risk_filter
 
 ---
 
-### Step 8 — Feature-based Trade Management / SL-TP
+### Step 8 — Feature-based Trade Management / SL-TP (historical, superseded)
 
-После первой реальной component-based стратегии вводится отдельный слой управления открытой сделкой.
+Историческая формулировка этапа: после первой реальной component-based стратегии вводится отдельный слой управления открытой сделкой.
+Актуальная архитектура для `ema_pullback` зафиксирована позже (Step 12): выходы и SL/TP описываются через `components.exits`, а корневой `TradeManagementSpec` зарезервирован.
 
 Trade Management не является FeaturesDev и не является entry-логикой.
 
@@ -352,7 +353,7 @@ volatility context
 trend relations
 ```
 
-Trade Management использует prepared feature bindings/relations, чтобы рассчитывать правила фиксации прибыли и убытка:
+Исторически Trade Management описывался как слой, использующий prepared feature bindings/relations для правил фиксации прибыли и убытка:
 
 ```text
 stop_loss
@@ -361,15 +362,16 @@ time_stop
 later: trailing_stop / partial exits
 ```
 
-`trade_management_profile` должен быть частью `StrategyConfig` и входить в `config_id`, потому что одинаковая entry-логика с разными правилами фиксации прибыли/убытка — это разные strategy instances.
+Историческая заметка: `trade_management_profile` рассматривался как часть `StrategyConfig` и `config_id`.
+Для текущей модели `ema_pullback` это заменено спецификацией выходов в `components.exits` (см. Step 12).
 
 Component Grid начинается только после базового Trade Management, потому что массово тестировать входы без стабильной архитектуры stop/take даёт искажённые выводы.
 
 ---
 
-### Step 9 — Research Results Artifact / Experiment Report
+### Step 9 — Research Results Artifact / Experiment Report (updated by later spec steps)
 
-После первой реальной component-based стратегии и базового Trade Management нужно перестать опираться только на stdout-таблицу runner.
+После первой реальной component-based стратегии нужно перестать опираться только на stdout-таблицу runner.
 
 Research runner формирует структурированный результат запуска:
 
@@ -379,7 +381,9 @@ research/results/*.json
 
 Минимальный смысл: `run.py` → structured experiment result artifact.
 
-Артефакт (минимум): `run_id`, `timestamp`, `family`, `symbol`, `timeframe`, `candles`, `variants`, `config_id`, `feature_profile`, component ids, `trade_management_profile`, `trades`, `sharpe`, `profit_factor`, `max_drawdown`, `total_return` (позже).
+Артефакт (минимум): `run_id`, `timestamp`, `family`, `symbol`, `timeframe`, `candles`, `variants`, `config_id`, `feature_profile`, component ids, `trades`, `sharpe`, `profit_factor`, `max_drawdown`, `total_return` (позже).
+
+Примечание: поле `trade_management_profile` относится к исторической формулировке ранних шагов; в актуальной модели источником семантики выходов является `components.exits` (см. Step 12).
 
 Цель: результаты backtest воспроизводимы, сравнимы и пригодны для будущего dashboard/grid.
 
@@ -428,11 +432,31 @@ slow EMA
 
 **Execution:** применение выходов сосредоточено в отдельном слое исполнения (orchestration + exits), а не размазано по runner и только входным компонентам.
 
-**Construction (тот же шаг по охвату roadmap):** typed **`component_builders.py`** и миграция **`spec_instances`** на единый pure-builder путь сборки spec-объектов — мост к Step 13 (внешний instance dict без второго способа ручной сборки dataclass-ов).
+**Construction (тот же шаг по охвату roadmap):** typed **`component_builders.py`** и миграция **`spec_instances`** на единый pure-builder путь сборки spec-объектов — мост к Step 14 (внешний instance dict без второго способа ручной сборки dataclass-ов).
 
 ---
 
-### Step 13 — External Instance Config MVP
+### Step 13 — Multi-instance компонентов в одном strategy instance
+
+После стабилизации side-aware компонентов и unified `exits` нужно разрешить повторное использование одного и того же component id в рамках одной роли с разными параметрами.
+
+**Цель:**
+
+- поддержать несколько экземпляров одного типа компонента (например, несколько `blockers`/`exits`) в одном `StrategySpec`;
+- ввести стабильные `instance_id`/алиасы для различения экземпляров и детерминированной диагностики;
+- зафиксировать единый целевой multi-instance формат как основной контракт шага.
+
+**High-level scope:**
+
+- расширить contracts builder/execution так, чтобы компонент мог присутствовать в конфиге как список instances;
+- определить порядок выполнения и агрегацию результатов для одинаковых component ids с разными params;
+- включить `instance_id` в debug/reporting слой (`research/results`) для воспроизводимого анализа.
+
+Подробный контракт и подшаги — в отдельном плане `docs/research/13_multi_instance_components_plan.md`.
+
+---
+
+### Step 14 — External Instance Config MVP
 
 После side-aware компонентов вводится тонкий внешний слой конфигурации одного экземпляра стратегии: маленький typed instance dict → один pure builder → существующий `EmaPullbackStrategySpec` → старый pipeline без изменений.
 
@@ -450,11 +474,11 @@ slow EMA
 - нет Grid / optimizer / parameter sweep;
 - нет frontend.
 
-Подробный контракт и подшаги — в отдельном плане Step 13.
+Подробный контракт и подшаги — в отдельном плане Step 14.
 
 ---
 
-### Step 14 — Component Grid
+### Step 15 — Component Grid
 
 Component Grid запускается только после того, как появятся структурированные результаты research-прогонов: без стабильного хранения результатов массовый прогон вариантов превращается в шумный и плохо сопоставимый `stdout`.
 
@@ -474,7 +498,7 @@ Grid должен:
 
 ---
 
-### Step 15 — Debug Reports / Diagnostics
+### Step 16 — Debug Reports / Diagnostics
 
 Расширение отчётности поверх базового structured artifact: debug counters, сделочная диагностика, причины входов/выходов.
 
@@ -490,7 +514,7 @@ trade_count
 
 ---
 
-### Step 16 — Validation
+### Step 17 — Validation
 
 Добавить защиту от самообмана:
 
@@ -518,7 +542,7 @@ trade_count
 
 Roadmap note:
 
-FeaturesDev keeps indicator calculation out of components. Exit rules (signal and ATR-based SL/TP) live in `StrategySpec` under `components.exits` and are evaluated via a dedicated execution exits path, so runner and entry-side code stay orchestration-focused. Research Results Artifact is inserted before Component Grid so experiments have stable structured output. EMA Pullback StrategySpec / anchor stack refactor stabilises the internal instance model after artifacts. Bidirectional Side Semantics (`TradeSideSpec`, long/short vectorbt wiring) follows StrategySpec so `ema_pullback` is not long-only. Step 12 completes side-aware blocker / risk / exit / trigger wiring and this **unified exits + reserved root trade_management** architecture, plus typed `component_builders` as the single construction layer ahead of external config. Step 13 adds an external instance config MVP so one `EmaPullbackStrategySpec` can be built from a small typed dict without file IO or CLI. Component Grid remains postponed until FeaturesDev, components, result artifacts, StrategySpec, side-aware specs, live components, builders, and external instance config are stable.
+FeaturesDev keeps indicator calculation out of components. Exit rules (signal and ATR-based SL/TP) live in `StrategySpec` under `components.exits` and are evaluated via a dedicated execution exits path, so runner and entry-side code stay orchestration-focused. Research Results Artifact is inserted before Component Grid so experiments have stable structured output. EMA Pullback StrategySpec / anchor stack refactor stabilises the internal instance model after artifacts. Bidirectional Side Semantics (`TradeSideSpec`, long/short vectorbt wiring) follows StrategySpec so `ema_pullback` is not long-only. Step 12 completes side-aware blocker / risk / exit / trigger wiring and this **unified exits + reserved root trade_management** architecture, plus typed `component_builders` as the single construction layer ahead of external config. Step 13 introduces multi-instance component support (same component id reused with different params and explicit instance ids). Step 14 adds an external instance config MVP so one `EmaPullbackStrategySpec` can be built from a small typed dict without file IO or CLI. Component Grid remains postponed until FeaturesDev, components, result artifacts, StrategySpec, side-aware specs, live components, builders, multi-instance support, and external instance config are stable.
 
 ---
 
@@ -542,10 +566,11 @@ FeaturesDev keeps indicator calculation out of components. Exit rules (signal an
 10. ema_pullback StrategySpec / anchor stack refactor
 11. bidirectional side semantics (TradeSideSpec, long / short)
 12. side-aware blocker / risk / exit / trigger + unified `exits` spec, execution exits layer, `component_builders`
-13. external instance config MVP
-14. component grid
-15. debug report / diagnostics
-16. validation
+13. multi-instance same component support (different params, explicit `instance_id`)
+14. external instance config MVP
+15. component grid
+16. debug report / diagnostics
+17. validation
 ```
 
 Итоговая цель:
