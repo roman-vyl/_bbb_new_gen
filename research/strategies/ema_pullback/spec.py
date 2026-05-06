@@ -165,8 +165,8 @@ class AtrDistanceSpec:
     multiplier: float
 
     def __post_init__(self) -> None:
-        if self.timeframe != "base":
-            raise ValueError("atr distance timeframe must be 'base'")
+        if not self.timeframe.strip():
+            raise ValueError("atr distance timeframe must be non-empty")
         if self.period <= 0:
             raise ValueError("atr distance period must be > 0")
         if self.multiplier <= 0:

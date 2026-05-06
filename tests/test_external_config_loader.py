@@ -153,6 +153,21 @@ def test_load_external_config_supports_anchor_stack_source_and_timeframe() -> No
     assert spec.anchor_stack.slow.timeframe == "4h"
 
 
+def test_load_external_config_supports_exit_atr_distance_timeframe() -> None:
+    instance = _instance("mtf_exit_distance")
+    strategy = instance["strategy"]
+    assert isinstance(strategy, dict)
+    exits = strategy["exits"]
+    assert isinstance(exits, list)
+    exits[0]["distance"]["timeframe"] = "15m"
+
+    loaded = load_strategy_config(_bundle([instance]))
+
+    spec = loaded.specs[0]
+    assert spec.components.exits[0].distance is not None
+    assert spec.components.exits[0].distance.timeframe == "15m"
+
+
 def test_load_external_config_accepts_user_variant_label() -> None:
     loaded = load_strategy_config(_bundle([_instance("baseline_long", variant="baseline_long")]))
 

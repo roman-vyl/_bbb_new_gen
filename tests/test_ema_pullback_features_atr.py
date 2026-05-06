@@ -53,7 +53,7 @@ def test_feature_plan_ids_follow_strategy_spec() -> None:
     assert len(atr_feats) == 1
     atr_periods = {r.distance.period for r in spec.components.exits if r.distance is not None}
     assert atr_feats[0].period in atr_periods
-    assert atr_feats[0].feature_id == f"atr_close_base_{atr_feats[0].period}"
+    assert atr_feats[0].feature_id == f"atr_close_{atr_feats[0].timeframe}_{atr_feats[0].period}"
 
     dist_feats = [f for f in plan.features if f.kind == "atr_distance"]
     distance_rules = [r for r in spec.components.exits if r.distance is not None]
@@ -175,3 +175,40 @@ def test_mtf_ema_and_rsi_align_only_after_completed_candle() -> None:
 
     assert out["rsi_close_4h_1"].iloc[:8].isna().all()
     assert out["rsi_close_4h_1"].iloc[8:].tolist() == [100.0, 100.0, 100.0, 100.0]
+
+
+def test_mtf_atr_distance_feature_uses_distance_timeframe() -> None:
+    plan = FeaturePlan(
+        features=(
+            PlannedFeature(
+                feature_id="atr_close_4h_3",
+                kind="atr",
+                source="close",
+                timeframe="4h",
+                period=3,
+                base_feature_id=None,
+                multiplier=None,
+            ),
+            PlannedFeature(
+                feature_id="atr_close_4h_3_x1_5",
+                kind="atr_distance",
+                source=None,
+                timeframe="4h",
+                period=None,
+                base_feature_id="atr_close_4h_3",
+                multiplier=1.5,
+            ),
+        ),
+        anchor_columns={},
+        exit_distance_columns={"atr_sl_4h": "atr_close_4h_3_x1_5"},
+        rsi_columns={},
+    )
+    out = add_feature_columns_from_plan(_ohlcv(24), plan)
+    assert "atr_close_4h_3" in out.columns
+    assert "atr_close_4h_3_x1_5" in out.columns
+    valid = out["atr_close_4h_3"].notna()
+    pd.testing.assert_series_equal(
+        out["atr_close_4h_3_x1_5"].where(valid),
+        (out["atr_close_4h_3"] * 1.5).where(valid),
+        check_names=False,
+    )

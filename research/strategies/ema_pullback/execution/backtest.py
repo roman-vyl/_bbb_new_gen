@@ -6,6 +6,7 @@ import math
 from typing import Any
 
 from data_engine.contracts import pandas_freq_alias
+import pandas as pd
 
 from research.strategies.ema_pullback.execution.result_models import (
     OpenTradesBreakdown,
@@ -134,9 +135,16 @@ def run_strategy_spec(
     stop_kwargs = exit_outputs.stop_kwargs()
     sl_stop = stop_kwargs["sl_stop"]
     tp_stop = stop_kwargs["tp_stop"]
-    # ATR-based stops are NaN until warmup; opening without finite sl/tp yields no stop exits
-    # and (with no signal exits) a single perpetual open trade in vectorbt.
-    stop_ready = sl_stop.notna() & tp_stop.notna()
+    # ATR-based stops are NaN until warmup.
+    # Gate entries only by configured distance exits:
+    # - both SL+TP -> require both ready
+    # - only one distance side -> require that side ready
+    # - signal-only exits -> no distance readiness gating
+    stop_ready = pd.Series(True, index=close.index, dtype=bool)
+    if sl_stop.notna().any():
+        stop_ready = stop_ready & sl_stop.notna()
+    if tp_stop.notna().any():
+        stop_ready = stop_ready & tp_stop.notna()
     entries_for_portfolio = signals.entries.fillna(False).astype(bool) & stop_ready
     short_entries_for_portfolio = signals.short_entries.fillna(False).astype(bool) & stop_ready
 

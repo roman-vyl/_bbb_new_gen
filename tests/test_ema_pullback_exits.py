@@ -12,6 +12,7 @@ from research.strategies.ema_pullback.component_builders import (
     component_stack,
     exit_atr_stop_loss,
     exit_atr_take_profit,
+    exit_rsi,
     exits_atr_default,
 )
 from research.strategies.ema_pullback.execution.exits import build_exit_outputs_from_spec
@@ -92,3 +93,63 @@ def test_build_exit_outputs_aggregates_repeated_distance_instances_by_kind() -> 
         "atr_sl_slow",
         "atr_take_profit",
     ]
+
+
+def test_build_exit_outputs_supports_only_stop_loss_distance() -> None:
+    base = default_ema_pullback_strategy_spec()
+    spec = replace(
+        base,
+        components=component_stack(
+            exits=(exit_atr_stop_loss(atr_period=14, atr_multiplier=1.5, instance_id="atr_sl_only"),)
+        ),
+    )
+    plan = build_feature_plan_from_strategy_spec(spec)
+    idx = pd.date_range("2024-01-01", periods=4, freq="h", tz="UTC")
+    close = pd.Series([100.0, 101.0, 102.0, 103.0], index=idx)
+    stop_dist = pd.Series([1.5, 3.0, 4.5, 6.0], index=idx)
+    df = pd.DataFrame(
+        {
+            "close": close,
+            "ema_close_base_200": close,
+            plan.exit_distance_columns["atr_sl_only"]: stop_dist,
+        },
+        index=idx,
+    )
+
+    exits = build_exit_outputs_from_spec(df, spec, plan)
+    pd.testing.assert_series_equal(exits.sl_stop, stop_dist / close, check_names=False)
+    assert exits.tp_stop.isna().all()
+
+
+def test_build_exit_outputs_supports_signal_only_exits() -> None:
+    base = default_ema_pullback_strategy_spec()
+    spec = replace(
+        base,
+        components=component_stack(
+            exits=(
+                exit_rsi(
+                    instance_id="rsi_signal_only",
+                    timeframe="base",
+                    period=14,
+                    long_exit_above=70.0,
+                    short_exit_below=30.0,
+                ),
+            )
+        ),
+    )
+    plan = build_feature_plan_from_strategy_spec(spec)
+    idx = pd.date_range("2024-01-01", periods=4, freq="h", tz="UTC")
+    close = pd.Series([100.0, 101.0, 102.0, 103.0], index=idx)
+    df = pd.DataFrame(
+        {
+            "close": close,
+            "ema_close_base_200": close,
+            "rsi_close_base_14": [50.0, 75.0, 20.0, 50.0],
+        },
+        index=idx,
+    )
+
+    exits = build_exit_outputs_from_spec(df, spec, plan)
+    assert exits.sl_stop.isna().all()
+    assert exits.tp_stop.isna().all()
+    assert exits.exits.tolist() == [False, True, False, False]

@@ -34,8 +34,8 @@ def _ema_feature_id(timeframe: str, period: int) -> str:
     return f"ema_close_{timeframe}_{period}"
 
 
-def _atr_feature_id(period: int) -> str:
-    return f"atr_close_base_{period}"
+def _atr_feature_id(timeframe: str, period: int) -> str:
+    return f"atr_close_{timeframe}_{period}"
 
 
 def _rsi_feature_id(timeframe: str, period: int) -> str:
@@ -73,7 +73,7 @@ def build_feature_plan_from_strategy_spec(spec: EmaPullbackStrategySpec) -> Feat
     for rule in spec.components.exits:
         if rule.distance is None:
             continue
-        base_id = _atr_feature_id(rule.distance.period)
+        base_id = _atr_feature_id(rule.distance.timeframe, rule.distance.period)
         add(
             PlannedFeature(
                 feature_id=base_id,
