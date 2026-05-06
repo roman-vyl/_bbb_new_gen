@@ -31,11 +31,11 @@
 - минимальный generic experiment config loader для одного файла:
   - файл содержит один instance object; или
   - файл содержит bundle/list instances;
-- shared validation envelope (`schema_version`, `experiment_id`/`run_name`, `family`, `instances`);
+- shared validation envelope (`schema_version`, `experiment_id`, `family`, `instances`);
 - dispatch по `family` к family-local parser;
 - family-local parser для `ema_pullback`: `dict` одного instance -> typed `EmaPullbackStrategySpec`;
 - fail-fast validation на файл/bundle в MVP;
-- batch result artifact (per-instance status + агрегированный summary), где per-instance status формируется только после успешной валидации всего файла/bundle;
+- batch result artifact (per-instance success status + агрегированный summary), который формируется только после успешной валидации всего файла/bundle и запуска;
 - deterministic mapping `external config -> strategy_spec_config_id -> result`.
 
 ## 4. Non-goals (out)
@@ -70,7 +70,7 @@ MVP фиксирует только один источник:
 
 ```text
 schema_version
-experiment_id or run_name
+experiment_id
 family
 instances[] (или single instance, нормализуемый к списку длины 1)
 ```
@@ -86,8 +86,7 @@ instances[] (или single instance, нормализуемый к списку 
 Каждый instance во внешнем файле обязан содержать:
 
 ```text
-schema_version
-instance_id (обязательный; может называться external_config_id в совместимой форме)
+instance_id
 variant
 market
 execution
@@ -104,8 +103,8 @@ exits[]
 Принципы:
 
 - обязательные поля явные и валидируются до build;
-- неизвестные поля -> validation error;
-- `instance_id/external_config_id` обязателен для каждого instance (derived id во внешнем формате не используется).
+- неизвестные поля валидируются в family-local parser;
+- `instance_id` обязателен для каждого instance; `external_config_id` в MVP не используется.
 
 ### 6.2 Batch identity
 
@@ -114,7 +113,7 @@ exits[]
 - `source_file`;
 - `entry_index` (для list внутри файла);
 - `family`;
-- `external_config_id`/`instance_id` (обязательное поле входа);
+- `instance_id` (обязательное поле входа);
 - итоговый `strategy_spec_config_id`.
 
 ---
@@ -126,11 +125,11 @@ exits[]
 ### 7.1 Generic validation (experiment layer)
 
 - наличие `schema_version`;
-- наличие `experiment_id`/`run_name`;
+- наличие `experiment_id`;
 - наличие `family`;
 - `instances` имеет корректный тип (или single object корректно нормализуется в list);
 - `instance_id` уникален внутри bundle;
-- общие поля (`market`, `execution`) имеют корректный тип.
+- generic loader валидирует только envelope и структуру входа; family-specific поля не проверяются на этом слое.
 
 ### 7.2 Family-specific validation (`ema_pullback` layer)
 
@@ -169,8 +168,9 @@ Batch pipeline (experiment layer):
 ```text
 discover config entries
 -> envelope validate (file-level)
--> for each entry run single-instance pipeline
--> aggregate status/metrics/errors
+-> family dispatch + validate/build all entries
+-> run all validated entries
+-> aggregate success statuses/metrics
 -> write batch summary artifact
 ```
 
@@ -188,18 +188,17 @@ discover config entries
 
 - `batch_run_id`, timestamp;
 - source metadata (file/dir, counts);
-- `validation_phase_status` (`passed`/`failed`) для явного разделения «не прошли общий validate» vs «дошли до исполнения»;
+- `validation_phase_status` (`passed`) для явного фиксирования, что bundle дошел до исполнения;
 - список entries:
   - identity fields;
-  - status (`success`/`failed_validation`/`failed_runtime`);
+  - status (`success`) только для entries, которые прошли валидацию и были запущены;
   - result artifact reference (для success);
-  - error payload (для failed);
-- агрегированные counters (total/success/failed).
+- агрегированные counters (total/success/failed, где `failed=0` для опубликованного MVP batch artifact).
 
 Guardrail:
 
 - если file/bundle validation не пройдена, execution не стартует вообще;
-- в этом случае артефакт фиксирует file-level fail и validation errors, без runtime/per-instance execution statuses.
+- в этом случае partial per-entry failed statuses в MVP не формируются.
 
 Цель: по одному артефакту видно, какие конфиги реально прогнаны и с каким итогом.
 
@@ -218,7 +217,7 @@ Guardrail:
 
 1. Ввести `research/experiments/config_loader.py` (минимальный generic loader).
 2. Реализовать чтение одного config file (single object или list/bundle).
-3. Реализовать shared envelope validation (`schema_version`, `experiment_id`/`run_name`, `family`, `instances`).
+3. Реализовать shared envelope validation (`schema_version`, `experiment_id`, `family`, `instances`).
 4. Реализовать family dispatch (`ema_pullback` -> `instance_loader.py`).
 5. Возвращать список typed specs и metadata для batch report.
 6. Добавить smoke-тесты на single-object, list/bundle, fail-fast и duplicate `instance_id`.
@@ -243,7 +242,7 @@ Guardrail:
 - все instances в файле валидируются до запуска, затем проходят единый validate->build->run путь;
 - один batch report содержит результаты по всем variants из файла;
 - ручная сборка spec в entrypoint отсутствует;
-- batch summary artifact фиксирует итог по каждому config entry;
+- batch summary artifact фиксирует success итог по каждому config entry только после успешной валидации всего файла/bundle;
 - directory feed не обязателен для завершения шага;
 - поведение детерминировано при повторном запуске с тем же config file.
 
@@ -252,13 +251,13 @@ Guardrail:
 ## 12. Основные риски и снижение
 
 - риск: размытый контракт конфига  
-  снижение: строгая schema + reject unknown fields.
+  снижение: строгая schema + reject unknown fields на соответствующем слое (envelope в generic loader, family-specific поля в parser).
 
 - риск: расхождение идентичности между external config и internal config_id  
   снижение: явная mapping-таблица в batch artifact.
 
 - риск: скрытые ошибки в batch (часть записей не прогнана)  
-  снижение: обязательный per-entry status и aggregated counters.
+  снижение: fail-fast до запуска; per-entry success statuses и aggregated counters только для успешно валидированного и запущенного bundle.
 
 - риск: scope creep в optimizer/grid  
   снижение: зафиксировать, что Step 14B ограничен single-file loader + dispatch без optimizer/grid.

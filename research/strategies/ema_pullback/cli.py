@@ -24,6 +24,12 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     p.add_argument("--init-cash", type=float, default=DEFAULT_EXECUTION_CONFIG.init_cash, help="Initial cash")
     p.add_argument("--fees", type=float, default=DEFAULT_EXECUTION_CONFIG.fees, help="Per-trade fee")
     p.add_argument("--slippage", type=float, default=DEFAULT_EXECUTION_CONFIG.slippage, help="Per-trade slippage")
+    p.add_argument(
+        "--config",
+        type=Path,
+        default=None,
+        help="Optional external single-file strategy config",
+    )
     return p.parse_args(argv)
 
 

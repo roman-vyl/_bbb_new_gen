@@ -18,11 +18,17 @@ if str(_ROOT) not in sys.path:
 from research.strategies.ema_pullback.cli import config_from_args, parse_args  # noqa: E402
 from research.strategies.ema_pullback.execution.runner import (  # noqa: E402
     run_active_strategy_specs,
+    run_strategy_specs_from_config,
 )
 
 
 def main() -> None:
-    run_active_strategy_specs(config_from_args(parse_args()))
+    args = parse_args()
+    cfg = config_from_args(args)
+    if args.config is not None:
+        run_strategy_specs_from_config(cfg, args.config)
+        return
+    run_active_strategy_specs(cfg)
 
 
 if __name__ == "__main__":

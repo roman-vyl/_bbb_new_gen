@@ -172,10 +172,11 @@ def build_research_run_payload(
     data_range_from_ms: int,
     data_range_to_ms: int,
     variants: list[dict[str, Any]],
+    batch_metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Assemble top-level artifact dict (field order stable for readability)."""
 
-    return {
+    payload = {
         "run_id": run_id,
         "created_at": _format_created_at(created_at),
         "report_schema_version": 3,
@@ -190,6 +191,9 @@ def build_research_run_payload(
         "variants_count": len(variants),
         "variants": variants,
     }
+    if batch_metadata is not None:
+        payload["batch_metadata"] = batch_metadata
+    return payload
 
 
 def write_research_results(

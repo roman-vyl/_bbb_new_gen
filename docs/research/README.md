@@ -350,7 +350,8 @@ global framework без необходимости
 ## Текущий статус
 
 Research-слой для `ema_pullback` включает bidirectional side semantics (Step 11)
-и первые side-aware live компоненты + RSI + MTF alignment на base OHLCV (Step 12).
+первые side-aware live компоненты + RSI + MTF alignment на base OHLCV (Step 12),
+multi-instance component semantics (Step 13) и внешний config loader MVP (Step 14).
 
 Текущий практически полезный контур:
 
@@ -365,11 +366,20 @@ clean candles
 → stdout + JSON report
 ```
 
+Для Step 14 доступен callable loader path:
+
+```text
+external config file
+→ research/experiments/config_loader.py
+→ research/strategies/ema_pullback/instance_loader.py
+→ typed StrategySpec bundle
+→ existing runner/backtest path
+```
+
 Следующие крупные направления:
 
 ```text
 Research:
-  external instance config MVP (Step 13)
   component grid
   debug diagnostics
   validation
