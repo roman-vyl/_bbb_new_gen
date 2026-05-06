@@ -16,21 +16,21 @@
 
 Ввести минимальный production-like слой внешней конфигурации для research:
 
-- загрузка instance config из файла(ов);
+- загрузка instance config из одного config file (single object или bundle/list instances);
 - строгая валидация;
 - сборка `EmaPullbackStrategySpec` только через builder path;
-- batch execution по множеству конфигов (multi-feed) с единым summary артефактом.
+- batch execution по instances из одного файла с единым summary артефактом.
 
 ---
 
 ## 3. Scope (in)
 
 - единый внешний контракт instance config для `ema_pullback`;
-- loader для чтения:
-  - одного файла конфигов;
-  - директории с множеством config файлов;
+- loader для чтения одного config file:
+  - файл содержит один instance object; или
+  - файл содержит bundle/list instances;
 - fail-fast validation по schema и бизнес-ограничениям;
-- orchestration, которая запускает каждый валидный config как отдельный strategy instance run;
+- orchestration, которая запускает instances только после полной успешной валидации файла/bundle;
 - batch result artifact (success/fail per config + агрегированный summary);
 - deterministic mapping `external config -> config_id -> result`.
 
@@ -44,48 +44,46 @@
 
 ---
 
-## 5. Вопрос «файл или папка»
+## 5. MVP ingestion model (single config file)
 
-Шаг фиксирует поддержку обоих вариантов подачи:
+MVP фиксирует только один источник:
 
-- `single file` — удобно для контролируемого batch-сценария;
-- `config directory` — удобно для набора независимых конфигов.
-
-MVP-правило:
-
-- orchestrator принимает один `config_source`;
-- если `config_source` файл:
-  - поддерживается либо один объект, либо список объектов;
-- если `config_source` директория:
-  - читаются все подходящие config files в детерминированном порядке (например, лексикографически по имени);
-- смешанный режим (одновременно file + dir в одном запуске) не обязателен.
+- orchestrator принимает один `config_source_file`;
+- поддерживается два допустимых payload shape:
+  - один instance object;
+  - bundle/list instances в одном файле;
+- directory feed и multi-file discovery не входят в DoD этого шага.
 
 ---
 
 ## 6. Предлагаемый high-level контракт
 
-### 6.1 External instance config (минимум)
+### 6.1 External instance config shape (MVP)
 
-Каждый конфиг описывает один запуск:
+Каждый instance во внешнем файле обязан содержать:
 
 ```text
+schema_version
 family
-variant(optional)
-symbol
-timeframe
-date range
-enabled_sides
-anchor params
-setup params
-atr exit params
-components(optional override, включая multi-instance role lists)
+instance_id (обязательный; может называться external_config_id в совместимой форме)
+variant
+market
+execution
+strategy.trade_sides
+anchor_stack
+direction
+setup
+trigger
+blockers[]
+risk
+exits[]
 ```
 
 Принципы:
 
 - обязательные поля явные и валидируются до build;
 - неизвестные поля -> validation error;
-- `components` (если передан) считается source of truth для component stack, как уже закреплено в builders/spec_instances.
+- `instance_id/external_config_id` обязателен для каждого instance (derived id во внешнем формате не используется).
 
 ### 6.2 Batch identity
 
@@ -93,7 +91,7 @@ components(optional override, включая multi-instance role lists)
 
 - `source_file`;
 - `entry_index` (для list внутри файла);
-- `external_config_id` (если есть во входе) или детерминированный derived id;
+- `external_config_id`/`instance_id` (обязательное поле входа);
 - итоговый `strategy_spec_config_id`.
 
 ---
@@ -110,8 +108,8 @@ Loader обязан валидировать:
 Режим ошибок:
 
 - синтаксическая/структурная ошибка файла -> file-level fail;
-- невалидный entry внутри списка -> entry-level fail;
-- batch продолжает обрабатывать остальные entries, формируя полный отчёт по статусам.
+- невалидный entry внутри списка -> file-level fail для всего bundle;
+- partial execution (mixed valid/invalid entries) в MVP не допускается.
 
 ---
 
@@ -163,25 +161,32 @@ discover config entries
 
 ## 10. План внедрения (подшаги)
 
-1. Зафиксировать schema внешнего instance config (минимальный обязательный набор).
+1. Зафиксировать schema внешнего instance config (конкретный MVP shape).
 2. Реализовать loader для `single file` (object/list).
-3. Реализовать loader для `config directory` (deterministic file discovery).
-4. Добавить слой normalize+validate с fail-fast на entry.
-5. Подключить builder-only сборку `EmaPullbackStrategySpec` из validated payload.
-6. Реализовать batch orchestration запуска entries через существующий runner.
-7. Добавить batch summary artifact и smoke примеры.
-8. Добавить тесты на file-mode, dir-mode, mixed valid/invalid entries, duplicate instance ids.
+3. Добавить слой normalize+validate с fail-fast на весь file/bundle.
+4. Подключить builder-only сборку `EmaPullbackStrategySpec` из validated payload.
+5. Реализовать batch orchestration запуска всех entries файла через существующий runner.
+6. Добавить batch summary artifact и smoke примеры.
+7. Добавить тесты на single-object file mode, list/bundle mode, fail-fast поведения, duplicate instance ids.
+
+### Follow-up (вне MVP шага)
+
+- loader для `config directory` (deterministic file discovery);
+- multi-file ingestion policies (включая возможный mixed mode);
+- расширенные сценарии partial processing, если понадобятся отдельно.
 
 ---
 
 ## 11. Критерии готовности (DoD)
 
-- можно запустить прогон из одного файла конфигов;
-- можно запустить прогон из директории конфигов;
-- каждый конфиг проходит единый validate->build->run путь;
+- можно загрузить и прогнать один файл с одним instance;
+- можно загрузить и прогнать один файл со списком instances;
+- все instances в файле валидируются до запуска, затем проходят единый validate->build->run путь;
+- один batch report содержит результаты по всем variants из файла;
 - ручная сборка spec в entrypoint отсутствует;
 - batch summary artifact фиксирует итог по каждому config entry;
-- поведение детерминировано при повторном запуске с тем же набором конфигов.
+- directory feed не обязателен для завершения шага;
+- поведение детерминировано при повторном запуске с тем же config file.
 
 ---
 
