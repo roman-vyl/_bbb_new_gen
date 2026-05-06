@@ -128,7 +128,13 @@ def test_cli_overrides_build_final_execution_config() -> None:
 
 def test_exit_shortcuts_build_expected_component_kinds() -> None:
     no_signal = exit_no_signal()
-    rsi = exit_rsi(timeframe="base", period=14, long_exit_above=80.0, short_exit_below=20.0)
+    rsi = exit_rsi(
+        instance_id="rsi_exit_base",
+        timeframe="base",
+        period=14,
+        long_exit_above=80.0,
+        short_exit_below=20.0,
+    )
     stop = exit_atr_stop_loss(atr_period=14, atr_multiplier=1.5)
     take = exit_atr_take_profit(atr_period=14, atr_multiplier=4.0)
 
@@ -136,6 +142,10 @@ def test_exit_shortcuts_build_expected_component_kinds() -> None:
     assert (rsi.component_id, rsi.exit_kind) == ("rsi_signal_exit", "signal")
     assert (stop.component_id, stop.exit_kind) == ("atr_stop_loss", "stop_loss")
     assert (take.component_id, take.exit_kind) == ("atr_take_profit", "take_profit")
+    assert no_signal.instance_id == "no_signal_exit"
+    assert rsi.instance_id == "rsi_exit_base"
+    assert stop.instance_id == "atr_stop_loss"
+    assert take.instance_id == "atr_take_profit"
 
 
 def test_exits_atr_default_builds_two_distance_exit_rules() -> None:
@@ -146,6 +156,7 @@ def test_exits_atr_default_builds_two_distance_exit_rules() -> None:
     )
     assert len(exits) == 2
     assert [rule.component_id for rule in exits] == ["atr_stop_loss", "atr_take_profit"]
+    assert [rule.instance_id for rule in exits] == ["atr_stop_loss", "atr_take_profit"]
     assert [rule.exit_kind for rule in exits] == ["stop_loss", "take_profit"]
     assert [rule.distance.multiplier if rule.distance else None for rule in exits] == [1.5, 4.0]
 
@@ -154,6 +165,7 @@ def test_component_stack_default_matches_baseline_defaults() -> None:
     stack = component_stack()
     assert stack.direction == "ema_anchor_stack_trend"
     assert [b.component_id for b in stack.blockers] == ["no_blockers"]
+    assert [b.instance_id for b in stack.blockers] == ["no_blockers"]
     assert stack.setup == "pullback_to_anchor"
     assert stack.trigger.component_id == "reclaim_anchor"
     assert stack.exits == exits_atr_default(
@@ -166,8 +178,12 @@ def test_component_stack_default_matches_baseline_defaults() -> None:
 
 def test_builders_normalize_sequences_to_tuples() -> None:
     sides = trade_sides(["long", "short"])
-    blockers_list = [blocker_none(), blocker_counter_candle(), blocker_extreme_rsi()]
-    exits_list = [exit_no_signal(), exit_rsi()]
+    blockers_list = [
+        blocker_none(),
+        blocker_counter_candle(),
+        blocker_extreme_rsi(instance_id="rsi_base"),
+    ]
+    exits_list = [exit_no_signal(), exit_rsi(instance_id="rsi_exit_base")]
     stack = component_stack(
         blockers=blockers_list,
         exits=exits_list,
@@ -191,7 +207,51 @@ def test_builders_reject_str_and_bytes_for_sequence_inputs() -> None:
 
 def test_blocker_and_trigger_shortcuts_return_expected_components() -> None:
     assert blocker_none().component_id == "no_blockers"
+    assert blocker_none().instance_id == "no_blockers"
     assert blocker_counter_candle().component_id == "counter_candle_blocker"
-    assert blocker_extreme_rsi().component_id == "rsi_extreme_blocker"
+    assert blocker_extreme_rsi(instance_id="rsi_base").component_id == "rsi_extreme_blocker"
     assert trigger_reclaim_anchor().component_id == "reclaim_anchor"
     assert trigger_touch_anchor().component_id == "touch_anchor"
+
+
+def test_component_stack_rejects_duplicate_instance_ids_per_role() -> None:
+    with pytest.raises(ValueError, match="components.blockers instance_id must be unique"):
+        component_stack(
+            blockers=(
+                blocker_counter_candle(instance_id="duplicate"),
+                blocker_extreme_rsi(instance_id="duplicate"),
+            )
+        )
+
+    with pytest.raises(ValueError, match="components.exits instance_id must be unique"):
+        component_stack(
+            exits=(
+                exit_no_signal(),
+                exit_rsi(instance_id="no_signal_exit"),
+            )
+        )
+
+
+def test_repeated_components_require_explicit_distinct_instance_ids() -> None:
+    stack = component_stack(
+        blockers=(
+            blocker_extreme_rsi(instance_id="rsi_5m", timeframe="5m", lookback=20),
+            blocker_extreme_rsi(instance_id="rsi_15m", timeframe="15m", lookback=40),
+        ),
+        exits=(
+            exit_atr_stop_loss(atr_period=14, atr_multiplier=1.5, instance_id="atr_sl_fast"),
+            exit_atr_stop_loss(atr_period=14, atr_multiplier=2.0, instance_id="atr_sl_slow"),
+            exit_atr_take_profit(atr_period=14, atr_multiplier=4.0),
+        ),
+    )
+
+    assert [rule.component_id for rule in stack.blockers] == [
+        "rsi_extreme_blocker",
+        "rsi_extreme_blocker",
+    ]
+    assert [rule.instance_id for rule in stack.blockers] == ["rsi_5m", "rsi_15m"]
+    assert [rule.instance_id for rule in stack.exits] == [
+        "atr_sl_fast",
+        "atr_sl_slow",
+        "atr_take_profit",
+    ]

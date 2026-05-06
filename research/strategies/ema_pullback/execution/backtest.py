@@ -172,5 +172,6 @@ def run_strategy_spec(
             sharpe=sharpe,
             max_drawdown=max_dd_f,
         ),
+        component_counters=list(signals.output_counters + exit_outputs.output_counters),
         trade_records=trade_records,
     )

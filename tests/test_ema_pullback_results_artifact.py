@@ -34,7 +34,16 @@ REQUIRED_TOP = (
     "variants",
 )
 
-REQUIRED_VARIANT = ("variant", "config_id", "symbol", "timeframe", "strategy_spec", "metrics", "trade_records")
+REQUIRED_VARIANT = (
+    "variant",
+    "config_id",
+    "symbol",
+    "timeframe",
+    "strategy_spec",
+    "metrics",
+    "component_counters",
+    "trade_records",
+)
 
 REQUIRED_METRICS = ("long", "short", "total", "open_trades")
 
@@ -98,6 +107,7 @@ def test_build_research_run_payload_top_level_keys() -> None:
             },
             "open_trades": {"long": 0, "short": 0, "total": 0},
         },
+        "component_counters": [],
         "trade_records": [],
     }
     created = datetime(2026, 5, 1, 12, 0, 0, tzinfo=timezone.utc)
@@ -223,12 +233,14 @@ def test_variant_payload_from_instance_matches_schema() -> None:
             max_drawdown=-0.05,
             open_trades=OpenTradesBreakdown(long=0, short=1, total=1),
         ),
+        component_counters=[],
         trade_records=[],
     ).to_payload()
     for k in REQUIRED_VARIANT:
         assert k in vr
     assert vr["variant"] == vr["strategy_spec"]["variant"]
     assert isinstance(vr["trade_records"], list)
+    assert isinstance(vr["component_counters"], list)
     assert tuple(vr["metrics"].keys()) == REQUIRED_METRICS
     assert vr["metrics"]["short"]["profit_factor"] is None
     assert vr["metrics"]["total"]["sharpe"] == 0.1

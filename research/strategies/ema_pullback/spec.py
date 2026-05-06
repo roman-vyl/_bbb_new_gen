@@ -52,6 +52,8 @@ class ComponentStackSpec:
             raise ValueError("components.blockers must contain at least one rule")
         if not self.exits:
             raise ValueError("components.exits must contain at least one rule")
+        _validate_unique_instance_ids("components.blockers", self.blockers)
+        _validate_unique_instance_ids("components.exits", self.exits)
 
 
 @dataclass(frozen=True)
@@ -61,6 +63,20 @@ class TriggerSpec:
     def __post_init__(self) -> None:
         if not self.component_id.strip():
             raise ValueError("trigger component_id must be non-empty")
+
+
+def _validate_unique_instance_ids(
+    collection_name: str,
+    rules: tuple["BlockerRuleSpec", ...] | tuple["ExitRuleSpec", ...],
+) -> None:
+    seen: set[str] = set()
+    for rule in rules:
+        instance_id = rule.instance_id
+        if not instance_id.strip():
+            raise ValueError(f"{collection_name} instance_id must be non-empty")
+        if instance_id in seen:
+            raise ValueError(f"{collection_name} instance_id must be unique: {instance_id!r}")
+        seen.add(instance_id)
 
 
 @dataclass(frozen=True)
@@ -77,6 +93,7 @@ class RsiFeatureSpec:
 
 @dataclass(frozen=True)
 class BlockerRuleSpec:
+    instance_id: str
     component_id: str
     rsi: RsiFeatureSpec | None = None
     lookback: int = 1
@@ -84,6 +101,8 @@ class BlockerRuleSpec:
     short_max: float | None = None
 
     def __post_init__(self) -> None:
+        if not self.instance_id.strip():
+            raise ValueError("blocker instance_id must be non-empty")
         if not self.component_id.strip():
             raise ValueError("blocker component_id must be non-empty")
         if self.lookback <= 0:
@@ -156,6 +175,7 @@ class AtrDistanceSpec:
 
 @dataclass(frozen=True)
 class ExitRuleSpec:
+    instance_id: str
     component_id: str
     exit_kind: ExitKind = "signal"
     rsi: RsiFeatureSpec | None = None
@@ -164,6 +184,8 @@ class ExitRuleSpec:
     distance: AtrDistanceSpec | None = None
 
     def __post_init__(self) -> None:
+        if not self.instance_id.strip():
+            raise ValueError("exit instance_id must be non-empty")
         if not self.component_id.strip():
             raise ValueError("exit component_id must be non-empty")
         allowed = {"signal", "stop_loss", "take_profit"}

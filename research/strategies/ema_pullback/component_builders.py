@@ -91,12 +91,14 @@ def risk_no_filter() -> str:
 def blocker_rule(
     component_id: str,
     *,
+    instance_id: str,
     rsi: RsiFeatureSpec | None = None,
     lookback: int = 1,
     long_min: float | None = None,
     short_max: float | None = None,
 ) -> BlockerRuleSpec:
     return BlockerRuleSpec(
+        instance_id=instance_id,
         component_id=component_id,
         rsi=rsi,
         lookback=lookback,
@@ -106,15 +108,16 @@ def blocker_rule(
 
 
 def blocker_none() -> BlockerRuleSpec:
-    return blocker_rule(NO_BLOCKERS_COMPONENT)
+    return blocker_rule(NO_BLOCKERS_COMPONENT, instance_id="no_blockers")
 
 
-def blocker_counter_candle() -> BlockerRuleSpec:
-    return blocker_rule(COUNTER_CANDLE_BLOCKER_COMPONENT)
+def blocker_counter_candle(*, instance_id: str = "counter_candle_blocker") -> BlockerRuleSpec:
+    return blocker_rule(COUNTER_CANDLE_BLOCKER_COMPONENT, instance_id=instance_id)
 
 
 def blocker_extreme_rsi(
     *,
+    instance_id: str,
     timeframe: str = "base",
     period: int = 14,
     lookback: int = 1,
@@ -123,6 +126,7 @@ def blocker_extreme_rsi(
 ) -> BlockerRuleSpec:
     return blocker_rule(
         RSI_EXTREME_BLOCKER_COMPONENT,
+        instance_id=instance_id,
         rsi=rsi_feature(timeframe=timeframe, period=period),
         lookback=lookback,
         long_min=long_min,
@@ -137,6 +141,7 @@ def atr_distance(*, timeframe: str = "base", period: int, multiplier: float) -> 
 def exit_rule(
     component_id: str,
     *,
+    instance_id: str,
     exit_kind: ExitKind = "signal",
     rsi: RsiFeatureSpec | None = None,
     long_exit_above: float | None = None,
@@ -144,6 +149,7 @@ def exit_rule(
     distance: AtrDistanceSpec | None = None,
 ) -> ExitRuleSpec:
     return ExitRuleSpec(
+        instance_id=instance_id,
         component_id=component_id,
         exit_kind=exit_kind,
         rsi=rsi,
@@ -154,11 +160,12 @@ def exit_rule(
 
 
 def exit_no_signal() -> ExitRuleSpec:
-    return exit_rule(NO_SIGNAL_EXIT_COMPONENT, exit_kind="signal")
+    return exit_rule(NO_SIGNAL_EXIT_COMPONENT, instance_id="no_signal_exit", exit_kind="signal")
 
 
 def exit_rsi(
     *,
+    instance_id: str,
     timeframe: str = "base",
     period: int = 14,
     long_exit_above: float = 70.0,
@@ -166,6 +173,7 @@ def exit_rsi(
 ) -> ExitRuleSpec:
     return exit_rule(
         RSI_SIGNAL_EXIT_COMPONENT,
+        instance_id=instance_id,
         exit_kind="signal",
         rsi=rsi_feature(timeframe=timeframe, period=period),
         long_exit_above=long_exit_above,
@@ -177,10 +185,12 @@ def exit_atr_stop_loss(
     *,
     atr_period: int,
     atr_multiplier: float,
+    instance_id: str = "atr_stop_loss",
     timeframe: str = "base",
 ) -> ExitRuleSpec:
     return exit_rule(
         ATR_STOP_LOSS_COMPONENT,
+        instance_id=instance_id,
         exit_kind="stop_loss",
         distance=atr_distance(timeframe=timeframe, period=atr_period, multiplier=atr_multiplier),
     )
@@ -190,10 +200,12 @@ def exit_atr_take_profit(
     *,
     atr_period: int,
     atr_multiplier: float,
+    instance_id: str = "atr_take_profit",
     timeframe: str = "base",
 ) -> ExitRuleSpec:
     return exit_rule(
         ATR_TAKE_PROFIT_COMPONENT,
+        instance_id=instance_id,
         exit_kind="take_profit",
         distance=atr_distance(timeframe=timeframe, period=atr_period, multiplier=atr_multiplier),
     )

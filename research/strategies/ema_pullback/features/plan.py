@@ -97,7 +97,8 @@ def build_feature_plan_from_strategy_spec(spec: EmaPullbackStrategySpec) -> Feat
                 multiplier=float(rule.distance.multiplier),
             )
         )
-        exit_columns[rule.exit_kind] = distance_id
+        exit_columns[rule.instance_id] = distance_id
+        exit_columns.setdefault(rule.exit_kind, distance_id)
 
     rsi_columns: dict[tuple[str, int], str] = {}
     rsi_specs = []

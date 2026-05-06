@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Callable
+from dataclasses import dataclass, field
+from typing import Any, Callable
 
 import pandas as pd
 
@@ -20,6 +20,13 @@ from research.strategies.ema_pullback.spec import TradeSide
 class PortfolioSignals:
     entries: pd.Series
     short_entries: pd.Series
+    output_counters: tuple[dict[str, Any], ...] = field(default_factory=tuple)
+
+
+@dataclass(frozen=True)
+class _SideSignalOutputs:
+    signal: pd.Series
+    output_counters: tuple[dict[str, Any], ...]
 
 
 def compose_final_signals(
@@ -71,32 +78,48 @@ def _build_side_signals(
     setup_fn: Callable[..., pd.Series],
     trigger_fn: Callable[..., pd.Series],
     risk_fn: Callable[..., pd.Series],
-) -> pd.Series:
+) -> _SideSignalOutputs:
     if not spec.trade_sides.includes(side):
-        return _false_series(df)
+        return _SideSignalOutputs(signal=_false_series(df), output_counters=())
 
     direction = direction_fn(df, fast_col, anchor_col, slow_col, side=side)
-    blockers = compose_blocker_signals(
-        tuple(
-            blockers_fn(
-                df,
-                side=side,
-                rule=rule,
-                rsi_col=_rsi_column(plan, rule.rsi),
-            )
-            for blockers_fn, rule in zip(blockers_fns, spec.components.blockers, strict=True)
+    blocker_signals = tuple(
+        blockers_fn(
+            df,
+            side=side,
+            rule=rule,
+            rsi_col=_rsi_column(plan, rule.rsi),
         )
+        for blockers_fn, rule in zip(blockers_fns, spec.components.blockers, strict=True)
     )
+    blocker_counters = tuple(
+        {
+            "role": "blockers",
+            "component_id": rule.component_id,
+            "instance_id": rule.instance_id,
+            "side": side,
+            "output_type": "allow_mask",
+            "counters": {
+                "allowed_count": int(signal.fillna(False).astype(bool).sum()),
+                "blocked_count": int((~signal.fillna(False).astype(bool)).sum()),
+            },
+        }
+        for rule, signal in zip(spec.components.blockers, blocker_signals, strict=True)
+    )
+    blockers = compose_blocker_signals(blocker_signals)
     setup = setup_fn(df, anchor_col, spec.setup.lookback, side=side)
     trigger = trigger_fn(df, anchor_col, side=side)
     risk = risk_fn(df, side=side)
 
-    return compose_final_signals(
-        direction_allowed=direction,
-        blockers_ok=blockers,
-        setup_ok=setup,
-        trigger_ok=trigger,
-        risk_ok=risk,
+    return _SideSignalOutputs(
+        signal=compose_final_signals(
+            direction_allowed=direction,
+            blockers_ok=blockers,
+            setup_ok=setup,
+            trigger_ok=trigger,
+            risk_ok=risk,
+        ),
+        output_counters=blocker_counters,
     )
 
 
@@ -119,7 +142,7 @@ def build_signals_from_spec(
     anchor_col = plan.anchor_columns["anchor"]
     slow_col = plan.anchor_columns["slow"]
 
-    entries = _build_side_signals(
+    long_outputs = _build_side_signals(
         df=df,
         side="long",
         spec=spec,
@@ -133,7 +156,7 @@ def build_signals_from_spec(
         trigger_fn=trigger_fn,
         risk_fn=risk_fn,
     )
-    short_entries = _build_side_signals(
+    short_outputs = _build_side_signals(
         df=df,
         side="short",
         spec=spec,
@@ -149,7 +172,8 @@ def build_signals_from_spec(
     )
 
     return PortfolioSignals(
-        entries=entries,
-        short_entries=short_entries,
+        entries=long_outputs.signal,
+        short_entries=short_outputs.signal,
+        output_counters=long_outputs.output_counters + short_outputs.output_counters,
     )
 
