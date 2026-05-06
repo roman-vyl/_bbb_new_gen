@@ -1,4 +1,4 @@
-# Step 14 — External Config Loader + Multi-instance Feed Plan
+# Step 14 — External Config Loader (Experiment Layer + Family Parser)
 
 ## 1. Контекст
 
@@ -14,25 +14,29 @@
 
 ## 2. Цель шага
 
-Ввести минимальный production-like слой внешней конфигурации для research:
+Ввести минимальный production-like слой внешней конфигурации для research с разделением двух уровней:
 
-- загрузка instance config из одного config file (single object или bundle/list instances);
-- строгая валидация;
-- сборка `EmaPullbackStrategySpec` только через builder path;
-- batch execution по instances из одного файла с единым summary артефактом.
+- **Experiment layer (generic)**:
+  - чтение одного external config file (single instance или bundle/list instances);
+  - общая envelope-валидация;
+  - dispatch по `family`;
+- **Strategy-family layer (`ema_pullback`)**:
+  - преобразование одного instance dict -> `EmaPullbackStrategySpec` через builder path;
+  - family-specific fail-fast validation.
 
 ---
 
 ## 3. Scope (in)
 
-- единый внешний контракт instance config для `ema_pullback`;
-- loader для чтения одного config file:
+- минимальный generic experiment config loader для одного файла:
   - файл содержит один instance object; или
   - файл содержит bundle/list instances;
-- fail-fast validation по schema и бизнес-ограничениям;
-- orchestration, которая запускает instances только после полной успешной валидации файла/bundle;
-- batch result artifact (success/fail per config + агрегированный summary);
-- deterministic mapping `external config -> config_id -> result`.
+- shared validation envelope (`schema_version`, `experiment_id`/`run_name`, `family`, `instances`);
+- dispatch по `family` к family-local parser;
+- family-local parser для `ema_pullback`: `dict` одного instance -> typed `EmaPullbackStrategySpec`;
+- fail-fast validation на файл/bundle в MVP;
+- batch result artifact (per-instance status + агрегированный summary);
+- deterministic mapping `external config -> strategy_spec_config_id -> result`.
 
 ## 4. Non-goals (out)
 
@@ -40,7 +44,8 @@
 - автогенерация конфигов;
 - UI/visual constructor;
 - изменения `data_engine/`;
-- plugin-архитектура источников конфигов (берём только файловую модель).
+- plugin-архитектура источников конфигов (берём только файловую модель);
+- размещение file/batch/grid/orchestration логики внутри `research/strategies/ema_pullback`.
 
 ---
 
@@ -52,11 +57,29 @@ MVP фиксирует только один источник:
 - поддерживается два допустимых payload shape:
   - один instance object;
   - bundle/list instances в одном файле;
-- directory feed и multi-file discovery не входят в DoD этого шага.
+- directory feed и multi-file discovery не входят в DoD этого шага;
+- весь file-level ingestion/dispatch живёт в experiment layer, не в strategy family.
 
 ---
 
 ## 6. Предлагаемый high-level контракт
+
+### 6.0 Experiment envelope (generic layer)
+
+Внешний файл описывает experiment-level контракт:
+
+```text
+schema_version
+experiment_id or run_name
+family
+instances[] (или single instance, нормализуемый к списку длины 1)
+```
+
+Принципы:
+
+- generic loader валидирует envelope до dispatch;
+- `family` определяет family parser;
+- unique `instance_id` проверяется на уровне bundle.
 
 ### 6.1 External instance config shape (MVP)
 
@@ -64,7 +87,6 @@ MVP фиксирует только один источник:
 
 ```text
 schema_version
-family
 instance_id (обязательный; может называться external_config_id в совместимой форме)
 variant
 market
@@ -91,6 +113,7 @@ exits[]
 
 - `source_file`;
 - `entry_index` (для list внутри файла);
+- `family`;
 - `external_config_id`/`instance_id` (обязательное поле входа);
 - итоговый `strategy_spec_config_id`.
 
@@ -98,12 +121,26 @@ exits[]
 
 ## 7. Validation semantics
 
-Loader обязан валидировать:
+Валидация разделена на два уровня.
 
-- структуру payload (тип полей, обязательность);
-- допустимые значения (`enabled_sides`, таймфреймы, числовые диапазоны и т.п.);
-- уникальность идентификаторов, критичных для Step 13 (`instance_id` в multi-instance списках ролей);
-- дубликаты config entries в одном batch (по выбранному ключу идентичности).
+### 7.1 Generic validation (experiment layer)
+
+- наличие `schema_version`;
+- наличие `experiment_id`/`run_name`;
+- наличие `family`;
+- `instances` имеет корректный тип (или single object корректно нормализуется в list);
+- `instance_id` уникален внутри bundle;
+- общие поля (`market`, `execution`) имеют корректный тип.
+
+### 7.2 Family-specific validation (`ema_pullback` layer)
+
+- допустимость `trigger` для `ema_pullback`;
+- допустимость `blockers[]` для `ema_pullback`;
+- допустимость `exits[]` для `ema_pullback`;
+- наличие и корректность family-specific параметров (например RSI там, где требуется);
+- `anchor_stack` содержит обязательные роли (`fast`, `anchor`, `slow`);
+- `component_builders` собирают typed spec;
+- `spec.py` (`__post_init__`) выполняет финальную fail-fast typed validation.
 
 Режим ошибок:
 
@@ -119,17 +156,19 @@ Pipeline на один config entry:
 
 ```text
 raw payload
--> normalize
--> validate
+-> experiment-layer normalize + envelope validate
+-> family dispatch
+-> family-specific validate
 -> build typed spec (component_builders/spec_instances path only)
 -> run backtest (existing execution path)
 -> collect per-instance artifact
 ```
 
-Batch pipeline:
+Batch pipeline (experiment layer):
 
 ```text
 discover config entries
+-> envelope validate (file-level)
 -> for each entry run single-instance pipeline
 -> aggregate status/metrics/errors
 -> write batch summary artifact
@@ -137,8 +176,9 @@ discover config entries
 
 Требование:
 
-- orchestration слой не переписывает execution-логику стратегии;
-- он только управляет множеством запусков и консолидацией результатов.
+- experiment orchestration слой не переписывает execution-логику стратегии;
+- strategy family (`ema_pullback`) не отвечает за file discovery, batch lifecycle, grid/optimization и cross-family comparison;
+- experiment layer управляет запуском множества entries и консолидацией результатов.
 
 ---
 
@@ -159,20 +199,31 @@ discover config entries
 
 ---
 
-## 10. План внедрения (подшаги)
+## 10. План внедрения (Step 14A / Step 14B)
 
-1. Зафиксировать schema внешнего instance config (конкретный MVP shape).
-2. Реализовать loader для `single file` (object/list).
-3. Добавить слой normalize+validate с fail-fast на весь file/bundle.
-4. Подключить builder-only сборку `EmaPullbackStrategySpec` из validated payload.
-5. Реализовать batch orchestration запуска всех entries файла через существующий runner.
-6. Добавить batch summary artifact и smoke примеры.
-7. Добавить тесты на single-object file mode, list/bundle mode, fail-fast поведения, duplicate instance ids.
+### 10.1 Step 14A — family-local parser (`ema_pullback`)
+
+1. Ввести `instance_loader.py` в `research/strategies/ema_pullback/`.
+2. Реализовать контракт: один instance `dict` -> `EmaPullbackStrategySpec`.
+3. Подключить `component_builders/spec_instances` как единственный путь сборки.
+4. Зафиксировать family-specific validation и fail-fast ошибки.
+
+### 10.2 Step 14B — minimal generic experiment loader (single file)
+
+1. Ввести `research/experiments/config_loader.py` (минимальный generic loader).
+2. Реализовать чтение одного config file (single object или list/bundle).
+3. Реализовать shared envelope validation (`schema_version`, `experiment_id`/`run_name`, `family`, `instances`).
+4. Реализовать family dispatch (`ema_pullback` -> `instance_loader.py`).
+5. Возвращать список typed specs и metadata для batch report.
+6. Добавить smoke-тесты на single-object, list/bundle, fail-fast и duplicate `instance_id`.
 
 ### Follow-up (вне MVP шага)
 
 - loader для `config directory` (deterministic file discovery);
 - multi-file ingestion policies (включая возможный mixed mode);
+- `research/experiments/runner.py` как расширенный batch lifecycle manager;
+- grid generation / optimization;
+- cross-family comparison и experiment-level benchmarking;
 - расширенные сценарии partial processing, если понадобятся отдельно.
 
 ---
@@ -181,6 +232,8 @@ discover config entries
 
 - можно загрузить и прогнать один файл с одним instance;
 - можно загрузить и прогнать один файл со списком instances;
+- общий experiment loader валидирует envelope и dispatch-ит по `family`;
+- `ema_pullback` получает только один instance dict и преобразует его в `EmaPullbackStrategySpec`;
 - все instances в файле валидируются до запуска, затем проходят единый validate->build->run путь;
 - один batch report содержит результаты по всем variants из файла;
 - ручная сборка spec в entrypoint отсутствует;
@@ -202,4 +255,23 @@ discover config entries
   снижение: обязательный per-entry status и aggregated counters.
 
 - риск: scope creep в optimizer/grid  
-  снижение: зафиксировать, что шаг про ingestion+orchestration, не про search.
+  снижение: зафиксировать, что Step 14B ограничен single-file loader + dispatch без optimizer/grid.
+
+- риск: смешение orchestration и strategy-family логики  
+  снижение: жёстко разделить generic experiment layer и family-local parser boundary.
+
+---
+
+## 13. Рекомендуемая минимальная структура папок
+
+```text
+research/
+  experiments/
+    config_loader.py      # generic single-file loader + envelope validation + dispatch
+
+  strategies/
+    ema_pullback/
+      instance_loader.py  # one instance dict -> EmaPullbackStrategySpec
+      component_builders.py
+      spec_instances.py
+```
