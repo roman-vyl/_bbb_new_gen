@@ -35,7 +35,7 @@
 - dispatch по `family` к family-local parser;
 - family-local parser для `ema_pullback`: `dict` одного instance -> typed `EmaPullbackStrategySpec`;
 - fail-fast validation на файл/bundle в MVP;
-- batch result artifact (per-instance status + агрегированный summary);
+- batch result artifact (per-instance status + агрегированный summary), где per-instance status формируется только после успешной валидации всего файла/bundle;
 - deterministic mapping `external config -> strategy_spec_config_id -> result`.
 
 ## 4. Non-goals (out)
@@ -188,12 +188,18 @@ discover config entries
 
 - `batch_run_id`, timestamp;
 - source metadata (file/dir, counts);
+- `validation_phase_status` (`passed`/`failed`) для явного разделения «не прошли общий validate» vs «дошли до исполнения»;
 - список entries:
   - identity fields;
   - status (`success`/`failed_validation`/`failed_runtime`);
   - result artifact reference (для success);
   - error payload (для failed);
 - агрегированные counters (total/success/failed).
+
+Guardrail:
+
+- если file/bundle validation не пройдена, execution не стартует вообще;
+- в этом случае артефакт фиксирует file-level fail и validation errors, без runtime/per-instance execution statuses.
 
 Цель: по одному артефакту видно, какие конфиги реально прогнаны и с каким итогом.
 
