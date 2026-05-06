@@ -456,25 +456,34 @@ slow EMA
 
 ---
 
-### Step 14 — External Instance Config MVP
+### Step 14 — External Config Loader и Multi-instance Feed
 
-После side-aware компонентов вводится тонкий внешний слой конфигурации одного экземпляра стратегии: маленький typed instance dict → один pure builder → существующий `EmaPullbackStrategySpec` → старый pipeline без изменений.
+После стабилизации typed builders и multi-instance компонентов вводится внешний слой загрузки конфигов запуска и orchestration массового прогона strategy instances.
+
+Шаг переводит `ema_pullback` из режима «инстанс собирается вручную в коде» в режим «инстансы подаются внешними конфигами, валидируются, компилируются в `EmaPullbackStrategySpec` и запускаются одним управляющим раннером».
 
 **Цель:**
 
-- сделать параметры одного экземпляра `ema_pullback` задаваемыми снаружи строго типизированным dict-ом;
-- ручная сборка dataclass-ов уходит из `spec_instances`: единственный путь сборки spec — через builder.
+- ввести внешний формат instance config (file-based), который описывает один strategy instance без ручной сборки dataclass-ов;
+- сделать loader, который читает config source, валидирует payload и собирает `EmaPullbackStrategySpec` только через существующий builder-путь;
+- добавить режим мультиподачи: если передан набор конфигов (один файл-список или директория с файлами), система прогоняет каждый config как отдельный instance run;
+- унифицировать batch run artifact так, чтобы каждый прогон имел стабильный `config_id`/`instance_id` и был воспроизводим.
+
+**High-level scope:**
+
+- поддержать два источника конфигов: `single file` и `directory feed` (окончательное правило приоритета и UX фиксируется в detailed plan шага);
+- добавить программу управления подачей конфигов в раннер (loader + run orchestrator + batch summary);
+- обеспечить fail-fast валидацию входных конфигов и явные ошибки по невалидным полям/дубликатам;
+- сохранить текущую архитектуру исполнения: внешний слой только поставляет корректный `StrategySpec`, execution pipeline не переписывается.
 
 **Non-goals:**
 
-- нет JSON-файлов;
-- нет CLI / `--config` / `--config-dir`;
-- нет перечисления каталога;
-- нет внешнего конфига для шести component roles (component ids, EMA source/timeframe, ATR timeframe, trade management profile остаются захардкоженными внутри builder-а);
-- нет Grid / optimizer / parameter sweep;
-- нет frontend.
+- нет optimizer/grid/parameter sweep логики;
+- нет frontend visual constructor;
+- нет изменений в `data_engine/`;
+- нет plugin/autodiscovery framework beyond explicit config files.
 
-Подробный контракт и подшаги — в отдельном плане Step 14.
+Подробный контракт и подшаги — в отдельном плане `docs/research/14_external_config_loader_plan.md`.
 
 ---
 
@@ -542,7 +551,7 @@ trade_count
 
 Roadmap note:
 
-FeaturesDev keeps indicator calculation out of components. Exit rules (signal and ATR-based SL/TP) live in `StrategySpec` under `components.exits` and are evaluated via a dedicated execution exits path, so runner and entry-side code stay orchestration-focused. Research Results Artifact is inserted before Component Grid so experiments have stable structured output. EMA Pullback StrategySpec / anchor stack refactor stabilises the internal instance model after artifacts. Bidirectional Side Semantics (`TradeSideSpec`, long/short vectorbt wiring) follows StrategySpec so `ema_pullback` is not long-only. Step 12 completes side-aware blocker / risk / exit / trigger wiring and this **unified exits + reserved root trade_management** architecture, plus typed `component_builders` as the single construction layer ahead of external config. Step 13 introduces multi-instance component support (same component id reused with different params and explicit instance ids). Step 14 adds an external instance config MVP so one `EmaPullbackStrategySpec` can be built from a small typed dict without file IO or CLI. Component Grid remains postponed until FeaturesDev, components, result artifacts, StrategySpec, side-aware specs, live components, builders, multi-instance support, and external instance config are stable.
+FeaturesDev keeps indicator calculation out of components. Exit rules (signal and ATR-based SL/TP) live in `StrategySpec` under `components.exits` and are evaluated via a dedicated execution exits path, so runner and entry-side code stay orchestration-focused. Research Results Artifact is inserted before Component Grid so experiments have stable structured output. EMA Pullback StrategySpec / anchor stack refactor stabilises the internal instance model after artifacts. Bidirectional Side Semantics (`TradeSideSpec`, long/short vectorbt wiring) follows StrategySpec so `ema_pullback` is not long-only. Step 12 completes side-aware blocker / risk / exit / trigger wiring and this **unified exits + reserved root trade_management** architecture, plus typed `component_builders` as the single construction layer ahead of external config. Step 13 introduces multi-instance component support (same component id reused with different params and explicit instance ids). Step 14 introduces external config loader orchestration with batch feed (single file and directory) so many `EmaPullbackStrategySpec` instances can be validated, built, and run in one controlled flow. Component Grid remains postponed until FeaturesDev, components, result artifacts, StrategySpec, side-aware specs, live components, builders, multi-instance support, and external loader batch feed are stable.
 
 ---
 
@@ -567,7 +576,7 @@ FeaturesDev keeps indicator calculation out of components. Exit rules (signal an
 11. bidirectional side semantics (TradeSideSpec, long / short)
 12. side-aware blocker / risk / exit / trigger + unified `exits` spec, execution exits layer, `component_builders`
 13. multi-instance same component support (different params, explicit `instance_id`)
-14. external instance config MVP
+14. external config loader + multi-instance feed
 15. component grid
 16. debug report / diagnostics
 17. validation
