@@ -58,7 +58,7 @@ ema_pullback_fast{fast.period}_anchor{anchor.period}_slow{slow.period}
 | `execution/result_models.py` | Dataclass-контракты `LoadedCandles`, `VariantMetrics`, `VariantResult` |
 | `execution/signals.py` | Композитор `entries/short_entries` из spec + plan + Component Registry |
 | `execution/exits.py` | Exit-layer: `components.exits` → `exits/short_exits/sl_stop/tp_stop` |
-| `execution/results.py` | JSON payload schema v2, `latest.json` / `runs/<run_id>.json` |
+| `execution/results.py` | JSON payload schema v3, `latest.json` / `runs/<run_id>.json` |
 
 ## Active StrategySpec
 
@@ -199,15 +199,16 @@ python research/ema_smoke.py
 ```
 
 Успешный `run.py` печатает summary-строку (`family`, `symbol`, `timeframe`,
-`candles`, `variants`), затем stdout comparison table и пути артефактов:
+`candles`, `variants`), затем side-aware stdout comparison table и пути артефактов:
 
 ```text
-variant | config_id | fast | anchor | slow | trades | sharpe | profit_factor | max_drawdown
+variant | config_id | fast | anchor | slow | long_trades | long_pnl | long_return_pct | long_profit_factor | long_win_rate | short_trades | short_pnl | short_return_pct | short_profit_factor | short_win_rate | total_trades | total_pnl | total_return_pct | total_profit_factor | total_win_rate | total_sharpe | total_max_drawdown | open_trades_long | open_trades_short | open_trades_total
 ```
 
-Колонки `fast | anchor | slow` — это периоды из `strategy_spec["anchor_stack"]`
-в stdout-таблице; полный spec (включая tuples компонентов и RSI rules) лежит
-только в JSON.
+Колонки `fast | anchor | slow` — это периоды из `strategy_spec["anchor_stack"]`.
+Side-aware метрики разделены на `long`, `short`, `total`; открытые сделки
+выведены отдельно как `open_trades_*`. Полный spec (включая tuples компонентов,
+RSI rules и distance exits) лежит только в JSON.
 
 ## JSON-отчёт
 
@@ -216,7 +217,7 @@ variant | config_id | fast | anchor | slow | trades | sharpe | profit_factor | m
 - `research/results/latest.json` — последний прогон (перезаписывается)
 - `research/results/runs/<run_id>.json` — тот же payload, имя по `run_id`
 
-Top-level payload содержит `report_schema_version: 2`. Variant payload содержит:
+Top-level payload содержит `report_schema_version: 3`. Variant payload содержит:
 
 ```text
 variant
@@ -225,11 +226,23 @@ symbol
 timeframe
 strategy_spec
 metrics
+component_counters
 trade_records
 ```
 
 Top-level также содержит `run_id`, `created_at`, `candles`, `data_range`,
-`variants_count`, `variants`.
+`variants_count`, `variants`. При запуске через external config дополнительно
+появляется `batch_metadata` с `experiment_id`, `source_file`, `entries`,
+`validation_phase_status` и aggregate counters.
+
+`metrics` имеет side-aware форму:
+
+```text
+metrics.long
+metrics.short
+metrics.total
+metrics.open_trades
+```
 
 При успехе `run.py` печатает пути `results_artifact=` и `run_artifact=`, затем
 `status=ok`.

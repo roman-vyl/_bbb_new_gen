@@ -122,6 +122,15 @@ def test_load_bundle_external_config_from_file(tmp_path: Path) -> None:
     assert loaded.identity_payload()["entries_count"] == 2
 
 
+@pytest.mark.parametrize("schema_version", [2, "2"])
+def test_loader_rejects_unsupported_schema_version(schema_version: object) -> None:
+    payload = _bundle([_instance()])
+    payload["schema_version"] = schema_version
+
+    with pytest.raises(ConfigValidationError, match="schema_version must be exactly 1"):
+        load_strategy_config(payload)
+
+
 def test_load_external_config_supports_anchor_stack_source_and_timeframe() -> None:
     loaded = load_strategy_config(
         _bundle(

@@ -82,6 +82,7 @@ instances[] (или single instance, нормализуемый к списку 
 Принципы:
 
 - generic loader валидирует envelope до dispatch;
+- `schema_version` в MVP должен быть строго `1`;
 - `family` определяет family parser;
 - generic loader не импортирует strategy-specific `spec.py` и не вычисляет `strategy_spec_config_id` сам; это делает family-local adapter;
 - unique `instance_id` проверяется на уровне bundle.
@@ -190,6 +191,7 @@ instances:
 ### 7.1 Generic validation (experiment layer)
 
 - наличие `schema_version`;
+- `schema_version` равен `1` (число; другие версии, включая `"2"`, fail-fast);
 - наличие `experiment_id`;
 - наличие `family`;
 - `execution` (если задан) содержит только run-level параметры `init_cash`, `fees`, `slippage`;

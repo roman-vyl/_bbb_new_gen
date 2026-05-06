@@ -32,7 +32,7 @@ class ConfigEntryMetadata:
 
 @dataclass(frozen=True)
 class LoadedExternalConfig:
-    schema_version: int | str
+    schema_version: int
     experiment_id: str
     family: str
     execution: "ExternalExecutionConfig"
@@ -70,6 +70,7 @@ class ExternalExecutionConfig:
 
 
 _ENVELOPE_KEYS = frozenset({"schema_version", "experiment_id", "family", "execution", "instances"})
+_SUPPORTED_SCHEMA_VERSION = 1
 
 
 @dataclass(frozen=True)
@@ -91,7 +92,7 @@ def load_strategy_config(
 ) -> LoadedExternalConfig:
     source_path = Path(source_file)
     root = _require_mapping("config payload", payload)
-    schema_version = _require_present(root, "schema_version")
+    schema_version = _parse_schema_version(root)
     experiment_id = _require_non_empty_str(root, "experiment_id")
     family = _require_non_empty_str(root, "family")
     execution = _parse_execution(root.get("execution", {}))
@@ -195,6 +196,15 @@ def _parse_execution(value: Any) -> ExternalExecutionConfig:
         fees=_optional_non_negative_number(payload, "fees"),
         slippage=_optional_non_negative_number(payload, "slippage"),
     )
+
+
+def _parse_schema_version(payload: Mapping[str, Any]) -> int:
+    value = _require_present(payload, "schema_version")
+    if value != _SUPPORTED_SCHEMA_VERSION:
+        raise ConfigValidationError(
+            f"schema_version must be exactly {_SUPPORTED_SCHEMA_VERSION} for MVP"
+        )
+    return _SUPPORTED_SCHEMA_VERSION
 
 
 def _load_family_instance(family: str, item: Mapping[str, Any]) -> _LoadedFamilyInstance:
