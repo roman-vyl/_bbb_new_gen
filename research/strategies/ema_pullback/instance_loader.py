@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any, Mapping, Sequence
 
 from research.strategies.ema_pullback import component_builders as builders
@@ -25,10 +26,10 @@ from research.strategies.ema_pullback.spec import (
     EmaPullbackStrategySpec,
     ExitRuleSpec,
     TradeSide,
+    strategy_spec_config_id,
 )
 from research.strategies.ema_pullback.spec_instances import (
     make_ema_pullback_strategy_spec,
-    variant_from_spec,
 )
 
 
@@ -36,13 +37,24 @@ class EmaPullbackInstanceValidationError(ValueError):
     """Raised when a single ema_pullback instance is invalid."""
 
 
+@dataclass(frozen=True)
+class LoadedEmaPullbackInstance:
+    spec: EmaPullbackStrategySpec
+    strategy_spec_config_id: str
+
+
 _INSTANCE_FIELDS = frozenset(
     {
         "instance_id",
         "variant",
         "market",
-        "execution",
         "strategy",
+    }
+)
+
+_STRATEGY_FIELDS = frozenset(
+    {
+        "trade_sides",
         "anchor_stack",
         "direction",
         "setup",
@@ -54,10 +66,18 @@ _INSTANCE_FIELDS = frozenset(
 )
 
 
+def load_ema_pullback_config_entry(instance: Mapping[str, Any]) -> LoadedEmaPullbackInstance:
+    spec = load_ema_pullback_instance(instance)
+    return LoadedEmaPullbackInstance(
+        spec=spec,
+        strategy_spec_config_id=strategy_spec_config_id(spec),
+    )
+
+
 def load_ema_pullback_instance(instance: Mapping[str, Any]) -> EmaPullbackStrategySpec:
     payload = _require_mapping("ema_pullback instance", instance)
     _reject_unknown_fields("ema_pullback instance", payload, _INSTANCE_FIELDS)
-    for key in _INSTANCE_FIELDS:
+    for key in _INSTANCE_FIELDS - {"variant"}:
         _require_present(payload, key)
 
     instance_id = _require_non_empty_str(payload, "instance_id")
@@ -65,15 +85,14 @@ def load_ema_pullback_instance(instance: Mapping[str, Any]) -> EmaPullbackStrate
         raise EmaPullbackInstanceValidationError("external_config_id is not supported; use instance_id")
 
     market = _parse_market(payload["market"])
-    _parse_execution(payload["execution"])
     strategy = _parse_strategy(payload["strategy"])
-    periods = _parse_anchor_stack(payload["anchor_stack"])
-    direction = _parse_direction(payload["direction"])
-    setup_component, setup_lookback = _parse_setup(payload["setup"])
-    trigger = _parse_trigger(payload["trigger"])
-    blockers = _parse_blockers(payload["blockers"])
-    risk = _parse_risk(payload["risk"])
-    exits = _parse_exits(payload["exits"])
+    periods = _parse_anchor_stack(strategy["anchor_stack"])
+    direction = _parse_direction(strategy["direction"])
+    setup_component, setup_lookback = _parse_setup(strategy["setup"])
+    trigger = _parse_trigger(strategy["trigger"])
+    blockers = _parse_blockers(strategy["blockers"])
+    risk = _parse_risk(strategy["risk"])
+    exits = _parse_exits(strategy["exits"])
 
     components = builders.component_stack(
         direction=direction,
@@ -83,23 +102,20 @@ def load_ema_pullback_instance(instance: Mapping[str, Any]) -> EmaPullbackStrate
         exits=exits,
         risk=risk,
     )
+    variant = _optional_non_empty_str(payload, "variant", default="")
     spec = make_ema_pullback_strategy_spec(
+        variant=variant if variant else None,
         symbol=market["symbol"],
         base_timeframe=market["base_timeframe"],
         fast_period=periods["fast"],
         anchor_period=periods["anchor"],
         slow_period=periods["slow"],
+        anchor_source=periods["source"],
+        anchor_timeframe=periods["timeframe"],
         setup_lookback=setup_lookback,
-        enabled_sides=strategy["trade_sides"],
+        enabled_sides=_parse_trade_sides(strategy["trade_sides"]),
         components=components,
     )
-    expected_variant = _require_non_empty_str(payload, "variant")
-    actual_variant = variant_from_spec(spec)
-    if expected_variant != actual_variant:
-        raise EmaPullbackInstanceValidationError(
-            f"instance {instance_id!r} variant {expected_variant!r} does not match "
-            f"anchor_stack-derived variant {actual_variant!r}"
-        )
     return spec
 
 
@@ -112,27 +128,45 @@ def _parse_market(value: Any) -> dict[str, str]:
     }
 
 
-def _parse_strategy(value: Any) -> dict[str, tuple[TradeSide, ...]]:
+def _parse_strategy(value: Any) -> Mapping[str, Any]:
     payload = _require_mapping("strategy", value)
-    _reject_unknown_fields("strategy", payload, {"trade_sides"})
-    trade_sides_value = _require_present(payload, "trade_sides")
+    _reject_unknown_fields("strategy", payload, _STRATEGY_FIELDS)
+    for key in _STRATEGY_FIELDS:
+        _require_present(payload, key)
+    return payload
+
+
+def _parse_trade_sides(value: Any) -> tuple[TradeSide, ...]:
+    trade_sides_value = value
     if isinstance(trade_sides_value, Mapping):
-        _reject_unknown_fields("strategy.trade_sides", trade_sides_value, {"enabled"})
-        trade_sides_value = _require_present(trade_sides_value, "enabled")
+        if "enabled" in trade_sides_value:
+            _reject_unknown_fields("strategy.trade_sides", trade_sides_value, {"enabled"})
+            trade_sides_value = _require_present(trade_sides_value, "enabled")
+        else:
+            _reject_unknown_fields("strategy.trade_sides", trade_sides_value, {"long", "short"})
+            return _parse_trade_side_flags(trade_sides_value)
     if not isinstance(trade_sides_value, Sequence) or isinstance(trade_sides_value, (str, bytes)):
         raise EmaPullbackInstanceValidationError("strategy.trade_sides must be a list")
-    return {"trade_sides": builders.trade_sides(tuple(trade_sides_value)).enabled}
+    return builders.trade_sides(tuple(trade_sides_value)).enabled
 
 
-def _parse_execution(value: Any) -> None:
-    payload = _require_mapping("execution", value)
-    _reject_unknown_fields("execution", payload, set())
+def _parse_trade_side_flags(payload: Mapping[str, Any]) -> tuple[TradeSide, ...]:
+    enabled: list[TradeSide] = []
+    for side in ("long", "short"):
+        value = payload.get(side, False)
+        if not isinstance(value, bool):
+            raise EmaPullbackInstanceValidationError(f"strategy.trade_sides.{side} must be a boolean")
+        if value:
+            enabled.append(side)
+    return builders.trade_sides(tuple(enabled)).enabled
 
 
-def _parse_anchor_stack(value: Any) -> dict[str, int]:
+def _parse_anchor_stack(value: Any) -> dict[str, Any]:
     payload = _require_mapping("anchor_stack", value)
-    _reject_unknown_fields("anchor_stack", payload, {"fast", "anchor", "slow"})
+    _reject_unknown_fields("anchor_stack", payload, {"source", "timeframe", "fast", "anchor", "slow"})
     return {
+        "source": _optional_non_empty_str(payload, "source", default="close"),
+        "timeframe": _optional_non_empty_str(payload, "timeframe", default="base"),
         "fast": _require_positive_int(payload, "fast"),
         "anchor": _require_positive_int(payload, "anchor"),
         "slow": _require_positive_int(payload, "slow"),

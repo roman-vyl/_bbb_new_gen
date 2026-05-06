@@ -102,6 +102,17 @@ def run_strategy_specs_from_config(base_config: ExecutionConfig, config_source_f
         family=loaded_config.family,
         symbol=specs[0].symbol,
         timeframe=specs[0].base_timeframe,
+        init_cash=(
+            loaded_config.execution.init_cash
+            if loaded_config.execution.init_cash is not None
+            else base_config.init_cash
+        ),
+        fees=loaded_config.execution.fees if loaded_config.execution.fees is not None else base_config.fees,
+        slippage=(
+            loaded_config.execution.slippage
+            if loaded_config.execution.slippage is not None
+            else base_config.slippage
+        ),
     )
     loaded = load_candles_once(run_config)
     variant_results = [

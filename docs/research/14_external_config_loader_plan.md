@@ -1,5 +1,7 @@
 # Step 14 — External Config Loader (Experiment Layer + Family Parser)
 
+Статус: **implemented MVP**.
+
 ## 1. Контекст
 
 После Step 12 (`component_builders`) и Step 13 (multi-instance компонентов) внутренняя модель `StrategySpec` стабилизирована, но запуск всё ещё опирается на ручную подачу параметров из кода.
@@ -26,12 +28,13 @@
 
 ---
 
-## 3. Scope (in)
+## 3. Реализованный Scope (in)
 
 - минимальный generic experiment config loader для одного файла:
   - файл содержит один instance object; или
   - файл содержит bundle/list instances;
-- shared validation envelope (`schema_version`, `experiment_id`, `family`, `instances`);
+- поддерживаются JSON и YAML (`PyYAML` входит в `research` extra);
+- shared validation envelope (`schema_version`, `experiment_id`, `family`, optional run-level `execution`, `instances`);
 - dispatch по `family` к family-local parser;
 - family-local parser для `ema_pullback`: `dict` одного instance -> typed `EmaPullbackStrategySpec`;
 - fail-fast validation на файл/bundle в MVP;
@@ -62,7 +65,7 @@ MVP фиксирует только один источник:
 
 ---
 
-## 6. Предлагаемый high-level контракт
+## 6. Финальный high-level контракт
 
 ### 6.0 Experiment envelope (generic layer)
 
@@ -72,6 +75,7 @@ MVP фиксирует только один источник:
 schema_version
 experiment_id
 family
+execution (run-level, optional)
 instances[] (или single instance, нормализуемый к списку длины 1)
 ```
 
@@ -79,6 +83,7 @@ instances[] (или single instance, нормализуемый к списку 
 
 - generic loader валидирует envelope до dispatch;
 - `family` определяет family parser;
+- generic loader не импортирует strategy-specific `spec.py` и не вычисляет `strategy_spec_config_id` сам; это делает family-local adapter;
 - unique `instance_id` проверяется на уровне bundle.
 
 ### 6.1 External instance config shape (MVP)
@@ -87,24 +92,84 @@ instances[] (или single instance, нормализуемый к списку 
 
 ```text
 instance_id
-variant
+variant (optional user label)
 market
-execution
 strategy.trade_sides
-anchor_stack
-direction
-setup
-trigger
-blockers[]
-risk
-exits[]
+strategy.anchor_stack.source
+strategy.anchor_stack.timeframe
+strategy.anchor_stack.fast
+strategy.anchor_stack.anchor
+strategy.anchor_stack.slow
+strategy.direction
+strategy.setup
+strategy.trigger
+strategy.blockers[]
+strategy.risk
+strategy.exits[]
 ```
 
 Принципы:
 
 - обязательные поля явные и валидируются до build;
+- component selectors используют поле `component_id` (не `component`);
 - неизвестные поля валидируются в family-local parser;
 - `instance_id` обязателен для каждого instance; `external_config_id` в MVP не используется.
+- `variant` является человекочитаемым user label; если поле не задано, используется derived default из EMA periods.
+- `execution` не является instance-level секцией; в MVP она живет только на run-level envelope.
+- `strategy.trade_sides` поддерживает формы `["long"]`, `{enabled: ["long", "short"]}` и UI-friendly `{long: true, short: false}`.
+
+Минимальный bundle example:
+
+```yaml
+schema_version: 1
+experiment_id: ema_pullback_batch_001
+family: ema_pullback
+execution:
+  init_cash: 10000
+  fees: 0.0006
+  slippage: 0.0001
+instances:
+  - instance_id: baseline_long
+    variant: baseline_long
+    market:
+      symbol: BTCUSDT
+      base_timeframe: 1h
+    strategy:
+      trade_sides:
+        long: true
+        short: false
+      anchor_stack:
+        source: close
+        timeframe: base
+        fast: 100
+        anchor: 200
+        slow: 1000
+      direction:
+        component_id: ema_anchor_stack_trend
+      setup:
+        component_id: pullback_to_anchor
+        lookback: 3
+      trigger:
+        component_id: reclaim_anchor
+      blockers:
+        - instance_id: no_blockers
+          component_id: no_blockers
+      risk:
+        component_id: no_risk_filter
+      exits:
+        - instance_id: atr_stop_loss
+          component_id: atr_stop_loss
+          distance:
+            timeframe: base
+            period: 14
+            multiplier: 1.5
+        - instance_id: atr_take_profit
+          component_id: atr_take_profit
+          distance:
+            timeframe: base
+            period: 14
+            multiplier: 4.0
+```
 
 ### 6.2 Batch identity
 
@@ -127,6 +192,7 @@ exits[]
 - наличие `schema_version`;
 - наличие `experiment_id`;
 - наличие `family`;
+- `execution` (если задан) содержит только run-level параметры `init_cash`, `fees`, `slippage`;
 - `instances` имеет корректный тип (или single object корректно нормализуется в list);
 - `instance_id` уникален внутри bundle;
 - generic loader валидирует только envelope и структуру входа; family-specific поля не проверяются на этом слое.
@@ -137,7 +203,7 @@ exits[]
 - допустимость `blockers[]` для `ema_pullback`;
 - допустимость `exits[]` для `ema_pullback`;
 - наличие и корректность family-specific параметров (например RSI там, где требуется);
-- `anchor_stack` содержит обязательные роли (`fast`, `anchor`, `slow`);
+- `anchor_stack` содержит обязательные роли (`fast`, `anchor`, `slow`) и поддерживает явные `source`/`timeframe`;
 - `component_builders` собирают typed spec;
 - `spec.py` (`__post_init__`) выполняет финальную fail-fast typed validation.
 
@@ -179,20 +245,25 @@ discover config entries
 - experiment orchestration слой не переписывает execution-логику стратегии;
 - strategy family (`ema_pullback`) не отвечает за file discovery, batch lifecycle, grid/optimization и cross-family comparison;
 - experiment layer управляет запуском множества entries и консолидацией результатов.
+- минимальный callable path реализован через `run_strategy_specs_from_config(...)`;
+- `--config` подключен как тонкий CLI-переключатель без расширения runtime `ExecutionConfig`.
 
 ---
 
 ## 9. Артефакты результата
 
-Добавить batch-level артефакт, содержащий минимум:
+MVP добавляет `batch_metadata` в research JSON payload только после успешной валидации и запуска bundle.
 
-- `batch_run_id`, timestamp;
-- source metadata (file/dir, counts);
+Содержимое:
+
+- source metadata (`source_file`, `entries_count`);
+- `schema_version`, `experiment_id`, `family`;
+- run-level `execution`, если задан;
 - `validation_phase_status` (`passed`) для явного фиксирования, что bundle дошел до исполнения;
 - список entries:
   - identity fields;
   - status (`success`) только для entries, которые прошли валидацию и были запущены;
-  - result artifact reference (для success);
+  - итоговый `strategy_spec_config_id`;
 - агрегированные counters (total/success/failed, где `failed=0` для опубликованного MVP batch artifact).
 
 Guardrail:
@@ -204,23 +275,25 @@ Guardrail:
 
 ---
 
-## 10. План внедрения (Step 14A / Step 14B)
+## 10. Что реализовано (Step 14A / Step 14B)
 
 ### 10.1 Step 14A — family-local parser (`ema_pullback`)
 
-1. Ввести `instance_loader.py` в `research/strategies/ema_pullback/`.
-2. Реализовать контракт: один instance `dict` -> `EmaPullbackStrategySpec`.
-3. Подключить `component_builders/spec_instances` как единственный путь сборки.
-4. Зафиксировать family-specific validation и fail-fast ошибки.
+1. Введён `research/strategies/ema_pullback/instance_loader.py`.
+2. Реализован контракт: один instance `dict` -> `EmaPullbackStrategySpec`.
+3. Подключён путь сборки через `component_builders/spec_instances`.
+4. Зафиксированы family-specific validation и fail-fast ошибки.
+5. `variant` стал optional user label; при отсутствии используется derived default.
+6. `anchor_stack.source/timeframe`, RSI blocker/exit timeframe и ATR exit timeframe поддерживаются во внешнем config.
 
 ### 10.2 Step 14B — minimal generic experiment loader (single file)
 
-1. Ввести `research/experiments/config_loader.py` (минимальный generic loader).
-2. Реализовать чтение одного config file (single object или list/bundle).
-3. Реализовать shared envelope validation (`schema_version`, `experiment_id`, `family`, `instances`).
-4. Реализовать family dispatch (`ema_pullback` -> `instance_loader.py`).
-5. Возвращать список typed specs и metadata для batch report.
-6. Добавить smoke-тесты на single-object, list/bundle, fail-fast и duplicate `instance_id`.
+1. Введён `research/experiments/config_loader.py`.
+2. Реализовано чтение одного config file (single object или list/bundle), JSON/YAML.
+3. Реализована shared envelope validation (`schema_version`, `experiment_id`, `family`, optional `execution`, `instances`).
+4. Реализован family dispatch (`ema_pullback` -> `instance_loader.py`) без direct import из `ema_pullback.spec`.
+5. Возвращаются typed specs и metadata для batch report.
+6. Добавлены smoke/contract tests на single-object, list/bundle, fail-fast, duplicate `instance_id`, unknown fields, unsupported family, YAML dependency contract, run-level execution и trade_sides forms.
 
 ### Follow-up (вне MVP шага)
 
@@ -246,6 +319,13 @@ Guardrail:
 - directory feed не обязателен для завершения шага;
 - поведение детерминировано при повторном запуске с тем же config file.
 
+Текущая проверка реализации:
+
+```text
+python -m pytest
+204 passed
+```
+
 ---
 
 ## 12. Основные риски и снижение
@@ -253,8 +333,11 @@ Guardrail:
 - риск: размытый контракт конфига  
   снижение: строгая schema + reject unknown fields на соответствующем слое (envelope в generic loader, family-specific поля в parser).
 
+- риск: протекание generic loader в strategy-family слой  
+  снижение: generic loader вызывает family-local adapter и не импортирует `ema_pullback.spec`.
+
 - риск: расхождение идентичности между external config и internal config_id  
-  снижение: явная mapping-таблица в batch artifact.
+  снижение: `variant` является user label, а semantic identity фиксируется через `strategy_spec_config_id` в batch metadata.
 
 - риск: скрытые ошибки в batch (часть записей не прогнана)  
   снижение: fail-fast до запуска; per-entry success statuses и aggregated counters только для успешно валидированного и запущенного bundle.
@@ -272,11 +355,12 @@ Guardrail:
 ```text
 research/
   experiments/
+    __init__.py
     config_loader.py      # generic single-file loader + envelope validation + dispatch
 
   strategies/
     ema_pullback/
-      instance_loader.py  # one instance dict -> EmaPullbackStrategySpec
+      instance_loader.py  # one instance dict -> EmaPullbackStrategySpec + config_id adapter
       component_builders.py
       spec_instances.py
 ```

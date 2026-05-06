@@ -58,9 +58,34 @@ def test_custom_spec_variant_follows_anchor_stack_periods() -> None:
     assert spec.anchor_stack.slow.period == 13
 
 
+def test_factory_accepts_user_variant_label() -> None:
+    spec = make_ema_pullback_strategy_spec(variant="baseline_both")
+
+    assert spec.variant == "baseline_both"
+    assert variant_from_spec(spec) == "ema_pullback_fast100_anchor200_slow1000"
+
+
 def test_anchor_stack_builder_matches_factory_anchor_periods() -> None:
     spec = make_ema_pullback_strategy_spec(fast_period=21, anchor_period=55, slow_period=200)
     expected = anchor_stack_from_periods(fast=21, anchor=55, slow=200)
+    assert spec.anchor_stack == expected
+
+
+def test_factory_accepts_anchor_stack_source_and_timeframe() -> None:
+    spec = make_ema_pullback_strategy_spec(
+        fast_period=21,
+        anchor_period=55,
+        slow_period=200,
+        anchor_source="close",
+        anchor_timeframe="4h",
+    )
+    expected = anchor_stack_from_periods(
+        fast=21,
+        anchor=55,
+        slow=200,
+        source="close",
+        timeframe="4h",
+    )
     assert spec.anchor_stack == expected
 
 

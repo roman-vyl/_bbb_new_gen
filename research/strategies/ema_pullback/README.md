@@ -32,8 +32,8 @@ EmaPullbackStrategySpec
 только входы, а `execution/exits.py` маппит exit rules в `exits/short_exits` и
 `sl_stop/tp_stop`.
 
-`variant` — это identity собранного `StrategySpec`. Имя генерируется из
-фактических периодов `anchor_stack`, а не хранится отдельным ручным литералом:
+`variant` — это человекочитаемый label собранного `StrategySpec`. Если caller не
+задаёт его явно, имя генерируется из фактических периодов `anchor_stack`:
 
 ```text
 ema_pullback_fast{fast.period}_anchor{anchor.period}_slow{slow.period}
@@ -66,8 +66,9 @@ ema_pullback_fast{fast.period}_anchor{anchor.period}_slow{slow.period}
 Числовые research-параметры задаются в `make_ema_pullback_strategy_spec(...)` и
 внутри фабрики собираются через builders (`anchor_stack_from_periods(...)`,
 `component_stack(...)`, `exits_atr_default(...)`, `trade_sides(...)`,
-`pullback_setup(...)`). `variant` всегда выводится из фактических
-`fast / anchor / slow` периодов:
+`pullback_setup(...)`). Если caller не задаёт `variant`, он выводится из фактических
+`fast / anchor / slow` периодов; внешний config может передать человекочитаемый
+variant label, а semantic uniqueness остаётся за `config_id`:
 
 ```text
 variant = ema_pullback_fast{fast.period}_anchor{anchor.period}_slow{slow.period}
@@ -90,6 +91,11 @@ components:
 
 trade_sides:
   enabled = ("long",)
+
+external config также принимает:
+  trade_sides = ["long", "short"]
+  trade_sides = {enabled = ["long", "short"]}
+  trade_sides = {long = true, short = false}
 
 trade_management:
   profile = reserved  # зарезервировано, не содержит exit_rules

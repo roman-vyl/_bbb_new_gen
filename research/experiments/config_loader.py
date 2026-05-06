@@ -7,8 +7,6 @@ import json
 from pathlib import Path
 from typing import Any, Mapping
 
-from research.strategies.ema_pullback.spec import strategy_spec_config_id
-
 
 class ConfigValidationError(ValueError):
     """Raised when an external experiment config fails MVP validation."""
@@ -37,6 +35,7 @@ class LoadedExternalConfig:
     schema_version: int | str
     experiment_id: str
     family: str
+    execution: "ExternalExecutionConfig"
     source_file: Path
     specs: tuple[Any, ...]
     entries: tuple[ConfigEntryMetadata, ...]
@@ -46,13 +45,37 @@ class LoadedExternalConfig:
             "schema_version": self.schema_version,
             "experiment_id": self.experiment_id,
             "family": self.family,
+            "execution": self.execution.to_payload(),
             "source_file": self.source_file.as_posix(),
             "entries_count": len(self.entries),
             "entries": [entry.to_payload() for entry in self.entries],
         }
 
 
-_ENVELOPE_KEYS = frozenset({"schema_version", "experiment_id", "family", "instances"})
+@dataclass(frozen=True)
+class ExternalExecutionConfig:
+    init_cash: float | None = None
+    fees: float | None = None
+    slippage: float | None = None
+
+    def to_payload(self) -> dict[str, float]:
+        payload: dict[str, float] = {}
+        if self.init_cash is not None:
+            payload["init_cash"] = self.init_cash
+        if self.fees is not None:
+            payload["fees"] = self.fees
+        if self.slippage is not None:
+            payload["slippage"] = self.slippage
+        return payload
+
+
+_ENVELOPE_KEYS = frozenset({"schema_version", "experiment_id", "family", "execution", "instances"})
+
+
+@dataclass(frozen=True)
+class _LoadedFamilyInstance:
+    spec: Any
+    strategy_spec_config_id: str
 
 
 def load_strategy_config_file(path: str | Path) -> LoadedExternalConfig:
@@ -71,24 +94,27 @@ def load_strategy_config(
     schema_version = _require_present(root, "schema_version")
     experiment_id = _require_non_empty_str(root, "experiment_id")
     family = _require_non_empty_str(root, "family")
+    execution = _parse_execution(root.get("execution", {}))
 
     instance_payloads = _normalize_instances(root)
     instance_ids = _validate_unique_instance_ids(instance_payloads)
-    specs = tuple(_load_family_instance(family, item) for item in instance_payloads)
+    loaded_instances = tuple(_load_family_instance(family, item) for item in instance_payloads)
+    specs = tuple(loaded.spec for loaded in loaded_instances)
     entries = tuple(
         ConfigEntryMetadata(
             source_file=source_path.as_posix(),
             entry_index=index,
             family=family,
             instance_id=instance_ids[index],
-            strategy_spec_config_id=strategy_spec_config_id(spec),
+            strategy_spec_config_id=loaded.strategy_spec_config_id,
         )
-        for index, spec in enumerate(specs)
+        for index, loaded in enumerate(loaded_instances)
     )
     return LoadedExternalConfig(
         schema_version=schema_version,
         experiment_id=experiment_id,
         family=family,
+        execution=execution,
         source_file=source_path,
         specs=specs,
         entries=entries,
@@ -159,12 +185,28 @@ def _validate_unique_instance_ids(
     return tuple(out)
 
 
-def _load_family_instance(family: str, item: Mapping[str, Any]) -> Any:
+def _parse_execution(value: Any) -> ExternalExecutionConfig:
+    payload = _require_mapping("execution", value)
+    unknown = sorted(set(payload) - {"init_cash", "fees", "slippage"})
+    if unknown:
+        raise ConfigValidationError(f"unknown execution field(s): {', '.join(unknown)}")
+    return ExternalExecutionConfig(
+        init_cash=_optional_positive_number(payload, "init_cash"),
+        fees=_optional_non_negative_number(payload, "fees"),
+        slippage=_optional_non_negative_number(payload, "slippage"),
+    )
+
+
+def _load_family_instance(family: str, item: Mapping[str, Any]) -> _LoadedFamilyInstance:
     if family != "ema_pullback":
         raise ConfigValidationError(f"unsupported family {family!r}; supported families: ema_pullback")
-    from research.strategies.ema_pullback.instance_loader import load_ema_pullback_instance
+    from research.strategies.ema_pullback.instance_loader import load_ema_pullback_config_entry
 
-    return load_ema_pullback_instance(item)
+    loaded = load_ema_pullback_config_entry(item)
+    return _LoadedFamilyInstance(
+        spec=loaded.spec,
+        strategy_spec_config_id=loaded.strategy_spec_config_id,
+    )
 
 
 def _require_mapping(name: str, value: Any) -> Mapping[str, Any]:
@@ -189,4 +231,22 @@ def _require_non_empty_str(
     if not isinstance(value, str) or not value.strip():
         raise ConfigValidationError(f"{prefix}{key} must be a non-empty string")
     return value.strip()
+
+
+def _optional_positive_number(payload: Mapping[str, Any], key: str) -> float | None:
+    if key not in payload:
+        return None
+    value = payload[key]
+    if not isinstance(value, (int, float)) or isinstance(value, bool) or value <= 0:
+        raise ConfigValidationError(f"execution.{key} must be a positive number")
+    return float(value)
+
+
+def _optional_non_negative_number(payload: Mapping[str, Any], key: str) -> float | None:
+    if key not in payload:
+        return None
+    value = payload[key]
+    if not isinstance(value, (int, float)) or isinstance(value, bool) or value < 0:
+        raise ConfigValidationError(f"execution.{key} must be a non-negative number")
+    return float(value)
 

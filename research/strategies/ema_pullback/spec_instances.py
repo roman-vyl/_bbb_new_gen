@@ -42,11 +42,14 @@ def variant_from_spec(spec: EmaPullbackStrategySpec) -> str:
 
 def make_ema_pullback_strategy_spec(
     *,
+    variant: str | None = None,
     symbol: str = "BTCUSDT",
     base_timeframe: str = "1h",
     fast_period: int = 100,
     anchor_period: int = 200,
     slow_period: int = 1000,
+    anchor_source: str = "close",
+    anchor_timeframe: str = "base",
     setup_lookback: int = 3,
     atr_period: int = 14,
     stop_atr_multiplier: float = 1.5,
@@ -72,13 +75,19 @@ def make_ema_pullback_strategy_spec(
     )
 
     return EmaPullbackStrategySpec(
-        variant=_variant_from_periods(fast_period, anchor_period, slow_period),
+        variant=(
+            _variant_from_periods(fast_period, anchor_period, slow_period)
+            if variant is None
+            else variant.strip()
+        ),
         symbol=symbol.strip().upper(),
         base_timeframe=base_timeframe.strip(),
         anchor_stack=anchor_stack_from_periods(
             fast=fast_period,
             anchor=anchor_period,
             slow=slow_period,
+            timeframe=anchor_timeframe,
+            source=anchor_source,
         ),
         components=resolved_components,
         trade_sides=trade_sides(enabled_sides),
