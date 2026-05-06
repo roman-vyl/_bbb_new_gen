@@ -62,7 +62,9 @@ role + component_id + instance_id + params + enabled(optional)
 
 - `instance_id` уникален в пределах соответствующей роли;
 - дубликаты `instance_id` в одной роли — validation error;
-- при отсутствии `instance_id` builder может авто-генерировать детерминированный alias, но предпочтителен явный id.
+- для внешнего целевого формата `instance_id` обязателен для каждого instance;
+- при отсутствии `instance_id` во внешнем config loader делает fail-fast;
+- internal builders могут иметь детерминированные helper-aliases только для тестов/прототипов, но это не часть внешнего контракта.
 
 ### 5.3 Формат Step 13
 
@@ -77,7 +79,9 @@ role + component_id + instance_id + params + enabled(optional)
 Для каждой роли фиксируется:
 
 - порядок применения экземпляров (в порядке списка после нормализации);
-- правила агрегации (например, для blockers: deny при срабатывании любого блокера; для exits: first-hit или приоритетный порядок по spec);
+- правила агрегации: для `blockers` — AND по allow-mask (любой блокер может запретить вход);
+- правила агрегации: для `exits` — OR по boolean exit-сигналам + технические stop/take каналы из exit layer;
+- deterministic list order сохраняется как базовый порядок обхода, но custom priority resolver не вводится, пока не будет отдельного явного шага;
 - единый интерфейс вызова component runtime с контекстом стороны сделки (long/short сохраняется из Step 12).
 
 Важно: семантика агрегации документируется отдельно по ролям и должна быть одинаковой между backtest runs.
