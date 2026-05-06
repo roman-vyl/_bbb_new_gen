@@ -336,9 +336,10 @@ risk_component = существующий/дефолтный no_risk_filter
 
 ---
 
-### Step 8 — Feature-based Trade Management / SL-TP
+### Step 8 — Feature-based Trade Management / SL-TP (historical, superseded)
 
-После первой реальной component-based стратегии вводится отдельный слой управления открытой сделкой.
+Историческая формулировка этапа: после первой реальной component-based стратегии вводится отдельный слой управления открытой сделкой.
+Актуальная архитектура для `ema_pullback` зафиксирована позже (Step 12): выходы и SL/TP описываются через `components.exits`, а корневой `TradeManagementSpec` зарезервирован.
 
 Trade Management не является FeaturesDev и не является entry-логикой.
 
@@ -352,7 +353,7 @@ volatility context
 trend relations
 ```
 
-Trade Management использует prepared feature bindings/relations, чтобы рассчитывать правила фиксации прибыли и убытка:
+Исторически Trade Management описывался как слой, использующий prepared feature bindings/relations для правил фиксации прибыли и убытка:
 
 ```text
 stop_loss
@@ -361,15 +362,16 @@ time_stop
 later: trailing_stop / partial exits
 ```
 
-`trade_management_profile` должен быть частью `StrategyConfig` и входить в `config_id`, потому что одинаковая entry-логика с разными правилами фиксации прибыли/убытка — это разные strategy instances.
+Историческая заметка: `trade_management_profile` рассматривался как часть `StrategyConfig` и `config_id`.
+Для текущей модели `ema_pullback` это заменено спецификацией выходов в `components.exits` (см. Step 12).
 
 Component Grid начинается только после базового Trade Management, потому что массово тестировать входы без стабильной архитектуры stop/take даёт искажённые выводы.
 
 ---
 
-### Step 9 — Research Results Artifact / Experiment Report
+### Step 9 — Research Results Artifact / Experiment Report (updated by later spec steps)
 
-После первой реальной component-based стратегии и базового Trade Management нужно перестать опираться только на stdout-таблицу runner.
+После первой реальной component-based стратегии нужно перестать опираться только на stdout-таблицу runner.
 
 Research runner формирует структурированный результат запуска:
 
@@ -379,7 +381,9 @@ research/results/*.json
 
 Минимальный смысл: `run.py` → structured experiment result artifact.
 
-Артефакт (минимум): `run_id`, `timestamp`, `family`, `symbol`, `timeframe`, `candles`, `variants`, `config_id`, `feature_profile`, component ids, `trade_management_profile`, `trades`, `sharpe`, `profit_factor`, `max_drawdown`, `total_return` (позже).
+Артефакт (минимум): `run_id`, `timestamp`, `family`, `symbol`, `timeframe`, `candles`, `variants`, `config_id`, `feature_profile`, component ids, `trades`, `sharpe`, `profit_factor`, `max_drawdown`, `total_return` (позже).
+
+Примечание: поле `trade_management_profile` относится к исторической формулировке ранних шагов; в актуальной модели источником семантики выходов является `components.exits` (см. Step 12).
 
 Цель: результаты backtest воспроизводимы, сравнимы и пригодны для будущего dashboard/grid.
 

@@ -20,7 +20,7 @@
 
 - детерминированный порядок исполнения;
 - воспроизводимость отчётов;
-- обратную совместимость с текущими single-instance конфигами.
+- единый и простой целевой контракт multi-instance формата.
 
 ---
 
@@ -30,7 +30,7 @@
 - явный `instance_id` для каждого экземпляра компонента;
 - execution orchestration для последовательного/предсказуемого применения instances;
 - включение `instance_id` в debug counters и structured results;
-- миграционный слой для старого single-instance формата.
+- явная валидация целевого multi-instance формата.
 
 ## 4. Non-goals (out)
 
@@ -64,10 +64,11 @@ role + component_id + instance_id + params + enabled(optional)
 - дубликаты `instance_id` в одной роли — validation error;
 - при отсутствии `instance_id` builder может авто-генерировать детерминированный alias, но предпочтителен явный id.
 
-### 5.3 Backward compatibility
+### 5.3 Формат Step 13
 
-- старый single-instance формат автоматически компилируется в список из одного instance;
-- runtime и reporting работают только с нормализованным list-представлением.
+- Step 13 фиксирует единый целевой list-of-instances формат;
+- runtime и reporting работают с этим форматом напрямую;
+- builder и orchestration принимают и валидируют этот формат как единственный рабочий контракт шага.
 
 ---
 
@@ -102,8 +103,7 @@ Structured results и debug-метрики должны включать:
 2. Добавить validation (`instance_id`, дубликаты, обязательные поля).
 3. Обновить execution orchestration для обработки списка instances по ролям.
 4. Прокинуть `instance_id` в diagnostics/result artifact.
-5. Добавить migration adapter для legacy single-instance конфигов.
-6. Подготовить 2-3 smoke strategy instances, где один `component_id` используется несколько раз с разными params.
+5. Подготовить 2-3 smoke strategy instances, где один `component_id` используется несколько раз с разными params.
 
 ---
 
@@ -111,7 +111,7 @@ Structured results и debug-метрики должны включать:
 
 - один `StrategySpec` поддерживает >=2 экземпляров одного `component_id` в минимум одной роли;
 - отчёт и debug clearly различают instances по `instance_id`;
-- старый single-instance spec продолжает выполняться без изменений пользовательского API;
+- используется единый целевой multi-instance формат как основной контракт шага;
 - поведение детерминировано между повторными запусками на одинаковых данных.
 
 ---
@@ -120,10 +120,10 @@ Structured results и debug-метрики должны включать:
 
 - неявная/нестабильная семантика агрегации между ролями;
 - путаница между `component_id` и `instance_id` в отчётах;
-- скрытая несовместимость с уже существующими spec_instances.
+- размывание scope из-за расширения шага вне целевого multi-instance контракта.
 
 Снижение рисков:
 
 - явная нормализация в builder;
 - строгая validation;
-- обязательные smoke regression сценарии для legacy и multi-instance кейсов.
+- обязательные smoke-сценарии для multi-instance кейсов.
