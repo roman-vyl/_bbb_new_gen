@@ -1,146 +1,135 @@
 ---
 name: ema pullback builders
-overview: "Ввести typed `component_builders.py` как слой «кирпичей» (component + stack builders) для сборки `spec.py`-объектов из kwargs/внешних параметров и перевести `spec_instances.py` на этот слой, сохранив единый путь сборки полного strategy instance. Учтён отказ от rich trade management spec: SL/TP по ATR и signal-exits живут в `ComponentStackSpec.exits` как `ExitRuleSpec`; `TradeManagementSpec` — заглушка (`profile=\"reserved\"`)."
+overview: "Typed `component_builders.py` — слой сборки spec-объектов из внешних параметров; `spec_instances.py` собирает полный `EmaPullbackStrategySpec` через builders, с опциональным `components` как source of truth и `enabled_sides: Sequence[TradeSide]`. SL/TP и signal-exits — в `ComponentStackSpec.exits`; `TradeManagementSpec` — заглушка (`profile=\"reserved\"`). Direction id после Step 11: `ema_anchor_stack_trend` (side-aware, не bullish)."
 todos:
   - id: add-builders-module
-    content: Создать `component_builders.py` с typed builders для EMA/anchor/RSI/trigger/blocker/exit rules/component-stack без full strategy builder; без builders для `DistanceExitRuleSpec`/exit_rules в TM (тип упразднён)
-    status: pending
+    content: Модуль `component_builders.py` с builders для EMA/anchor/RSI/trigger/blocker/exit/component-stack; без full-strategy builder и без rich TM
+    status: completed
   - id: migrate-spec-instances
-    content: Перевести `spec_instances.py` на builders при сохранении public API; ручная сборка `ExitRuleSpec`+`AtrDistanceSpec` для atr SL/TP → shortcuts `exits_atr_default(...)` / `exit_atr_stop_loss` / `exit_atr_take_profit`
-    status: pending
+    content: "`spec_instances.py` на builders; ATR SL/TP через `exits_atr_default` / `exit_atr_*`; опционально `components`"
+    status: completed
   - id: extend-tests
-    content: Добавить/обновить тесты на equivalence и shortcuts builders (в т.ч. `tests/test_ema_pullback_exits.py` вместо legacy trade_management)
-    status: pending
+    content: Тесты на equivalence, shortcuts, custom `components`, `enabled_sides` как Sequence, `config_id`
+    status: completed
   - id: document-builders
-    content: Обновить README — parsing/validation vs builders; пример dict→builders→spec; явно описать единый `exits` и зарезервированный `trade_management`
-    status: pending
+    content: README family + этот research-док
+    status: completed
 isProject: false
 ---
 
-# Step 12: `component_builders.py` for typed spec assembly
+# Step 12: `component_builders.py` — typed spec assembly
 
 ## Цель
-Сделать единый pure-builder слой для `ema_pullback`, который принимает внешние параметры (kwargs/dict-loader input) и возвращает строго типизированные объекты из [`D:/_bbb_new_gen/research/strategies/ema_pullback/spec.py`](D:/_bbb_new_gen/research/strategies/ema_pullback/spec.py), без расчётов данных, `df` и `vectorbt`.
 
-## Что реализуем
+Единый **pure-builder** слой для `ema_pullback`: внешние параметры (kwargs / dict после parse+validate) → строго типизированные dataclass-ы из [`research/strategies/ema_pullback/spec.py`](../../research/strategies/ema_pullback/spec.py). Без расчёта индикаторов, без `DataFrame`, без `vectorbt`.
 
-### 1) Новый модуль builders
-Создать [`D:/_bbb_new_gen/research/strategies/ema_pullback/component_builders.py`](D:/_bbb_new_gen/research/strategies/ema_pullback/component_builders.py) с функциями по ролям:
+## Модуль [`component_builders.py`](../../research/strategies/ema_pullback/component_builders.py)
 
-- EMA / anchor:
-  - `ema(period: int, *, timeframe: str = "base", source: str = "close") -> EmaSpec`
-  - `anchor_stack(*, fast: EmaSpec, anchor: EmaSpec, slow: EmaSpec) -> AnchorStackSpec`
-  - `anchor_stack_from_periods(*, fast: int, anchor: int, slow: int, timeframe: str = "base", source: str = "close") -> AnchorStackSpec`
-- RSI feature:
-  - `rsi_feature(*, timeframe: str = "base", period: int = 14) -> RsiFeatureSpec`
-- Trigger:
-  - `trigger(component_id: str) -> TriggerSpec`
-  - shortcut `trigger_touch_anchor() -> TriggerSpec`
-  - shortcut `trigger_reclaim_anchor() -> TriggerSpec`
-  - shortcut-функции используют family-local constants (не raw string literals по коду)
-- Direction component id:
-  - `direction_ema_anchor_stack() -> str`
-- Setup component id:
-  - `setup_pullback_to_anchor() -> str`
-- Blocker:
-  - generic `blocker_rule(...) -> BlockerRuleSpec`
-  - `blocker_none() -> BlockerRuleSpec`
-  - `blocker_counter_candle() -> BlockerRuleSpec`
-  - shortcut `blocker_extreme_rsi(...) -> BlockerRuleSpec`
-- **Exit rules** (единый тип для signal / SL / TP по дистанции):
-  - generic `exit_rule(...) -> ExitRuleSpec`
-  - `exit_no_signal() -> ExitRuleSpec` → `no_signal_exit`, `exit_kind="signal"`
-  - `exit_rsi(...) -> ExitRuleSpec` → `rsi_signal_exit` + пороги/RSI feature
-  - `exit_atr_stop_loss(...) -> ExitRuleSpec` / `exit_atr_take_profit(...) -> ExitRuleSpec` с `distance=AtrDistanceSpec(...)` и корректным `exit_kind`
-  - shortcut **`exits_atr_default(*, atr_period, stop_atr_multiplier, take_atr_multiplier) -> tuple[ExitRuleSpec, ExitRuleSpec]`** — пара `atr_stop_loss` + `atr_take_profit`, как в текущем `make_ema_pullback_strategy_spec`
-  - маппинг на `_EXIT_COMPONENT_KINDS` в `spec.py`: несовпадение `component_id` / `exit_kind` ловит `__post_init__`
-- Risk component id:
-  - `risk_no_filter() -> str`
-- **Trade management:** отдельный builder для `TradeManagementSpec` **не** вводим; на `EmaPullbackStrategySpec` остаётся дефолт `field(default_factory=TradeManagementSpec)` из `spec.py`. **Не** восстанавливать builders для удалённого rich TM (`exit_rules`, `distance_exit_rule`, `trade_management_atr` как отдельный подграф spec).
-- Остальные typed builders:
-  - `trade_sides(enabled: Sequence[TradeSide] = ("long",)) -> TradeSideSpec`
-  - `pullback_setup(*, lookback: int = 3) -> PullbackSetupSpec`
-  - `component_stack(*, direction: str | None = None, blockers: Sequence[BlockerRuleSpec] | None = None, setup: str | None = None, trigger: TriggerSpec | None = None, exits: Sequence[ExitRuleSpec] | None = None, risk: str | None = None) -> ComponentStackSpec`
-  - defaults внутри `component_stack()` (вызов без аргументов): `direction_ema_anchor_stack()`, `(blocker_none(),)`, `setup_pullback_to_anchor()`, `trigger_reclaim_anchor()`, **`exits_atr_default(atr_period=14, stop_atr_multiplier=1.5, take_atr_multiplier=4.0)`**, `risk_no_filter()` — числа ATR совпадают с дефолтами `make_ema_pullback_strategy_spec`
-  - `atr_distance(...) -> AtrDistanceSpec` — вспомогательный builder для SL/TP exit rules
+### EMA / anchor
 
-Важно:
+- `ema(period: int, *, timeframe: str = "base", source: str = "close") -> EmaSpec`
+- `anchor_stack(*, fast: EmaSpec, anchor: EmaSpec, slow: EmaSpec) -> AnchorStackSpec`
+- `anchor_stack_from_periods(*, fast: int, anchor: int, slow: int, timeframe: str = "base", source: str = "close") -> AnchorStackSpec`
 
-- `component_builders.py` не содержит builder полного `EmaPullbackStrategySpec`; полный instance остаётся в зоне ответственности `spec_instances.py`.
-- Валидация остаётся в dataclass `__post_init__` внутри `spec.py`; builders делают только construction + нормализацию внешнего ввода.
-- Нормализация внешнего ввода: `Sequence -> tuple` для `trade_sides`, `blockers`, **`exits`**; dataclass-объекты не используются как mutable default args.
-- Guardrail нормализации: строка (`str`/`bytes`) не принимается как `Sequence` для `trade_sides`, `blockers`, **`exits`** (чтобы исключить посимвольную упаковку в tuple).
+### RSI feature
 
-Минимальная структура `component_builders.py` фиксируется так:
+- `rsi_feature(*, timeframe: str = "base", period: int = 14) -> RsiFeatureSpec`
 
-- `ema(...)`, `anchor_stack_from_periods(...)`, `rsi_feature(...)`
-- `direction_ema_anchor_stack()`, `setup_pullback_to_anchor()`, `risk_no_filter()`
-- `trigger_reclaim_anchor()`, `trigger_touch_anchor()`
-- `blocker_none()`, `blocker_counter_candle()`, `blocker_extreme_rsi(...)`
-- **`exit_no_signal()`, `exit_atr_stop_loss(...)`, `exit_atr_take_profit(...)`, `exits_atr_default(...)`** (при необходимости `exit_rsi`)
-- `trade_sides(...)`, `pullback_setup(...)`, `component_stack(...)`, `atr_distance(...)`
+### Trigger
 
-### 2) Миграция `spec_instances.py` на builders
-Обновить [`D:/_bbb_new_gen/research/strategies/ema_pullback/spec_instances.py`](D:/_bbb_new_gen/research/strategies/ema_pullback/spec_instances.py):
+- `trigger(component_id: str) -> TriggerSpec`
+- `trigger_touch_anchor() -> TriggerSpec` — id из `components/registry.py` (`TOUCH_ANCHOR_COMPONENT`)
+- `trigger_reclaim_anchor() -> TriggerSpec` — `RECLAIM_ANCHOR_COMPONENT`
 
-- убрать ручную вложенную сборку `AnchorStackSpec(EmaSpec(...), ...)` и дублирование двух `ExitRuleSpec` с `AtrDistanceSpec`;
-- использовать `anchor_stack_from_periods(...)`, **`exits_atr_default(...)`** (или эквивалент), `component_stack(...)`, `trade_sides(...)`, `pullback_setup(...)`;
-- для component roles использовать builders, а не raw strings: `direction_ema_anchor_stack()`, `setup_pullback_to_anchor()`, `trigger_reclaim_anchor()`, `risk_no_filter()`, `blocker_none()`;
-- **`TradeManagementSpec` не собирать и не экспортировать builder** — остаётся дефолт `field(default_factory=TradeManagementSpec)` на `EmaPullbackStrategySpec`, если фабрика не передаёт поле явно;
-- сохранить публичные функции и текущие дефолтные значения (`make_ema_pullback_strategy_spec`, `default_ema_pullback_strategy_spec`, `active_strategy_specs`) для обратной совместимости тестов и раннера.
+Shortcuts не размазывают raw string literals по коду: строки берутся из констант registry.
 
-### 3) Граница ответственности full strategy instance
-Покрытие параметров фиксируем так:
+### Direction / setup / risk (component id как `str`)
 
-- `symbol`/`base_timeframe`/`variant` остаются в [`spec_instances.py`](D:/_bbb_new_gen/research/strategies/ema_pullback/spec_instances.py) (и future loader, который вызывает этот слой);
-- `anchor periods/source/timeframe` -> `anchor_stack_from_periods(...)`;
-- `trade_sides` -> `trade_sides(...)`;
-- `direction`/`blockers`/`setup component id`/`trigger`/**`exits`**/`risk` -> role builders в `component_builders.py`;
-- `setup lookback` -> `pullback_setup(...)`;
-- **`ATR SL/TP` -> `exits_atr_default(...)` (или пара `exit_atr_*`) в `components.exits`, не в `trade_management`.**
+- **`direction_ema_anchor_stack() -> str`** — возвращает **`ema_anchor_stack_trend`** (`EMA_ANCHOR_STACK_TREND_COMPONENT` в registry). После Step 11 компонент direction **side-aware** (long: fast > anchor > slow; short: fast < anchor < slow); старый id `ema_anchor_stack_bullish` **не используется**, alias нет.
+- `setup_pullback_to_anchor() -> str`
+- `risk_no_filter() -> str`
 
-### 4) Обновить тесты под новый builder-слой
-Точечно расширить тесты в:
+### Blocker
 
-- [`tests/test_ema_pullback_manual_variants.py`](D:/_bbb_new_gen/tests/test_ema_pullback_manual_variants.py)
-- [`tests/test_strategy_config_instance.py`](D:/_bbb_new_gen/tests/test_strategy_config_instance.py)
-- при необходимости [`tests/test_ema_pullback_exits.py`](D:/_bbb_new_gen/tests/test_ema_pullback_exits.py) / [`tests/test_ema_pullback_feature_profile.py`](D:/_bbb_new_gen/tests/test_ema_pullback_feature_profile.py)
+- `blocker_rule(component_id: str, *, rsi=..., lookback=..., long_min=..., short_max=...) -> BlockerRuleSpec`
+- `blocker_none()`, `blocker_counter_candle()`
+- `blocker_extreme_rsi(*, timeframe=..., period=..., lookback=..., long_min=..., short_max=...) -> BlockerRuleSpec`
 
-Добавить проверки:
+### Exit rules (`ExitRuleSpec`)
 
-- `anchor_stack_from_periods` даёт тот же валидный стек, что и ручная сборка;
-- **`exits_atr_default` создаёт ровно 2 `ExitRuleSpec` с `atr_stop_loss` / `atr_take_profit` и корректными `exit_kind` + `AtrDistanceSpec`;**
-- `component_stack()` без аргументов даёт baseline по всем ролям, включая **`exits` == `exits_atr_default(14, 1.5, 4.0)`**, согласовано с дефолтом `make_ema_pullback_strategy_spec`;
-- `trade_sides`/`component_stack` корректно нормализуют `Sequence -> tuple`;
-- нормализация отбрасывает `str`/`bytes` как некорректный `Sequence`-input для списков правил;
-- `blocker_none`/`blocker_counter_candle`/`blocker_extreme_rsi` возвращают ожидаемые `component_id`;
-- **`exit_no_signal` / RSI / ATR exit shortcuts** возвращают ожидаемые `component_id` и согласованные `exit_kind`;
-- `trigger_touch_anchor`/`trigger_reclaim_anchor` выставляют ожидаемые `component_id`;
-- `make_ema_pullback_strategy_spec` после миграции даёт прежний контракт (вариант, стороны, component ids, risk/setup, **порядок и содержимое `exits`**).
+- `exit_rule(...)` — generic
+- `exit_no_signal()` → `no_signal_exit`, `exit_kind="signal"`
+- `exit_rsi(...)` → `rsi_signal_exit` + пороги / RSI feature
+- `exit_atr_stop_loss(...)`, `exit_atr_take_profit(...)` — с `distance` через `atr_distance(...)` и корректным `exit_kind`
+- **`exits_atr_default(*, atr_period, stop_atr_multiplier, take_atr_multiplier) -> tuple[ExitRuleSpec, ExitRuleSpec]`** — пара `atr_stop_loss` + `atr_take_profit` (как baseline в фабрике)
 
-### 5) Документация и внешний config readiness
-Обновить [`D:/_bbb_new_gen/research/strategies/ema_pullback/README.md`](D:/_bbb_new_gen/research/strategies/ema_pullback/README.md):
+Согласованность `component_id` / `exit_kind` с `_EXIT_COMPONENT_KINDS` в `spec.py` — валидация в `__post_init__`.
 
-- зафиксировать: `component_builders.py` — официальный construction layer после parsing/validation внешней схемы;
-- пример `dict -> builders -> spec_instances.make_ema_pullback_strategy_spec(...)`;
-- подчеркнуть: builders не считают индикаторы и не работают с dataframe;
-- **явно: SL/TP и signal-exits конфигурируются через `components.exits`; `trade_management` в spec зарезервирован и не несёт exit_rules.**
+### Остальное
 
-## Поток сборки (target architecture)
+- `atr_distance(*, timeframe: str = "base", period: int, multiplier: float) -> AtrDistanceSpec`
+- `trade_sides(enabled: Sequence[TradeSide] = ("long",)) -> TradeSideSpec`
+- `pullback_setup(*, lookback: int = 3) -> PullbackSetupSpec`
+- **`component_stack(*, direction=None, blockers=None, setup=None, trigger=None, exits=None, risk=None) -> ComponentStackSpec`**
+
+Дефолты при вызове `component_stack()` без аргументов (или с `None` на соответствующих полях):
+
+- `direction` → `direction_ema_anchor_stack()` → **`ema_anchor_stack_trend`**
+- `blockers` → `(blocker_none(),)`
+- `setup` → `setup_pullback_to_anchor()`
+- `trigger` → `trigger_reclaim_anchor()`
+- `exits` → `exits_atr_default(atr_period=14, stop_atr_multiplier=1.5, take_atr_multiplier=4.0)` (совпадает с дефолтами `make_ema_pullback_strategy_spec`)
+- `risk` → `risk_no_filter()`
+
+**Trade management:** отдельного builder для `TradeManagementSpec` нет; на `EmaPullbackStrategySpec` остаётся `field(default_factory=TradeManagementSpec)` из `spec.py`.
+
+### Нормализация и guardrails
+
+- `Sequence -> tuple` для `trade_sides.enabled`, `components.blockers`, `components.exits` (через `_normalize_sequence`).
+- **`str` / `bytes` не принимаются как Sequence** для этих полей (исключена посимвольная «упаковка» в tuple) — `TypeError`.
+
+### Границы
+
+- В **`component_builders.py` нет** builder полного `EmaPullbackStrategySpec` — только «кирпичи» и `component_stack`.
+- Валидация бизнес-правил — в `spec.py` (`__post_init__`); builders: construction + нормализация входа.
+
+## [`spec_instances.py`](../../research/strategies/ema_pullback/spec_instances.py)
+
+Публичные фабрики: `make_ema_pullback_strategy_spec`, `default_ema_pullback_strategy_spec`, `active_strategy_specs`, `variant_from_spec` — без изменения смысла для существующих вызовов.
+
+### `make_ema_pullback_strategy_spec`
+
+Ключевые параметры (помимо anchor periods, symbol, timeframe, setup lookback, ATR):
+
+- **`enabled_sides: Sequence[TradeSide] = ("long",)`** — допускается list/tuple и др. sequence; внутри **`trade_sides(enabled_sides)`** → tuple в `TradeSideSpec`.
+- **`components: ComponentStackSpec | None = None`**
+  - **`None`** — baseline: тот же набор, что даёт явный вызов `component_stack(...)` с `exits_atr_default(atr_period=..., stop_atr_multiplier=..., take_atr_multiplier=...)` из числовых параметров фабрики.
+  - **переданный `ComponentStackSpec`** — **source of truth**: фабрика **не перезаписывает** trigger/blockers/exits и т.д.; параметры `atr_period` / multipliers **не подмешиваются** в exits, если задан свой stack.
+
+`variant` по-прежнему из периодов anchor stack; `trade_management` не собирается явно (дефолт dataclass).
+
+## Поток сборки
 
 ```mermaid
 flowchart TD
-    externalParams["External params (dict/kwargs)"] --> builders["component_builders.py"]
-    builders --> typedComponents["Typed anchor/stack/exit rules specs"]
-    typedComponents --> specInstances["spec_instances.py full strategy instances"]
-    futureLoader["Future JSON/YAML loader"] --> specInstances
+    externalParams["External params dict/kwargs"] --> builders["component_builders.py"]
+    builders --> typedParts["Typed AnchorStack / ComponentStack / ..."]
+    typedParts --> specInstances["spec_instances.make_ema_pullback_strategy_spec"]
+    futureLoader["Future loader JSON/YAML"] --> specInstances
 ```
 
-## Критерии готовности
-- В `spec_instances.py` нет ручной глубокой вложенной сборки dataclass-ов для anchor / **пары ATR exits** / component stack (всё через builders).
-- В `component_builders.py` отсутствует full `EmaPullbackStrategySpec` builder (нет второго пути сборки полного instance).
-- Дефолт **`component_stack()`** (без аргументов) задаёт **`exits` == `exits_atr_default(atr_period=14, stop_atr_multiplier=1.5, take_atr_multiplier=4.0)`**; отдельного builder для **`TradeManagementSpec`** нет.
-- **Нет возврата к rich `TradeManagementSpec` в рамках этой задачи** — builders не воспроизводят удалённый `DistanceExitRuleSpec` + `exit_rules` на TM.
-- Все текущие public factory API из `spec_instances.py` сохраняют поведение.
-- Тесты на baseline/manual variants и exits/feature profile проходят без изменения бизнес-смысла.
-- Builders являются pure construction layer: только `params -> typed spec objects`.
+## Тесты (актуальные зоны)
+
+- [`tests/test_ema_pullback_manual_variants.py`](../../tests/test_ema_pullback_manual_variants.py) — baseline direction **`ema_anchor_stack_trend`**, anchor/exits equivalence, **custom `components`**, **различие `strategy_spec_config_id`** baseline vs custom.
+- [`tests/test_strategy_config_instance.py`](../../tests/test_strategy_config_instance.py) — builders shortcuts, **`enabled_sides` как list**, guardrail `str/bytes` для sequences.
+- [`tests/test_ema_pullback_exits.py`](../../tests/test_ema_pullback_exits.py), [`tests/test_ema_pullback_feature_profile.py`](../../tests/test_ema_pullback_feature_profile.py) — согласованность с дефолтным spec.
+
+## Критерии (выполнено)
+
+- Нет ручной глубокой вложенной сборки anchor / пары ATR exits / baseline `component_stack` в `spec_instances` — через builders.
+- Нет второго пути «full spec builder» в `component_builders.py`.
+- Дефолт `component_stack()` совпадает с baseline exits **14 / 1.5 / 4.0**; нет builder для `TradeManagementSpec`.
+- Direction registry: **`ema_anchor_stack_trend`**; **`ema_anchor_stack_bullish` удалён**, alias отсутствует.
+- Фабрика: **`components` опционален**; **`enabled_sides: Sequence[TradeSide]`**.
+
+Подробности для пользователей пайплайна см. также [`research/strategies/ema_pullback/README.md`](../../research/strategies/ema_pullback/README.md).
