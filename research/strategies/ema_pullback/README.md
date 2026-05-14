@@ -140,7 +140,23 @@ short:
 семантическими exit rules и только в execution-слое становятся `sl_stop/tp_stop`.
 
 SL/TP и signal exits конфигурируются только через `components.exits` (`ExitRuleSpec`).
+ATR-выходы используют вложенный объект `distance` (как раньше). **Константная дистанция в USD**
+(численно те же единицы, что у `close` на рынках вида `*USDT`: сдвиг цены в «долларах движения», не риск от `init_cash`)):
+`component_id: constant_usd_stop_loss` / `constant_usd_take_profit` и поле `usd_distance` (строго `> 0`).
+Execution-слой по-прежнему переводит это в `sl_stop` / `tp_stop` как отношение к `close`. Для этих компонентов **не** создаются ATR-колонки в `FeaturePlan`.
 `trade_management` остаётся reserved-stub и не владеет exit graph.
+
+Пример YAML (`strategy.exits`):
+
+```yaml
+exits:
+  - instance_id: sl_usd
+    component_id: constant_usd_stop_loss
+    usd_distance: 500.0
+  - instance_id: tp_usd
+    component_id: constant_usd_take_profit
+    usd_distance: 1200.0
+```
 
 ## External Params -> Builders -> Spec
 
@@ -178,8 +194,8 @@ direction: ema_anchor_stack_trend
 setup: pullback_to_anchor
 trigger: reclaim_anchor, touch_anchor
 blockers: no_blockers, counter_candle_blocker, rsi_extreme_blocker
-exits: atr_stop_loss, atr_take_profit, rsi_signal_exit
-future exits: fixed_stop_loss, fixed_take_profit, time_stop
+exits: atr_stop_loss, atr_take_profit, constant_usd_stop_loss, constant_usd_take_profit, rsi_signal_exit
+time_stop (future)
 risk: no_risk_filter
 ```
 

@@ -15,6 +15,7 @@ from research.strategies.ema_pullback.components.direction import (
 )
 from research.strategies.ema_pullback.components.exits import (
     atr_distance_exit,
+    constant_usd_distance_exit,
     no_signal_exit,
     rsi_signal_exit,
 )
@@ -48,6 +49,8 @@ NO_SIGNAL_EXIT_COMPONENT = "no_signal_exit"
 RSI_SIGNAL_EXIT_COMPONENT = "rsi_signal_exit"
 ATR_STOP_LOSS_COMPONENT = "atr_stop_loss"
 ATR_TAKE_PROFIT_COMPONENT = "atr_take_profit"
+CONSTANT_USD_STOP_LOSS_COMPONENT = "constant_usd_stop_loss"
+CONSTANT_USD_TAKE_PROFIT_COMPONENT = "constant_usd_take_profit"
 NO_RISK_FILTER_COMPONENT = "no_risk_filter"
 
 
@@ -135,6 +138,18 @@ COMPONENT_REGISTRY: dict[str, dict[str, ComponentDefinition]] = {
             func=atr_distance_exit,
             description="ATR distance take-profit exit.",
         ),
+        CONSTANT_USD_STOP_LOSS_COMPONENT: ComponentDefinition(
+            role="exits",
+            component_id=CONSTANT_USD_STOP_LOSS_COMPONENT,
+            func=constant_usd_distance_exit,
+            description="Stop loss at a constant USD distance from price (USDT-style markets).",
+        ),
+        CONSTANT_USD_TAKE_PROFIT_COMPONENT: ComponentDefinition(
+            role="exits",
+            component_id=CONSTANT_USD_TAKE_PROFIT_COMPONENT,
+            func=constant_usd_distance_exit,
+            description="Take profit at a constant USD distance from price (USDT-style markets).",
+        ),
     },
     "risk": {
         NO_RISK_FILTER_COMPONENT: ComponentDefinition(
@@ -169,6 +184,8 @@ __all__ = [
     "COMPONENT_REGISTRY",
     "ATR_STOP_LOSS_COMPONENT",
     "ATR_TAKE_PROFIT_COMPONENT",
+    "CONSTANT_USD_STOP_LOSS_COMPONENT",
+    "CONSTANT_USD_TAKE_PROFIT_COMPONENT",
     "ComponentDefinition",
     "COUNTER_CANDLE_BLOCKER_COMPONENT",
     "EMA_ANCHOR_STACK_TREND_COMPONENT",

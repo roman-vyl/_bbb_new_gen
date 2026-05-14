@@ -63,3 +63,21 @@ def atr_distance_exit(
     if rule.distance is None or distance_col is None:
         raise ValueError("atr_distance_exit requires rule.distance and distance_col")
     return df[distance_col].astype(float)
+
+
+def constant_usd_distance_exit(
+    df: pd.DataFrame,
+    anchor_col: str | None = None,
+    side: TradeSide = "long",
+    *,
+    rule: ExitRuleSpec,
+    distance_col: str | None = None,
+) -> pd.Series:
+    """Constant stop/take distance in USD (same numeric units as ``close`` on *USDT markets)."""
+
+    _ = anchor_col
+    _ = side
+    _ = distance_col
+    if rule.usd_distance is None:
+        raise ValueError("constant_usd_distance_exit requires rule.usd_distance")
+    return pd.Series(float(rule.usd_distance), index=df.index, dtype=float)

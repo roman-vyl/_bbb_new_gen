@@ -10,6 +10,8 @@ T = TypeVar("T")
 from research.strategies.ema_pullback.components.registry import (
     ATR_STOP_LOSS_COMPONENT,
     ATR_TAKE_PROFIT_COMPONENT,
+    CONSTANT_USD_STOP_LOSS_COMPONENT,
+    CONSTANT_USD_TAKE_PROFIT_COMPONENT,
     COUNTER_CANDLE_BLOCKER_COMPONENT,
     EMA_ANCHOR_STACK_TREND_COMPONENT,
     NO_BLOCKERS_COMPONENT,
@@ -147,6 +149,7 @@ def exit_rule(
     long_exit_above: float | None = None,
     short_exit_below: float | None = None,
     distance: AtrDistanceSpec | None = None,
+    usd_distance: float | None = None,
 ) -> ExitRuleSpec:
     return ExitRuleSpec(
         instance_id=instance_id,
@@ -156,6 +159,7 @@ def exit_rule(
         long_exit_above=long_exit_above,
         short_exit_below=short_exit_below,
         distance=distance,
+        usd_distance=usd_distance,
     )
 
 
@@ -208,6 +212,32 @@ def exit_atr_take_profit(
         instance_id=instance_id,
         exit_kind="take_profit",
         distance=atr_distance(timeframe=timeframe, period=atr_period, multiplier=atr_multiplier),
+    )
+
+
+def exit_constant_usd_stop_loss(
+    *,
+    usd_distance: float,
+    instance_id: str = "constant_usd_stop_loss",
+) -> ExitRuleSpec:
+    return exit_rule(
+        CONSTANT_USD_STOP_LOSS_COMPONENT,
+        instance_id=instance_id,
+        exit_kind="stop_loss",
+        usd_distance=float(usd_distance),
+    )
+
+
+def exit_constant_usd_take_profit(
+    *,
+    usd_distance: float,
+    instance_id: str = "constant_usd_take_profit",
+) -> ExitRuleSpec:
+    return exit_rule(
+        CONSTANT_USD_TAKE_PROFIT_COMPONENT,
+        instance_id=instance_id,
+        exit_kind="take_profit",
+        usd_distance=float(usd_distance),
     )
 
 

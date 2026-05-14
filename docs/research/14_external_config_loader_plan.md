@@ -172,6 +172,18 @@ instances:
             multiplier: 4.0
 ```
 
+Альтернатива — константная дистанция в USD (для `BTCUSDT` те же единицы, что у цены в USDT):
+
+```yaml
+      exits:
+        - instance_id: sl_usd
+          component_id: constant_usd_stop_loss
+          usd_distance: 500.0
+        - instance_id: tp_usd
+          component_id: constant_usd_take_profit
+          usd_distance: 1200.0
+```
+
 ### 6.2 Batch identity
 
 Для каждого элемента batch фиксируются:

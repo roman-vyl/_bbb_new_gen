@@ -14,6 +14,8 @@ from research.strategies.ema_pullback.component_builders import (
     component_stack,
     exit_atr_stop_loss,
     exit_atr_take_profit,
+    exit_constant_usd_stop_loss,
+    exit_constant_usd_take_profit,
     exit_no_signal,
     exit_rsi,
     exits_atr_default,
@@ -170,11 +172,17 @@ def test_exit_shortcuts_build_expected_component_kinds() -> None:
     )
     stop = exit_atr_stop_loss(atr_period=14, atr_multiplier=1.5)
     take = exit_atr_take_profit(atr_period=14, atr_multiplier=4.0)
+    fixed_sl = exit_constant_usd_stop_loss(usd_distance=500.0)
+    fixed_tp = exit_constant_usd_take_profit(usd_distance=1200.0)
 
     assert (no_signal.component_id, no_signal.exit_kind) == ("no_signal_exit", "signal")
     assert (rsi.component_id, rsi.exit_kind) == ("rsi_signal_exit", "signal")
     assert (stop.component_id, stop.exit_kind) == ("atr_stop_loss", "stop_loss")
     assert (take.component_id, take.exit_kind) == ("atr_take_profit", "take_profit")
+    assert (fixed_sl.component_id, fixed_sl.exit_kind) == ("constant_usd_stop_loss", "stop_loss")
+    assert (fixed_tp.component_id, fixed_tp.exit_kind) == ("constant_usd_take_profit", "take_profit")
+    assert fixed_sl.usd_distance == 500.0 and fixed_sl.distance is None
+    assert fixed_tp.usd_distance == 1200.0 and fixed_tp.distance is None
     assert no_signal.instance_id == "no_signal_exit"
     assert rsi.instance_id == "rsi_exit_base"
     assert stop.instance_id == "atr_stop_loss"

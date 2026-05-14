@@ -170,6 +170,34 @@ def test_load_external_config_supports_exit_atr_distance_timeframe() -> None:
     assert spec.components.exits[0].distance.timeframe == "15m"
 
 
+def test_load_external_config_supports_constant_usd_stop_and_take() -> None:
+    loaded = load_strategy_config(
+        _bundle(
+            [
+                _instance(
+                    "constant_usd_exits",
+                    exits=[
+                        {
+                            "instance_id": "sl_usd",
+                            "component_id": "constant_usd_stop_loss",
+                            "usd_distance": 500.0,
+                        },
+                        {
+                            "instance_id": "tp_usd",
+                            "component_id": "constant_usd_take_profit",
+                            "usd_distance": 1200.0,
+                        },
+                    ],
+                )
+            ]
+        )
+    )
+
+    sl, tp = loaded.specs[0].components.exits
+    assert sl.component_id == "constant_usd_stop_loss" and sl.usd_distance == 500.0 and sl.distance is None
+    assert tp.component_id == "constant_usd_take_profit" and tp.usd_distance == 1200.0 and tp.distance is None
+
+
 def test_load_external_config_supports_only_atr_stop_loss_exit() -> None:
     loaded = load_strategy_config(
         _bundle(

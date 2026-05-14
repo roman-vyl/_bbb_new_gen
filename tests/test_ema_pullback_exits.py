@@ -12,6 +12,8 @@ from research.strategies.ema_pullback.component_builders import (
     component_stack,
     exit_atr_stop_loss,
     exit_atr_take_profit,
+    exit_constant_usd_stop_loss,
+    exit_constant_usd_take_profit,
     exit_rsi,
     exits_atr_default,
 )
@@ -59,6 +61,33 @@ def test_build_exit_outputs_supports_stop_loss_and_take_profit_distances() -> No
     pd.testing.assert_series_equal(exits.tp_stop, take_dist / close, check_names=False)
     assert exits.exits.tolist() == [False, False, False, False]
     assert exits.short_exits.tolist() == [False, False, False, False]
+
+
+def test_build_exit_outputs_constant_usd_distances() -> None:
+    spec = make_ema_pullback_strategy_spec(
+        components=component_stack(
+            exits=(
+                exit_constant_usd_stop_loss(usd_distance=500.0),
+                exit_constant_usd_take_profit(usd_distance=1200.0),
+            )
+        )
+    )
+    plan = build_feature_plan_from_strategy_spec(spec)
+    assert plan.exit_distance_columns == {}
+
+    df = _ohlcv(n=10)
+    out = build_exit_outputs_from_spec(df, spec, plan)
+    close = df["close"].astype(float)
+    pd.testing.assert_series_equal(
+        out.sl_stop,
+        pd.Series(500.0, index=df.index) / close,
+        check_names=False,
+    )
+    pd.testing.assert_series_equal(
+        out.tp_stop,
+        pd.Series(1200.0, index=df.index) / close,
+        check_names=False,
+    )
 
 
 def test_default_factory_exit_rules_match_atr_shortcut_defaults() -> None:

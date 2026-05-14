@@ -8,6 +8,11 @@ pytest.importorskip("pandas")
 
 import pandas as pd
 
+from research.strategies.ema_pullback.component_builders import (
+    component_stack,
+    exit_constant_usd_stop_loss,
+    exit_constant_usd_take_profit,
+)
 from research.strategies.ema_pullback.features.calculations import add_feature_columns_from_plan
 from research.strategies.ema_pullback.features.plan import (
     FeaturePlan,
@@ -212,3 +217,19 @@ def test_mtf_atr_distance_feature_uses_distance_timeframe() -> None:
         (out["atr_close_4h_3"] * 1.5).where(valid),
         check_names=False,
     )
+
+
+def test_feature_plan_skips_atr_when_only_constant_usd_exits() -> None:
+    spec = make_ema_pullback_strategy_spec(
+        components=component_stack(
+            exits=(
+                exit_constant_usd_stop_loss(usd_distance=500.0),
+                exit_constant_usd_take_profit(usd_distance=1200.0),
+            )
+        )
+    )
+    plan = build_feature_plan_from_strategy_spec(spec)
+    assert plan.exit_distance_columns == {}
+    kinds = {f.kind for f in plan.features}
+    assert "atr" not in kinds
+    assert "atr_distance" not in kinds

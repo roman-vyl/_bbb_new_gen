@@ -52,7 +52,7 @@ def test_invalid_anchor_stack_order_rejected() -> None:
 
 
 def test_exit_distance_rules_require_distance() -> None:
-    with pytest.raises(ValueError, match="stop_loss exit requires distance"):
+    with pytest.raises(ValueError, match="atr_stop_loss exit requires distance"):
         ExitRuleSpec(instance_id="atr_stop_loss", component_id="atr_stop_loss", exit_kind="stop_loss")
 
 
@@ -87,6 +87,27 @@ def test_distance_exit_rules_reject_signal_thresholds() -> None:
             exit_kind="stop_loss",
             distance=distance,
             long_exit_above=70.0,
+        )
+
+
+def test_constant_usd_stop_requires_positive_usd_distance() -> None:
+    with pytest.raises(ValueError, match="constant_usd_stop_loss exit requires positive usd_distance"):
+        ExitRuleSpec(
+            instance_id="sl",
+            component_id="constant_usd_stop_loss",
+            exit_kind="stop_loss",
+        )
+
+
+def test_atr_stop_rejects_usd_distance() -> None:
+    distance = AtrDistanceSpec(timeframe="base", period=14, multiplier=1.5)
+    with pytest.raises(ValueError, match="atr_stop_loss exit must not define usd_distance"):
+        ExitRuleSpec(
+            instance_id="sl",
+            component_id="atr_stop_loss",
+            exit_kind="stop_loss",
+            distance=distance,
+            usd_distance=100.0,
         )
 
 

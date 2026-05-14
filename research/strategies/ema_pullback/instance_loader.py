@@ -9,6 +9,8 @@ from research.strategies.ema_pullback import component_builders as builders
 from research.strategies.ema_pullback.components.registry import (
     ATR_STOP_LOSS_COMPONENT,
     ATR_TAKE_PROFIT_COMPONENT,
+    CONSTANT_USD_STOP_LOSS_COMPONENT,
+    CONSTANT_USD_TAKE_PROFIT_COMPONENT,
     COUNTER_CANDLE_BLOCKER_COMPONENT,
     EMA_ANCHOR_STACK_TREND_COMPONENT,
     NO_BLOCKERS_COMPONENT,
@@ -283,6 +285,13 @@ def _parse_exit(index: int, value: Any) -> ExitRuleSpec:
             atr_period=distance["period"],
             atr_multiplier=distance["multiplier"],
         )
+    if component_id in {CONSTANT_USD_STOP_LOSS_COMPONENT, CONSTANT_USD_TAKE_PROFIT_COMPONENT}:
+        allowed = common | {"usd_distance"}
+        _reject_unknown_fields(f"exits[{index}]", payload, allowed)
+        usd_distance = _require_positive_number(payload, "usd_distance")
+        if component_id == CONSTANT_USD_STOP_LOSS_COMPONENT:
+            return builders.exit_constant_usd_stop_loss(instance_id=instance_id, usd_distance=usd_distance)
+        return builders.exit_constant_usd_take_profit(instance_id=instance_id, usd_distance=usd_distance)
     raise EmaPullbackInstanceValidationError(f"unsupported exit component_id {component_id!r}")
 
 
