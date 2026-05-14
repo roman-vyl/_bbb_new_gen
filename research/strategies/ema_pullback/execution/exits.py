@@ -8,6 +8,7 @@ from typing import Any, Callable
 import pandas as pd
 
 from research.strategies.ema_pullback.components.registry import resolve_component
+from research.strategies.ema_pullback.execution.exit_attribution import ExitAttributionContext
 from research.strategies.ema_pullback.features.plan import FeaturePlan
 from research.strategies.ema_pullback.spec import EmaPullbackStrategySpec
 from research.strategies.ema_pullback.spec import ExitRuleSpec
@@ -22,6 +23,7 @@ class PortfolioExitOutputs:
     sl_stop: pd.Series
     tp_stop: pd.Series
     output_counters: tuple[dict[str, Any], ...] = field(default_factory=tuple)
+    attribution: ExitAttributionContext | None = None
 
     def stop_kwargs(self) -> dict[str, pd.Series]:
         return {
@@ -144,6 +146,28 @@ def _build_stop_outputs(
     }, tuple(counters)
 
 
+def _signal_series_for_side(
+    df: pd.DataFrame,
+    *,
+    side: TradeSide,
+    spec: EmaPullbackStrategySpec,
+    plan: FeaturePlan,
+    anchor_col: str,
+    exit_fn: Callable[..., pd.Series],
+    rule: ExitRuleSpec,
+) -> pd.Series:
+    if not spec.trade_sides.includes(side):
+        return _false_series(df)
+    s = exit_fn(
+        df,
+        anchor_col=anchor_col,
+        side=side,
+        rule=rule,
+        rsi_col=_rsi_column(plan, rule.rsi),
+    )
+    return s.fillna(False).astype(bool)
+
+
 def build_exit_outputs_from_spec(
     df: pd.DataFrame,
     spec: EmaPullbackStrategySpec,
@@ -176,10 +200,45 @@ def build_exit_outputs_from_spec(
         signal_rules=signal_rules,
     )
 
+    close = df["close"].astype(float)
+    n_rules = len(resolved_rules)
+    long_by_idx: list[pd.Series | None] = [None] * n_rules
+    short_by_idx: list[pd.Series | None] = [None] * n_rules
+    dist_ratio_by_idx: list[pd.Series | None] = [None] * n_rules
+    instance_ids: list[str] = []
+    exit_kinds: list[str] = []
+
+    for i, (exit_fn, rule) in enumerate(resolved_rules):
+        instance_ids.append(rule.instance_id)
+        exit_kinds.append(rule.exit_kind)
+        if rule.exit_kind == "signal":
+            long_by_idx[i] = _signal_series_for_side(
+                df, side="long", spec=spec, plan=plan, anchor_col=anchor_col, exit_fn=exit_fn, rule=rule
+            )
+            short_by_idx[i] = _signal_series_for_side(
+                df, side="short", spec=spec, plan=plan, anchor_col=anchor_col, exit_fn=exit_fn, rule=rule
+            )
+        else:
+            distance_col = _distance_column(plan, rule)
+            distance = exit_fn(df, rule=rule, distance_col=distance_col)
+            dist_ratio_by_idx[i] = distance.astype(float) / close
+
+    attribution = ExitAttributionContext(
+        index=df.index,
+        instance_ids=tuple(instance_ids),
+        exit_kinds=tuple(exit_kinds),
+        long_signal_by_rule=tuple(long_by_idx),
+        short_signal_by_rule=tuple(short_by_idx),
+        distance_ratio_by_rule=tuple(dist_ratio_by_idx),
+        sl_stop_agg=stop_kwargs["sl_stop"],
+        tp_stop_agg=stop_kwargs["tp_stop"],
+    )
+
     return PortfolioExitOutputs(
         exits=long_exits,
         short_exits=short_exits,
         sl_stop=stop_kwargs["sl_stop"],
         tp_stop=stop_kwargs["tp_stop"],
         output_counters=long_counters + short_counters + distance_counters,
+        attribution=attribution,
     )
