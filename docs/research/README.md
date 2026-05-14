@@ -174,17 +174,13 @@ Stage 13: unified components.exits для signal exits и ATR stop/take,
 
 ## Как запустить
 
-Основная проверка research runner:
+Основная проверка research runner (experiment-конфиг обязателен):
 
 ```bash
-python research/strategies/ema_pullback/run.py
+python research/strategies/ema_pullback/run.py --config research/experiments/configs/ema_pullback/ema_pullback_batch_001_step14.yaml
 ```
 
-Smoke entrypoint старого Phase 4:
-
-```bash
-python research/ema_smoke.py
-```
+Опционально: `--db-path path/to.sqlite`. Скрипт `research/ema_smoke.py` удалён; единственный поддерживаемый пользовательский вход для этого пайплайна — `run.py` с `--config`.
 
 Все тесты:
 

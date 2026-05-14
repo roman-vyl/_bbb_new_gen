@@ -17,7 +17,7 @@ from research.strategies.ema_pullback.execution.results import (
     write_research_results,
 )
 from research.strategies.ema_pullback.spec_instances import (
-    default_ema_pullback_strategy_spec,
+    make_ema_pullback_strategy_spec,
     variant_from_spec,
 )
 
@@ -81,7 +81,7 @@ def test_json_safe_nan_becomes_null() -> None:
 
 def test_build_research_run_payload_top_level_keys() -> None:
     cfg = DEFAULT_EXECUTION_CONFIG
-    spec = default_ema_pullback_strategy_spec(symbol=cfg.symbol, base_timeframe=cfg.timeframe)
+    spec = make_ema_pullback_strategy_spec(symbol=cfg.symbol, base_timeframe=cfg.timeframe)
     assert spec.variant == variant_from_spec(spec)
     variant = {
         "variant": spec.variant,
@@ -217,7 +217,7 @@ def test_variant_payload_from_instance_matches_schema() -> None:
         VariantResult,
     )
 
-    spec = default_ema_pullback_strategy_spec()
+    spec = make_ema_pullback_strategy_spec()
     assert spec.variant == variant_from_spec(spec)
     vr = VariantResult(
         variant=spec.variant,

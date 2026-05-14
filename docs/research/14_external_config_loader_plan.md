@@ -247,8 +247,8 @@ discover config entries
 - experiment orchestration слой не переписывает execution-логику стратегии;
 - strategy family (`ema_pullback`) не отвечает за file discovery, batch lifecycle, grid/optimization и cross-family comparison;
 - experiment layer управляет запуском множества entries и консолидацией результатов.
-- минимальный callable path реализован через `run_strategy_specs_from_config(...)`;
-- `--config` подключен как тонкий CLI-переключатель без расширения runtime `ExecutionConfig`.
+- минимальный callable path реализован через `run_strategy_specs_from_config(config_file, db_path=...)`;
+- CLI family-local (`run.py`): обязательный `--config` (путь к experiment YAML/JSON) и опциональный `--db-path`; market и `execution.*` задаются только в файле конфигурации.
 
 ---
 

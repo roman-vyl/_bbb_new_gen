@@ -41,3 +41,27 @@ DEFAULT_EXECUTION_CONFIG = ExecutionConfig(
     fees=0.0,
     slippage=0.0,
 )
+
+
+def execution_config_from_external(
+    *,
+    family: str,
+    symbol: str,
+    timeframe: str,
+    db_path: Path | None,
+    init_cash: float | None,
+    fees: float | None,
+    slippage: float | None,
+) -> ExecutionConfig:
+    """Build validated ExecutionConfig after external config load (market + optional execution)."""
+
+    base = DEFAULT_EXECUTION_CONFIG
+    return ExecutionConfig(
+        family=family.strip(),
+        symbol=symbol.strip().upper(),
+        timeframe=timeframe.strip(),
+        db_path=db_path,
+        init_cash=float(init_cash) if init_cash is not None else base.init_cash,
+        fees=float(fees) if fees is not None else base.fees,
+        slippage=float(slippage) if slippage is not None else base.slippage,
+    )

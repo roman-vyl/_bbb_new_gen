@@ -18,7 +18,6 @@ from research.strategies.ema_pullback.execution.exits import PortfolioExitOutput
 from research.strategies.ema_pullback.execution.report_table import print_comparison_table
 from research.strategies.ema_pullback.execution.signals import PortfolioSignals
 from research.strategies.ema_pullback.spec_instances import (
-    default_ema_pullback_strategy_spec,
     make_ema_pullback_strategy_spec,
 )
 
@@ -257,7 +256,7 @@ def test_run_strategy_spec_wires_short_signals_and_masks_warmup(
         index=idx,
     )
 
-    backtest.run_strategy_spec(default_ema_pullback_strategy_spec(), ohlcv)
+    backtest.run_strategy_spec(make_ema_pullback_strategy_spec(), ohlcv)
 
     # Signal exits are boolean close conditions; only configured distance exits gate ATR warmup.
     assert captured["entries"].tolist() == expected_entries

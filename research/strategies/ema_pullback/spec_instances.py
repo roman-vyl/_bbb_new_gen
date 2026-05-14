@@ -93,15 +93,3 @@ def make_ema_pullback_strategy_spec(
         trade_sides=trade_sides(enabled_sides),
         setup=pullback_setup(lookback=setup_lookback),
     )
-
-
-def default_ema_pullback_strategy_spec(
-    symbol: str = "BTCUSDT",
-    base_timeframe: str = "1h",
-) -> EmaPullbackStrategySpec:
-    """Active Stage-10 default: valid spec with no caller-supplied research parameters."""
-    return make_ema_pullback_strategy_spec(symbol=symbol, base_timeframe=base_timeframe)
-
-
-def active_strategy_specs(symbol: str, base_timeframe: str) -> list[EmaPullbackStrategySpec]:
-    return [default_ema_pullback_strategy_spec(symbol=symbol, base_timeframe=base_timeframe)]

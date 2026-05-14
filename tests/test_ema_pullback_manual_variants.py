@@ -11,16 +11,14 @@ from research.strategies.ema_pullback.component_builders import (
 )
 from research.strategies.ema_pullback.spec import strategy_spec_config_id
 from research.strategies.ema_pullback.spec_instances import (
-    active_strategy_specs,
-    default_ema_pullback_strategy_spec,
     make_ema_pullback_strategy_spec,
     variant_from_spec,
 )
 
 
 def test_spec_instance_factory_values() -> None:
-    reference = default_ema_pullback_strategy_spec()
-    spec = default_ema_pullback_strategy_spec(symbol="ethusdt", base_timeframe="4h")
+    reference = make_ema_pullback_strategy_spec()
+    spec = make_ema_pullback_strategy_spec(symbol="ethusdt", base_timeframe="4h")
     assert spec.variant == reference.variant
     assert spec.variant == variant_from_spec(spec)
     assert spec.symbol == "ETHUSDT"
@@ -31,11 +29,9 @@ def test_spec_instance_factory_values() -> None:
     assert {r.exit_kind for r in spec.components.exits} == {"stop_loss", "take_profit"}
 
 
-def test_active_strategy_specs_matches_default_factory() -> None:
-    specs = active_strategy_specs("BTCUSDT", "1h")
-    assert len(specs) == 1
-    spec = specs[0]
-    assert spec == default_ema_pullback_strategy_spec(symbol="BTCUSDT", base_timeframe="1h")
+def test_baseline_factory_matches_expected_stack_shape() -> None:
+    spec = make_ema_pullback_strategy_spec(symbol="BTCUSDT", base_timeframe="1h")
+    assert spec == make_ema_pullback_strategy_spec()
     assert spec.variant == variant_from_spec(spec)
     assert (
         spec.anchor_stack.fast.period

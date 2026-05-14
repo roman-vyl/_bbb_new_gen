@@ -18,7 +18,7 @@ from research.strategies.ema_pullback.component_builders import (
 from research.strategies.ema_pullback.execution.exits import build_exit_outputs_from_spec
 from research.strategies.ema_pullback.features.calculations import add_feature_columns_from_plan
 from research.strategies.ema_pullback.features.plan import build_feature_plan_from_strategy_spec
-from research.strategies.ema_pullback.spec_instances import default_ema_pullback_strategy_spec
+from research.strategies.ema_pullback.spec_instances import make_ema_pullback_strategy_spec
 
 
 def _ohlcv(n: int = 30) -> pd.DataFrame:
@@ -37,7 +37,7 @@ def _ohlcv(n: int = 30) -> pd.DataFrame:
 
 
 def test_build_exit_outputs_supports_stop_loss_and_take_profit_distances() -> None:
-    spec = default_ema_pullback_strategy_spec()
+    spec = make_ema_pullback_strategy_spec()
     plan = build_feature_plan_from_strategy_spec(spec)
 
     idx = pd.date_range("2024-01-01", periods=4, freq="h", tz="UTC")
@@ -62,7 +62,7 @@ def test_build_exit_outputs_supports_stop_loss_and_take_profit_distances() -> No
 
 
 def test_default_factory_exit_rules_match_atr_shortcut_defaults() -> None:
-    spec = default_ema_pullback_strategy_spec()
+    spec = make_ema_pullback_strategy_spec()
     assert spec.components.exits == exits_atr_default(
         atr_period=14,
         stop_atr_multiplier=1.5,
@@ -71,7 +71,7 @@ def test_default_factory_exit_rules_match_atr_shortcut_defaults() -> None:
 
 
 def test_build_exit_outputs_aggregates_repeated_distance_instances_by_kind() -> None:
-    base = default_ema_pullback_strategy_spec()
+    base = make_ema_pullback_strategy_spec()
     spec = replace(
         base,
         components=component_stack(
@@ -112,7 +112,7 @@ def test_build_exit_outputs_aggregates_repeated_distance_instances_by_kind() -> 
 
 
 def test_build_exit_outputs_supports_only_stop_loss_distance() -> None:
-    base = default_ema_pullback_strategy_spec()
+    base = make_ema_pullback_strategy_spec()
     spec = replace(
         base,
         components=component_stack(
@@ -138,7 +138,7 @@ def test_build_exit_outputs_supports_only_stop_loss_distance() -> None:
 
 
 def test_build_exit_outputs_supports_only_take_profit_distance() -> None:
-    base = default_ema_pullback_strategy_spec()
+    base = make_ema_pullback_strategy_spec()
     spec = replace(
         base,
         components=component_stack(
@@ -170,7 +170,7 @@ def test_build_exit_outputs_supports_only_take_profit_distance() -> None:
 
 
 def test_build_exit_outputs_supports_signal_only_exits() -> None:
-    base = default_ema_pullback_strategy_spec()
+    base = make_ema_pullback_strategy_spec()
     spec = replace(
         base,
         components=component_stack(
@@ -204,7 +204,7 @@ def test_build_exit_outputs_supports_signal_only_exits() -> None:
 
 
 def test_build_exit_outputs_supports_signal_exit_with_stop_loss_distance() -> None:
-    base = default_ema_pullback_strategy_spec()
+    base = make_ema_pullback_strategy_spec()
     spec = replace(
         base,
         components=component_stack(
@@ -241,7 +241,7 @@ def test_build_exit_outputs_supports_signal_exit_with_stop_loss_distance() -> No
 
 
 def test_build_exit_outputs_supports_signal_exit_with_take_profit_distance() -> None:
-    base = default_ema_pullback_strategy_spec()
+    base = make_ema_pullback_strategy_spec()
     spec = replace(
         base,
         components=component_stack(
@@ -278,7 +278,7 @@ def test_build_exit_outputs_supports_signal_exit_with_take_profit_distance() -> 
 
 
 def test_feature_plan_does_not_require_atr_for_signal_only_exits() -> None:
-    base = default_ema_pullback_strategy_spec()
+    base = make_ema_pullback_strategy_spec()
     spec = replace(
         base,
         components=component_stack(

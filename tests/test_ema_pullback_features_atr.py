@@ -19,7 +19,7 @@ from research.strategies.ema_pullback.spec import (
     ExitRuleSpec,
     RsiFeatureSpec,
 )
-from research.strategies.ema_pullback.spec_instances import default_ema_pullback_strategy_spec
+from research.strategies.ema_pullback.spec_instances import make_ema_pullback_strategy_spec
 
 
 def _ohlcv(n: int = 30) -> pd.DataFrame:
@@ -38,7 +38,7 @@ def _ohlcv(n: int = 30) -> pd.DataFrame:
 
 
 def test_feature_plan_ids_follow_strategy_spec() -> None:
-    spec = default_ema_pullback_strategy_spec()
+    spec = make_ema_pullback_strategy_spec()
     plan = build_feature_plan_from_strategy_spec(spec)
     ema_feats = [f for f in plan.features if f.kind == "ema"]
     assert {f.period for f in ema_feats} == {
@@ -66,7 +66,7 @@ def test_feature_plan_ids_follow_strategy_spec() -> None:
 
 
 def test_add_feature_columns_from_plan_creates_expected_columns() -> None:
-    spec = default_ema_pullback_strategy_spec()
+    spec = make_ema_pullback_strategy_spec()
     plan = build_feature_plan_from_strategy_spec(spec)
     df = add_feature_columns_from_plan(_ohlcv(40), plan)
     for f in plan.features:
@@ -74,7 +74,7 @@ def test_add_feature_columns_from_plan_creates_expected_columns() -> None:
 
 
 def test_atr_distance_columns_follow_plan_multipliers() -> None:
-    spec = default_ema_pullback_strategy_spec()
+    spec = make_ema_pullback_strategy_spec()
     plan = build_feature_plan_from_strategy_spec(spec)
     df = add_feature_columns_from_plan(_ohlcv(40), plan)
     atr_col = next(f.feature_id for f in plan.features if f.kind == "atr")
@@ -89,7 +89,7 @@ def test_atr_distance_columns_follow_plan_multipliers() -> None:
 
 
 def test_base_rsi_feature_plan_and_calculation() -> None:
-    base = default_ema_pullback_strategy_spec()
+    base = make_ema_pullback_strategy_spec()
     spec = replace(
         base,
         components=replace(

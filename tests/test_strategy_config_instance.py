@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from research.experiments.config_loader import load_strategy_config
 from research.strategies.ema_pullback.component_builders import (
     blocker_counter_candle,
     blocker_extreme_rsi,
@@ -23,13 +24,13 @@ from research.strategies.ema_pullback.component_builders import (
 from research.strategies.ema_pullback.config import (
     DEFAULT_EXECUTION_CONFIG,
     ExecutionConfig,
+    execution_config_from_external,
 )
-from research.strategies.ema_pullback.cli import config_from_args, parse_args
+from research.strategies.ema_pullback.cli import parse_args
 from research.strategies.ema_pullback.spec import TradeSideSpec, strategy_spec_config_id
-from research.strategies.ema_pullback.spec_instances import (
-    default_ema_pullback_strategy_spec,
-    make_ema_pullback_strategy_spec,
-)
+from research.strategies.ema_pullback.spec_instances import make_ema_pullback_strategy_spec
+
+from tests.test_external_config_loader import _bundle, _instance
 
 
 def test_default_execution_config_contains_only_runtime_fields() -> None:
@@ -60,7 +61,7 @@ def test_execution_config_validates_runtime_fields() -> None:
 
 
 def test_runtime_changes_do_not_change_strategy_spec_id() -> None:
-    spec = default_ema_pullback_strategy_spec(symbol="BTCUSDT", base_timeframe="1h")
+    spec = make_ema_pullback_strategy_spec(symbol="BTCUSDT", base_timeframe="1h")
     base_id = strategy_spec_config_id(spec)
     _runtime_a = ExecutionConfig("ema_pullback", "BTCUSDT", "1h", Path("a.sqlite"), 100.0, 0.0, 0.0)
     _runtime_b = ExecutionConfig("ema_pullback", "BTCUSDT", "1h", Path("b.sqlite"), 500.0, 0.001, 0.0005)
@@ -68,7 +69,7 @@ def test_runtime_changes_do_not_change_strategy_spec_id() -> None:
 
 
 def test_default_strategy_spec_is_long_only() -> None:
-    spec = default_ema_pullback_strategy_spec()
+    spec = make_ema_pullback_strategy_spec()
     assert spec.trade_sides.enabled == ("long",)
 
 
@@ -100,30 +101,52 @@ def test_factory_accepts_sequence_for_enabled_sides() -> None:
     assert spec.trade_sides.enabled == ("long", "short")
 
 
-def test_cli_overrides_build_final_execution_config() -> None:
-    args = parse_args(
-        [
-            "--symbol",
-            "ethusdt",
-            "--tf",
-            "4h",
-            "--db-path",
-            "custom.sqlite",
-            "--init-cash",
-            "1500",
-            "--fees",
-            "0.001",
-            "--slippage",
-            "0.0005",
-        ]
+def test_cli_requires_config_path() -> None:
+    with pytest.raises(SystemExit):
+        parse_args([])
+
+
+def test_cli_rejects_legacy_symbol_flag() -> None:
+    with pytest.raises(SystemExit):
+        parse_args(["--config", "x.yaml", "--symbol", "BTCUSDT"])
+
+
+def test_cli_accepts_config_and_db_path() -> None:
+    args = parse_args(["--config", "experiment.yaml", "--db-path", "custom.sqlite"])
+    assert args.config == Path("experiment.yaml")
+    assert args.db_path == Path("custom.sqlite")
+
+
+def test_cli_help_does_not_list_legacy_market_flags(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit):
+        parse_args(["-h"])
+    out = capsys.readouterr().out
+    assert "--symbol" not in out
+    assert "--tf" not in out
+    assert "--init-cash" not in out
+    assert "--fees" not in out
+    assert "--slippage" not in out
+
+
+def test_execution_config_from_external_merges_market_and_optional_execution() -> None:
+    payload = {**_bundle([_instance("merge_exec")]), "execution": {}}
+    loaded = load_strategy_config(payload)
+    spec = loaded.specs[0]
+    cfg = execution_config_from_external(
+        family=loaded.family,
+        symbol=spec.symbol,
+        timeframe=spec.base_timeframe,
+        db_path=Path("db.sqlite"),
+        init_cash=loaded.execution.init_cash,
+        fees=loaded.execution.fees,
+        slippage=loaded.execution.slippage,
     )
-    cfg = config_from_args(args)
-    assert cfg.symbol == "ETHUSDT"
-    assert cfg.timeframe == "4h"
-    assert cfg.db_path == Path("custom.sqlite")
-    assert cfg.init_cash == 1500.0
-    assert cfg.fees == 0.001
-    assert cfg.slippage == 0.0005
+    assert cfg.symbol == "BTCUSDT"
+    assert cfg.timeframe == "1h"
+    assert cfg.db_path == Path("db.sqlite")
+    assert cfg.init_cash == DEFAULT_EXECUTION_CONFIG.init_cash
+    assert cfg.fees == DEFAULT_EXECUTION_CONFIG.fees
+    assert cfg.slippage == DEFAULT_EXECUTION_CONFIG.slippage
 
 
 def test_exit_shortcuts_build_expected_component_kinds() -> None:

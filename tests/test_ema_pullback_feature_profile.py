@@ -13,13 +13,13 @@ from research.strategies.ema_pullback.spec import (
     strategy_spec_config_id,
 )
 from research.strategies.ema_pullback.spec_instances import (
-    default_ema_pullback_strategy_spec,
+    make_ema_pullback_strategy_spec,
     variant_from_spec,
 )
 
 
 def test_default_spec_factory_is_valid_strategy_spec() -> None:
-    spec = default_ema_pullback_strategy_spec()
+    spec = make_ema_pullback_strategy_spec()
     assert spec.variant.strip()
     assert spec.variant == variant_from_spec(spec)
     assert spec.symbol.strip()
@@ -37,8 +37,8 @@ def test_default_spec_factory_is_valid_strategy_spec() -> None:
 
 
 def test_strategy_spec_config_id_is_deterministic() -> None:
-    a = default_ema_pullback_strategy_spec()
-    b = default_ema_pullback_strategy_spec()
+    a = make_ema_pullback_strategy_spec()
+    b = make_ema_pullback_strategy_spec()
     assert strategy_spec_config_id(a) == strategy_spec_config_id(b)
 
 
@@ -97,7 +97,7 @@ def test_trade_management_is_reserved_stub() -> None:
 
 
 def test_component_stack_uses_typed_rule_specs() -> None:
-    spec = default_ema_pullback_strategy_spec()
+    spec = make_ema_pullback_strategy_spec()
     assert spec.components.trigger.component_id == "reclaim_anchor"
     assert isinstance(spec.components.blockers, tuple)
     assert isinstance(spec.components.exits, tuple)
@@ -107,4 +107,4 @@ def test_component_stack_uses_typed_rule_specs() -> None:
 
 def test_strategy_spec_requires_non_empty_identity_fields() -> None:
     with pytest.raises(ValueError, match="variant must be non-empty"):
-        replace(default_ema_pullback_strategy_spec(), variant="")
+        replace(make_ema_pullback_strategy_spec(), variant="")

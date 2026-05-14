@@ -11,7 +11,6 @@ from research.experiments.config_loader import (
     load_strategy_config,
     load_strategy_config_file,
 )
-from research.strategies.ema_pullback.config import DEFAULT_EXECUTION_CONFIG
 from research.strategies.ema_pullback.execution import runner
 from research.strategies.ema_pullback.instance_loader import (
     EmaPullbackInstanceValidationError,
@@ -378,7 +377,7 @@ def test_runner_does_not_load_candles_when_config_validation_fails(
     monkeypatch.setattr(runner, "load_candles_once", fail_if_called)
 
     with pytest.raises(EmaPullbackInstanceValidationError, match="anchor_stack is required"):
-        runner.run_strategy_specs_from_config(DEFAULT_EXECUTION_CONFIG, path)
+        runner.run_strategy_specs_from_config(path)
     assert called is False
 
 
@@ -423,7 +422,7 @@ def test_runner_applies_run_level_execution_from_external_config(
         ),
     )
 
-    runner.run_strategy_specs_from_config(DEFAULT_EXECUTION_CONFIG, path)
+    runner.run_strategy_specs_from_config(path)
 
     assert captured == {"init_cash": 10000.0, "fees": 0.0006, "slippage": 0.0001}
 

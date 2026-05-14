@@ -2,9 +2,11 @@
 
 Исследовательская strategy family для EMA pullback после Step 11 и Step 12.
 
-Единственная semantic-модель стратегии — `EmaPullbackStrategySpec`. Runtime-конфиг
-содержит только технические настройки запуска (`ExecutionConfig`): `family`, `symbol`,
-`timeframe`, `db_path`, `init_cash`, `fees`, `slippage`.
+После загрузки внешнего experiment-файла runner строит финальный `ExecutionConfig`
+через `execution_config_from_external(...)`: `family`, `symbol`, `timeframe` и
+опциональные поля `execution.*` берутся из конфига; при отсутствии
+`execution.init_cash` / `fees` / `slippage` подставляются значения из
+`DEFAULT_EXECUTION_CONFIG`. CLI может задать только переопределение `db_path`.
 
 Активный pipeline:
 
@@ -24,8 +26,7 @@ EmaPullbackStrategySpec
 `component_builders.py`: это единый слой `params -> spec dataclasses` без работы
 с `DataFrame`, indicator-расчётов или runtime execution.
 
-Текущий active spec создаётся через `default_ema_pullback_strategy_spec(...)`
-и выбирается runner-ом через `active_strategy_specs(...)`.
+Стратегии для прогона задаются **только** внешним YAML/JSON (см. `research/experiments/config_loader.py` и `instance_loader.py`). Typed-сборка из dict выполняется через `make_ema_pullback_strategy_spec(...)` / builders; отдельного «списка активных спеков в Python» нет.
 
 Текущая модель держит все выходы в одном `components.exits`: сигнальные правила
 и ATR stop/take описываются одинаково как `ExitRuleSpec`. `signals.py` собирает
@@ -43,26 +44,28 @@ ema_pullback_fast{fast.period}_anchor{anchor.period}_slow{slow.period}
 
 | Путь | Назначение |
 |------|------------|
-| `config.py` | Runtime-only `ExecutionConfig` и значения по умолчанию для CLI |
+| `config.py` | `ExecutionConfig`, `DEFAULT_EXECUTION_CONFIG`, `execution_config_from_external` |
 | `spec.py` | Dataclass-контракты `EmaPullbackStrategySpec` и вложенных spec-частей |
 | `component_builders.py` | Typed builders для `anchor/trigger/blockers/exits/trade_sides/components` |
-| `spec_instances.py` | Factory текущего active spec и `active_strategy_specs(...)` |
-| `run.py` | Тонкая CLI-точка входа для active StrategySpec runner |
+| `spec_instances.py` | `make_ema_pullback_strategy_spec`, `variant_from_spec` |
+| `run.py` | CLI: только `--config` (experiment file) и опционально `--db-path` |
 | `features/plan.py` | `FeaturePlan` из `EmaPullbackStrategySpec` без расчёта данных |
 | `features/calculations.py` | Расчёт только features, объявленных в `FeaturePlan` |
 | `components/*.py` | Ступени пайплайна + `registry.py` для новых role ids |
 | `execution/data_loader.py` | Загрузка DB candles в `LoadedCandles` (`ohlcv` + metadata диапазона) |
 | `execution/backtest.py` | Backend `run_strategy_spec(...)` через vectorbt |
 | `execution/report_table.py` | Stdout comparison table с `fast / anchor / slow` |
-| `execution/runner.py` | Orchestration: active specs → backtest → stdout table → JSON artifact |
+| `execution/runner.py` | `run_strategy_specs_from_config`: loader → финальный `ExecutionConfig` → backtest → таблица → JSON |
 | `execution/result_models.py` | Dataclass-контракты `LoadedCandles`, `VariantMetrics`, `VariantResult` |
 | `execution/signals.py` | Композитор `entries/short_entries` из spec + plan + Component Registry |
 | `execution/exits.py` | Exit-layer: `components.exits` → `exits/short_exits/sl_stop/tp_stop` |
 | `execution/results.py` | JSON payload schema v3, `latest.json` / `runs/<run_id>.json` |
 
-## Active StrategySpec
+## StrategySpec factory (Python)
 
-`spec_instances.py` объявляет один active spec через нейтральную default-фабрику.
+`spec_instances.py` экспортирует фабрику `make_ema_pullback_strategy_spec(...)` для тестов,
+`instance_loader` и ручных сценариев в коде — **не** как альтернативный пользовательский runner.
+
 Числовые research-параметры задаются в `make_ema_pullback_strategy_spec(...)` и
 внутри фабрики собираются через builders (`anchor_stack_from_periods(...)`,
 `component_stack(...)`, `exits_atr_default(...)`, `trade_sides(...)`,
@@ -186,19 +189,18 @@ RSI считается в `features/calculations.py` по `FeaturePlan`; ком�
 Из корня репозитория (с research-зависимостями, например `pip install -e ".[research]"`):
 
 ```bash
-python research/strategies/ema_pullback/run.py
+python research/strategies/ema_pullback/run.py --config research/experiments/configs/ema_pullback/ema_pullback_batch_001_step14.yaml
 ```
 
-Флаги CLI задают только runtime-настройки: `--symbol`, `--tf`, `--db-path`,
-`--init-cash`, `--fees`, `--slippage`. Они не меняют semantic strategy spec.
-
-Smoke entrypoint использует тот же active StrategySpec runner:
+Опционально указать SQLite:
 
 ```bash
-python research/ema_smoke.py
+python research/strategies/ema_pullback/run.py --config path/to/experiment.yaml --db-path path/to/custom.sqlite
 ```
 
-Успешный `run.py` печатает summary-строку (`family`, `symbol`, `timeframe`,
+`symbol`, `timeframe`, `execution.*` задаются в experiment-конфиге, а не через CLI.
+
+Успешный прогон печатает summary-строку (`family`, `experiment_id`, `symbol`, `timeframe`,
 `candles`, `variants`), затем side-aware stdout comparison table и пути артефактов:
 
 ```text
