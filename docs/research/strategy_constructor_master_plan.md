@@ -494,7 +494,29 @@ slow EMA
 
 ---
 
-### Step 15 — Component Grid
+### Step 15 — OHLC-aware vectorbt execution (family runner)
+
+**Цель:** перевести vectorbt execution с **close-only** на **OHLC-aware**, без изменения семантики стратегии и без изменения внешнего **config-контракта** (`StrategySpec` / YAML envelope остаются как есть).
+
+**Сделать:** в execution path family (например `ema_pullback`, `run_strategy_spec`) передавать в `Portfolio.from_signals` те же `open`, `high`, `low`, что уже доступны в обогащённом OHLCV после feature layer, параллельно с `close`.
+
+**Замечание:** equity и список сделок могут **слегка** разойтись с прошлым close-only (стопы в vectorbt учитывают high/low); это ожидаемая плата за согласованность с реальными тенями свечей. Зафиксировать в family README / заметке к релизу.
+
+Подробный контракт и подшаги — в отдельном плане `docs/research/15_ohlc_aware_vectorbt_plan.md`.
+
+---
+
+### Step 16 — exit_reason attribution (research JSON)
+
+После Step 9 (artifact), Step 12–13 (unified `exits`, multi-instance) и **Step 15 (OHLC-aware `from_signals`)** в `trade_records` удобно иметь **персделочную** причину закрытия, а не только агрегированные counters и плейсхолдер `unknown`.
+
+**Цель кратко:** заполнять в JSON осмысленный `exit_reason` (например SL / TP / signal с привязкой к `instance_id` правила), согласованно с порядком исполнения vectorbt (стоп vs пользовательский exit signal), без изменений в `data_engine/`.
+
+Подробный контракт, формат полей, приоритеты при коллизиях и ограничения (trailing / custom adjust и т.д.) — в отдельном плане `docs/research/16_exit_reason_attribution_plan.md`.
+
+---
+
+### Step 17 — Component Grid
 
 Component Grid запускается только после того, как появятся структурированные результаты research-прогонов: без стабильного хранения результатов массовый прогон вариантов превращается в шумный и плохо сопоставимый `stdout`.
 
@@ -514,9 +536,9 @@ Grid должен:
 
 ---
 
-### Step 16 — Debug Reports / Diagnostics
+### Step 18 — Debug Reports / Diagnostics
 
-Расширение отчётности поверх базового structured artifact: debug counters, сделочная диагностика, причины входов/выходов.
+Расширение отчётности поверх базового structured artifact: debug counters, сделочная диагностика, причины входов/выходов (в т.ч. поверх машиночитаемого `exit_reason` из Step 16).
 
 Примеры счётчиков:
 
@@ -530,7 +552,7 @@ trade_count
 
 ---
 
-### Step 17 — Validation
+### Step 19 — Validation
 
 Добавить защиту от самообмана:
 
@@ -558,7 +580,7 @@ trade_count
 
 Roadmap note:
 
-FeaturesDev keeps indicator calculation out of components. Exit rules (signal and ATR-based SL/TP) live in `StrategySpec` under `components.exits` and are evaluated via a dedicated execution exits path, so runner and entry-side code stay orchestration-focused. Research Results Artifact is inserted before Component Grid so experiments have stable structured output. EMA Pullback StrategySpec / anchor stack refactor stabilises the internal instance model after artifacts. Bidirectional Side Semantics (`TradeSideSpec`, long/short vectorbt wiring) follows StrategySpec so `ema_pullback` is not long-only. Step 12 completes side-aware blocker / risk / exit / trigger wiring and this **unified exits + reserved root trade_management** architecture, plus typed `component_builders` as the single construction layer ahead of external config. Step 13 introduces multi-instance component support (same component id reused with different params and explicit instance ids). Step 14 then splits responsibilities: experiment layer reads/validates one external config file and dispatches by family, while `ema_pullback` only parses one instance dict into `EmaPullbackStrategySpec`. Directory discovery, grid/optimization, and richer lifecycle orchestration remain follow-up. Component Grid remains postponed until FeaturesDev, components, result artifacts, StrategySpec, side-aware specs, live components, builders, multi-instance support, and this boundary-safe external config flow are stable.
+FeaturesDev keeps indicator calculation out of components. Exit rules (signal and ATR-based SL/TP) live in `StrategySpec` under `components.exits` and are evaluated via a dedicated execution exits path, so runner and entry-side code stay orchestration-focused. Research Results Artifact (Step 9) supports structured run output. Step 15 moves vectorbt execution from close-only to OHLC-aware `from_signals` without changing strategy or external config contract. Step 16 adds per-trade `exit_reason` in JSON for analyzable experiments ahead of Component Grid (Step 17). EMA Pullback StrategySpec / anchor stack refactor stabilises the internal instance model after artifacts. Bidirectional Side Semantics (`TradeSideSpec`, long/short vectorbt wiring) follows StrategySpec so `ema_pullback` is not long-only. Step 12 completes side-aware blocker / risk / exit / trigger wiring and this **unified exits + reserved root trade_management** architecture, plus typed `component_builders` as the single construction layer ahead of external config. Step 13 introduces multi-instance component support (same component id reused with different params and explicit instance ids). Step 14 then splits responsibilities: experiment layer reads/validates one external config file and dispatches by family, while `ema_pullback` only parses one instance dict into `EmaPullbackStrategySpec`. Directory discovery, grid/optimization, and richer lifecycle orchestration remain follow-up. Component Grid (Step 17) remains postponed until FeaturesDev, components, result artifacts, StrategySpec, side-aware specs, live components, builders, multi-instance support, this boundary-safe external config flow, OHLC-aware execution, and usable per-trade exit attribution are stable.
 
 ---
 
@@ -584,9 +606,11 @@ FeaturesDev keeps indicator calculation out of components. Exit rules (signal an
 12. side-aware blocker / risk / exit / trigger + unified `exits` spec, execution exits layer, `component_builders`
 13. multi-instance same component support (different params, explicit `instance_id`)
 14. external config loader (experiment layer + family parser)
-15. component grid
-16. debug report / diagnostics
-17. validation
+15. OHLC-aware vectorbt execution (`from_signals` with open/high/low)
+16. exit_reason attribution (research JSON `trade_records`)
+17. component grid
+18. debug report / diagnostics
+19. validation
 ```
 
 Итоговая цель:

@@ -263,6 +263,79 @@ def test_run_strategy_spec_wires_short_signals_and_masks_warmup(
     assert captured["short_entries"].tolist() == expected_entries
     assert captured["exits"].tolist() == [False, False, False, False]
     assert captured["short_exits"].tolist() == [False, False, False, False]
+    # Step 15: OHLC passed into vectorbt for stop semantics (regression guard vs close-only).
+    pd.testing.assert_series_equal(captured["open"], ohlcv["open"].astype(float), check_names=False)
+    pd.testing.assert_series_equal(captured["high"], ohlcv["high"].astype(float), check_names=False)
+    pd.testing.assert_series_equal(captured["low"], ohlcv["low"].astype(float), check_names=False)
+    pd.testing.assert_series_equal(captured["close"], ohlcv["close"].astype(float), check_names=False)
+
+
+def test_run_strategy_spec_raises_when_ohlc_column_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    class FakeTrades:
+        records = None
+
+        def count(self) -> int:
+            return 0
+
+        def profit_factor(self) -> float:
+            return 1.0
+
+    class FakePortfolio:
+        trades = FakeTrades()
+
+        def sharpe_ratio(self) -> float:
+            return 0.0
+
+        def max_drawdown(self) -> float:
+            return 0.0
+
+    class FakePortfolioFactory:
+        @staticmethod
+        def from_signals(close: pd.Series, entries: pd.Series, exits: pd.Series, **kwargs: object) -> FakePortfolio:
+            captured.update(kwargs)
+            return FakePortfolio()
+
+    monkeypatch.setitem(sys.modules, "vectorbt", SimpleNamespace(Portfolio=FakePortfolioFactory))
+
+    def fake_build_signals_from_spec(df: pd.DataFrame, spec: object, plan: object) -> PortfolioSignals:
+        values = pd.Series([True, True, True, True], index=df.index, dtype=bool)
+        return PortfolioSignals(entries=values, short_entries=values)
+
+    def fake_build_exit_outputs_from_spec(
+        df: pd.DataFrame, spec: object, plan: object
+    ) -> PortfolioExitOutputs:
+        idx = df.index
+        nan4 = [float("nan")] * 4
+        return PortfolioExitOutputs(
+            exits=pd.Series(False, index=idx, dtype=bool),
+            short_exits=pd.Series(False, index=idx, dtype=bool),
+            sl_stop=pd.Series(nan4, index=idx),
+            tp_stop=pd.Series(nan4, index=idx),
+        )
+
+    monkeypatch.setattr(backtest, "build_signals_from_spec", fake_build_signals_from_spec)
+    monkeypatch.setattr(backtest, "build_exit_outputs_from_spec", fake_build_exit_outputs_from_spec)
+
+    idx = pd.date_range("2024-01-01", periods=4, freq="h", tz="UTC")
+    close = pd.Series([100.0, 101.0, 102.0, 103.0], index=idx)
+    ohlcv = pd.DataFrame(
+        {
+            "high": close + 1.0,
+            "low": close - 1.0,
+            "close": close,
+            "volume": 1.0,
+        },
+        index=idx,
+    )
+
+    with pytest.raises(SystemExit, match="open.*high.*low|missing"):
+        backtest.run_strategy_spec(make_ema_pullback_strategy_spec(), ohlcv)
+
+    assert not captured, "Portfolio.from_signals must not run when OHLC columns are missing"
 
 
 @pytest.mark.optional_vectorbt

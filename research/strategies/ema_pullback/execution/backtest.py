@@ -37,6 +37,24 @@ def _nullable_finite(value: float) -> float | None:
     return value
 
 
+def _open_high_low_for_vectorbt(enriched: pd.DataFrame) -> tuple[pd.Series, pd.Series, pd.Series]:
+    """Require real OHLC columns for vectorbt stop semantics (Step 15); fail-fast if missing or non-finite."""
+
+    missing = [c for c in ("open", "high", "low") if c not in enriched.columns]
+    if missing:
+        raise SystemExit(
+            "enriched OHLCV must contain columns open, high, low for vectorbt stop execution; "
+            f"missing: {', '.join(repr(c) for c in missing)}"
+        )
+    open_s = enriched["open"].astype(float)
+    high_s = enriched["high"].astype(float)
+    low_s = enriched["low"].astype(float)
+    for name, series in (("open", open_s), ("high", high_s), ("low", low_s)):
+        if series.isna().any():
+            raise SystemExit(f"{name} contains NaN — check DB / repair pipeline.")
+    return open_s, high_s, low_s
+
+
 def _build_side_metrics(records: list[dict[str, Any]], init_cash: float) -> SideMetrics:
     trades = len(records)
     pnl_values = [float(record.get("pnl") or 0.0) for record in records]
@@ -117,6 +135,7 @@ def run_strategy_spec(
 
     plan = build_feature_plan_from_strategy_spec(spec)
     enriched = add_feature_columns_from_plan(ohlcv, plan)
+    open_s, high_s, low_s = _open_high_low_for_vectorbt(enriched)
     signals = build_signals_from_spec(enriched, spec, plan)
     exit_outputs = build_exit_outputs_from_spec(enriched, spec, plan)
 
@@ -154,6 +173,9 @@ def run_strategy_spec(
         exit_outputs.exits,
         short_entries=short_entries_for_portfolio,
         short_exits=exit_outputs.short_exits,
+        open=open_s,
+        high=high_s,
+        low=low_s,
         freq=freq,
         init_cash=float(init_cash),
         fees=float(fees),

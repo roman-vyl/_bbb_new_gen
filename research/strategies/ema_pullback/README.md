@@ -20,7 +20,7 @@ EmaPullbackStrategySpec
 → direction / blockers / setup / trigger / exits / risk
 → entry signals composer
 → execution exit-layer
-→ vectorbt
+→ vectorbt (OHLC-aware: `open`/`high`/`low` + `close` в `Portfolio.from_signals` для реалистичных стопов)
 → JSON report
 ```
 
@@ -55,7 +55,7 @@ ema_pullback_fast{fast.period}_anchor{anchor.period}_slow{slow.period}
 | `features/calculations.py` | Расчёт только features, объявленных в `FeaturePlan` |
 | `components/*.py` | Ступени пайплайна + `registry.py` для новых role ids |
 | `execution/data_loader.py` | Загрузка DB candles в `LoadedCandles` (`ohlcv` + metadata диапазона) |
-| `execution/backtest.py` | Backend `run_strategy_spec(...)` через vectorbt |
+| `execution/backtest.py` | Backend `run_strategy_spec(...)` через vectorbt; в `from_signals` передаются `open`/`high`/`low` из enriched OHLCV (fail-fast, если колонок нет — см. Step 15 в `docs/research/15_ohlc_aware_vectorbt_plan.md`) |
 | `execution/report_table.py` | Stdout comparison table с `fast / anchor / slow` |
 | `execution/runner.py` | `run_strategy_specs_from_config`: loader → финальный `ExecutionConfig` → backtest → таблица → JSON |
 | `execution/result_models.py` | Dataclass-контракты `LoadedCandles`, `VariantMetrics`, `VariantResult` |
