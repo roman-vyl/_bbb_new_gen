@@ -429,9 +429,13 @@ atr_stop_loss
 atr_take_profit
   возвращает подготовленную ATR distance series для take_profit
 
+constant_usd_stop_loss
+  константная дистанция в USD (ряд одного значения) для stop_loss
+
+constant_usd_take_profit
+  константная дистанция в USD для take_profit
+
 planned later:
-  fixed_stop_loss
-  fixed_take_profit
   time_stop
 ```
 

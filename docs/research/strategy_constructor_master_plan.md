@@ -456,25 +456,41 @@ slow EMA
 
 ---
 
-### Step 14 — External Instance Config MVP
+### Step 14 — External Config Loader (Experiment Layer + Family Parser)
 
-После side-aware компонентов вводится тонкий внешний слой конфигурации одного экземпляра стратегии: маленький typed instance dict → один pure builder → существующий `EmaPullbackStrategySpec` → старый pipeline без изменений.
+После стабилизации typed builders и multi-instance компонентов вводится двухуровневый внешний слой конфигурации: generic experiment layer и family-local parser.
 
-**Цель:**
+Шаг переводит систему из режима «инстанс собирается вручную в коде» в режим «external config file проходит generic envelope-валидацию, dispatch по family, затем family parser собирает typed spec».
 
-- сделать параметры одного экземпляра `ema_pullback` задаваемыми снаружи строго типизированным dict-ом;
-- ручная сборка dataclass-ов уходит из `spec_instances`: единственный путь сборки spec — через builder.
+**Step 14A (family-local, `ema_pullback`):**
 
-**Non-goals:**
+- добавить `instance_loader.py` в `research/strategies/ema_pullback/`;
+- контракт уровня family: один instance `dict` -> `EmaPullbackStrategySpec`;
+- использовать только builder path (`component_builders/spec_instances`);
+- валидировать family-specific поля (trigger/blockers/exits/anchor_stack и т.д.) с fail-fast.
 
-- нет JSON-файлов;
-- нет CLI / `--config` / `--config-dir`;
-- нет перечисления каталога;
-- нет внешнего конфига для шести component roles (component ids, EMA source/timeframe, ATR timeframe, trade management profile остаются захардкоженными внутри builder-а);
-- нет Grid / optimizer / parameter sweep;
-- нет frontend.
+**Step 14B (generic experiment layer, minimal MVP):**
 
-Подробный контракт и подшаги — в отдельном плане Step 14.
+- добавить минимальный `research/experiments/config_loader.py`;
+- читать один внешний config file (single instance object или bundle/list instances);
+- валидировать общий envelope (`schema_version`, `experiment_id`/`run_name`, `family`, `instances`);
+- делать dispatch по `family` в family-local parser;
+- возвращать список typed specs и metadata для batch report.
+
+**Boundary (жёсткое разделение ответственности):**
+
+- `research/strategies/ema_pullback/` знает только, как из одного dict собрать свою стратегию;
+- file ingestion, batch orchestration, experiment lifecycle и cross-family сравнение живут выше — в `research/experiments/`;
+- strategy-family слой не должен содержать generic file/batch/grid logic.
+
+**MVP ограничения шага:**
+
+- только single config file ingestion;
+- no partial execution: fail-fast на весь файл/bundle;
+- без grid/optimizer/parameter sweep;
+- без config directory discovery (это follow-up).
+
+Подробный контракт и подшаги — в отдельном плане `docs/research/14_external_config_loader_plan.md`.
 
 ---
 
@@ -542,7 +558,7 @@ trade_count
 
 Roadmap note:
 
-FeaturesDev keeps indicator calculation out of components. Exit rules (signal and ATR-based SL/TP) live in `StrategySpec` under `components.exits` and are evaluated via a dedicated execution exits path, so runner and entry-side code stay orchestration-focused. Research Results Artifact is inserted before Component Grid so experiments have stable structured output. EMA Pullback StrategySpec / anchor stack refactor stabilises the internal instance model after artifacts. Bidirectional Side Semantics (`TradeSideSpec`, long/short vectorbt wiring) follows StrategySpec so `ema_pullback` is not long-only. Step 12 completes side-aware blocker / risk / exit / trigger wiring and this **unified exits + reserved root trade_management** architecture, plus typed `component_builders` as the single construction layer ahead of external config. Step 13 introduces multi-instance component support (same component id reused with different params and explicit instance ids). Step 14 adds an external instance config MVP so one `EmaPullbackStrategySpec` can be built from a small typed dict without file IO or CLI. Component Grid remains postponed until FeaturesDev, components, result artifacts, StrategySpec, side-aware specs, live components, builders, multi-instance support, and external instance config are stable.
+FeaturesDev keeps indicator calculation out of components. Exit rules (signal and ATR-based SL/TP) live in `StrategySpec` under `components.exits` and are evaluated via a dedicated execution exits path, so runner and entry-side code stay orchestration-focused. Research Results Artifact is inserted before Component Grid so experiments have stable structured output. EMA Pullback StrategySpec / anchor stack refactor stabilises the internal instance model after artifacts. Bidirectional Side Semantics (`TradeSideSpec`, long/short vectorbt wiring) follows StrategySpec so `ema_pullback` is not long-only. Step 12 completes side-aware blocker / risk / exit / trigger wiring and this **unified exits + reserved root trade_management** architecture, plus typed `component_builders` as the single construction layer ahead of external config. Step 13 introduces multi-instance component support (same component id reused with different params and explicit instance ids). Step 14 then splits responsibilities: experiment layer reads/validates one external config file and dispatches by family, while `ema_pullback` only parses one instance dict into `EmaPullbackStrategySpec`. Directory discovery, grid/optimization, and richer lifecycle orchestration remain follow-up. Component Grid remains postponed until FeaturesDev, components, result artifacts, StrategySpec, side-aware specs, live components, builders, multi-instance support, and this boundary-safe external config flow are stable.
 
 ---
 
@@ -567,7 +583,7 @@ FeaturesDev keeps indicator calculation out of components. Exit rules (signal an
 11. bidirectional side semantics (TradeSideSpec, long / short)
 12. side-aware blocker / risk / exit / trigger + unified `exits` spec, execution exits layer, `component_builders`
 13. multi-instance same component support (different params, explicit `instance_id`)
-14. external instance config MVP
+14. external config loader (experiment layer + family parser)
 15. component grid
 16. debug report / diagnostics
 17. validation

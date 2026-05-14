@@ -16,7 +16,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest"]
-research = ["numpy>=1.24", "pandas>=2.1", "vectorbt>=0.26"]
+research = ["numpy>=1.24", "pandas>=2.1", "PyYAML", "vectorbt>=0.26"]
 
 [tool.setuptools]
 include-package-data = false

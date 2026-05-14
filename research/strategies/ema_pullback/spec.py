@@ -121,6 +121,8 @@ _EXIT_COMPONENT_KINDS: dict[str, ExitKind] = {
     "rsi_signal_exit": "signal",
     "atr_stop_loss": "stop_loss",
     "atr_take_profit": "take_profit",
+    "constant_usd_stop_loss": "stop_loss",
+    "constant_usd_take_profit": "take_profit",
 }
 
 
@@ -165,8 +167,8 @@ class AtrDistanceSpec:
     multiplier: float
 
     def __post_init__(self) -> None:
-        if self.timeframe != "base":
-            raise ValueError("atr distance timeframe must be 'base'")
+        if not self.timeframe.strip():
+            raise ValueError("atr distance timeframe must be non-empty")
         if self.period <= 0:
             raise ValueError("atr distance period must be > 0")
         if self.multiplier <= 0:
@@ -182,6 +184,7 @@ class ExitRuleSpec:
     long_exit_above: float | None = None
     short_exit_below: float | None = None
     distance: AtrDistanceSpec | None = None
+    usd_distance: float | None = None
 
     def __post_init__(self) -> None:
         if not self.instance_id.strip():
@@ -196,10 +199,21 @@ class ExitRuleSpec:
             raise ValueError(
                 f"exit component {self.component_id!r} requires exit_kind {expected_kind!r}"
             )
-        if self.exit_kind == "signal" and self.distance is not None:
-            raise ValueError("signal exit must not define distance")
-        if self.exit_kind in {"stop_loss", "take_profit"} and self.distance is None:
-            raise ValueError(f"{self.exit_kind} exit requires distance")
+        if self.exit_kind == "signal":
+            if self.distance is not None or self.usd_distance is not None:
+                raise ValueError("signal exit must not define distance or usd_distance")
+        elif self.component_id in {"atr_stop_loss", "atr_take_profit"}:
+            if self.distance is None:
+                raise ValueError(f"{self.component_id} exit requires distance")
+            if self.usd_distance is not None:
+                raise ValueError(f"{self.component_id} exit must not define usd_distance")
+        elif self.component_id in {"constant_usd_stop_loss", "constant_usd_take_profit"}:
+            if self.usd_distance is None or self.usd_distance <= 0:
+                raise ValueError(f"{self.component_id} exit requires positive usd_distance")
+            if self.distance is not None:
+                raise ValueError(f"{self.component_id} exit must not define distance")
+        elif self.exit_kind in {"stop_loss", "take_profit"}:
+            raise ValueError(f"unsupported distance exit component_id {self.component_id!r}")
         if self.exit_kind in {"stop_loss", "take_profit"}:
             if self.rsi is not None or self.long_exit_above is not None or self.short_exit_below is not None:
                 raise ValueError(f"{self.exit_kind} exit must not define signal thresholds")

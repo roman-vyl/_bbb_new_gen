@@ -24,10 +24,7 @@ from research.strategies.ema_pullback.execution.signals import (
 )
 from research.strategies.ema_pullback.features.calculations import add_feature_columns_from_plan
 from research.strategies.ema_pullback.features.plan import build_feature_plan_from_strategy_spec
-from research.strategies.ema_pullback.spec_instances import (
-    default_ema_pullback_strategy_spec,
-    make_ema_pullback_strategy_spec,
-)
+from research.strategies.ema_pullback.spec_instances import make_ema_pullback_strategy_spec
 
 
 def _ohlcv() -> pd.DataFrame:
@@ -46,7 +43,7 @@ def _ohlcv() -> pd.DataFrame:
 
 
 def test_build_signals_from_spec_uses_component_registry_and_plan_columns() -> None:
-    spec = default_ema_pullback_strategy_spec()
+    spec = make_ema_pullback_strategy_spec()
     plan = build_feature_plan_from_strategy_spec(spec)
     df = add_feature_columns_from_plan(_ohlcv(), plan)
 
@@ -71,7 +68,7 @@ def test_build_signals_from_spec_uses_component_registry_and_plan_columns() -> N
 
 
 def test_build_exit_outputs_from_spec_uses_unified_exit_rules() -> None:
-    spec = default_ema_pullback_strategy_spec()
+    spec = make_ema_pullback_strategy_spec()
     plan = build_feature_plan_from_strategy_spec(spec)
     idx = pd.date_range("2024-01-01", periods=30, freq="h", tz="UTC")
     ohlcv = _ohlcv().reindex(idx).ffill()
@@ -103,7 +100,7 @@ def test_build_exit_outputs_from_spec_uses_unified_exit_rules() -> None:
 
 
 def test_exit_outputs_include_boolean_and_distance_instance_counters() -> None:
-    base = default_ema_pullback_strategy_spec()
+    base = make_ema_pullback_strategy_spec()
     spec = replace(
         base,
         components=component_stack(

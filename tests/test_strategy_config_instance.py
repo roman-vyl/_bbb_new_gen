@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from research.experiments.config_loader import load_strategy_config
 from research.strategies.ema_pullback.component_builders import (
     blocker_counter_candle,
     blocker_extreme_rsi,
@@ -13,6 +14,8 @@ from research.strategies.ema_pullback.component_builders import (
     component_stack,
     exit_atr_stop_loss,
     exit_atr_take_profit,
+    exit_constant_usd_stop_loss,
+    exit_constant_usd_take_profit,
     exit_no_signal,
     exit_rsi,
     exits_atr_default,
@@ -21,19 +24,29 @@ from research.strategies.ema_pullback.component_builders import (
     trigger_touch_anchor,
 )
 from research.strategies.ema_pullback.config import (
-    DEFAULT_EXECUTION_CONFIG,
+    DEFAULT_FEES,
+    DEFAULT_INIT_CASH,
+    DEFAULT_SLIPPAGE,
     ExecutionConfig,
+    execution_config_from_external,
 )
-from research.strategies.ema_pullback.cli import config_from_args, parse_args
+from research.strategies.ema_pullback.cli import parse_args
 from research.strategies.ema_pullback.spec import TradeSideSpec, strategy_spec_config_id
-from research.strategies.ema_pullback.spec_instances import (
-    default_ema_pullback_strategy_spec,
-    make_ema_pullback_strategy_spec,
-)
+from research.strategies.ema_pullback.spec_instances import make_ema_pullback_strategy_spec
+
+from tests.test_external_config_loader import _bundle, _instance
 
 
-def test_default_execution_config_contains_only_runtime_fields() -> None:
-    cfg = DEFAULT_EXECUTION_CONFIG
+def test_execution_config_has_expected_dataclass_fields() -> None:
+    cfg = ExecutionConfig(
+        family="ema_pullback",
+        symbol="ETHUSDT",
+        timeframe="4h",
+        db_path=Path("x.sqlite"),
+        init_cash=DEFAULT_INIT_CASH,
+        fees=DEFAULT_FEES,
+        slippage=DEFAULT_SLIPPAGE,
+    )
     assert set(cfg.__dataclass_fields__) == {
         "family",
         "symbol",
@@ -60,7 +73,7 @@ def test_execution_config_validates_runtime_fields() -> None:
 
 
 def test_runtime_changes_do_not_change_strategy_spec_id() -> None:
-    spec = default_ema_pullback_strategy_spec(symbol="BTCUSDT", base_timeframe="1h")
+    spec = make_ema_pullback_strategy_spec(symbol="BTCUSDT", base_timeframe="1h")
     base_id = strategy_spec_config_id(spec)
     _runtime_a = ExecutionConfig("ema_pullback", "BTCUSDT", "1h", Path("a.sqlite"), 100.0, 0.0, 0.0)
     _runtime_b = ExecutionConfig("ema_pullback", "BTCUSDT", "1h", Path("b.sqlite"), 500.0, 0.001, 0.0005)
@@ -68,7 +81,7 @@ def test_runtime_changes_do_not_change_strategy_spec_id() -> None:
 
 
 def test_default_strategy_spec_is_long_only() -> None:
-    spec = default_ema_pullback_strategy_spec()
+    spec = make_ema_pullback_strategy_spec()
     assert spec.trade_sides.enabled == ("long",)
 
 
@@ -100,30 +113,52 @@ def test_factory_accepts_sequence_for_enabled_sides() -> None:
     assert spec.trade_sides.enabled == ("long", "short")
 
 
-def test_cli_overrides_build_final_execution_config() -> None:
-    args = parse_args(
-        [
-            "--symbol",
-            "ethusdt",
-            "--tf",
-            "4h",
-            "--db-path",
-            "custom.sqlite",
-            "--init-cash",
-            "1500",
-            "--fees",
-            "0.001",
-            "--slippage",
-            "0.0005",
-        ]
+def test_cli_requires_config_path() -> None:
+    with pytest.raises(SystemExit):
+        parse_args([])
+
+
+def test_cli_rejects_legacy_symbol_flag() -> None:
+    with pytest.raises(SystemExit):
+        parse_args(["--config", "x.yaml", "--symbol", "BTCUSDT"])
+
+
+def test_cli_accepts_config_and_db_path() -> None:
+    args = parse_args(["--config", "experiment.yaml", "--db-path", "custom.sqlite"])
+    assert args.config == Path("experiment.yaml")
+    assert args.db_path == Path("custom.sqlite")
+
+
+def test_cli_help_does_not_list_legacy_market_flags(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit):
+        parse_args(["-h"])
+    out = capsys.readouterr().out
+    assert "--symbol" not in out
+    assert "--tf" not in out
+    assert "--init-cash" not in out
+    assert "--fees" not in out
+    assert "--slippage" not in out
+
+
+def test_execution_config_from_external_merges_market_and_optional_execution() -> None:
+    payload = {**_bundle([_instance("merge_exec")]), "execution": {}}
+    loaded = load_strategy_config(payload)
+    spec = loaded.specs[0]
+    cfg = execution_config_from_external(
+        family=loaded.family,
+        symbol=spec.symbol,
+        timeframe=spec.base_timeframe,
+        db_path=Path("db.sqlite"),
+        init_cash=loaded.execution.init_cash,
+        fees=loaded.execution.fees,
+        slippage=loaded.execution.slippage,
     )
-    cfg = config_from_args(args)
-    assert cfg.symbol == "ETHUSDT"
-    assert cfg.timeframe == "4h"
-    assert cfg.db_path == Path("custom.sqlite")
-    assert cfg.init_cash == 1500.0
-    assert cfg.fees == 0.001
-    assert cfg.slippage == 0.0005
+    assert cfg.symbol == "BTCUSDT"
+    assert cfg.timeframe == "1h"
+    assert cfg.db_path == Path("db.sqlite")
+    assert cfg.init_cash == DEFAULT_INIT_CASH
+    assert cfg.fees == DEFAULT_FEES
+    assert cfg.slippage == DEFAULT_SLIPPAGE
 
 
 def test_exit_shortcuts_build_expected_component_kinds() -> None:
@@ -137,11 +172,17 @@ def test_exit_shortcuts_build_expected_component_kinds() -> None:
     )
     stop = exit_atr_stop_loss(atr_period=14, atr_multiplier=1.5)
     take = exit_atr_take_profit(atr_period=14, atr_multiplier=4.0)
+    fixed_sl = exit_constant_usd_stop_loss(usd_distance=500.0)
+    fixed_tp = exit_constant_usd_take_profit(usd_distance=1200.0)
 
     assert (no_signal.component_id, no_signal.exit_kind) == ("no_signal_exit", "signal")
     assert (rsi.component_id, rsi.exit_kind) == ("rsi_signal_exit", "signal")
     assert (stop.component_id, stop.exit_kind) == ("atr_stop_loss", "stop_loss")
     assert (take.component_id, take.exit_kind) == ("atr_take_profit", "take_profit")
+    assert (fixed_sl.component_id, fixed_sl.exit_kind) == ("constant_usd_stop_loss", "stop_loss")
+    assert (fixed_tp.component_id, fixed_tp.exit_kind) == ("constant_usd_take_profit", "take_profit")
+    assert fixed_sl.usd_distance == 500.0 and fixed_sl.distance is None
+    assert fixed_tp.usd_distance == 1200.0 and fixed_tp.distance is None
     assert no_signal.instance_id == "no_signal_exit"
     assert rsi.instance_id == "rsi_exit_base"
     assert stop.instance_id == "atr_stop_loss"

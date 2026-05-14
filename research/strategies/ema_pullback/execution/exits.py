@@ -51,7 +51,9 @@ def _rsi_column(plan: FeaturePlan, rsi: RsiFeatureSpec | None) -> str | None:
     return plan.rsi_columns[(rsi.timeframe, rsi.period)]
 
 
-def _distance_column(plan: FeaturePlan, rule: ExitRuleSpec) -> str:
+def _distance_column(plan: FeaturePlan, rule: ExitRuleSpec) -> str | None:
+    if rule.distance is None:
+        return None
     return plan.exit_distance_columns[rule.instance_id]
 
 
@@ -98,13 +100,15 @@ def _build_stop_outputs(
     plan: FeaturePlan,
     distance_rules: tuple[tuple[Callable[..., pd.Series], ExitRuleSpec], ...],
 ) -> tuple[dict[str, pd.Series], tuple[dict[str, Any], ...]]:
+    nan_series = pd.Series(float("nan"), index=df.index, dtype=float)
     distances: dict[str, list[pd.Series]] = {}
     counters: list[dict[str, Any]] = []
     for exit_fn, rule in distance_rules:
+        distance_col = _distance_column(plan, rule)
         distance = exit_fn(
             df,
             rule=rule,
-            distance_col=_distance_column(plan, rule),
+            distance_col=distance_col,
         )
         distances.setdefault(rule.exit_kind, []).append(distance)
         non_null_count = int(distance.notna().sum())
@@ -123,14 +127,17 @@ def _build_stop_outputs(
             }
         )
 
-    missing = {"stop_loss", "take_profit"} - set(distances)
-    if missing:
-        missing_names = ", ".join(sorted(missing))
-        raise ValueError(f"missing required distance exit rules: {missing_names}")
-
     close = df["close"].astype(float)
-    stop_loss = pd.concat(distances["stop_loss"], axis=1).min(axis=1)
-    take_profit = pd.concat(distances["take_profit"], axis=1).min(axis=1)
+    stop_loss = (
+        pd.concat(distances["stop_loss"], axis=1).min(axis=1)
+        if "stop_loss" in distances
+        else nan_series
+    )
+    take_profit = (
+        pd.concat(distances["take_profit"], axis=1).min(axis=1)
+        if "take_profit" in distances
+        else nan_series
+    )
     return {
         "sl_stop": stop_loss.astype(float) / close,
         "tp_stop": take_profit.astype(float) / close,

@@ -8,7 +8,6 @@ from pathlib import Path
 
 import pytest
 
-from research.strategies.ema_pullback.config import DEFAULT_EXECUTION_CONFIG
 from research.strategies.ema_pullback.execution.results import (
     build_research_run_payload,
     build_run_id,
@@ -17,7 +16,7 @@ from research.strategies.ema_pullback.execution.results import (
     write_research_results,
 )
 from research.strategies.ema_pullback.spec_instances import (
-    default_ema_pullback_strategy_spec,
+    make_ema_pullback_strategy_spec,
     variant_from_spec,
 )
 
@@ -53,6 +52,10 @@ REQUIRED_TOTAL_EXTRAS = ("sharpe", "max_drawdown")
 
 REQUIRED_OPEN_TRADES = ("long", "short", "total")
 
+# Market for this file's payload fixtures only (not module defaults in config.py).
+_ARTIFACT_TEST_SYMBOL = "BTCUSDT"
+_ARTIFACT_TEST_TIMEFRAME = "1h"
+
 REQUIRED_TRADE_FIELDS = (
     "trade_id",
     "direction",
@@ -80,18 +83,20 @@ def test_json_safe_nan_becomes_null() -> None:
 
 
 def test_build_research_run_payload_top_level_keys() -> None:
-    cfg = DEFAULT_EXECUTION_CONFIG
-    spec = default_ema_pullback_strategy_spec(symbol=cfg.symbol, base_timeframe=cfg.timeframe)
+    spec = make_ema_pullback_strategy_spec(
+        symbol=_ARTIFACT_TEST_SYMBOL,
+        base_timeframe=_ARTIFACT_TEST_TIMEFRAME,
+    )
     assert spec.variant == variant_from_spec(spec)
     variant = {
         "variant": spec.variant,
         "config_id": "abc123",
-        "symbol": cfg.symbol,
-        "timeframe": cfg.timeframe,
+        "symbol": _ARTIFACT_TEST_SYMBOL,
+        "timeframe": _ARTIFACT_TEST_TIMEFRAME,
         "strategy_spec": {
             "variant": spec.variant,
-            "symbol": cfg.symbol,
-            "base_timeframe": cfg.timeframe,
+            "symbol": _ARTIFACT_TEST_SYMBOL,
+            "base_timeframe": _ARTIFACT_TEST_TIMEFRAME,
         },
         "metrics": {
             "long": {"trades": 0, "pnl": 0.0, "return_pct": 0.0, "profit_factor": None, "win_rate": None},
@@ -114,9 +119,9 @@ def test_build_research_run_payload_top_level_keys() -> None:
     payload = build_research_run_payload(
         run_id="rid",
         created_at=created,
-        family=cfg.family,
-        symbol=cfg.symbol,
-        timeframe=cfg.timeframe,
+        family="ema_pullback",
+        symbol=_ARTIFACT_TEST_SYMBOL,
+        timeframe=_ARTIFACT_TEST_TIMEFRAME,
         candles_count=100,
         data_range_from_ms=1,
         data_range_to_ms=2,
@@ -217,7 +222,7 @@ def test_variant_payload_from_instance_matches_schema() -> None:
         VariantResult,
     )
 
-    spec = default_ema_pullback_strategy_spec()
+    spec = make_ema_pullback_strategy_spec()
     assert spec.variant == variant_from_spec(spec)
     vr = VariantResult(
         variant=spec.variant,

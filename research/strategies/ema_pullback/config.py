@@ -32,12 +32,32 @@ class ExecutionConfig:
         if self.slippage < 0:
             raise ValueError("slippage must be >= 0")
 
-DEFAULT_EXECUTION_CONFIG = ExecutionConfig(
-    family="ema_pullback",
-    symbol="BTCUSDT",
-    timeframe="1h",
-    db_path=None,
-    init_cash=100.0,
-    fees=0.0,
-    slippage=0.0,
-)
+
+# Fallback execution economics when an external config omits execution.* fields.
+# Not related to market symbol/timeframe (those always come from the loaded spec / config).
+DEFAULT_INIT_CASH: float = 100.0
+DEFAULT_FEES: float = 0.0
+DEFAULT_SLIPPAGE: float = 0.0
+
+
+def execution_config_from_external(
+    *,
+    family: str,
+    symbol: str,
+    timeframe: str,
+    db_path: Path | None,
+    init_cash: float | None,
+    fees: float | None,
+    slippage: float | None,
+) -> ExecutionConfig:
+    """Build validated ExecutionConfig after external config load (market + optional execution)."""
+
+    return ExecutionConfig(
+        family=family.strip(),
+        symbol=symbol.strip().upper(),
+        timeframe=timeframe.strip(),
+        db_path=db_path,
+        init_cash=float(init_cash) if init_cash is not None else DEFAULT_INIT_CASH,
+        fees=float(fees) if fees is not None else DEFAULT_FEES,
+        slippage=float(slippage) if slippage is not None else DEFAULT_SLIPPAGE,
+    )

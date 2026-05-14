@@ -11,16 +11,14 @@ from research.strategies.ema_pullback.component_builders import (
 )
 from research.strategies.ema_pullback.spec import strategy_spec_config_id
 from research.strategies.ema_pullback.spec_instances import (
-    active_strategy_specs,
-    default_ema_pullback_strategy_spec,
     make_ema_pullback_strategy_spec,
     variant_from_spec,
 )
 
 
 def test_spec_instance_factory_values() -> None:
-    reference = default_ema_pullback_strategy_spec()
-    spec = default_ema_pullback_strategy_spec(symbol="ethusdt", base_timeframe="4h")
+    reference = make_ema_pullback_strategy_spec()
+    spec = make_ema_pullback_strategy_spec(symbol="ethusdt", base_timeframe="4h")
     assert spec.variant == reference.variant
     assert spec.variant == variant_from_spec(spec)
     assert spec.symbol == "ETHUSDT"
@@ -31,11 +29,9 @@ def test_spec_instance_factory_values() -> None:
     assert {r.exit_kind for r in spec.components.exits} == {"stop_loss", "take_profit"}
 
 
-def test_active_strategy_specs_matches_default_factory() -> None:
-    specs = active_strategy_specs("BTCUSDT", "1h")
-    assert len(specs) == 1
-    spec = specs[0]
-    assert spec == default_ema_pullback_strategy_spec(symbol="BTCUSDT", base_timeframe="1h")
+def test_baseline_factory_matches_expected_stack_shape() -> None:
+    spec = make_ema_pullback_strategy_spec(symbol="BTCUSDT", base_timeframe="1h")
+    assert spec == make_ema_pullback_strategy_spec()
     assert spec.variant == variant_from_spec(spec)
     assert (
         spec.anchor_stack.fast.period
@@ -58,9 +54,34 @@ def test_custom_spec_variant_follows_anchor_stack_periods() -> None:
     assert spec.anchor_stack.slow.period == 13
 
 
+def test_factory_accepts_user_variant_label() -> None:
+    spec = make_ema_pullback_strategy_spec(variant="baseline_both")
+
+    assert spec.variant == "baseline_both"
+    assert variant_from_spec(spec) == "ema_pullback_fast100_anchor200_slow1000"
+
+
 def test_anchor_stack_builder_matches_factory_anchor_periods() -> None:
     spec = make_ema_pullback_strategy_spec(fast_period=21, anchor_period=55, slow_period=200)
     expected = anchor_stack_from_periods(fast=21, anchor=55, slow=200)
+    assert spec.anchor_stack == expected
+
+
+def test_factory_accepts_anchor_stack_source_and_timeframe() -> None:
+    spec = make_ema_pullback_strategy_spec(
+        fast_period=21,
+        anchor_period=55,
+        slow_period=200,
+        anchor_source="close",
+        anchor_timeframe="4h",
+    )
+    expected = anchor_stack_from_periods(
+        fast=21,
+        anchor=55,
+        slow=200,
+        source="close",
+        timeframe="4h",
+    )
     assert spec.anchor_stack == expected
 
 

@@ -23,9 +23,9 @@ feature profiles
 strategy components
 strategy configs / instances
 manual variants
-trade management
+entries & exits (в спеке: components + components.exits; композиция в execution/)
 vectorbt backtests
-JSON reports
+JSON reports (report_schema_version 3)
 ```
 
 Он не отвечает за:
@@ -80,7 +80,7 @@ frontend logic
 ```text
 clean candles (SQLite → OHLCV DataFrame)
 ↓
-EmaPullbackStrategySpec (semantic model)
+EmaPullbackStrategySpec (semantic model; в т.ч. components.exits в спеке)
 ↓
 FeaturePlan (что посчитать: EMA/ATR/distance/RSI, при необходимости MTF)
 ↓
@@ -93,12 +93,12 @@ execution/signals.py
   blockers: AND по tuple правил
 ↓
 execution/exits.py
-  components.exits: signal exits OR + ATR stop/take mapping
+  читает components.exits из спека → signal exits OR + ATR stop/take mapping
   exits / short_exits / sl_stop / tp_stop
 ↓
 vectorbt Portfolio
 ↓
-stdout table + JSON report (schema v2)
+stdout table + JSON report (report_schema_version 3)
 ```
 
 Исторические stage-документы (`05_featuresdev_layer.md`, …) остаются полезными
@@ -147,8 +147,8 @@ StrategySpec — единственный semantic источник для famil
 FeaturePlan — декларация нужных колонок (включая RSI и MTF EMA/RSI).
 Components — решают по подготовленным колонкам; RSI не считают внутри себя.
 signals.py — side-aware composer только для entries/short_entries.
-exits.py — единый exit-layer: signal exits OR + ATR distance → sl_stop/tp_stop.
-JSON report — полный strategy_spec внутри variant payload.
+components.exits в StrategySpec — декларативные exit-компоненты; exits.py сводит их к слоям vectorbt (signal OR + ATR → sl_stop/tp_stop).
+JSON report — полный strategy_spec внутри variant payload; top-level report_schema_version: 3.
 ```
 
 ---
@@ -159,7 +159,7 @@ JSON report — полный strategy_spec внутри variant payload.
 в репозитории на момент Step 12:
 
 ```text
-Stage 9: JSON run report (schema v2) — research/results/latest.json + runs/<run_id>.json
+Stage 9: JSON run report (report_schema_version 3) — research/results/latest.json + runs/<run_id>.json
 Stage 10: EmaPullbackStrategySpec как единственная semantic модель
 Stage 11: TradeSideSpec + long/short wiring в vectorbt
 Stage 12: typed blockers/signal exit tuples, live components, RSI features,
@@ -174,17 +174,13 @@ Stage 13: unified components.exits для signal exits и ATR stop/take,
 
 ## Как запустить
 
-Основная проверка research runner:
+Основная проверка research runner (experiment-конфиг обязателен):
 
 ```bash
-python research/strategies/ema_pullback/run.py
+python research/strategies/ema_pullback/run.py --config research/experiments/configs/ema_pullback/ema_pullback_batch_001_step14.yaml
 ```
 
-Smoke entrypoint старого Phase 4:
-
-```bash
-python research/ema_smoke.py
-```
+Опционально: `--db-path path/to.sqlite`. Скрипт `research/ema_smoke.py` удалён; единственный поддерживаемый пользовательский вход для этого пайплайна — `run.py` с `--config`.
 
 Все тесты:
 
@@ -239,7 +235,7 @@ status=ok
 
 `runs/<run_id>.json` — исторический артефакт конкретного запуска.
 
-Top-level payload (schema v2) содержит:
+Top-level payload содержит `report_schema_version: 3` и поля:
 
 ```text
 run_id
@@ -252,7 +248,11 @@ candles
 data_range
 variants_count
 variants
+batch_metadata
 ```
+
+При запуске через external experiment config (Step 14) в payload попадает `batch_metadata`
+(`experiment_id`, `source_file`, `entries`, …).
 
 Каждый элемент `variants[]` содержит:
 
@@ -263,6 +263,7 @@ symbol
 timeframe
 strategy_spec
 metrics
+component_counters
 trade_records
 ```
 
@@ -350,7 +351,8 @@ global framework без необходимости
 ## Текущий статус
 
 Research-слой для `ema_pullback` включает bidirectional side semantics (Step 11)
-и первые side-aware live компоненты + RSI + MTF alignment на base OHLCV (Step 12).
+первые side-aware live компоненты + RSI + MTF alignment на base OHLCV (Step 12),
+multi-instance component semantics (Step 13) и внешний config loader MVP (Step 14).
 
 Текущий практически полезный контур:
 
@@ -358,18 +360,26 @@ Research-слой для `ema_pullback` включает bidirectional side sema
 clean candles
 → StrategySpec + trade_sides
 → FeaturePlan + feature calculations
-→ components + registry
-→ trade management
-→ long/short signals
+→ components + registry (включая components.exits в спеке)
+→ execution signals + exits (композиция для vectorbt)
 → vectorbt
 → stdout + JSON report
+```
+
+Для Step 14 доступен callable loader path:
+
+```text
+external config file
+→ research/experiments/config_loader.py
+→ research/strategies/ema_pullback/instance_loader.py
+→ typed StrategySpec bundle
+→ existing runner/backtest path
 ```
 
 Следующие крупные направления:
 
 ```text
 Research:
-  external instance config MVP (Step 13)
   component grid
   debug diagnostics
   validation

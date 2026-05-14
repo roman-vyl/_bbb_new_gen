@@ -11,12 +11,15 @@ pytest.importorskip("pandas")
 
 import pandas as pd
 
+from research.strategies.ema_pullback.component_builders import component_stack, exit_rsi
 from research.strategies.ema_pullback.execution import backtest
 from research.strategies.ema_pullback.execution.backtest import build_trade_side_metrics, ensure_finite_metric
 from research.strategies.ema_pullback.execution.exits import PortfolioExitOutputs
 from research.strategies.ema_pullback.execution.report_table import print_comparison_table
 from research.strategies.ema_pullback.execution.signals import PortfolioSignals
-from research.strategies.ema_pullback.spec_instances import default_ema_pullback_strategy_spec
+from research.strategies.ema_pullback.spec_instances import (
+    make_ema_pullback_strategy_spec,
+)
 
 
 def test_ensure_finite_metric_accepts_finite() -> None:
@@ -139,7 +142,53 @@ def test_build_trade_side_metrics_ignores_open_trades_for_realized() -> None:
     assert metrics.open_trades.total == 2
 
 
-def test_run_strategy_spec_wires_short_signals_and_masks_warmup(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize(
+    ("sl_values", "tp_values", "expected_entries"),
+    [
+        pytest.param(
+            [float("nan"), 0.01, 0.01, 0.01],
+            [float("nan")] * 4,
+            [False, True, True, True],
+            id="only_sl",
+        ),
+        pytest.param(
+            [float("nan")] * 4,
+            [float("nan"), 0.02, 0.02, 0.02],
+            [False, True, True, True],
+            id="only_tp",
+        ),
+        pytest.param(
+            [float("nan"), 0.01, 0.01, 0.01],
+            [float("nan"), 0.02, 0.02, 0.02],
+            [False, True, True, True],
+            id="sl_and_tp",
+        ),
+        pytest.param(
+            [float("nan")] * 4,
+            [float("nan")] * 4,
+            [True, True, True, True],
+            id="signal_only",
+        ),
+        pytest.param(
+            [float("nan"), 0.01, 0.01, 0.01],
+            [float("nan")] * 4,
+            [False, True, True, True],
+            id="rsi_plus_sl",
+        ),
+        pytest.param(
+            [float("nan")] * 4,
+            [float("nan"), 0.02, 0.02, 0.02],
+            [False, True, True, True],
+            id="rsi_plus_tp",
+        ),
+    ],
+)
+def test_run_strategy_spec_wires_short_signals_and_masks_warmup(
+    monkeypatch: pytest.MonkeyPatch,
+    sl_values: list[float],
+    tp_values: list[float],
+    expected_entries: list[bool],
+) -> None:
     captured: dict[str, object] = {}
 
     class FakeTrades:
@@ -182,8 +231,8 @@ def test_run_strategy_spec_wires_short_signals_and_masks_warmup(monkeypatch: pyt
         df: pd.DataFrame, spec: object, plan: object
     ) -> PortfolioExitOutputs:
         exits = pd.Series(False, index=df.index, dtype=bool)
-        sl_stop = pd.Series([float("nan"), 0.01, 0.01, 0.01], index=df.index)
-        tp_stop = pd.Series([float("nan"), 0.02, 0.02, 0.02], index=df.index)
+        sl_stop = pd.Series(sl_values, index=df.index)
+        tp_stop = pd.Series(tp_values, index=df.index)
         return PortfolioExitOutputs(
             exits=exits,
             short_exits=exits,
@@ -207,9 +256,44 @@ def test_run_strategy_spec_wires_short_signals_and_masks_warmup(monkeypatch: pyt
         index=idx,
     )
 
-    backtest.run_strategy_spec(default_ema_pullback_strategy_spec(), ohlcv)
+    backtest.run_strategy_spec(make_ema_pullback_strategy_spec(), ohlcv)
 
-    assert captured["entries"].tolist() == [False, True, True, True]
-    assert captured["short_entries"].tolist() == [False, True, True, True]
+    # Signal exits are boolean close conditions; only configured distance exits gate ATR warmup.
+    assert captured["entries"].tolist() == expected_entries
+    assert captured["short_entries"].tolist() == expected_entries
     assert captured["exits"].tolist() == [False, False, False, False]
     assert captured["short_exits"].tolist() == [False, False, False, False]
+
+
+@pytest.mark.optional_vectorbt
+def test_run_strategy_spec_accepts_signal_only_exits_with_nan_stops() -> None:
+    pytest.importorskip("vectorbt")
+    spec = make_ema_pullback_strategy_spec(
+        components=component_stack(
+            exits=(
+                exit_rsi(
+                    instance_id="rsi_signal_only",
+                    timeframe="base",
+                    period=14,
+                    long_exit_above=70.0,
+                    short_exit_below=30.0,
+                ),
+            )
+        )
+    )
+    idx = pd.date_range("2024-01-01", periods=40, freq="h", tz="UTC")
+    close = pd.Series([100.0 + float(i % 7) for i in range(len(idx))], index=idx)
+    ohlcv = pd.DataFrame(
+        {
+            "open": close,
+            "high": close + 1.0,
+            "low": close - 1.0,
+            "close": close,
+            "volume": 1.0,
+        },
+        index=idx,
+    )
+
+    result = backtest.run_strategy_spec(spec, ohlcv)
+
+    assert result.variant == spec.variant
