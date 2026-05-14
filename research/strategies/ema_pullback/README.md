@@ -5,8 +5,10 @@
 После загрузки внешнего experiment-файла runner строит финальный `ExecutionConfig`
 через `execution_config_from_external(...)`: `family`, `symbol`, `timeframe` и
 опциональные поля `execution.*` берутся из конфига; при отсутствии
-`execution.init_cash` / `fees` / `slippage` подставляются значения из
-`DEFAULT_EXECUTION_CONFIG`. CLI может задать только переопределение `db_path`.
+`execution.init_cash` / `fees` / `slippage` подставляются модульные дефолты
+`DEFAULT_INIT_CASH` / `DEFAULT_FEES` / `DEFAULT_SLIPPAGE`. Рынок (`symbol`,
+`timeframe`) всегда из загруженного спека, не из `config.py`. Отдельного
+«рыночного дефолта» в модуле нет. CLI может задать только переопределение `db_path`.
 
 Активный pipeline:
 
@@ -44,7 +46,7 @@ ema_pullback_fast{fast.period}_anchor{anchor.period}_slow{slow.period}
 
 | Путь | Назначение |
 |------|------------|
-| `config.py` | `ExecutionConfig`, `DEFAULT_EXECUTION_CONFIG`, `execution_config_from_external` |
+| `config.py` | `ExecutionConfig`, `DEFAULT_INIT_CASH` / `DEFAULT_FEES` / `DEFAULT_SLIPPAGE`, `execution_config_from_external` |
 | `spec.py` | Dataclass-контракты `EmaPullbackStrategySpec` и вложенных spec-частей |
 | `component_builders.py` | Typed builders для `anchor/trigger/blockers/exits/trade_sides/components` |
 | `spec_instances.py` | `make_ema_pullback_strategy_spec`, `variant_from_spec` |

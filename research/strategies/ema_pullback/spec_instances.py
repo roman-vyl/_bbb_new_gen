@@ -1,4 +1,4 @@
-"""Concrete StrategySpec instances for active ema_pullback runs."""
+"""Factory helpers for ema_pullback StrategySpec."""
 
 from __future__ import annotations
 

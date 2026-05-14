@@ -22,7 +22,9 @@ from research.strategies.ema_pullback.component_builders import (
     trigger_touch_anchor,
 )
 from research.strategies.ema_pullback.config import (
-    DEFAULT_EXECUTION_CONFIG,
+    DEFAULT_FEES,
+    DEFAULT_INIT_CASH,
+    DEFAULT_SLIPPAGE,
     ExecutionConfig,
     execution_config_from_external,
 )
@@ -33,8 +35,16 @@ from research.strategies.ema_pullback.spec_instances import make_ema_pullback_st
 from tests.test_external_config_loader import _bundle, _instance
 
 
-def test_default_execution_config_contains_only_runtime_fields() -> None:
-    cfg = DEFAULT_EXECUTION_CONFIG
+def test_execution_config_has_expected_dataclass_fields() -> None:
+    cfg = ExecutionConfig(
+        family="ema_pullback",
+        symbol="ETHUSDT",
+        timeframe="4h",
+        db_path=Path("x.sqlite"),
+        init_cash=DEFAULT_INIT_CASH,
+        fees=DEFAULT_FEES,
+        slippage=DEFAULT_SLIPPAGE,
+    )
     assert set(cfg.__dataclass_fields__) == {
         "family",
         "symbol",
@@ -144,9 +154,9 @@ def test_execution_config_from_external_merges_market_and_optional_execution() -
     assert cfg.symbol == "BTCUSDT"
     assert cfg.timeframe == "1h"
     assert cfg.db_path == Path("db.sqlite")
-    assert cfg.init_cash == DEFAULT_EXECUTION_CONFIG.init_cash
-    assert cfg.fees == DEFAULT_EXECUTION_CONFIG.fees
-    assert cfg.slippage == DEFAULT_EXECUTION_CONFIG.slippage
+    assert cfg.init_cash == DEFAULT_INIT_CASH
+    assert cfg.fees == DEFAULT_FEES
+    assert cfg.slippage == DEFAULT_SLIPPAGE
 
 
 def test_exit_shortcuts_build_expected_component_kinds() -> None:
