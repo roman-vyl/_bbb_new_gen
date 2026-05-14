@@ -28,6 +28,7 @@ def _instance(
     anchor_source: str = "close",
     anchor_timeframe: str = "base",
     trade_sides: object | None = None,
+    exits: object | None = None,
 ) -> dict[str, object]:
     return {
         "instance_id": instance_id,
@@ -51,7 +52,9 @@ def _instance(
             "trigger": {"component_id": "reclaim_anchor"},
             "blockers": [{"instance_id": "no_blockers", "component_id": "no_blockers"}],
             "risk": {"component_id": "no_risk_filter"},
-            "exits": [
+            "exits": exits
+            if exits is not None
+            else [
                 {
                     "instance_id": "atr_stop_loss",
                     "component_id": "atr_stop_loss",
@@ -166,6 +169,89 @@ def test_load_external_config_supports_exit_atr_distance_timeframe() -> None:
     spec = loaded.specs[0]
     assert spec.components.exits[0].distance is not None
     assert spec.components.exits[0].distance.timeframe == "15m"
+
+
+def test_load_external_config_supports_only_atr_stop_loss_exit() -> None:
+    loaded = load_strategy_config(
+        _bundle(
+            [
+                _instance(
+                    "only_atr_sl",
+                    exits=[
+                        {
+                            "instance_id": "atr_stop_loss",
+                            "component_id": "atr_stop_loss",
+                            "distance": {"timeframe": "base", "period": 14, "multiplier": 1.5},
+                        }
+                    ],
+                )
+            ]
+        )
+    )
+
+    exit_rule = loaded.specs[0].components.exits[0]
+    assert len(loaded.specs[0].components.exits) == 1
+    assert exit_rule.exit_kind == "stop_loss"
+    assert exit_rule.distance is not None
+    assert exit_rule.distance.period == 14
+    assert exit_rule.distance.multiplier == 1.5
+
+
+def test_load_external_config_supports_only_atr_take_profit_exit() -> None:
+    loaded = load_strategy_config(
+        _bundle(
+            [
+                _instance(
+                    "only_atr_tp",
+                    exits=[
+                        {
+                            "instance_id": "atr_take_profit",
+                            "component_id": "atr_take_profit",
+                            "distance": {"timeframe": "base", "period": 14, "multiplier": 4.0},
+                        }
+                    ],
+                )
+            ]
+        )
+    )
+
+    exit_rule = loaded.specs[0].components.exits[0]
+    assert len(loaded.specs[0].components.exits) == 1
+    assert exit_rule.exit_kind == "take_profit"
+    assert exit_rule.distance is not None
+    assert exit_rule.distance.period == 14
+    assert exit_rule.distance.multiplier == 4.0
+
+
+def test_load_external_config_supports_only_rsi_signal_exit() -> None:
+    loaded = load_strategy_config(
+        _bundle(
+            [
+                _instance(
+                    "only_rsi_exit",
+                    exits=[
+                        {
+                            "instance_id": "rsi_exit",
+                            "component_id": "rsi_signal_exit",
+                            "rsi": {"timeframe": "base", "period": 14},
+                            "long_exit_above": 70.0,
+                            "short_exit_below": 30.0,
+                        }
+                    ],
+                )
+            ]
+        )
+    )
+
+    exit_rule = loaded.specs[0].components.exits[0]
+    assert len(loaded.specs[0].components.exits) == 1
+    assert exit_rule.exit_kind == "signal"
+    assert exit_rule.distance is None
+    assert exit_rule.rsi is not None
+    assert exit_rule.rsi.timeframe == "base"
+    assert exit_rule.rsi.period == 14
+    assert exit_rule.long_exit_above == 70.0
+    assert exit_rule.short_exit_below == 30.0
 
 
 def test_load_external_config_accepts_user_variant_label() -> None:
