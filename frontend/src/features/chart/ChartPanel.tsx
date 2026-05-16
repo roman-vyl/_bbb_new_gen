@@ -2,6 +2,7 @@ import {
   CandlestickSeries,
   createChart,
   createSeriesMarkers,
+  LineSeries,
   type IChartApi,
   type ISeriesApi,
   type ISeriesMarkersPluginApi,
@@ -9,20 +10,30 @@ import {
 } from "lightweight-charts";
 import { useEffect, useMemo, useRef } from "react";
 
+import { CHART_EMA_PERIOD } from "@/api/types";
 import { ChartMarkerLegend } from "@/features/chart/ChartMarkerLegend";
 import { toCandlestickSeriesData, tradeFocusHalfWindowSec } from "@/features/chart/chartCandleUtils";
 import { buildTradeMarkers, candleRangeMs, tradeOutsideCandleRange } from "@/features/chart/chartMarkers";
 import { useWorkbench } from "@/shared/context/WorkbenchContext";
 
-const STUB_CANDLES_BANNER =
-  "Report loaded. Candles are fixture/stub until market API is connected.";
-
 export function ChartPanel() {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
+  const emaSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
   const markersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
-  const { candles, candlesSource, selectedVariant, selectedTradeId, selectTrade } = useWorkbench();
+  const {
+    candles,
+    emaPoints,
+    candlesSource,
+    marketError,
+    timeframeMismatch,
+    reportTimeframe,
+    chartTimeframe,
+    selectedVariant,
+    selectedTradeId,
+    selectTrade,
+  } = useWorkbench();
 
   const focusHalfWindowSec = useMemo(() => tradeFocusHalfWindowSec(candles), [candles]);
 
@@ -58,8 +69,15 @@ export function ChartPanel() {
       wickDownColor: "#ef4444",
     });
 
+    const emaSeries = chart.addSeries(LineSeries, {
+      color: "#38bdf8",
+      lineWidth: 2,
+      title: `EMA ${CHART_EMA_PERIOD}`,
+    });
+
     chartRef.current = chart;
     seriesRef.current = series;
+    emaSeriesRef.current = emaSeries;
     markersRef.current = createSeriesMarkers(series);
 
     const ro = new ResizeObserver((entries) => {
@@ -73,17 +91,26 @@ export function ChartPanel() {
       chart.remove();
       chartRef.current = null;
       seriesRef.current = null;
+      emaSeriesRef.current = null;
       markersRef.current = null;
     };
   }, []);
 
   useEffect(() => {
     const series = seriesRef.current;
+    const emaSeries = emaSeriesRef.current;
     const chart = chartRef.current;
     const markersPlugin = markersRef.current;
-    if (!series || !chart || !markersPlugin || !selectedVariant) return;
+    if (!series || !emaSeries || !chart || !markersPlugin || !selectedVariant) return;
 
     series.setData(toCandlestickSeriesData(candles));
+    emaSeries.setData(
+      emaPoints.map((p) => ({
+        time: p.time as Time,
+        value: p.value,
+      })),
+    );
+
     const markers = buildTradeMarkers(selectedVariant.trade_records, selectedTradeId);
     markersPlugin.setMarkers(markers);
 
@@ -100,7 +127,7 @@ export function ChartPanel() {
     }
 
     chart.timeScale().fitContent();
-  }, [candles, selectedVariant, selectedTradeId, focusHalfWindowSec]);
+  }, [candles, emaPoints, selectedVariant, selectedTradeId, focusHalfWindowSec]);
 
   if (!selectedVariant) {
     return null;
@@ -110,17 +137,24 @@ export function ChartPanel() {
     <section className="panel chart-panel">
       <div className="panel__header">
         <h2>Chart</h2>
-        <p className="panel__hint">Trade markers from loaded report · OHLC from {candlesSource}</p>
+        <p className="panel__hint">
+          OHLC + EMA({CHART_EMA_PERIOD}) from {candlesSource} · markers from report
+        </p>
       </div>
-      {candlesSource === "fixture" && (
-        <p className="banner banner--info" role="status">
-          {STUB_CANDLES_BANNER}
+      {timeframeMismatch && reportTimeframe !== null && (
+        <p className="banner banner--warn" role="status">
+          Report timeframe ({reportTimeframe}) differs from chart timeframe ({chartTimeframe}).
+        </p>
+      )}
+      {marketError !== null && (
+        <p className="banner banner--warn" role="status">
+          Market data unavailable: {marketError}
         </p>
       )}
       <ChartMarkerLegend />
       {rangeWarning && (
         <p className="banner banner--warn" role="status">
-          Selected trade entry is outside the loaded candle range (fixture overlap check).
+          Selected trade entry is outside the loaded candle range.
         </p>
       )}
       <div ref={containerRef} className="chart-canvas" />

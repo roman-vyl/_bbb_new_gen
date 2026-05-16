@@ -16,6 +16,17 @@ export type ChartBar = {
   volume?: number;
 };
 
+export type IndicatorPoint = {
+  time: number;
+  value: number;
+};
+
+/** MVP chart market timeframe (execution/research TF for Workbench). */
+export const CHART_MARKET_TIMEFRAME = "5m" as const;
+
+/** Default EMA overlay period for Chart (server-side series). */
+export const CHART_EMA_PERIOD = 200;
+
 export type TradeOverlay = {
   trade_id: number;
   direction: "long" | "short";

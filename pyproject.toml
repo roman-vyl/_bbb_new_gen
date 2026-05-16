@@ -31,4 +31,5 @@ include = ["data_engine*", "research*", "research_api*"]
 markers = [
     "optional_vectorbt: requires the project research extra (vectorbt)",
     "workbench_api: requires the workbench-api extra (fastapi, httpx); install with pip install -e \".[dev,workbench-api]\"",
+    "workbench_market: market API tests in tests/test_research_api_market.py",
 ]

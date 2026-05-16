@@ -1,5 +1,7 @@
 import {
   assertSupportedReportSchema,
+  type ChartBar,
+  type IndicatorPoint,
   type RunReport,
   type RunSummary,
 } from "@/api/types";
@@ -61,4 +63,49 @@ export async function fetchRunReport(runId: string): Promise<RunReport> {
 
 export function isApiBaseConfigured(): boolean {
   return API_BASE.length > 0;
+}
+
+export async function fetchCandles(params: {
+  symbol: string;
+  timeframe: string;
+  fromMs: number;
+  toMs: number;
+}): Promise<ChartBar[]> {
+  const qs = new URLSearchParams({
+    symbol: params.symbol,
+    timeframe: params.timeframe,
+    from: String(params.fromMs),
+    to: String(params.toMs),
+  });
+  return requestJson<ChartBar[]>(`/api/market/candles?${qs.toString()}`);
+}
+
+export async function fetchEma(params: {
+  symbol: string;
+  timeframe: string;
+  period: number;
+  fromMs: number;
+  toMs: number;
+}): Promise<IndicatorPoint[]> {
+  const qs = new URLSearchParams({
+    symbol: params.symbol,
+    timeframe: params.timeframe,
+    period: String(params.period),
+    from: String(params.fromMs),
+    to: String(params.toMs),
+  });
+  return requestJson<IndicatorPoint[]>(`/api/market/indicators/ema?${qs.toString()}`);
+}
+
+/** Half-open window end for report ``to_open_time_ms`` + one bar (5m default step). */
+export function reportRangeEndMs(toOpenTimeMs: number, chartTimeframe: string): number {
+  const stepMs =
+    chartTimeframe === "5m"
+      ? 300_000
+      : chartTimeframe === "1h"
+        ? 3_600_000
+        : chartTimeframe === "15m"
+          ? 900_000
+          : 300_000;
+  return toOpenTimeMs + stepMs;
 }

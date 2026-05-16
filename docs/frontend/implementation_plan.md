@@ -55,7 +55,7 @@ research layer      data_engine read (candles)
 - `frontend/` — Vite + React + TS, alias `@` → `src/`.
 - `research_api/` — top-level пакет (расширить `pyproject` packages: `research_api*`).
 - Optional extra: `workbench-api = ["fastapi", "uvicorn"]`.
-- CI: `npm run build` (фаза 0+); BFF pytest: `pip install -e ".[dev,workbench-api]"` && `pytest tests/test_research_api_runs.py -q`.
+- CI: `npm run build` (фаза 0+); BFF pytest: `pip install -e ".[dev,workbench-api]"` && `pytest tests/test_research_api_runs.py tests/test_research_api_market.py -q`.
 
 ### Contracts-first
 
