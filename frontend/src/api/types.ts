@@ -3,6 +3,9 @@
 export const SUPPORTED_REPORT_SCHEMA_VERSIONS = [3] as const;
 export type ReportSchemaVersion = (typeof SUPPORTED_REPORT_SCHEMA_VERSIONS)[number];
 
+/** JSON object maps in reports/config drafts (avoids bare `Record` under TS 5.8). */
+export type JsonObject = Record<string, unknown>;
+
 export type ChartBar = {
   /** Unix seconds (from `Candle.open_time_ms / 1000`) for Lightweight Charts. */
   time: number;
@@ -55,7 +58,7 @@ export type RunVariant = {
   config_id: string;
   symbol: string;
   timeframe: string;
-  strategy_spec: Record<string, unknown>;
+  strategy_spec: JsonObject;
   metrics: VariantMetrics;
   component_counters: unknown[];
   trade_records: TradeRecord[];
@@ -98,7 +101,7 @@ export type StrategyInstanceDraft = {
   instance_id: string;
   variant: string;
   market: { symbol: string; base_timeframe: string };
-  strategy: Record<string, unknown>;
+  strategy: JsonObject;
 };
 
 export type WorkbenchTab = "chart" | "composer" | "reports";

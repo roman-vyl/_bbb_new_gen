@@ -7,8 +7,10 @@ import {
   type ISeriesMarkersPluginApi,
   type Time,
 } from "lightweight-charts";
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 
+import { ChartMarkerLegend } from "@/features/chart/ChartMarkerLegend";
+import { toCandlestickSeriesData, tradeFocusHalfWindowSec } from "@/features/chart/chartCandleUtils";
 import { buildTradeMarkers, candleRangeMs, tradeOutsideCandleRange } from "@/features/chart/chartMarkers";
 import { useWorkbench } from "@/shared/context/WorkbenchContext";
 
@@ -18,6 +20,8 @@ export function ChartPanel() {
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const markersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
   const { candles, selectedVariant, selectedTradeId, selectTrade } = useWorkbench();
+
+  const focusHalfWindowSec = useMemo(() => tradeFocusHalfWindowSec(candles), [candles]);
 
   const range = candleRangeMs(candles);
   const selectedTrade = selectedVariant.trade_records.find((t) => t.trade_id === selectedTradeId);
@@ -75,7 +79,7 @@ export function ChartPanel() {
     const markersPlugin = markersRef.current;
     if (!series || !chart || !markersPlugin) return;
 
-    series.setData(candles);
+    series.setData(toCandlestickSeriesData(candles));
     const markers = buildTradeMarkers(selectedVariant.trade_records, selectedTradeId);
     markersPlugin.setMarkers(markers);
 
@@ -83,17 +87,16 @@ export function ChartPanel() {
       const trade = selectedVariant.trade_records.find((t) => t.trade_id === selectedTradeId);
       if (trade) {
         const center = Math.floor(trade.entry_time_ms / 1000);
-        const windowSec = 15 * 300;
         chart.timeScale().setVisibleRange({
-          from: (center - windowSec) as Time,
-          to: (center + windowSec) as Time,
+          from: (center - focusHalfWindowSec) as Time,
+          to: (center + focusHalfWindowSec) as Time,
         });
         return;
       }
     }
 
     chart.timeScale().fitContent();
-  }, [candles, selectedVariant, selectedTradeId]);
+  }, [candles, selectedVariant, selectedTradeId, focusHalfWindowSec]);
 
   return (
     <section className="panel chart-panel">
@@ -101,6 +104,7 @@ export function ChartPanel() {
         <h2>Chart</h2>
         <p className="panel__hint">Fixture candles · entry/exit markers from report trades</p>
       </div>
+      <ChartMarkerLegend />
       {rangeWarning && (
         <p className="banner banner--warn" role="status">
           Selected trade entry is outside the loaded candle range (fixture overlap check).
