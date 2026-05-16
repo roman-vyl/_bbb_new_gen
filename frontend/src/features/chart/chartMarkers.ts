@@ -98,6 +98,31 @@ export function buildTradeMarkers(
   return markers.sort((a, b) => (a.time as number) - (b.time as number));
 }
 
+export function filterMarkersToTimeRange(
+  markers: SeriesMarker<Time>[],
+  fromSec: number,
+  toSec: number,
+): SeriesMarker<Time>[] {
+  return markers.filter((marker) => {
+    const t = marker.time as number;
+    return t >= fromSec && t <= toSec;
+  });
+}
+
+export function buildTradeMarkersForView(
+  trades: TradeRecord[],
+  selectedTradeId: number | null,
+  viewCandles: { time: number }[],
+): SeriesMarker<Time>[] {
+  const all = buildTradeMarkers(trades, selectedTradeId);
+  if (viewCandles.length === 0) {
+    return [];
+  }
+  const fromSec = viewCandles[0].time;
+  const toSec = viewCandles[viewCandles.length - 1].time;
+  return filterMarkersToTimeRange(all, fromSec, toSec);
+}
+
 export function candleRangeMs(candles: { time: number }[]): { min: number; max: number } | null {
   if (candles.length === 0) return null;
   const min = candles[0].time * 1000;

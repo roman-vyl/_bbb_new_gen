@@ -12,8 +12,12 @@ import { useEffect, useMemo, useRef } from "react";
 
 import { CHART_EMA_PERIOD } from "@/api/types";
 import { ChartMarkerLegend } from "@/features/chart/ChartMarkerLegend";
-import { toCandlestickSeriesData, tradeFocusHalfWindowSec } from "@/features/chart/chartCandleUtils";
-import { buildTradeMarkers, candleRangeMs, tradeOutsideCandleRange } from "@/features/chart/chartMarkers";
+import { toCandlestickSeriesData } from "@/features/chart/chartCandleUtils";
+import {
+  buildTradeMarkersForView,
+  tradeOutsideCandleRange,
+} from "@/features/chart/chartMarkers";
+import { CHART_RENDER_BAR_LIMIT } from "@/features/chart/chartViewWindow";
 import { useWorkbench } from "@/shared/context/WorkbenchContext";
 
 export function ChartPanel() {
@@ -23,25 +27,37 @@ export function ChartPanel() {
   const emaSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
   const markersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
   const {
-    candles,
-    emaPoints,
+    chartCandles,
+    chartEma,
     candlesSource,
     marketError,
+    marketCandlesCount,
     timeframeMismatch,
     reportTimeframe,
     chartTimeframe,
     selectedVariant,
     selectedTradeId,
     selectTrade,
+    fullCandleRange,
   } = useWorkbench();
 
-  const focusHalfWindowSec = useMemo(() => tradeFocusHalfWindowSec(candles), [candles]);
-
-  const range = candleRangeMs(candles);
   const trades = selectedVariant?.trade_records ?? [];
   const selectedTrade = trades.find((t) => t.trade_id === selectedTradeId);
   const rangeWarning =
-    selectedTrade && tradeOutsideCandleRange(selectedTrade.entry_time_ms, range);
+    selectedTrade && tradeOutsideCandleRange(selectedTrade.entry_time_ms, fullCandleRange);
+
+  const chartHint = useMemo(() => {
+    if (candlesSource !== "market") {
+      return "Market data unavailable · trade markers from report";
+    }
+    const shown = chartCandles.length;
+    const total = marketCandlesCount;
+    const windowNote =
+      total > shown
+        ? `Showing ${shown} of ${total} bars`
+        : `Showing ${shown} bar${shown === 1 ? "" : "s"}`;
+    return `${windowNote} · OHLC + chart overlay EMA(${CHART_EMA_PERIOD}) · trade markers from report`;
+  }, [candlesSource, chartCandles.length, marketCandlesCount]);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -103,31 +119,23 @@ export function ChartPanel() {
     const markersPlugin = markersRef.current;
     if (!series || !emaSeries || !chart || !markersPlugin || !selectedVariant) return;
 
-    series.setData(toCandlestickSeriesData(candles));
+    series.setData(toCandlestickSeriesData(chartCandles));
     emaSeries.setData(
-      emaPoints.map((p) => ({
+      chartEma.map((p) => ({
         time: p.time as Time,
         value: p.value,
       })),
     );
 
-    const markers = buildTradeMarkers(selectedVariant.trade_records, selectedTradeId);
+    const markers = buildTradeMarkersForView(
+      selectedVariant.trade_records,
+      selectedTradeId,
+      chartCandles,
+    );
     markersPlugin.setMarkers(markers);
 
-    if (selectedTradeId !== null) {
-      const trade = selectedVariant.trade_records.find((t) => t.trade_id === selectedTradeId);
-      if (trade) {
-        const center = Math.floor(trade.entry_time_ms / 1000);
-        chart.timeScale().setVisibleRange({
-          from: (center - focusHalfWindowSec) as Time,
-          to: (center + focusHalfWindowSec) as Time,
-        });
-        return;
-      }
-    }
-
     chart.timeScale().fitContent();
-  }, [candles, emaPoints, selectedVariant, selectedTradeId, focusHalfWindowSec]);
+  }, [chartCandles, chartEma, selectedVariant, selectedTradeId]);
 
   if (!selectedVariant) {
     return null;
@@ -137,11 +145,7 @@ export function ChartPanel() {
     <section className="panel chart-panel">
       <div className="panel__header">
         <h2>Chart</h2>
-        <p className="panel__hint">
-          {candlesSource === "market"
-            ? `OHLC + chart overlay EMA(${CHART_EMA_PERIOD}) · trade markers from report`
-            : "Market data unavailable · trade markers from report"}
-        </p>
+        <p className="panel__hint">{chartHint}</p>
       </div>
       {timeframeMismatch && reportTimeframe !== null && (
         <p className="banner banner--warn" role="status">
@@ -153,10 +157,17 @@ export function ChartPanel() {
           Market data unavailable: {marketError}
         </p>
       )}
+      {candlesSource === "market" && marketCandlesCount > CHART_RENDER_BAR_LIMIT && (
+        <p className="banner banner--info" role="status">
+          Full report range cached ({marketCandlesCount} bars). Chart renders up to{" "}
+          {CHART_RENDER_BAR_LIMIT} bars per view; trade focus uses an in-memory slice (no extra API
+          calls).
+        </p>
+      )}
       <ChartMarkerLegend />
       {rangeWarning && (
         <p className="banner banner--warn" role="status">
-          Selected trade entry is outside the loaded candle range.
+          Selected trade entry is outside the loaded market data range.
         </p>
       )}
       <div ref={containerRef} className="chart-canvas" />
