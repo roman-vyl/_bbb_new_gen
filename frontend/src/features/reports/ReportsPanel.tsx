@@ -23,10 +23,15 @@ export function ReportsPanel() {
   const [exitFilter, setExitFilter] = useState<ExitReasonFilterId>("all");
 
   const trades = useMemo(() => {
+    if (!selectedVariant) return [];
     return selectedVariant.trade_records.filter((t) =>
       matchesExitReasonFilter(t.exit_reason, exitFilter),
     );
-  }, [selectedVariant.trade_records, exitFilter]);
+  }, [selectedVariant, exitFilter]);
+
+  if (!report || !selectedVariant) {
+    return null;
+  }
 
   const metrics = selectedVariant.metrics;
 
@@ -35,7 +40,7 @@ export function ReportsPanel() {
       <div className="panel__header">
         <h2>Reports</h2>
         <p className="panel__hint">
-          Fixture run · schema v{report.report_schema_version} · click a row to focus Chart
+          Run {report.run_id} · schema v{report.report_schema_version} · click a row to focus Chart
         </p>
       </div>
 

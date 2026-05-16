@@ -14,17 +14,21 @@ import { toCandlestickSeriesData, tradeFocusHalfWindowSec } from "@/features/cha
 import { buildTradeMarkers, candleRangeMs, tradeOutsideCandleRange } from "@/features/chart/chartMarkers";
 import { useWorkbench } from "@/shared/context/WorkbenchContext";
 
+const STUB_CANDLES_BANNER =
+  "Report loaded. Candles are fixture/stub until market API is connected.";
+
 export function ChartPanel() {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const markersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
-  const { candles, selectedVariant, selectedTradeId, selectTrade } = useWorkbench();
+  const { candles, candlesSource, selectedVariant, selectedTradeId, selectTrade } = useWorkbench();
 
   const focusHalfWindowSec = useMemo(() => tradeFocusHalfWindowSec(candles), [candles]);
 
   const range = candleRangeMs(candles);
-  const selectedTrade = selectedVariant.trade_records.find((t) => t.trade_id === selectedTradeId);
+  const trades = selectedVariant?.trade_records ?? [];
+  const selectedTrade = trades.find((t) => t.trade_id === selectedTradeId);
   const rangeWarning =
     selectedTrade && tradeOutsideCandleRange(selectedTrade.entry_time_ms, range);
 
@@ -77,7 +81,7 @@ export function ChartPanel() {
     const series = seriesRef.current;
     const chart = chartRef.current;
     const markersPlugin = markersRef.current;
-    if (!series || !chart || !markersPlugin) return;
+    if (!series || !chart || !markersPlugin || !selectedVariant) return;
 
     series.setData(toCandlestickSeriesData(candles));
     const markers = buildTradeMarkers(selectedVariant.trade_records, selectedTradeId);
@@ -98,12 +102,21 @@ export function ChartPanel() {
     chart.timeScale().fitContent();
   }, [candles, selectedVariant, selectedTradeId, focusHalfWindowSec]);
 
+  if (!selectedVariant) {
+    return null;
+  }
+
   return (
     <section className="panel chart-panel">
       <div className="panel__header">
         <h2>Chart</h2>
-        <p className="panel__hint">Fixture candles · entry/exit markers from report trades</p>
+        <p className="panel__hint">Trade markers from loaded report · OHLC from {candlesSource}</p>
       </div>
+      {candlesSource === "fixture" && (
+        <p className="banner banner--info" role="status">
+          {STUB_CANDLES_BANNER}
+        </p>
+      )}
       <ChartMarkerLegend />
       {rangeWarning && (
         <p className="banner banner--warn" role="status">

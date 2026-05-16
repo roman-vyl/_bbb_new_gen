@@ -245,6 +245,32 @@ select {
   border: 1px solid #854d0e;
 }
 
+.banner--info {
+  background: #0c2340;
+  color: #93c5fd;
+  border: 1px solid #1e40af;
+}
+
+.workbench-gate {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  min-height: 50vh;
+  color: #94a3b8;
+}
+
+.workbench-gate--error {
+  max-width: 36rem;
+  text-align: center;
+}
+
+.workbench-gate--error h2 {
+  margin: 0;
+  color: #f87171;
+}
+
 .reports-summary {
   display: flex;
   gap: 0.75rem;

@@ -5,10 +5,18 @@ export function ContextBar() {
     symbol,
     timeframe,
     report,
+    runs,
+    selectedRunId,
+    setSelectedRunId,
     selectedVariantKey,
     setSelectedVariantKey,
     selectedTradeId,
+    candlesSource,
   } = useWorkbench();
+
+  if (!report) {
+    return null;
+  }
 
   return (
     <header className="context-bar">
@@ -24,8 +32,15 @@ export function ContextBar() {
         </label>
         <label className="context-field context-field--grow">
           <span>Run</span>
-          <select value={report.run_id} disabled title="Run picker — phase 1 API">
-            <option value={report.run_id}>{report.run_id}</option>
+          <select
+            value={selectedRunId ?? report.run_id}
+            onChange={(e) => setSelectedRunId(e.target.value)}
+          >
+            {runs.map((run) => (
+              <option key={run.run_id} value={run.run_id}>
+                {run.run_id}
+              </option>
+            ))}
           </select>
         </label>
         <label className="context-field context-field--grow">
@@ -45,7 +60,10 @@ export function ContextBar() {
           <span className="context-pill">Trade #{selectedTradeId}</span>
         )}
       </div>
-      <span className="context-bar__phase">Phase 0 · fixtures</span>
+      <span className="context-bar__phase">
+        Phase 1 · report API
+        {candlesSource === "fixture" ? " · stub candles" : ""}
+      </span>
     </header>
   );
 }
