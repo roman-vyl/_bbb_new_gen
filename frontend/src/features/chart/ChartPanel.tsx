@@ -72,7 +72,7 @@ export function ChartPanel() {
     const emaSeries = chart.addSeries(LineSeries, {
       color: "#38bdf8",
       lineWidth: 2,
-      title: `EMA ${CHART_EMA_PERIOD}`,
+      title: `EMA ${CHART_EMA_PERIOD} (overlay)`,
     });
 
     chartRef.current = chart;
@@ -138,7 +138,9 @@ export function ChartPanel() {
       <div className="panel__header">
         <h2>Chart</h2>
         <p className="panel__hint">
-          OHLC + EMA({CHART_EMA_PERIOD}) from {candlesSource} · markers from report
+          {candlesSource === "market"
+            ? `OHLC + chart overlay EMA(${CHART_EMA_PERIOD}) · trade markers from report`
+            : "Market data unavailable · trade markers from report"}
         </p>
       </div>
       {timeframeMismatch && reportTimeframe !== null && (
@@ -146,7 +148,7 @@ export function ChartPanel() {
           Report timeframe ({reportTimeframe}) differs from chart timeframe ({chartTimeframe}).
         </p>
       )}
-      {marketError !== null && (
+      {candlesSource === "unavailable" && marketError !== null && (
         <p className="banner banner--warn" role="status">
           Market data unavailable: {marketError}
         </p>

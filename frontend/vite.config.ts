@@ -13,6 +13,8 @@ export default defineConfig({
     },
   },
   server: {
+    // Windows: bind IPv4 so localhost/127.0.0.1 both work (avoid [::1]-only listen).
+    host: "127.0.0.1",
     proxy: {
       "/api": {
         target: "http://127.0.0.1:8000",

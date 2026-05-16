@@ -16,15 +16,27 @@ export type ChartBar = {
   volume?: number;
 };
 
+/** BFF overlay discriminator — not strategy features / not Data Engine indicators. */
+export const CHART_OVERLAY_EMA_KIND = "chart_overlay_ema" as const;
+
 export type IndicatorPoint = {
   time: number;
   value: number;
+  kind: typeof CHART_OVERLAY_EMA_KIND;
+};
+
+export type ChartMarketBundle = {
+  candles: ChartBar[];
+  ema: IndicatorPoint[];
 };
 
 /** MVP chart market timeframe (execution/research TF for Workbench). */
 export const CHART_MARKET_TIMEFRAME = "5m" as const;
 
-/** Default EMA overlay period for Chart (server-side series). */
+/**
+ * Default chart overlay EMA period (BFF view-layer series).
+ * Computed only over the loaded candle window; not `ema_close_*` strategy features.
+ */
 export const CHART_EMA_PERIOD = 200;
 
 export type TradeOverlay = {

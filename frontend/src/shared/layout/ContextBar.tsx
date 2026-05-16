@@ -61,7 +61,7 @@ export function ContextBar() {
         )}
       </div>
       <span className="context-bar__phase">
-        Phase 2 · {candlesSource === "market" ? "market API" : "market pending"}
+        Phase 2 · {candlesSource === "market" ? "market API" : "market unavailable"}
       </span>
     </header>
   );

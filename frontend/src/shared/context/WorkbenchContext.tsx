@@ -10,11 +10,9 @@ import {
 
 import {
   ApiError,
-  fetchCandles,
-  fetchEma,
+  fetchChartMarketBundle,
   fetchRunReport,
   fetchRunSummaries,
-  reportRangeEndMs,
 } from "@/api/client";
 import {
   CHART_EMA_PERIOD,
@@ -30,7 +28,7 @@ import {
 import configDraftFixture from "@/fixtures/config_draft.json";
 
 export type ReportLoadStatus = "loading" | "ready" | "error";
-export type CandlesSource = "fixture" | "market";
+export type CandlesSource = "market" | "unavailable";
 
 type WorkbenchState = {
   symbol: string;
@@ -86,7 +84,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
   const [report, setReport] = useState<RunReport | null>(null);
   const [candles, setCandles] = useState<ChartBar[]>([]);
   const [emaPoints, setEmaPoints] = useState<IndicatorPoint[]>([]);
-  const [candlesSource, setCandlesSource] = useState<CandlesSource>("fixture");
+  const [candlesSource, setCandlesSource] = useState<CandlesSource>("unavailable");
   const [selectedVariantKey, setSelectedVariantKey] = useState("");
   const [selectedTradeId, setSelectedTradeId] = useState<number | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
@@ -175,27 +173,19 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     async function loadMarket() {
       setMarketError(null);
       const fromMs = snapshot.data_range.from_open_time_ms;
-      const toMs = reportRangeEndMs(snapshot.data_range.to_open_time_ms, chartTimeframe);
+      const toOpenTimeMs = snapshot.data_range.to_open_time_ms;
 
       try {
-        const [loadedCandles, loadedEma] = await Promise.all([
-          fetchCandles({
-            symbol: snapshot.symbol,
-            timeframe: chartTimeframe,
-            fromMs,
-            toMs,
-          }),
-          fetchEma({
-            symbol: snapshot.symbol,
-            timeframe: chartTimeframe,
-            period: CHART_EMA_PERIOD,
-            fromMs,
-            toMs,
-          }),
-        ]);
+        const bundle = await fetchChartMarketBundle({
+          symbol: snapshot.symbol,
+          timeframe: chartTimeframe,
+          fromMs,
+          toOpenTimeMs,
+          emaPeriod: CHART_EMA_PERIOD,
+        });
         if (cancelled) return;
-        setCandles(loadedCandles);
-        setEmaPoints(loadedEma);
+        setCandles(bundle.candles);
+        setEmaPoints(bundle.ema);
         setCandlesSource("market");
       } catch (err) {
         if (cancelled) return;
@@ -208,7 +198,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
         setMarketError(message);
         setCandles([]);
         setEmaPoints([]);
-        setCandlesSource("fixture");
+        setCandlesSource("unavailable");
       }
     }
 

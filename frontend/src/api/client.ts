@@ -1,6 +1,7 @@
 import {
   assertSupportedReportSchema,
   type ChartBar,
+  type ChartMarketBundle,
   type IndicatorPoint,
   type RunReport,
   type RunSummary,
@@ -65,47 +66,54 @@ export function isApiBaseConfigured(): boolean {
   return API_BASE.length > 0;
 }
 
+/** Single request: OHLC + chart overlay EMA (one BFF/SQLite read). */
+export async function fetchChartMarketBundle(params: {
+  symbol: string;
+  timeframe: string;
+  fromMs: number;
+  toOpenTimeMs: number;
+  emaPeriod: number;
+}): Promise<ChartMarketBundle> {
+  const qs = new URLSearchParams({
+    symbol: params.symbol,
+    timeframe: params.timeframe,
+    from: String(params.fromMs),
+    to_open_time_ms: String(params.toOpenTimeMs),
+    ema_period: String(params.emaPeriod),
+  });
+  return requestJson<ChartMarketBundle>(`/api/market/chart-bundle?${qs.toString()}`);
+}
+
 export async function fetchCandles(params: {
   symbol: string;
   timeframe: string;
   fromMs: number;
-  toMs: number;
+  /** Report ``data_range.to_open_time_ms``; BFF resolves exclusive end via Data Engine ``timeframe_ms``. */
+  toOpenTimeMs: number;
 }): Promise<ChartBar[]> {
   const qs = new URLSearchParams({
     symbol: params.symbol,
     timeframe: params.timeframe,
     from: String(params.fromMs),
-    to: String(params.toMs),
+    to_open_time_ms: String(params.toOpenTimeMs),
   });
   return requestJson<ChartBar[]>(`/api/market/candles?${qs.toString()}`);
 }
 
-export async function fetchEma(params: {
+/** Chart overlay EMA from BFF (`kind: chart_overlay_ema`). Not strategy/Data Engine indicators. */
+export async function fetchChartOverlayEma(params: {
   symbol: string;
   timeframe: string;
   period: number;
   fromMs: number;
-  toMs: number;
+  toOpenTimeMs: number;
 }): Promise<IndicatorPoint[]> {
   const qs = new URLSearchParams({
     symbol: params.symbol,
     timeframe: params.timeframe,
     period: String(params.period),
     from: String(params.fromMs),
-    to: String(params.toMs),
+    to_open_time_ms: String(params.toOpenTimeMs),
   });
   return requestJson<IndicatorPoint[]>(`/api/market/indicators/ema?${qs.toString()}`);
-}
-
-/** Half-open window end for report ``to_open_time_ms`` + one bar (5m default step). */
-export function reportRangeEndMs(toOpenTimeMs: number, chartTimeframe: string): number {
-  const stepMs =
-    chartTimeframe === "5m"
-      ? 300_000
-      : chartTimeframe === "1h"
-        ? 3_600_000
-        : chartTimeframe === "15m"
-          ? 900_000
-          : 300_000;
-  return toOpenTimeMs + stepMs;
 }
