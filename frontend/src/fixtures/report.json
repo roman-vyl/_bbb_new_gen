@@ -1,0 +1,121 @@
+{
+  "run_id": "2026-05-01T120000Z_ema_pullback_BTCUSDT_5m_fixture",
+  "created_at": "2026-05-01T12:00:00Z",
+  "report_schema_version": 3,
+  "family": "ema_pullback",
+  "symbol": "BTCUSDT",
+  "timeframe": "5m",
+  "candles": 100,
+  "data_range": {
+    "from_open_time_ms": 1714550400000,
+    "to_open_time_ms": 1714579800000
+  },
+  "variants_count": 1,
+  "variants": [
+    {
+      "variant": "exp_06_ema_50_200_500_rsi_exit",
+      "config_id": "fixture_config_001",
+      "symbol": "BTCUSDT",
+      "timeframe": "5m",
+      "strategy_spec": {
+        "variant": "exp_06_ema_50_200_500_rsi_exit",
+        "symbol": "BTCUSDT",
+        "base_timeframe": "5m"
+      },
+      "metrics": {
+        "long": {
+          "trades": 2,
+          "pnl": 420.5,
+          "return_pct": 0.042,
+          "profit_factor": 1.8,
+          "win_rate": 0.5
+        },
+        "short": {
+          "trades": 1,
+          "pnl": -85.2,
+          "return_pct": -0.0085,
+          "profit_factor": 0.0,
+          "win_rate": 0.0
+        },
+        "total": {
+          "trades": 3,
+          "pnl": 335.3,
+          "return_pct": 0.0335,
+          "profit_factor": 1.4,
+          "win_rate": 0.33,
+          "sharpe": 0.92,
+          "max_drawdown": -0.018
+        },
+        "open_trades": { "long": 1, "short": 0, "total": 1 }
+      },
+      "component_counters": [],
+      "trade_records": [
+        {
+          "trade_id": 1,
+          "direction": "long",
+          "status": "closed",
+          "entry_time_ms": 1714556400000,
+          "exit_time_ms": 1714560900000,
+          "entry_price": 62740,
+          "exit_price": 62730,
+          "size": 0.15,
+          "pnl": 180.2,
+          "return_pct": 0.018,
+          "exit_reason": "stop_loss:atr_sl_far"
+        },
+        {
+          "trade_id": 2,
+          "direction": "short",
+          "status": "closed",
+          "entry_time_ms": 1714565400000,
+          "exit_time_ms": 1714569900000,
+          "entry_price": 62130,
+          "exit_price": 61530,
+          "size": 0.12,
+          "pnl": -85.2,
+          "return_pct": -0.0085,
+          "exit_reason": "take_profit:atr_tp_far"
+        },
+        {
+          "trade_id": 3,
+          "direction": "long",
+          "status": "open",
+          "entry_time_ms": 1714575900000,
+          "exit_time_ms": null,
+          "entry_price": 60730,
+          "exit_price": null,
+          "size": 0.18,
+          "pnl": null,
+          "return_pct": null,
+          "exit_reason": "open"
+        },
+        {
+          "trade_id": 4,
+          "direction": "long",
+          "status": "closed",
+          "entry_time_ms": 1714552500000,
+          "exit_time_ms": 1714554300000,
+          "entry_price": 62230,
+          "exit_price": 62680,
+          "size": 0.1,
+          "pnl": 240.3,
+          "return_pct": 0.024,
+          "exit_reason": "signal:rsi_exit_base"
+        },
+        {
+          "trade_id": 5,
+          "direction": "short",
+          "status": "closed",
+          "entry_time_ms": 1714563000000,
+          "exit_time_ms": 1714566600000,
+          "entry_price": 62450,
+          "exit_price": 61970,
+          "size": 0.11,
+          "pnl": 52.0,
+          "return_pct": 0.0052,
+          "exit_reason": "unknown"
+        }
+      ]
+    }
+  ]
+}
