@@ -189,6 +189,7 @@ def test_extract_trade_records_closed_and_open() -> None:
     assert t0["direction"] == "long"
     assert t0["entry_time_ms"] is not None
     assert t0["exit_time_ms"] is not None
+    assert t0["exit_reason"] == "unknown"
 
     exits_open = pd.Series([False, False, False, False, False], index=idx)
     pf_o = vbt.Portfolio.from_signals(close, entries, exits_open, freq="1h")
@@ -196,6 +197,7 @@ def test_extract_trade_records_closed_and_open() -> None:
     assert rec_o[0]["status"] == "open"
     assert rec_o[0]["exit_time_ms"] is None
     assert rec_o[0]["exit_price"] is None
+    assert rec_o[0]["exit_reason"] == "open"
 
     short_entries = pd.Series([False, True, False, False, False], index=idx)
     short_exits = pd.Series([False, False, False, True, False], index=idx)
@@ -212,6 +214,7 @@ def test_extract_trade_records_closed_and_open() -> None:
     assert len(rec_s) == 1
     assert rec_s[0]["status"] == "closed"
     assert rec_s[0]["direction"] == "short"
+    assert rec_s[0]["exit_reason"] == "unknown"
 
 
 def test_variant_payload_from_instance_matches_schema() -> None:

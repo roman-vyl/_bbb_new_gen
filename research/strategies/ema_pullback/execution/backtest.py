@@ -183,7 +183,14 @@ def run_strategy_spec(
         **stop_kwargs,
     )
 
-    trade_records = extract_trade_records(pf, close)
+    trade_records = extract_trade_records(
+        pf,
+        close,
+        high=high_s,
+        low=low_s,
+        open_s=open_s,
+        attribution=exit_outputs.attribution,
+    )
 
     sharpe = ensure_finite_metric("sharpe_ratio", float(pf.sharpe_ratio()))
     max_dd_raw = pf.max_drawdown()

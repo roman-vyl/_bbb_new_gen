@@ -99,6 +99,78 @@ def test_default_factory_exit_rules_match_atr_shortcut_defaults() -> None:
     )
 
 
+def test_build_exit_outputs_skips_boolean_counters_for_disabled_trade_side() -> None:
+    base = make_ema_pullback_strategy_spec(enabled_sides=("long",))
+    spec = replace(
+        base,
+        components=component_stack(
+            exits=(
+                exit_rsi(
+                    instance_id="rsi_long_only",
+                    timeframe="base",
+                    period=14,
+                    long_exit_above=70.0,
+                    short_exit_below=30.0,
+                ),
+            )
+        ),
+    )
+    plan = build_feature_plan_from_strategy_spec(spec)
+    idx = pd.date_range("2024-01-01", periods=4, freq="h", tz="UTC")
+    close = pd.Series([100.0, 101.0, 102.0, 103.0], index=idx)
+    df = pd.DataFrame(
+        {
+            "close": close,
+            "ema_close_base_200": close,
+            "rsi_close_base_14": [50.0, 75.0, 20.0, 50.0],
+        },
+        index=idx,
+    )
+    out = build_exit_outputs_from_spec(df, spec, plan)
+    boolean_counters = [c for c in out.output_counters if c["output_type"] == "boolean"]
+    assert len(boolean_counters) == 1
+    assert boolean_counters[0]["side"] == "long"
+    assert out.attribution is not None
+    short_series = out.attribution.short_signal_by_rule[0]
+    assert short_series is not None
+    assert not short_series.any()
+
+
+def test_build_exit_outputs_attribution_matches_aggregated_stops() -> None:
+    """Attribution context must come from the same single pass as portfolio stops."""
+
+    base = make_ema_pullback_strategy_spec()
+    spec = replace(
+        base,
+        components=component_stack(
+            exits=(
+                exit_atr_stop_loss(atr_period=14, atr_multiplier=1.5, instance_id="atr_sl_fast"),
+                exit_atr_stop_loss(atr_period=14, atr_multiplier=2.0, instance_id="atr_sl_slow"),
+            )
+        ),
+    )
+    plan = build_feature_plan_from_strategy_spec(spec)
+    idx = pd.date_range("2024-01-01", periods=4, freq="h", tz="UTC")
+    close = pd.Series([100.0, 100.0, 100.0, 100.0], index=idx)
+    fast_stop = pd.Series([1.5, 1.5, 1.5, 1.5], index=idx)
+    slow_stop = pd.Series([2.0, 2.0, 2.0, 2.0], index=idx)
+    df = pd.DataFrame(
+        {
+            "close": close,
+            "ema_close_base_200": close,
+            plan.exit_distance_columns["atr_sl_fast"]: fast_stop,
+            plan.exit_distance_columns["atr_sl_slow"]: slow_stop,
+        },
+        index=idx,
+    )
+    out = build_exit_outputs_from_spec(df, spec, plan)
+    assert out.attribution is not None
+    ctx = out.attribution
+    pd.testing.assert_series_equal(ctx.sl_stop_agg, out.sl_stop, check_names=False)
+    pd.testing.assert_series_equal(ctx.distance_ratio_by_rule[0], fast_stop / close, check_names=False)
+    pd.testing.assert_series_equal(ctx.distance_ratio_by_rule[1], slow_stop / close, check_names=False)
+
+
 def test_build_exit_outputs_aggregates_repeated_distance_instances_by_kind() -> None:
     base = make_ema_pullback_strategy_spec()
     spec = replace(

@@ -82,6 +82,16 @@ exit_reason
 exit_reason = "unknown"
 ```
 
+После Step 16 ([`16_exit_reason_attribution_plan.md`](16_exit_reason_attribution_plan.md)) для закрытых сделок ожидаются машиночитаемые строки с префиксом и `instance_id` правила из spec, например:
+
+```text
+stop_loss:<instance_id>
+take_profit:<instance_id>
+signal:<instance_id>
+```
+
+Для открытых сделок (выхода ещё нет): `exit_reason = "open"`. Если контекст атрибуции недоступен или режим не поддержан — по-прежнему `unknown`. Приоритет отчёта согласован с vectorbt: стоп важнее boolean signal exit на том же баре; внутри стопов — сначала stop loss, затем take profit (см. план Step 16).
+
 ## Где писать код
 
 Добавить маленький модуль:

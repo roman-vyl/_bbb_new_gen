@@ -13,6 +13,11 @@ from typing import Any, Mapping
 
 import pandas as pd
 
+from research.strategies.ema_pullback.execution.exit_attribution import (
+    ExitAttributionContext,
+    classify_exit_reason,
+)
+
 
 def _repo_root() -> Path:
     return Path(__file__).resolve().parents[4]
@@ -95,6 +100,45 @@ def json_safe(value: Any) -> Any:
         return str(value)
 
 
+def _series_index_aligned(series: pd.Series, index: pd.Index) -> bool:
+    return series.index.equals(index)
+
+
+def _attribution_context_aligned(ctx: ExitAttributionContext, index: pd.Index) -> bool:
+    if not ctx.index.equals(index):
+        return False
+    for group in (
+        ctx.long_signal_by_rule,
+        ctx.short_signal_by_rule,
+        ctx.distance_ratio_by_rule,
+    ):
+        for series in group:
+            if series is not None and not _series_index_aligned(series, index):
+                return False
+    return _series_index_aligned(ctx.sl_stop_agg, index) and _series_index_aligned(ctx.tp_stop_agg, index)
+
+
+def _can_use_exit_attribution(
+    close: pd.Series,
+    *,
+    high: pd.Series | None,
+    low: pd.Series | None,
+    open_s: pd.Series | None,
+    attribution: ExitAttributionContext | None,
+) -> bool:
+    if attribution is None or high is None or low is None or open_s is None:
+        return False
+    index = close.index
+    if not (
+        _series_index_aligned(high, index)
+        and _series_index_aligned(low, index)
+        and _series_index_aligned(open_s, index)
+        and _attribution_context_aligned(attribution, index)
+    ):
+        return False
+    return True
+
+
 def _index_to_open_time_ms(index: pd.Index, idx: Any) -> int | None:
     if idx is None or (isinstance(idx, float) and math.isnan(idx)):
         return None
@@ -114,13 +158,25 @@ def _index_to_open_time_ms(index: pd.Index, idx: Any) -> int | None:
     return int(ts.value // 1_000_000)
 
 
-def extract_trade_records(pf: Any, close: pd.Series) -> list[dict[str, Any]]:
+def extract_trade_records(
+    pf: Any,
+    close: pd.Series,
+    *,
+    high: pd.Series | None = None,
+    low: pd.Series | None = None,
+    open_s: pd.Series | None = None,
+    attribution: ExitAttributionContext | None = None,
+) -> list[dict[str, Any]]:
     """Normalize vectorbt portfolio trades into Stage 9 trade_records (library-agnostic fields)."""
 
     index = close.index
     records_df = pf.trades.records
     if records_df is None or len(records_df) == 0:
         return []
+
+    use_attr = _can_use_exit_attribution(
+        close, high=high, low=low, open_s=open_s, attribution=attribution
+    )
 
     out: list[dict[str, Any]] = []
     # TradeDirectionT(Long=0, Short=1), TradeStatusT(Open=0, Closed=1)
@@ -143,6 +199,21 @@ def extract_trade_records(pf: Any, close: pd.Series) -> list[dict[str, Any]]:
             exit_ms = None
             exit_p = None
 
+        if status == "open":
+            exit_reason = "open"
+        elif use_attr:
+            assert attribution is not None and high is not None and low is not None and open_s is not None
+            exit_reason = classify_exit_reason(
+                row=row,
+                close=close,
+                high=high,
+                low=low,
+                open_=open_s,
+                ctx=attribution,
+            )
+        else:
+            exit_reason = "unknown"
+
         out.append(
             {
                 "trade_id": i + 1,
@@ -155,7 +226,7 @@ def extract_trade_records(pf: Any, close: pd.Series) -> list[dict[str, Any]]:
                 "size": size_v,
                 "pnl": pnl_v,
                 "return_pct": ret_v,
-                "exit_reason": "unknown",
+                "exit_reason": exit_reason,
             }
         )
     return out
