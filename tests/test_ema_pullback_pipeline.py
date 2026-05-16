@@ -119,11 +119,14 @@ def test_exit_outputs_include_boolean_and_distance_instance_counters() -> None:
     df[plan.rsi_columns[("base", 3)]] = [50.0, 70.0] * 15
 
     exit_outputs = build_exit_outputs_from_spec(df, spec, plan)
-    counters = {(item["instance_id"], item["output_type"]): item for item in exit_outputs.output_counters}
+    counters = {
+        (item["instance_id"], item["output_type"], item.get("side")): item
+        for item in exit_outputs.output_counters
+    }
 
-    assert counters[("rsi_exit_base", "boolean")]["counters"]["signal_count"] == 15
-    assert counters[("atr_stop_loss", "distance")]["counters"]["non_null_distance_count"] > 0
-    assert counters[("atr_take_profit", "distance")]["counters"]["ready_count"] > 0
+    assert counters[("rsi_exit_base", "boolean", "long")]["counters"]["signal_count"] == 15
+    assert counters[("atr_stop_loss", "distance", None)]["counters"]["non_null_distance_count"] > 0
+    assert counters[("atr_take_profit", "distance", None)]["counters"]["ready_count"] > 0
 
 
 def test_build_signals_from_spec_can_emit_short_entries_when_enabled() -> None:

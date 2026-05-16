@@ -100,6 +100,45 @@ def json_safe(value: Any) -> Any:
         return str(value)
 
 
+def _series_index_aligned(series: pd.Series, index: pd.Index) -> bool:
+    return series.index.equals(index)
+
+
+def _attribution_context_aligned(ctx: ExitAttributionContext, index: pd.Index) -> bool:
+    if not ctx.index.equals(index):
+        return False
+    for group in (
+        ctx.long_signal_by_rule,
+        ctx.short_signal_by_rule,
+        ctx.distance_ratio_by_rule,
+    ):
+        for series in group:
+            if series is not None and not _series_index_aligned(series, index):
+                return False
+    return _series_index_aligned(ctx.sl_stop_agg, index) and _series_index_aligned(ctx.tp_stop_agg, index)
+
+
+def _can_use_exit_attribution(
+    close: pd.Series,
+    *,
+    high: pd.Series | None,
+    low: pd.Series | None,
+    open_s: pd.Series | None,
+    attribution: ExitAttributionContext | None,
+) -> bool:
+    if attribution is None or high is None or low is None or open_s is None:
+        return False
+    index = close.index
+    if not (
+        _series_index_aligned(high, index)
+        and _series_index_aligned(low, index)
+        and _series_index_aligned(open_s, index)
+        and _attribution_context_aligned(attribution, index)
+    ):
+        return False
+    return True
+
+
 def _index_to_open_time_ms(index: pd.Index, idx: Any) -> int | None:
     if idx is None or (isinstance(idx, float) and math.isnan(idx)):
         return None
@@ -135,14 +174,8 @@ def extract_trade_records(
     if records_df is None or len(records_df) == 0:
         return []
 
-    use_attr = (
-        attribution is not None
-        and high is not None
-        and low is not None
-        and open_s is not None
-        and len(high) == len(close)
-        and len(low) == len(close)
-        and len(open_s) == len(close)
+    use_attr = _can_use_exit_attribution(
+        close, high=high, low=low, open_s=open_s, attribution=attribution
     )
 
     out: list[dict[str, Any]] = []
@@ -168,7 +201,8 @@ def extract_trade_records(
 
         if status == "open":
             exit_reason = "open"
-        elif use_attr and attribution is not None and high is not None and low is not None and open_s is not None:
+        elif use_attr:
+            assert attribution is not None and high is not None and low is not None and open_s is not None
             exit_reason = classify_exit_reason(
                 row=row,
                 close=close,

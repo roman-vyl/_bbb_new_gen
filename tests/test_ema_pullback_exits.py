@@ -99,6 +99,41 @@ def test_default_factory_exit_rules_match_atr_shortcut_defaults() -> None:
     )
 
 
+def test_build_exit_outputs_attribution_matches_aggregated_stops() -> None:
+    """Attribution context must come from the same single pass as portfolio stops."""
+
+    base = make_ema_pullback_strategy_spec()
+    spec = replace(
+        base,
+        components=component_stack(
+            exits=(
+                exit_atr_stop_loss(atr_period=14, atr_multiplier=1.5, instance_id="atr_sl_fast"),
+                exit_atr_stop_loss(atr_period=14, atr_multiplier=2.0, instance_id="atr_sl_slow"),
+            )
+        ),
+    )
+    plan = build_feature_plan_from_strategy_spec(spec)
+    idx = pd.date_range("2024-01-01", periods=4, freq="h", tz="UTC")
+    close = pd.Series([100.0, 100.0, 100.0, 100.0], index=idx)
+    fast_stop = pd.Series([1.5, 1.5, 1.5, 1.5], index=idx)
+    slow_stop = pd.Series([2.0, 2.0, 2.0, 2.0], index=idx)
+    df = pd.DataFrame(
+        {
+            "close": close,
+            "ema_close_base_200": close,
+            plan.exit_distance_columns["atr_sl_fast"]: fast_stop,
+            plan.exit_distance_columns["atr_sl_slow"]: slow_stop,
+        },
+        index=idx,
+    )
+    out = build_exit_outputs_from_spec(df, spec, plan)
+    assert out.attribution is not None
+    ctx = out.attribution
+    pd.testing.assert_series_equal(ctx.sl_stop_agg, out.sl_stop, check_names=False)
+    pd.testing.assert_series_equal(ctx.distance_ratio_by_rule[0], fast_stop / close, check_names=False)
+    pd.testing.assert_series_equal(ctx.distance_ratio_by_rule[1], slow_stop / close, check_names=False)
+
+
 def test_build_exit_outputs_aggregates_repeated_distance_instances_by_kind() -> None:
     base = make_ema_pullback_strategy_spec()
     spec = replace(
