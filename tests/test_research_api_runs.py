@@ -1,4 +1,7 @@
-"""Research API BFF — runs endpoints."""
+"""Research API BFF — runs endpoints.
+
+Requires: ``pip install -e ".[dev,workbench-api]"`` (fastapi, httpx).
+"""
 
 from __future__ import annotations
 
@@ -6,6 +9,9 @@ import json
 from pathlib import Path
 
 import pytest
+
+pytestmark = pytest.mark.workbench_api
+
 from fastapi.testclient import TestClient
 
 from research_api.main import app
@@ -14,6 +20,7 @@ from research_api.services.results_reader import (
     list_run_summaries,
     load_run_report,
 )
+from research_api.services.run_id import InvalidRunIdError, validate_run_id
 
 _SAMPLE_REPORT = {
     "run_id": "2026-05-01T120000Z_ema_pullback_BTCUSDT_5m",
@@ -130,6 +137,42 @@ def test_http_runs_endpoints(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
 
     missing = client.get("/api/research/runs/does-not-exist")
     assert missing.status_code == 404
+
+
+def test_validate_run_id_rejects_unsafe() -> None:
+    with pytest.raises(InvalidRunIdError):
+        validate_run_id("../latest")
+    with pytest.raises(InvalidRunIdError):
+        validate_run_id("foo/bar")
+    with pytest.raises(InvalidRunIdError):
+        validate_run_id("foo\\bar")
+
+
+def test_http_invalid_run_id_returns_400(monkeypatch: pytest.MonkeyPatch) -> None:
+    import research_api.services.results_reader as reader
+
+    monkeypatch.setattr(reader, "default_results_dir", lambda: Path("/unused"))
+
+    client = TestClient(app)
+    # Single path segment after decode (encoded ``/`` is rejected by the ASGI stack with 404).
+    for bad_id in ("%2E%2E", "foo%5Cbar", "bad%20id", "foo%40bar"):
+        resp = client.get(f"/api/research/runs/{bad_id}")
+        assert resp.status_code == 400, bad_id
+        assert "Invalid run_id" in resp.json()["detail"]
+
+
+def test_http_missing_valid_run_id_returns_404(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import research_api.services.results_reader as reader
+
+    monkeypatch.setattr(reader, "default_results_dir", lambda: tmp_path)
+
+    client = TestClient(app)
+    valid_missing = "2026-05-01T120000Z_ema_pullback_BTCUSDT_5m"
+    resp = client.get(f"/api/research/runs/{valid_missing}")
+    assert resp.status_code == 404
 
 
 def test_http_unsupported_schema(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -10,6 +10,7 @@ from research_api.contracts.runs import (
     RunReport,
     RunSummary,
 )
+from research_api.services.run_id import validate_run_id
 
 
 class ResultsNotFoundError(FileNotFoundError):
@@ -57,7 +58,8 @@ def parse_run_report(payload: dict) -> RunReport:
 
 
 def load_run_report(*, run_id: str, results_dir: Path | None = None) -> RunReport:
-    path = _runs_dir(results_dir) / f"{run_id}.json"
+    safe_run_id = validate_run_id(run_id)
+    path = _runs_dir(results_dir) / f"{safe_run_id}.json"
     return parse_run_report(_load_json(path))
 
 

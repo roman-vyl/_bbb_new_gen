@@ -15,11 +15,14 @@ from research_api.services.results_reader import (
     load_latest_run_report,
     load_run_report,
 )
+from research_api.services.run_id import InvalidRunIdError
 
 router = APIRouter(prefix="/api/research", tags=["research"])
 
 
 def _http_from_reader(exc: Exception) -> HTTPException:
+    if isinstance(exc, InvalidRunIdError):
+        return HTTPException(status_code=400, detail=str(exc))
     if isinstance(exc, ResultsNotFoundError):
         return HTTPException(status_code=404, detail=str(exc))
     if isinstance(exc, UnsupportedSchemaVersionError):

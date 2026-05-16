@@ -27,6 +27,8 @@ where = ["."]
 include = ["data_engine*", "research*", "research_api*"]
 
 [tool.pytest.ini_options]
+# Workbench BFF tests: pip install -e ".[dev,workbench-api]"
 markers = [
     "optional_vectorbt: requires the project research extra (vectorbt)",
+    "workbench_api: requires the workbench-api extra (fastapi, httpx); install with pip install -e \".[dev,workbench-api]\"",
 ]
