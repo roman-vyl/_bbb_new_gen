@@ -256,6 +256,39 @@ def test_multiple_stop_loss_rules_picks_tighter_min_at_entry() -> None:
     )
 
 
+def test_multiple_take_profit_rules_picks_tighter_min_at_entry() -> None:
+    idx = pd.date_range("2024-01-01", periods=5, freq="h", tz="UTC")
+    entry_i = 1
+    exit_i = 3
+    close_val = 100.0
+    close = pd.Series(close_val, index=idx, dtype=float)
+    wide = pd.Series([float("nan"), 5.0, float("nan"), float("nan"), float("nan")], index=idx)
+    tight = pd.Series([float("nan"), 1.0, float("nan"), float("nan"), float("nan")], index=idx)
+    wide_ratio = wide / close
+    tight_ratio = tight / close
+    agg_tp = pd.concat([wide, tight], axis=1).min(axis=1) / close
+    nan_s = pd.Series(float("nan"), index=idx, dtype=float)
+    ctx = ExitAttributionContext(
+        index=idx,
+        instance_ids=("wide_tp", "tight_tp"),
+        exit_kinds=("take_profit", "take_profit"),
+        long_signal_by_rule=(None, None),
+        short_signal_by_rule=(None, None),
+        distance_ratio_by_rule=(wide_ratio, tight_ratio),
+        sl_stop_agg=nan_s,
+        tp_stop_agg=agg_tp,
+    )
+    tp_level = close_val * (1.0 + 0.01)
+    high = pd.Series(close_val, index=idx, dtype=float)
+    high.iloc[exit_i] = tp_level + 0.5
+    low = pd.Series(close_val, index=idx, dtype=float)
+    open_ = pd.Series(close_val, index=idx, dtype=float)
+    row = {"status": 1, "direction": 0, "entry_idx": entry_i, "exit_idx": exit_i}
+    assert classify_exit_reason(row=row, close=close, high=high, low=low, open_=open_, ctx=ctx) == (
+        "take_profit:tight_tp"
+    )
+
+
 def test_can_use_attribution_false_on_index_mismatch() -> None:
     idx = pd.date_range("2024-01-01", periods=4, freq="h", tz="UTC")
     close = pd.Series([1.0, 2.0, 3.0, 4.0], index=idx)

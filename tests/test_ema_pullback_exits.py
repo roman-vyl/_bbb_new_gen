@@ -99,6 +99,43 @@ def test_default_factory_exit_rules_match_atr_shortcut_defaults() -> None:
     )
 
 
+def test_build_exit_outputs_skips_boolean_counters_for_disabled_trade_side() -> None:
+    base = make_ema_pullback_strategy_spec(enabled_sides=("long",))
+    spec = replace(
+        base,
+        components=component_stack(
+            exits=(
+                exit_rsi(
+                    instance_id="rsi_long_only",
+                    timeframe="base",
+                    period=14,
+                    long_exit_above=70.0,
+                    short_exit_below=30.0,
+                ),
+            )
+        ),
+    )
+    plan = build_feature_plan_from_strategy_spec(spec)
+    idx = pd.date_range("2024-01-01", periods=4, freq="h", tz="UTC")
+    close = pd.Series([100.0, 101.0, 102.0, 103.0], index=idx)
+    df = pd.DataFrame(
+        {
+            "close": close,
+            "ema_close_base_200": close,
+            "rsi_close_base_14": [50.0, 75.0, 20.0, 50.0],
+        },
+        index=idx,
+    )
+    out = build_exit_outputs_from_spec(df, spec, plan)
+    boolean_counters = [c for c in out.output_counters if c["output_type"] == "boolean"]
+    assert len(boolean_counters) == 1
+    assert boolean_counters[0]["side"] == "long"
+    assert out.attribution is not None
+    short_series = out.attribution.short_signal_by_rule[0]
+    assert short_series is not None
+    assert not short_series.any()
+
+
 def test_build_exit_outputs_attribution_matches_aggregated_stops() -> None:
     """Attribution context must come from the same single pass as portfolio stops."""
 

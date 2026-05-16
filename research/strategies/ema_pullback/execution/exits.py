@@ -123,30 +123,32 @@ def build_exit_outputs_from_spec(
             rule_i = len(instance_ids) - 1
             long_by_idx[rule_i] = long_s
             short_by_idx[rule_i] = short_s
-            long_signal_parts.append(long_s)
-            short_signal_parts.append(short_s)
-            counters.append(
-                {
-                    "role": "exits",
-                    "component_id": rule.component_id,
-                    "instance_id": rule.instance_id,
-                    "exit_kind": rule.exit_kind,
-                    "side": "long",
-                    "output_type": "boolean",
-                    "counters": {"signal_count": int(long_s.sum())},
-                }
-            )
-            counters.append(
-                {
-                    "role": "exits",
-                    "component_id": rule.component_id,
-                    "instance_id": rule.instance_id,
-                    "exit_kind": rule.exit_kind,
-                    "side": "short",
-                    "output_type": "boolean",
-                    "counters": {"signal_count": int(short_s.sum())},
-                }
-            )
+            if spec.trade_sides.includes("long"):
+                long_signal_parts.append(long_s)
+                counters.append(
+                    {
+                        "role": "exits",
+                        "component_id": rule.component_id,
+                        "instance_id": rule.instance_id,
+                        "exit_kind": rule.exit_kind,
+                        "side": "long",
+                        "output_type": "boolean",
+                        "counters": {"signal_count": int(long_s.sum())},
+                    }
+                )
+            if spec.trade_sides.includes("short"):
+                short_signal_parts.append(short_s)
+                counters.append(
+                    {
+                        "role": "exits",
+                        "component_id": rule.component_id,
+                        "instance_id": rule.instance_id,
+                        "exit_kind": rule.exit_kind,
+                        "side": "short",
+                        "output_type": "boolean",
+                        "counters": {"signal_count": int(short_s.sum())},
+                    }
+                )
         else:
             distance_col = _distance_column(plan, rule)
             distance = exit_fn(df, rule=rule, distance_col=distance_col).astype(float)
