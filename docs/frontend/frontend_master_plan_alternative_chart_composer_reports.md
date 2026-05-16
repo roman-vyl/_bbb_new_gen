@@ -1,109 +1,353 @@
-# Frontend — альтернативный мастер-план (Chart–Composer–Reports)
+# Research Workbench — мастер-план (Chart · Composer · Reports)
 
-Этот документ — **вторая линия планирования** рядом с осторожным планом в `frontend_master_plan.md`.  
-Тот файл **не заменяется** и **не дублируется здесь**: при расхождении трактовок смотрите оба плана и выберите активную линию для спринтов.
+Этот документ — **вторая линия планирования** рядом с осторожным планом в [`frontend_master_plan.md`](frontend_master_plan.md).  
+Тот файл **не заменяется**: при расхождении трактовок смотрите оба плана и выберите активную линию для спринтов.
+
+**Research Workbench** — рабочее место исследователя (не frontend-витрина и не «страничка»). Четыре зоны продукта: **Chart**, **Strategy Composer**, **Reports**, плюс выбор прогона в **context bar** (отдельной вкладки Runs нет).
+
+---
 
 ## Цель
 
-Сразу строить **продуктовый UI из трёх опор**: свечной график, визуальный композер конфигураций экземпляров стратегии, просмотр JSON-отчётов с наложением сделок и выходов на график. Read-слой и API **подстраиваются под экраны**, а не наоборот.
-
-Граница по ответственности **та же по смыслу**, что и в первом плане:
+Сразу строить **вертикальные срезы** от fixture к API: свечной график, schema-driven композер **draft config**, просмотр JSON-отчётов с оверлеями сделок на графике. BFF (`research_api/`) и contracts **фиксируют границу**; UI не лезет в research Python, файлы и Data Engine напрямую.
 
 ```text
 Data Engine отдаёт чистые данные (read).
 Research создаёт экземпляры стратегий, валидирует конфиги и артефакты результатов.
-Frontend показывает и редактирует черновики конфигурации только в рамках согласованной валидации;
+Research Workbench показывает данные и редактирует только draft config до валидации на бэкенде;
 исполнение бэктеста и каноническое состояние — на стороне research.
 ```
 
-## Чего frontend не должен делать
+Граница вызовов:
 
-- Не запускать живую торговлю и не отправлять ордера.
-- Не менять Data Engine напрямую.
-- Не обходить валидацию research-слоя при сохранении конфигурации.
-- Не считать бэктест на клиенте как источник правды (отображение — да; истина метрик — в отчёте/API).
+```text
+Workbench (browser) → research_api/ (FastAPI BFF) → research layer | data read adapter
+
+Запрещено: Workbench → import Python / SQLite / прямое редактирование research/
+```
+
+---
 
 ## Принцип планирования
 
-- **Вертикальные срезы**: от fixture → к API, но график и оверлеи сделок **не откладываются** «на потом».
-- **Схема важнее формы API**: экраны и сериализация привязаны к **JSON Schema / OpenAPI** конфигов и отчётов; эндпоинты могут догонять.
-- **Конфиг из UI = черновик**: «сохранить / применить» только после ответа **research** (валидация + согласованный канал записи).
+- **Вертикальные срезы (фазы 0–4)**: одна фаза = один релизопригодный сценарий + минимальный API-slice. Следующая фаза **не начинается**, пока не закрыт DoD предыдущей. Не строить параллельные «дорожки» из полуготовых подсистем.
+- **Схема важнее формы API**: экраны и сериализация привязаны к **OpenAPI / JSON Schema**; эндпоинты догоняют по фазам.
+- **Конфиг из UI = draft** до `POST /validate`; persist и backtest — только после `ok` на бэкенде.
+- График и оверлеи сделок **не откладываются** «на потом» (фаза 0 — fixtures с маркерами).
+
+Сквозные **опоры** (ниже) задают направление; **реализация идёт по фазам 0–4**, не параллельно по трём столбцам.
 
 ---
 
-## Опора 1 — Свечной график (первый компонент)
+## UI: вкладки и context bar
 
-График — **ядро layout** (центральная большая область приложения).
+### Три вкладки (с фазы 0)
 
-- Технология: ориентир — **Lightweight Charts** (TradingView) или эквивалент с серией OHLC, зумом, скроллом и серией маркеров.
-- **MVP**: статический JSON свечей + зум/скролл + переключение символа/таймфрейма из состояния/URL.
-- **Дальше**: те же данные с read-only API (Data Engine или агрегированный read-слой по договорённости).
-- **Контракт бара**: единый формат `{ time, open, high, low, close, volume? }` и единая привязка времени к барам отчёта.
+| Вкладка | Содержание |
+|---------|------------|
+| **Chart** | Свечи, EMA overlays (с фазы 2), entry/exit markers, exit_reason badges, highlight выбранной сделки |
+| **Strategy Composer** | Instances, sections, component slots, params, validate, draft JSON / serialize preview |
+| **Reports** | Summary, variants, trade table, filters, selected trade details |
 
-Веха: **«рабочий свечной график + fixture или реальные данные»** с первого значимого релиза UI.
+### Context bar (shared layout)
 
----
+Всегда виден (верхний или левый):
 
-## Опора 2 — Визуальное управление конфигурацией экземпляров стратегии
+- `symbol` — MVP: **BTCUSDT**
+- `timeframe` — MVP: **5m** (минимальный execution/research TF; lower-TF policy отложена)
+- `selected run`
+- `selected strategy instance` (variant / instance)
 
-Отдельный крупный модуль: не «простая форма на будущее», а **блочный графический UI**.
+### Структура кода (фаза 0)
 
-### UX
+Vite/React: всё приложение внутри `src/`; фичи — в `features/`, не в корне `frontend/`.
 
-- **Несколько экземпляров**: список/вкладки карточек («Instance A, B…»), кнопка **«+ добавить экземпляр»**.
-- Внутри экземпляра — **секции** (вход, фильтры, выходы, блокеры, risk — по доменной модели проекта).
-- В каждой секции — ряд компонентов; **«+»** добавляет новый слот компонента.
-- Слот: выбор **типа компонента** + **параметры** (timeframe, период EMA и т.д.) — по возможности **поля, сгенерированные из схемы**, а не ручной список полей на каждый тип.
-- Drag-and-drop между слотами — **опционально** после стабилизации модели; на старте достаточно **+ / удалить / дублировать экземпляр**.
+```text
+frontend/
+  src/
+    features/
+      chart/              # вкладка Chart, серия OHLC, markers
+      composer/           # вкладка Strategy Composer, draft state
+      reports/            # вкладка Reports, таблица сделок
+    shared/               # layout, context bar, routing, UI primitives
+    api/
+      types.ts            # централизованные TS-типы (не в компонентах)
+      client.ts           # fetch-обёртки — с фазы 1+
+    fixtures/
+      candles.json
+      report.json
+      config_draft.json   # draft JSON, не боевой YAML
+  package.json
+  vite.config.ts
+  ...
+```
 
-### Техническая связка
+Импорты: `@/features/chart`, `@/shared/...`, `@/api/types` (alias `@` → `src/` в Vite).
 
-- Состояние UI сериализуется в **тот JSON**, который ожидает research (или явно оговорённый промежуточный документ).
-- Действие **«Проверить»** / перед сохранением — **POST валидации** на стороне research; ошибки показываются **привязанными к блокам** (как в IDE).
-- Персистенция: только через согласованный механизм (файл в репо, API и т.д.); без «тихого» обхода правил.
+Технология графика: **Lightweight Charts** (TradingView) или эквивалент (OHLC, zoom, markers).
 
-### Риск (явно)
-
-В первом плане визуальный конструктор отложен до стабильного `StrategySpec`. В этой линии вы **принимаете** возможные переделки UI при эволюции схемы. Смягчение: **генерация форм из схемы** + поле **`config_version`** (или аналог) в JSON.
-
----
-
-## Опора 3 — Просмотр и анализ JSON-отчётов в GUI
-
-- Источник: **выбор run из API** и/или **локальная загрузка `.json`** (удобно до полного API).
-- Панель: метрики, таблица сделок, фильтры (сторона, причина выхода и т.д. — в т.ч. совместимо с планами вроде exit reason attribution).
-- **Связь с графиком**:
-  - маркеры **входа** и **выхода** (различимые визуально);
-  - линии/зоны, если в отчёте есть уровни (SL/TP/trailing — при наличии в данных);
-  - клик по строке сделки → **центрирование и подсветка** на свечном графике.
-- Таймфрейм: по умолчанию из отчёта/экземпляра; при расхождении — явный переключатель и предупреждение.
-
----
-
-## Фазы (параллельные дорожки)
-
-| Фаза | Содержание |
-|------|------------|
-| **0** | Каркас приложения, роутинг, базовая визуальная система; график + **fixture** свечей и **fixture** отчёта с несколькими сделками на тех же барах. |
-| **1** | Список прогонов (read) + загрузка отчёта; оверлеи сделок из реального JSON. |
-| **2** | Read API для OHLC (или прокси к существующему слою); график с сервера. |
-| **3** | Композер: один экземпляр, секции, «+» слоты, сериализация, **validate** на бэкенде. |
-| **4** | Несколько экземпляров, копирование, полировка таблицы сделок и фильтров по причинам выхода. |
-
-Минимальный API можно вводить **точечно**: `GET` отчётов и свечей раньше полного набора; **endpoint валидации конфига** — раньше полного CRUD.
+**Chart — будущие overlays** (после MVP): SL/TP levels, entry/exit price lines, touch zones.
 
 ---
 
-## Guardrails (общие с первым планом)
+## `research_api/` — Backend-for-Frontend
 
-- Frontend не исполняет сделки на бирже.
-- За построение стратегии, прогон и канонические артефакты отвечает research.
-- За рыночные данные — Data Engine / согласованный read-слой.
-- Конфигурация из UI не обходит валидацию research-слоя.
+Отдельный **top-level** пакет `research_api/` (не вложенный в `research/`): тонкий FastAPI-адаптер под экраны Workbench. Не Data Engine, не research core (runner, vectorbt, strategy families).
+
+- **Стек**: FastAPI + Pydantic v2; OpenAPI/Swagger из коробки.
+- **Зависимости**: optional extra в `pyproject.toml` (например `workbench-api`: `fastapi`, `uvicorn`).
+
+### Префиксы API
+
+| Префикс | Назначение |
+|---------|------------|
+| `/api/research/...` | Runs, reports, component catalog, config, backtests |
+| `/api/market/...` | Candles, indicators (view models для Chart) |
+
+### Contracts
+
+```text
+research_api/contracts/          # Pydantic — источник правды для HTTP
+  chart.py                       # ChartBar, IndicatorPoint, TradeOverlay
+  runs.py                        # RunSummary, RunReport
+  config.py                      # StrategyConfigDraft, ValidationResult
+  catalog.py                     # ComponentCatalog, ComponentSchema
+
+frontend/src/api/types.ts        # TS-зеркало (MVP: вручную; цель: codegen из OpenAPI)
+frontend/src/api/client.ts       # см. дерево в разделе «Структура кода»
+```
+
+**Mapping** (не дублировать домен):
+
+| API model | Источник |
+|-----------|----------|
+| `ChartBar` | View-model поверх `data_engine.contracts.Candle` + правило `time` для графика |
+| `RunReport`, trades | JSON-артефакты в `research/results/`; версия схемы — из поля **`report_schema_version`** в payload (не хардкодить в UI/plan). При неподдерживаемой версии — явная ошибка, не тихий парсинг |
+| `StrategyConfigDraft` | UI draft; валидация делегируется research (`EmaPullbackStrategySpec` и др. — внутри research) |
+| `ComponentCatalog` | Registry / component builders (stub допустим до Step 17) |
+
+**Правило для реализации:** не объявлять типы Chart/Report/Config внутри React-компонентов.
+
+---
+
+## Draft config (Composer)
+
+Composer **не редактирует боевой** experiment YAML в репозитории. Рабочая сущность UI — **draft config** (`StrategyConfigDraft`).
+
+### Канонический поток
+
+```text
+UI draft state
+  ↓
+POST /api/research/config/validate  →  ValidationResult
+  ↓ (если ok)
+POST /api/research/config/save      →  research/experiments/...  (только server)
+  и/или
+POST /api/research/backtests        →  research run (фаза 4)
+```
+
+| Endpoint | Назначение |
+|----------|------------|
+| `POST .../config/validate` | Research проверяет draft |
+| `POST .../config/serialize` | Draft → **preview** канонического YAML/JSON для UI; **без** записи на диск |
+| `POST .../config/save` | После `ok`: persist канонического config — **только** `research_api` |
+
+### Запрещено
+
+- React **напрямую пишет YAML** в repo.
+- React **сам решает**, что config валидный (client-side hints допустимы; истина — только ответ API).
+- Composer как текстовый редактор production YAML.
+
+---
+
+## Guardrails
+
+### Research Workbench (`frontend/`)
+
+- Workbench **не импортирует** research Python logic.
+- Workbench **не знает** vectorbt.
+- Workbench **не считает** metrics (только из report/API).
+- Workbench **не считает EMA** как canonical source (только отображает series с API).
+- Workbench **не редактирует files** напрямую (ни YAML, ни JSON в `research/`).
+- Workbench работает **только через API contracts** (`src/api/types.ts`, `src/api/client.ts`).
+- Конфиг из UI = **draft** до `POST /validate`; save и backtest — после `ok` на бэкенде.
+- Не запускает живую торговлю и не отправляет ордера.
+- Не меняет Data Engine напрямую.
+- Не считает бэктест на клиенте источником правды по метрикам.
+
+### Research API (`research_api/`)
+
+- Research API **не меняет** data_engine schema / operational store Data Engine.
+- Research API **не запускает** live trading.
+- Backtest из UI = **только research run** (`run.py` / runner), **не** exchange execution.
+- Validate / save / backtest делегируют в research layer; HTTP handler без vectorbt и торговой логики.
+
+### Фаза 4 (backtest)
+
+- Без Celery, Redis, docker-compose, Postgres, WebSocket на первом заходе.
+- Сначала **синхронный** `POST /backtests` → report; позже optional `job_id` + poll.
+- Локально: subprocess / in-process runner; не enterprise-очередь.
+
+---
+
+## Сквозные опоры
+
+### Опора 1 — Свечной график
+
+- Контракт бара для UI: `{ time, open, high, low, close, volume? }` (`ChartBar`).
+- MVP market: **BTCUSDT**, **5m**.
+- EMA и прочие series — только с `/api/market/...`, не расчёт в браузере.
+
+### Опора 2 — Strategy Composer
+
+- Schema-driven формы из `component-catalog` (`params_schema`).
+- Несколько instances: `+` / duplicate / delete; секции direction, setup, trigger, blockers, exits, risk; sides long / short / both.
+- Drag-and-drop — опционально после стабилизации; не в DoD фазы 3.
+- Риск: возможные переделки при эволюции `StrategySpec`; смягчение — `config_version` в draft + catalog из схемы.
+
+### Опора 3 — Reports + график
+
+- Источник: API (`research/results` через BFF); локальная загрузка `.json` — только dev-исключение.
+- Фильтры `exit_reason` по [Step 16](../research/16_exit_reason_attribution_plan.md): `open`, `unknown`, `stop_loss:<id>`, `take_profit:<id>`, `signal:<id>`.
+- Клик по сделке → focus/highlight на Chart.
+- Расхождение TF отчёта и графика — предупреждение в UI.
+
+---
+
+## Фазы (вертикальные срезы)
+
+### Фаза 0 — App Shell + fixtures
+
+**Цель:** приложение открывается, **3 вкладки**, график живой на фикстурах.
+
+**Без:** `research_api`, Data Engine, backtest.
+
+**DoD:**
+
+- [ ] `npm run build` проходит
+- [ ] Chart: свечи из fixture; фиктивные entry/exit markers
+- [ ] Reports: таблица фиктивных сделок
+- [ ] Composer: **draft config** → JSON preview (не YAML в repo)
+- [ ] Click trade → marker focus на Chart
+
+---
+
+### Фаза 1 — Reports + real JSON
+
+**Цель:** реальные `research/results/*.json` через BFF; отчёт ↔ график.
+
+**API:**
+
+| Method | Path |
+|--------|------|
+| GET | `/api/research/runs` |
+| GET | `/api/research/runs/latest` |
+| GET | `/api/research/runs/{run_id}` |
+
+**UI:** выбор run (context bar); summary; variants; trade table; exit_reason filters; click trade → chart focus.
+
+**Candles на фазе 1 (допустимо, но явно):** до фазы 2 Chart может оставаться на **fixture/stub candles**, если бары покрывают `entry_time_ms` сделок; иначе — минимальный overlap. Рассинхрон report vs candles **не замалчивать**.
+
+**Обязательный banner в UI** (пока нет `/api/market/candles`):
+
+```text
+Report loaded. Candles are fixture/stub until market API is connected.
+```
+
+Banner виден на вкладке Chart (и при необходимости в context bar), пока источник свечей ≠ market API. Снять banner — критерий готовности **фазы 2**, не «тихо подменить данные».
+
+**DoD:**
+
+- [ ] один реальный run end-to-end; фильтры exit_reason; оверлеи сделок из JSON
+- [ ] при fixture/stub candles — banner всегда отображается
+- [ ] `report_schema_version` читается из ответа API; неподдерживаемая версия — сообщение пользователю
+
+---
+
+### Фаза 2 — Candles + Indicators API
+
+**Цель:** реальные свечи и EMA на графике.
+
+**API:**
+
+| Method | Path |
+|--------|------|
+| GET | `/api/market/candles?symbol=BTCUSDT&timeframe=5m&from=&to=` |
+| GET | `/api/market/indicators/ema?symbol=BTCUSDT&timeframe=5m&period=...` |
+
+**DoD:** OHLC + EMA с сервера; связь Reports ↔ Chart сохранена; **banner fixture/stub снят**; предупреждение при расхождении TF отчёта и графика (отдельно от banner фазы 1).
+
+---
+
+### Фаза 3 — Component Catalog + Composer + draft pipeline
+
+**Цель:** schema-driven Composer; draft → validate → serialize preview → save.
+
+**API:**
+
+| Method | Path |
+|--------|------|
+| GET | `/api/research/component-catalog` |
+| POST | `/api/research/config/validate` |
+| POST | `/api/research/config/serialize` |
+| POST | `/api/research/config/save` |
+
+**Пример элемента catalog** (не Python-классы):
+
+```json
+{
+  "component_id": "ema_trend_filter",
+  "role": "blocker",
+  "label": "EMA trend filter",
+  "params_schema": {
+    "ema_period": { "type": "integer", "min": 1 },
+    "timeframe": { "type": "string", "enum": ["5m", "15m", "1h"] }
+  }
+}
+```
+
+**DoD:**
+
+- [ ] `+ instance` / duplicate / delete; sections; add/remove components; params from schema
+- [ ] Draft JSON preview; serialize preview (опционально YAML tab) без записи в repo
+- [ ] Validate → errors near block; Save disabled until `ok`; Save только через API
+- [ ] Backtest — **не** в этой фазе
+
+---
+
+### Фаза 4 — Run Backtest from UI
+
+**Цель:** запуск прогона из Workbench после validate.
+
+**API:**
+
+| Method | Path |
+|--------|------|
+| POST | `/api/research/backtests` |
+| GET | `/api/research/backtests/{job_id}` (когда async) |
+| GET | `/api/research/runs/{run_id}` |
+
+**DoD:** backtest только после успешного validate; новый run в Reports + Chart.
+
+**Не делать:** невалидированный draft; vectorbt в HTTP handler; Celery/Redis/… на первом заходе.
+
+---
+
+## Сводная таблица фаз
+
+| Фаза | Пользовательский срез | API |
+|------|----------------------|-----|
+| **0** | 3 вкладки + fixtures | — |
+| **1** | Real reports + trade↔chart | GET `/api/research/runs*` |
+| **2** | Real candles + EMA | GET `/api/market/*` |
+| **3** | Draft composer → validate → save | catalog, validate, serialize, save |
+| **4** | Backtest from UI | POST backtests (+ optional job poll) |
 
 ---
 
 ## Когда выбирать какую линию
 
 - **`frontend_master_plan.md`** — API-first, read-only дашборд, минимум расхождения со сменяющимся `StrategySpec`, мало переделок UI.
-- **Этот документ** — опыт-first: цикл «график → собрать экземпляры → отчёт снова на графике»; больше сопровождения схемы и UI при эволюции модели.
+- **Этот документ (Research Workbench)** — вертикальные срезы: цикл «график → draft config → отчёт снова на графике»; `research_api/` + contracts; больше сопровождения схемы при эволюции модели.
+
+Детальные чеклисты по фазам (опционально): `frontend_master_plan_alternative_chart_composer_reports_phase_N.md` — по одному файлу на фазу, когда понадобятся спринты.
