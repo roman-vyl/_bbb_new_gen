@@ -2,9 +2,14 @@ import {
   assertSupportedReportSchema,
   type ChartBar,
   type ChartMarketBundle,
+  type ComponentCatalog,
   type IndicatorPoint,
   type RunReport,
   type RunSummary,
+  type SaveConfigResult,
+  type SerializeResult,
+  type StrategyConfigDraft,
+  type ValidationResult,
 } from "@/api/types";
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, "") ?? "";
@@ -36,12 +41,20 @@ async function readErrorDetail(res: Response): Promise<string> {
   }
 }
 
-async function requestJson<T>(path: string): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`);
+async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(`${API_BASE}${path}`, init);
   if (!res.ok) {
     throw new ApiError(res.status, await readErrorDetail(res));
   }
   return (await res.json()) as T;
+}
+
+async function postJson<T>(path: string, body: unknown): Promise<T> {
+  return requestJson<T>(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
 }
 
 export async function fetchRunSummaries(): Promise<RunSummary[]> {
@@ -139,4 +152,34 @@ export async function fetchChartOverlayEma(params: {
     to_open_time_ms: String(params.toOpenTimeMs),
   });
   return requestJson<IndicatorPoint[]>(`/api/market/indicators/ema?${qs.toString()}`);
+}
+
+export async function fetchComponentCatalog(
+  family = "ema_pullback",
+): Promise<ComponentCatalog> {
+  const qs = new URLSearchParams({ family });
+  return requestJson<ComponentCatalog>(`/api/research/component-catalog?${qs.toString()}`);
+}
+
+export async function validateConfigDraft(
+  draft: StrategyConfigDraft,
+): Promise<ValidationResult> {
+  return postJson<ValidationResult>("/api/research/config/validate", draft);
+}
+
+export async function serializeConfigDraft(
+  draft: StrategyConfigDraft,
+  format: "json" | "yaml" = "json",
+): Promise<SerializeResult> {
+  const qs = new URLSearchParams({ format });
+  return postJson<SerializeResult>(
+    `/api/research/config/serialize?${qs.toString()}`,
+    draft,
+  );
+}
+
+export async function saveConfigDraft(
+  draft: StrategyConfigDraft,
+): Promise<SaveConfigResult> {
+  return postJson<SaveConfigResult>("/api/research/config/save", { draft });
 }
