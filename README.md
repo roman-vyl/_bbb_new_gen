@@ -23,6 +23,15 @@ pip install -e ".[dev,workbench-api]"
 python -m pytest tests/test_research_api_runs.py tests/test_research_api_market.py -q
 ```
 
+## Research Workbench (UI + BFF, Windows)
+
+From repo root (after `pip install -e ".[dev,workbench-api]"` and `cd frontend && npm install`):
+
+- **Start:** `scripts\dev-workbench.bat` — frees ports **8000** / **5173**, opens BFF + Vite in two windows. UI: http://127.0.0.1:5173/ · API docs: http://127.0.0.1:8000/docs
+- **Stop:** `scripts\stop-workbench.bat`
+- BFF runs **without** `--reload`; after backend changes run stop → dev again.
+- Chart `Field required` on market load usually means a stale BFF on 8000 — run stop, then dev (script checks for `ema_fast` in OpenAPI).
+
 Пример вывода:
 
 ```text
