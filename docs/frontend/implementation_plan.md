@@ -241,6 +241,16 @@ frontend/
 
 **Оценка:** ~2–3 спринта.
 
+### Follow-up (не блокирует закрытие фазы 3)
+
+| Тема | Сейчас | Цель |
+|------|--------|------|
+| **Component catalog** | Ручной stub в `research_api/services/component_catalog.py` | Вывод из `research/.../components/registry.py` (+ тест: catalog ⊆ registry). Validate уже в research — catalog только для UI. |
+| **Save path = run path (фаза 4)** | `research/experiments/configs/{family}/{experiment_id}.json` | `POST /backtests` вызывает `run_strategy_specs_from_config` с **тем же** файлом (после re-validate / save). Не вводить второй каталог конфигов. См. `research/strategies/ema_pullback/run.py --config`. |
+| **Typed draft в BFF** | `instances: list[dict]` | Позже: nested Pydantic (`StrategyInstanceDraft` + market/strategy) или убрать неиспользуемые типы из OpenAPI. Frontend: `StrategyInstanceDraft` в `types.ts`. |
+| **Ошибки validate** | Один `ValidationErrorItem` из `str(exc)` + regex path | Field-level UX — когда loader отдаёт структурированные issues (`path`, `message`[]). |
+| **Serialize `format`** | При ошибке validate возвращается запрошенный `json`/`yaml` | ✓ исправлено в `config_service.serialize_draft`. |
+
 ---
 
 ## Фаза 4 — Run Backtest from UI
@@ -256,12 +266,22 @@ frontend/
 
 Позже (не в первом заходе): `GET /api/research/backtests/{job_id}`.
 
+### Контракт config path (согласован с фазой 3)
+
+```text
+Save (фаза 3)  →  research/experiments/configs/{family}/{experiment_id}.json
+Backtest (фаза 4)  →  run_strategy_specs_from_config(тот же path)
+CLI  →  python research/strategies/ema_pullback/run.py --config <тот же path>
+```
+
+Формат файла: JSON или YAML (loader); save в MVP пишет JSON. Имя файла = sanitized `experiment_id` (перезапись при повторном save).
+
 ### Задачи
 
 | # | Задача |
 |---|--------|
-| 4.1 | Sync POST: subprocess / in-process runner |
-| 4.2 | Только после успешного validate (server-side) |
+| 4.1 | Sync POST: in-process `run_strategy_specs_from_config` (или subprocess с тем же entrypoint) |
+| 4.2 | Только после успешного validate (server-side); путь к конфигу — из save или явный `config_path` в теле |
 | 4.3 | UI: Run backtest, loading, auto-select new run |
 | 4.4 | Без Celery, Redis, WebSocket на первом заходе |
 

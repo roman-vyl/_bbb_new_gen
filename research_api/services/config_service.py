@@ -60,13 +60,18 @@ def validate_draft(draft: StrategyConfigDraft) -> ValidationResult:
         return ValidationResult(ok=False, errors=[_parse_validation_message(str(exc))])
 
 
+def _serialize_format(fmt: str) -> str:
+    return "yaml" if fmt.lower() == "yaml" else "json"
+
+
 def serialize_draft(draft: StrategyConfigDraft, *, fmt: str = "json") -> SerializeResult:
+    out_fmt = _serialize_format(fmt)
     validation = validate_draft(draft)
     if not validation.ok:
-        return SerializeResult(ok=False, format="json", content="", errors=validation.errors)
+        return SerializeResult(ok=False, format=out_fmt, content="", errors=validation.errors)
 
     payload = draft_to_canonical_payload(draft)
-    if fmt == "yaml":
+    if out_fmt == "yaml":
         try:
             import yaml  # type: ignore[import-untyped]
         except ImportError:

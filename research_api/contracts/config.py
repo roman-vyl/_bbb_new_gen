@@ -15,13 +15,6 @@ class ExecutionDraft(BaseModel):
     slippage: float | None = None
 
 
-class MarketDraft(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    symbol: str
-    base_timeframe: str
-
-
 class StrategyConfigDraft(BaseModel):
     """UI draft envelope — ``config_version`` maps to loader ``schema_version``."""
 

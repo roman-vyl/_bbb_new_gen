@@ -95,6 +95,18 @@ def test_validate_config_rejects_bad_instance(client: TestClient) -> None:
     assert body["errors"]
 
 
+def test_serialize_invalid_draft_returns_requested_format(client: TestClient) -> None:
+    draft = _valid_draft()
+    draft["experiment_id"] = ""
+
+    res = client.post("/api/research/config/serialize?format=yaml", json=draft)
+    assert res.status_code == 200
+    body = res.json()
+    assert body["ok"] is False
+    assert body["format"] == "yaml"
+    assert body["content"] == ""
+
+
 def test_serialize_config_json(client: TestClient) -> None:
     res = client.post("/api/research/config/serialize?format=json", json=_valid_draft())
     assert res.status_code == 200
