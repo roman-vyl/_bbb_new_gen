@@ -17,9 +17,13 @@ class RunBacktestRequest(BaseModel):
     """Repo-relative path under ``research/experiments/configs/`` (after save or explicit)."""
 
     @model_validator(mode="after")
-    def _require_source(self) -> RunBacktestRequest:
-        if self.draft is None and self.config_path is None:
-            raise ValueError("draft or config_path is required")
+    def _exactly_one_source(self) -> RunBacktestRequest:
+        has_draft = self.draft is not None
+        has_path = self.config_path is not None
+        if has_draft and has_path:
+            raise ValueError("provide exactly one of draft or config_path, not both")
+        if not has_draft and not has_path:
+            raise ValueError("provide exactly one of draft or config_path")
         return self
 
 

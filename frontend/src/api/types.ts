@@ -184,10 +184,10 @@ export type SaveConfigResult = {
   errors: ValidationErrorItem[];
 };
 
-export type RunBacktestRequest = {
-  draft?: StrategyConfigDraft;
-  config_path?: string;
-};
+/** Exactly one field — mutual exclusion enforced by BFF (422 if both or neither). */
+export type RunBacktestRequest =
+  | { draft: StrategyConfigDraft; config_path?: never }
+  | { config_path: string; draft?: never };
 
 export type BacktestResult = {
   ok: boolean;

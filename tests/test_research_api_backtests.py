@@ -26,6 +26,14 @@ def test_backtest_rejects_without_draft_or_path(client: TestClient) -> None:
     assert res.status_code == 422
 
 
+def test_backtest_rejects_draft_and_config_path(client: TestClient) -> None:
+    res = client.post(
+        "/api/research/backtests",
+        json={"draft": _valid_draft(), "config_path": "ema_pullback/foo.json"},
+    )
+    assert res.status_code == 422
+
+
 def test_backtest_rejects_invalid_draft(client: TestClient) -> None:
     draft = _valid_draft()
     draft["experiment_id"] = ""
