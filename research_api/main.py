@@ -5,7 +5,7 @@ from __future__ import annotations
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from research_api.routers import market, research_config, research_runs
+from research_api.routers import market, research_backtests, research_config, research_runs
 
 app = FastAPI(title="Research Workbench API", version="0.1.0")
 
@@ -22,6 +22,7 @@ app.add_middleware(
 
 app.include_router(research_runs.router)
 app.include_router(research_config.router)
+app.include_router(research_backtests.router)
 app.include_router(market.router)
 
 

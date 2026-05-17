@@ -491,7 +491,8 @@ select {
 }
 
 .composer-actions button:disabled,
-.composer-save:disabled {
+.composer-save:disabled,
+.composer-backtest:disabled {
   opacity: 0.45;
   cursor: not-allowed;
 }
@@ -499,6 +500,11 @@ select {
 .composer-save:not(:disabled) {
   border-color: #3b82f6;
   color: #93c5fd;
+}
+
+.composer-backtest:not(:disabled) {
+  border-color: #22c55e;
+  color: #86efac;
 }
 
 .composer-status {

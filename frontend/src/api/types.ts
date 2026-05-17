@@ -184,6 +184,18 @@ export type SaveConfigResult = {
   errors: ValidationErrorItem[];
 };
 
+export type RunBacktestRequest = {
+  draft?: StrategyConfigDraft;
+  config_path?: string;
+};
+
+export type BacktestResult = {
+  ok: boolean;
+  run_id: string | null;
+  config_path: string | null;
+  errors: ValidationErrorItem[];
+};
+
 export type WorkbenchTab = "chart" | "composer" | "reports";
 
 export function assertSupportedReportSchema(version: number): void {

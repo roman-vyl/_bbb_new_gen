@@ -6,6 +6,7 @@ import {
   type IndicatorPoint,
   type RunReport,
   type RunSummary,
+  type BacktestResult,
   type SaveConfigResult,
   type SerializeResult,
   type StrategyConfigDraft,
@@ -182,4 +183,10 @@ export async function saveConfigDraft(
   draft: StrategyConfigDraft,
 ): Promise<SaveConfigResult> {
   return postJson<SaveConfigResult>("/api/research/config/save", { draft });
+}
+
+export async function runBacktest(
+  body: { draft: StrategyConfigDraft } | { config_path: string },
+): Promise<BacktestResult> {
+  return postJson<BacktestResult>("/api/research/backtests", body);
 }
