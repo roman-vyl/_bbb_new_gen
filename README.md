@@ -16,6 +16,13 @@ pip install -e .[dev]
 python -m data_engine status
 ```
 
+Research Workbench BFF tests (`tests/test_research_api_*.py`):
+
+```bash
+pip install -e ".[dev,workbench-api]"
+python -m pytest tests/test_research_api_runs.py tests/test_research_api_market.py -q
+```
+
 Пример вывода:
 
 ```text
