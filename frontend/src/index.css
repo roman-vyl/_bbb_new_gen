@@ -603,18 +603,198 @@ select {
   margin: 0;
 }
 
+.composer-panel {
+  min-height: 0;
+}
+
+.composer-toolbar {
+  flex-shrink: 0;
+}
+
+.composer-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  gap: 0.5rem;
+}
+
+.composer-instance-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.composer-instance-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.composer-instance-chip {
+  max-width: 14rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: #151c26;
+  border: 1px solid #334155;
+  border-radius: 999px;
+  color: #94a3b8;
+  padding: 0.25rem 0.65rem;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.composer-instance-chip:hover {
+  color: #e2e8f0;
+  border-color: #475569;
+}
+
+.composer-instance-chip.is-active {
+  background: #1e3a5f;
+  border-color: #3b82f6;
+  color: #dbeafe;
+}
+
+.composer-instance-chip--add {
+  border-style: dashed;
+  max-width: none;
+}
+
+.composer-instance-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  flex-shrink: 0;
+}
+
 .composer-grid {
   display: grid;
-  grid-template-columns: minmax(260px, 360px) 1fr;
+  grid-template-columns: minmax(0, 1fr);
   gap: 1rem;
   flex: 1;
   min-height: 0;
+}
+
+.composer-grid--preview-open {
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 420px);
+}
+
+.composer-form-scroll {
+  overflow-y: auto;
+  min-height: 0;
+  padding-right: 0.35rem;
 }
 
 .composer-form {
   display: flex;
   flex-direction: column;
   gap: 0.65rem;
+}
+
+.composer-section--collapsible > summary {
+  cursor: pointer;
+  color: #93c5fd;
+  font-size: 0.85rem;
+  font-weight: 500;
+  list-style: none;
+  user-select: none;
+}
+
+.composer-section--collapsible > summary::-webkit-details-marker {
+  display: none;
+}
+
+.composer-section--collapsible > summary::before {
+  content: "▸ ";
+  color: #64748b;
+}
+
+.composer-section--collapsible[open] > summary::before {
+  content: "▾ ";
+}
+
+.composer-collapsible {
+  border: 1px solid #243041;
+  border-radius: 8px;
+  margin: 0 0 0.5rem;
+  background: #0c1016;
+}
+
+.composer-collapsible--error {
+  border-color: #854d0e;
+}
+
+.composer-collapsible__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.45rem 0.65rem;
+  background: transparent;
+  border: none;
+  color: #cbd5e1;
+  font-size: 0.85rem;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+}
+
+.composer-collapsible__head:hover {
+  color: #f8fafc;
+}
+
+.composer-collapsible__summary {
+  font-size: 0.72rem;
+  font-weight: 400;
+  color: #64748b;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-collapsible__body {
+  padding: 0 0.65rem 0.65rem;
+  border-top: 1px solid #1e2836;
+}
+
+.composer-collapsible__body .composer-section--nested {
+  margin-bottom: 0;
+  border: none;
+  padding: 0.5rem 0 0;
+  background: transparent;
+}
+
+.composer-slot--collapsed .composer-slot__params {
+  display: none;
+}
+
+.composer-slot__toggle {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: #cbd5e1;
+  font-size: 0.78rem;
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-slot__toggle:hover {
+  color: #f8fafc;
+}
+
+.composer-collapsible-inner {
+  padding-top: 0.35rem;
 }
 
 .field {
@@ -643,10 +823,17 @@ select {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  max-width: 420px;
+  overflow: hidden;
   border: 1px solid #243041;
   border-radius: 8px;
   background: #0f1419;
   padding: 0.75rem;
+}
+
+.composer-preview-toggle.is-active {
+  border-color: #3b82f6;
+  color: #93c5fd;
 }
 
 .composer-preview h3 {
@@ -816,8 +1003,13 @@ select {
   color: #86efac;
 }
 
-@media (max-width: 900px) {
-  .composer-grid {
+@media (max-width: 1100px) {
+  .composer-grid--preview-open {
     grid-template-columns: 1fr;
+  }
+
+  .composer-preview {
+    max-width: none;
+    max-height: 40vh;
   }
 }

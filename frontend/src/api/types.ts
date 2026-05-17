@@ -193,6 +193,20 @@ export type SaveConfigResult = {
   errors: ValidationErrorItem[];
 };
 
+export type ConfigListEntry = {
+  experiment_id: string;
+  path: string;
+  updated_at: string;
+};
+
+export type ConfigStateResponse = {
+  family: string;
+  selected_experiment_id: string | null;
+  selected_path: string | null;
+  draft: StrategyConfigDraft | null;
+  configs: ConfigListEntry[];
+};
+
 /** Exactly one field — mutual exclusion enforced by BFF (422 if both or neither). */
 export type RunBacktestRequest =
   | { draft: StrategyConfigDraft; config_path?: never }

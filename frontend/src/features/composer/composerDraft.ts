@@ -7,6 +7,18 @@ import type {
   ValidationErrorItem,
 } from "@/api/types";
 
+export const COMPOSER_DEFAULT_FAMILY = "ema_pullback";
+
+export function createBlankConfigDraft(family = COMPOSER_DEFAULT_FAMILY): StrategyConfigDraft {
+  return {
+    config_version: 1,
+    experiment_id: "",
+    family,
+    execution: {},
+    instances: [createDefaultInstance("instance_1")],
+  };
+}
+
 export function createDefaultInstance(instanceId: string): StrategyInstanceDraft {
   return {
     instance_id: instanceId,

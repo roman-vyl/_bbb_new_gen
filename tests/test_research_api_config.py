@@ -157,3 +157,65 @@ def test_save_config_rejects_invalid_draft(client: TestClient) -> None:
     body = res.json()
     assert body["ok"] is False
     assert body["path"] is None
+
+
+def test_config_state_empty(client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    configs_root = tmp_path / "configs"
+    monkeypatch.setattr(config_service, "_CONFIGS_ROOT", configs_root)
+    monkeypatch.setattr(config_service, "_SELECTION_FILE", configs_root / ".workbench_selection.json")
+
+    res = client.get("/api/research/configs/state?family=ema_pullback")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["family"] == "ema_pullback"
+    assert body["configs"] == []
+    assert body["draft"] is None
+
+
+def test_config_state_loads_saved_config(
+    client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    configs_root = tmp_path / "configs"
+    monkeypatch.setattr(config_service, "_CONFIGS_ROOT", configs_root)
+    monkeypatch.setattr(config_service, "_SELECTION_FILE", configs_root / ".workbench_selection.json")
+
+    save = client.post("/api/research/config/save", json={"draft": _valid_draft()})
+    assert save.json()["ok"] is True
+
+    res = client.get("/api/research/configs/state?family=ema_pullback")
+    assert res.status_code == 200
+    body = res.json()
+    assert len(body["configs"]) == 1
+    assert body["selected_experiment_id"] == "api_config_smoke"
+    assert body["draft"]["experiment_id"] == "api_config_smoke"
+    assert body["draft"]["instances"][0]["instance_id"] == "baseline"
+
+
+def test_select_config_switches_draft(
+    client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    configs_root = tmp_path / "configs"
+    monkeypatch.setattr(config_service, "_CONFIGS_ROOT", configs_root)
+    monkeypatch.setattr(config_service, "_SELECTION_FILE", configs_root / ".workbench_selection.json")
+
+    first = _valid_draft()
+    client.post("/api/research/config/save", json={"draft": first})
+
+    second = _valid_draft()
+    second["experiment_id"] = "api_config_alt"
+    instances = list(second["instances"])  # type: ignore[index]
+    inst = dict(instances[0])  # type: ignore[arg-type]
+    inst["instance_id"] = "alt"
+    inst["variant"] = "alt"
+    instances[0] = inst
+    second["instances"] = instances
+    client.post("/api/research/config/save", json={"draft": second})
+
+    res = client.put(
+        "/api/research/configs/selected",
+        json={"family": "ema_pullback", "experiment_id": "api_config_alt"},
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["selected_experiment_id"] == "api_config_alt"
+    assert body["draft"]["instances"][0]["instance_id"] == "alt"

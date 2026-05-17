@@ -11,15 +11,19 @@ import {
 import {
   ApiError,
   fetchChartMarketBundle,
+  fetchConfigState,
   fetchRunReport,
   fetchRunSummaries,
   fetchSignalTrace,
+  selectSavedConfig,
 } from "@/api/client";
 import {
   CHART_MARKET_TIMEFRAME,
   type AnchorStackPeriods,
   type ChartBar,
   type ChartEmaOverlay,
+  type ConfigListEntry,
+  type ConfigStateResponse,
   type RunReport,
   type RunSummary,
   type RunVariant,
@@ -27,6 +31,7 @@ import {
   type StrategyConfigDraft,
   type WorkbenchTab,
 } from "@/api/types";
+import { COMPOSER_DEFAULT_FAMILY, createBlankConfigDraft } from "@/features/composer/composerDraft";
 import {
   AnchorStackParseError,
   anchorStackPeriodsFromStrategySpec,
@@ -40,9 +45,8 @@ import {
   setMarketCacheIfAbsent,
   type MarketCacheKey,
 } from "@/features/chart/marketDataCache";
-import configDraftFixture from "@/fixtures/config_draft.json";
-
 export type ReportLoadStatus = "loading" | "ready" | "error";
+export type ConfigLoadStatus = "loading" | "ready" | "empty" | "error";
 export type MarketLoadStatus = "idle" | "loading" | "ready" | "error";
 export type CandlesSource = "market" | "unavailable";
 export type SignalTraceLoadStatus = "idle" | "loading" | "ready" | "error";
@@ -73,8 +77,15 @@ type WorkbenchState = {
   selectedTradeId: number | null;
   selectTrade: (tradeId: number | null) => void;
   selectedVariant: RunVariant | null;
-  configDraft: StrategyConfigDraft;
+  configDraft: StrategyConfigDraft | null;
   setConfigDraft: (draft: StrategyConfigDraft) => void;
+  configLoadStatus: ConfigLoadStatus;
+  configLoadError: string | null;
+  configList: ConfigListEntry[];
+  selectedConfigPath: string | null;
+  reloadConfig: () => Promise<void>;
+  selectConfig: (experimentId: string) => Promise<void>;
+  createNewConfig: () => void;
   reloadReport: () => void;
   refreshRunsAndSelectRun: (runId: string) => Promise<void>;
   signalTrace: SignalTraceBundle | null;
@@ -111,9 +122,11 @@ function marketErrorMessage(err: unknown): string {
 
 export function WorkbenchProvider({ children }: { children: ReactNode }) {
   const [activeTab, setActiveTab] = useState<WorkbenchTab>("chart");
-  const [configDraft, setConfigDraft] = useState(
-    () => configDraftFixture as StrategyConfigDraft,
-  );
+  const [configDraft, setConfigDraft] = useState<StrategyConfigDraft | null>(null);
+  const [configLoadStatus, setConfigLoadStatus] = useState<ConfigLoadStatus>("loading");
+  const [configLoadError, setConfigLoadError] = useState<string | null>(null);
+  const [configList, setConfigList] = useState<ConfigListEntry[]>([]);
+  const [selectedConfigPath, setSelectedConfigPath] = useState<string | null>(null);
 
   const [reportLoadStatus, setReportLoadStatus] = useState<ReportLoadStatus>("loading");
   const [reportError, setReportError] = useState<string | null>(null);
@@ -130,6 +143,64 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
   const [signalTraceStatus, setSignalTraceStatus] = useState<SignalTraceLoadStatus>("idle");
   const [signalTraceError, setSignalTraceError] = useState<string | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
+
+  const applyConfigState = useCallback((state: ConfigStateResponse) => {
+    setConfigList(state.configs);
+    setSelectedConfigPath(state.selected_path);
+    if (state.draft) {
+      setConfigDraft(state.draft);
+      setConfigLoadStatus("ready");
+      setConfigLoadError(null);
+      return;
+    }
+    setConfigDraft(null);
+    if (state.configs.length === 0) {
+      setConfigLoadStatus("empty");
+      setConfigLoadError(null);
+      return;
+    }
+    setConfigLoadStatus("error");
+    setConfigLoadError("Saved config could not be loaded.");
+  }, []);
+
+  const reloadConfig = useCallback(async () => {
+    setConfigLoadStatus((status) => (status === "ready" ? status : "loading"));
+    try {
+      const state = await fetchConfigState(COMPOSER_DEFAULT_FAMILY);
+      applyConfigState(state);
+    } catch (err) {
+      setConfigLoadError(
+        err instanceof ApiError ? err.detail : "Failed to load saved strategy config.",
+      );
+      setConfigLoadStatus("error");
+    }
+  }, [applyConfigState]);
+
+  const selectConfig = useCallback(
+    async (experimentId: string) => {
+      try {
+        const state = await selectSavedConfig(COMPOSER_DEFAULT_FAMILY, experimentId);
+        applyConfigState(state);
+        setConfigLoadError(null);
+      } catch (err) {
+        setConfigLoadError(
+          err instanceof ApiError ? err.detail : "Failed to switch strategy config.",
+        );
+      }
+    },
+    [applyConfigState],
+  );
+
+  const createNewConfig = useCallback(() => {
+    setConfigDraft(createBlankConfigDraft(COMPOSER_DEFAULT_FAMILY));
+    setSelectedConfigPath(null);
+    setConfigLoadStatus("ready");
+    setConfigLoadError(null);
+  }, []);
+
+  useEffect(() => {
+    void reloadConfig();
+  }, [reloadConfig]);
 
   const chartTimeframe = CHART_MARKET_TIMEFRAME;
   const reportTimeframe = report?.timeframe ?? null;
@@ -458,6 +529,13 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       selectedVariant,
       configDraft,
       setConfigDraft,
+      configLoadStatus,
+      configLoadError,
+      configList,
+      selectedConfigPath,
+      reloadConfig,
+      selectConfig,
+      createNewConfig,
       reloadReport,
       refreshRunsAndSelectRun,
       signalTrace,
@@ -491,6 +569,13 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       selectTrade,
       selectedVariant,
       configDraft,
+      configLoadStatus,
+      configLoadError,
+      configList,
+      selectedConfigPath,
+      reloadConfig,
+      selectConfig,
+      createNewConfig,
       reloadReport,
       refreshRunsAndSelectRun,
       signalTrace,

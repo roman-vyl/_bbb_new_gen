@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 
 import {
   ApiError,
@@ -60,8 +60,92 @@ function SectionErrors({
   return <ValidationMessages errors={scoped} />;
 }
 
+function firstPipelineSectionFromErrors(
+  errors: ValidationErrorItem[],
+  instanceIndex: number,
+): string | null {
+  const prefix = `instances[${instanceIndex}].strategy.`;
+  for (const err of errors) {
+    if (!err.path?.startsWith(prefix)) {
+      continue;
+    }
+    const rest = err.path.slice(prefix.length);
+    const key = rest.split(".")[0]?.split("[")[0];
+    if (
+      key === "direction" ||
+      key === "setup" ||
+      key === "trigger" ||
+      key === "blockers" ||
+      key === "risk" ||
+      key === "exits" ||
+      key === "anchor_stack" ||
+      key === "trade_sides"
+    ) {
+      return key === "anchor_stack" || key === "trade_sides" ? "instance-setup" : key;
+    }
+    if (rest.startsWith("market")) {
+      return "instance-setup";
+    }
+  }
+  return null;
+}
+
+function singletonSummary(value: JsonObject): string {
+  const id = value.component_id;
+  return id ? String(id) : "—";
+}
+
+function listSummary(slots: JsonObject[]): string {
+  if (slots.length === 0) {
+    return "none";
+  }
+  return slots.map((s) => String(s.instance_id || s.component_id || "?")).join(", ");
+}
+
+function ComposerCollapsible({
+  id,
+  title,
+  summary,
+  open,
+  onToggle,
+  hasError,
+  children,
+}: {
+  id: string;
+  title: string;
+  summary?: string;
+  open: boolean;
+  onToggle: (id: string) => void;
+  hasError?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <div
+      className={`composer-collapsible${open ? " composer-collapsible--open" : ""}${hasError ? " composer-collapsible--error" : ""}`}
+    >
+      <button type="button" className="composer-collapsible__head" onClick={() => onToggle(id)}>
+        <span>{title}</span>
+        {summary ? <span className="composer-collapsible__summary">{summary}</span> : null}
+      </button>
+      {open ? <div className="composer-collapsible__body">{children}</div> : null}
+    </div>
+  );
+}
+
 export function ComposerPanel() {
-  const { configDraft, setConfigDraft, refreshRunsAndSelectRun, setActiveTab } = useWorkbench();
+  const {
+    configDraft,
+    setConfigDraft,
+    configLoadStatus,
+    configLoadError,
+    configList,
+    selectedConfigPath,
+    reloadConfig,
+    selectConfig,
+    createNewConfig,
+    refreshRunsAndSelectRun,
+    setActiveTab,
+  } = useWorkbench();
   const [catalog, setCatalog] = useState<ComponentCatalog | null>(null);
   const [catalogError, setCatalogError] = useState<string | null>(null);
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -69,12 +153,17 @@ export function ComposerPanel() {
   const [serializeContent, setSerializeContent] = useState<string | null>(null);
   const [serializeFormat, setSerializeFormat] = useState<"json" | "yaml">("json");
   const [previewTab, setPreviewTab] = useState<PreviewTab>("draft");
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [openPipeline, setOpenPipeline] = useState("direction");
   const [busy, setBusy] = useState<"validate" | "serialize" | "save" | "backtest" | null>(null);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [backtestMessage, setBacktestMessage] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!configDraft) {
+      return;
+    }
     let cancelled = false;
     void fetchComponentCatalog(configDraft.family)
       .then((c) => {
@@ -92,18 +181,41 @@ export function ComposerPanel() {
     return () => {
       cancelled = true;
     };
-  }, [configDraft.family]);
+  }, [configDraft?.family]);
 
-  const draftPreview = useMemo(() => JSON.stringify(configDraft, null, 2), [configDraft]);
+  const draftPreview = useMemo(
+    () => (configDraft ? JSON.stringify(configDraft, null, 2) : ""),
+    [configDraft],
+  );
   const validationErrors = validation?.errors ?? [];
   const canSave = validation?.ok === true;
   const canRunBacktest = validation?.ok === true;
 
-  const instance = configDraft.instances[selectedIndex] ?? null;
+  const instance = configDraft?.instances[selectedIndex] ?? null;
   const strategy = (instance?.strategy ?? {}) as JsonObject;
+
+  const togglePipeline = useCallback((id: string) => {
+    setOpenPipeline((cur) => (cur === id ? "" : id));
+  }, []);
+
+  const sectionHasError = useCallback(
+    (pathPrefix: string) => errorsForPath(validationErrors, pathPrefix).length > 0,
+    [validationErrors],
+  );
+
+  useEffect(() => {
+    if (!validation || validation.ok) {
+      return;
+    }
+    const first = firstPipelineSectionFromErrors(validation.errors, selectedIndex);
+    if (first) {
+      setOpenPipeline(first);
+    }
+  }, [validation, selectedIndex]);
 
   const patchDraft = useCallback(
     (patch: Partial<StrategyConfigDraft>) => {
+      if (!configDraft) return;
       setValidation(null);
       setSerializeContent(null);
       setSaveMessage(null);
@@ -115,6 +227,7 @@ export function ComposerPanel() {
 
   const patchInstance = useCallback(
     (index: number, patch: Partial<StrategyInstanceDraft>) => {
+      if (!configDraft) return;
       setValidation(null);
       setSerializeContent(null);
       setSaveMessage(null);
@@ -129,14 +242,16 @@ export function ComposerPanel() {
 
   const patchStrategy = useCallback(
     (index: number, patch: JsonObject) => {
+      if (!configDraft) return;
       const inst = configDraft.instances[index];
       if (!inst) return;
       patchInstance(index, { strategy: { ...inst.strategy, ...patch } });
     },
-    [configDraft.instances, patchInstance],
+    [configDraft, patchInstance],
   );
 
   const runValidate = useCallback(async () => {
+    if (!configDraft) return;
     setBusy("validate");
     setActionError(null);
     setSaveMessage(null);
@@ -154,6 +269,7 @@ export function ComposerPanel() {
   }, [configDraft]);
 
   const runSerialize = useCallback(async () => {
+    if (!configDraft) return;
     setBusy("serialize");
     setActionError(null);
     try {
@@ -165,6 +281,7 @@ export function ComposerPanel() {
       }
       setSerializeContent(result.content);
       setPreviewTab("serialized");
+      setPreviewOpen(true);
     } catch (err) {
       setActionError(err instanceof ApiError ? err.detail : "Serialize failed.");
     } finally {
@@ -173,6 +290,7 @@ export function ComposerPanel() {
   }, [configDraft, serializeFormat]);
 
   const runSave = useCallback(async () => {
+    if (!configDraft) return;
     setBusy("save");
     setActionError(null);
     setSaveMessage(null);
@@ -183,15 +301,17 @@ export function ComposerPanel() {
         setValidation({ ok: false, errors: result.errors });
         return;
       }
+      await reloadConfig();
       setSaveMessage(result.path ? `Saved to ${result.path}` : "Saved.");
     } catch (err) {
       setActionError(err instanceof ApiError ? err.detail : "Save failed.");
     } finally {
       setBusy(null);
     }
-  }, [configDraft]);
+  }, [configDraft, reloadConfig]);
 
   const runBacktestAction = useCallback(async () => {
+    if (!configDraft) return;
     setBusy("backtest");
     setActionError(null);
     setBacktestMessage(null);
@@ -220,6 +340,7 @@ export function ComposerPanel() {
   }, [configDraft, refreshRunsAndSelectRun, setActiveTab]);
 
   const addInstance = () => {
+    if (!configDraft) return;
     const id = nextInstanceId(configDraft);
     const instances = [...configDraft.instances, createDefaultInstance(id)];
     patchDraft({ instances });
@@ -227,13 +348,14 @@ export function ComposerPanel() {
   };
 
   const removeInstance = (index: number) => {
-    if (configDraft.instances.length <= 1) return;
+    if (!configDraft || configDraft.instances.length <= 1) return;
     const instances = configDraft.instances.filter((_, i) => i !== index);
     patchDraft({ instances });
     setSelectedIndex(Math.min(selectedIndex, instances.length - 1));
   };
 
   const duplicateSelected = () => {
+    if (!configDraft) return;
     const source = configDraft.instances[selectedIndex];
     if (!source) return;
     const id = nextInstanceId(configDraft);
@@ -260,6 +382,7 @@ export function ComposerPanel() {
     slotIndex: number,
     nextSlot: JsonObject,
   ) => {
+    if (!configDraft) return;
     const inst = configDraft.instances[index];
     if (!inst) return;
     const list = [...((inst.strategy[role] as JsonObject[] | undefined) ?? [])];
@@ -268,7 +391,7 @@ export function ComposerPanel() {
   };
 
   const addListSlot = (index: number, role: "blockers" | "exits", componentId: string) => {
-    if (!catalog) return;
+    if (!catalog || !configDraft) return;
     const schema = findComponentSchema(catalog, componentId);
     const slotId = `${componentId}_${Date.now().toString(36).slice(-4)}`;
     const base: JsonObject = { instance_id: slotId, component_id: componentId };
@@ -280,6 +403,7 @@ export function ComposerPanel() {
   };
 
   const removeListSlot = (index: number, role: "blockers" | "exits", slotIndex: number) => {
+    if (!configDraft) return;
     const inst = configDraft.instances[index];
     if (!inst) return;
     const list = ((inst.strategy[role] as JsonObject[] | undefined) ?? []).filter(
@@ -287,6 +411,54 @@ export function ComposerPanel() {
     );
     patchStrategy(index, { [role]: list });
   };
+
+  if (configLoadStatus === "loading") {
+    return (
+      <section className="panel composer-panel">
+        <p className="panel__hint">Loading saved strategy config…</p>
+      </section>
+    );
+  }
+
+  if (!configDraft) {
+    return (
+      <section className="panel composer-panel">
+        <div className="panel__header">
+          <h2>Strategy Composer</h2>
+          <p className="panel__hint">
+            No saved config on disk yet. Create one here, then Save to write{" "}
+            <code>research/experiments/configs/{"{family}"}/{"{experiment_id}"}.json</code>.
+          </p>
+        </div>
+        {configLoadError && <p className="banner banner--error">{configLoadError}</p>}
+        {configList.length > 0 && (
+          <label className="field">
+            <span>Saved config</span>
+            <select
+              defaultValue=""
+              onChange={(e) => {
+                if (e.target.value) {
+                  void selectConfig(e.target.value);
+                }
+              }}
+            >
+              <option value="" disabled>
+                Select…
+              </option>
+              {configList.map((entry) => (
+                <option key={entry.path} value={entry.experiment_id}>
+                  {entry.experiment_id}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        <button type="button" className="composer-backtest" onClick={createNewConfig}>
+          New strategy config
+        </button>
+      </section>
+    );
+  }
 
   if (!catalog && !catalogError) {
     return (
@@ -298,14 +470,28 @@ export function ComposerPanel() {
 
   return (
     <section className="panel composer-panel">
+      <div className="composer-toolbar">
       <div className="panel__header composer-header">
         <div>
           <h2>Strategy Composer</h2>
           <p className="panel__hint">
-            Draft → validate → save → run backtest. Results appear in Reports and Chart.
+            Edit the saved backend config, then validate → save → run backtest. Results appear in
+            Reports and Chart.
           </p>
+          {selectedConfigPath ? (
+            <p className="panel__hint composer-config-path">
+              Source: <code>{selectedConfigPath}</code>
+            </p>
+          ) : null}
         </div>
         <div className="composer-actions">
+          <button
+            type="button"
+            className={`composer-preview-toggle${previewOpen ? " is-active" : ""}`}
+            onClick={() => setPreviewOpen((open) => !open)}
+          >
+            {previewOpen ? "Hide JSON" : "JSON preview"}
+          </button>
           <button type="button" disabled={busy !== null} onClick={() => void runValidate()}>
             {busy === "validate" ? "Validating…" : "Validate"}
           </button>
@@ -350,12 +536,70 @@ export function ComposerPanel() {
           {validation.ok ? "Config is valid." : "Validation failed — fix errors below."}
         </p>
       )}
+      </div>
 
-      <div className="composer-grid">
-        <div className="composer-form">
-          <fieldset className="composer-section">
-            <legend>Experiment</legend>
+      <div className="composer-body">
+        <div className="composer-instance-bar">
+          <div className="composer-instance-chips" role="tablist" aria-label="Strategy instances">
+            {configDraft.instances.map((inst, i) => (
+              <button
+                key={inst.instance_id}
+                type="button"
+                role="tab"
+                aria-selected={i === selectedIndex}
+                className={
+                  i === selectedIndex ? "composer-instance-chip is-active" : "composer-instance-chip"
+                }
+                title={inst.instance_id}
+                onClick={() => setSelectedIndex(i)}
+              >
+                {inst.instance_id}
+              </button>
+            ))}
+            <button type="button" className="composer-instance-chip composer-instance-chip--add" onClick={addInstance}>
+              + instance
+            </button>
+          </div>
+          <div className="composer-instance-actions">
+            <button type="button" onClick={duplicateSelected} disabled={!instance}>
+              Duplicate
+            </button>
+            <button
+              type="button"
+              onClick={() => removeInstance(selectedIndex)}
+              disabled={configDraft.instances.length <= 1}
+            >
+              Delete
+            </button>
+          </div>
+        </div>
+
+        <div className={`composer-grid${previewOpen ? " composer-grid--preview-open" : ""}`}>
+          <div className="composer-form-scroll">
+            <div className="composer-form">
+          <details className="composer-section composer-section--collapsible">
+            <summary>Experiment settings</summary>
             <SectionErrors errors={validationErrors} pathPrefix="" />
+            {configList.length > 0 && (
+              <label className="field">
+                <span>Saved config</span>
+                <select
+                  value={configDraft.experiment_id}
+                  onChange={(e) => {
+                    setValidation(null);
+                    setSaveMessage(null);
+                    setBacktestMessage(null);
+                    void selectConfig(e.target.value);
+                  }}
+                >
+                  {configList.map((entry) => (
+                    <option key={entry.path} value={entry.experiment_id}>
+                      {entry.experiment_id}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
             <label className="field">
               <span>experiment_id</span>
               <input
@@ -414,56 +658,39 @@ export function ComposerPanel() {
                 }
               />
             </label>
-          </fieldset>
+          </details>
 
-          <fieldset className="composer-section">
-            <legend>Instances</legend>
-            <div className="composer-instance-toolbar">
-              <select
-                value={String(selectedIndex)}
-                onChange={(e) => setSelectedIndex(Number(e.target.value))}
+          {instance && (
+            <fieldset className="composer-section">
+              <legend>Instance</legend>
+              <SectionErrors errors={validationErrors} pathPrefix={instancePath(selectedIndex)} />
+              <label className="field">
+                <span>instance_id</span>
+                <input
+                  value={instance.instance_id}
+                  onChange={(e) => patchInstance(selectedIndex, { instance_id: e.target.value })}
+                />
+              </label>
+              <label className="field">
+                <span>variant</span>
+                <input
+                  value={instance.variant}
+                  onChange={(e) => patchInstance(selectedIndex, { variant: e.target.value })}
+                />
+              </label>
+
+              <ComposerCollapsible
+                id="instance-setup"
+                title="Market & anchor"
+                summary={`${instance.market.symbol} · ${instance.market.base_timeframe}`}
+                open={openPipeline === "instance-setup"}
+                onToggle={togglePipeline}
+                hasError={
+                  sectionHasError(`${instancePath(selectedIndex)}.market`) ||
+                  sectionHasError(`${strategyPath(selectedIndex)}.anchor_stack`) ||
+                  sectionHasError(`${strategyPath(selectedIndex)}.trade_sides`)
+                }
               >
-                {configDraft.instances.map((inst, i) => (
-                  <option key={inst.instance_id} value={String(i)}>
-                    {inst.instance_id}
-                  </option>
-                ))}
-              </select>
-              <button type="button" onClick={addInstance}>
-                + instance
-              </button>
-              <button type="button" onClick={duplicateSelected} disabled={!instance}>
-                Duplicate
-              </button>
-              <button
-                type="button"
-                onClick={() => removeInstance(selectedIndex)}
-                disabled={configDraft.instances.length <= 1}
-              >
-                Delete
-              </button>
-            </div>
-
-            {instance && (
-              <>
-                <SectionErrors errors={validationErrors} pathPrefix={instancePath(selectedIndex)} />
-                <label className="field">
-                  <span>instance_id</span>
-                  <input
-                    value={instance.instance_id}
-                    onChange={(e) =>
-                      patchInstance(selectedIndex, { instance_id: e.target.value })
-                    }
-                  />
-                </label>
-                <label className="field">
-                  <span>variant</span>
-                  <input
-                    value={instance.variant}
-                    onChange={(e) => patchInstance(selectedIndex, { variant: e.target.value })}
-                  />
-                </label>
-
                 <h4 className="composer-subhead">Market</h4>
                 <label className="field">
                   <span>symbol</span>
@@ -487,7 +714,6 @@ export function ComposerPanel() {
                     }
                   />
                 </label>
-
                 <h4 className="composer-subhead">Anchor stack</h4>
                 <AnchorStackFields
                   stack={(strategy.anchor_stack as JsonObject) ?? {}}
@@ -495,14 +721,23 @@ export function ComposerPanel() {
                   errors={validationErrors}
                   onChange={(anchor_stack) => patchStrategy(selectedIndex, { anchor_stack })}
                 />
-
                 <h4 className="composer-subhead">Trade sides</h4>
                 <TradeSidesFields
                   value={(strategy.trade_sides as JsonObject) ?? {}}
                   onChange={(trade_sides) => patchStrategy(selectedIndex, { trade_sides })}
                 />
+              </ComposerCollapsible>
 
+              <ComposerCollapsible
+                id="direction"
+                title="Direction"
+                summary={singletonSummary((strategy.direction as JsonObject) ?? {})}
+                open={openPipeline === "direction"}
+                onToggle={togglePipeline}
+                hasError={sectionHasError(`${strategyPath(selectedIndex)}.direction`)}
+              >
                 <SingletonComponentSection
+                  compact
                   title="Direction"
                   role="direction"
                   catalog={catalog!}
@@ -512,8 +747,18 @@ export function ComposerPanel() {
                   onSelect={(id) => setSingletonComponent(selectedIndex, "direction", id)}
                   onChange={(direction) => patchStrategy(selectedIndex, { direction })}
                 />
+              </ComposerCollapsible>
 
+              <ComposerCollapsible
+                id="setup"
+                title="Setup"
+                summary={singletonSummary((strategy.setup as JsonObject) ?? {})}
+                open={openPipeline === "setup"}
+                onToggle={togglePipeline}
+                hasError={sectionHasError(`${strategyPath(selectedIndex)}.setup`)}
+              >
                 <SingletonComponentSection
+                  compact
                   title="Setup"
                   role="setup"
                   catalog={catalog!}
@@ -523,8 +768,18 @@ export function ComposerPanel() {
                   onSelect={(id) => setSingletonComponent(selectedIndex, "setup", id)}
                   onChange={(setup) => patchStrategy(selectedIndex, { setup })}
                 />
+              </ComposerCollapsible>
 
+              <ComposerCollapsible
+                id="trigger"
+                title="Trigger"
+                summary={singletonSummary((strategy.trigger as JsonObject) ?? {})}
+                open={openPipeline === "trigger"}
+                onToggle={togglePipeline}
+                hasError={sectionHasError(`${strategyPath(selectedIndex)}.trigger`)}
+              >
                 <SingletonComponentSection
+                  compact
                   title="Trigger"
                   role="trigger"
                   catalog={catalog!}
@@ -534,8 +789,18 @@ export function ComposerPanel() {
                   onSelect={(id) => setSingletonComponent(selectedIndex, "trigger", id)}
                   onChange={(trigger) => patchStrategy(selectedIndex, { trigger })}
                 />
+              </ComposerCollapsible>
 
+              <ComposerCollapsible
+                id="blockers"
+                title="Blockers"
+                summary={listSummary(((strategy.blockers as JsonObject[]) ?? []) as JsonObject[])}
+                open={openPipeline === "blockers"}
+                onToggle={togglePipeline}
+                hasError={sectionHasError(`${strategyPath(selectedIndex)}.blockers`)}
+              >
                 <ListComponentSection
+                  compact
                   title="Blockers"
                   role="blockers"
                   catalog={catalog!}
@@ -544,12 +809,20 @@ export function ComposerPanel() {
                   errors={validationErrors}
                   onAdd={(id) => addListSlot(selectedIndex, "blockers", id)}
                   onRemove={(slot) => removeListSlot(selectedIndex, "blockers", slot)}
-                  onChange={(slot, next) =>
-                    updateListSlot(selectedIndex, "blockers", slot, next)
-                  }
+                  onChange={(slot, next) => updateListSlot(selectedIndex, "blockers", slot, next)}
                 />
+              </ComposerCollapsible>
 
+              <ComposerCollapsible
+                id="risk"
+                title="Risk"
+                summary={singletonSummary((strategy.risk as JsonObject) ?? {})}
+                open={openPipeline === "risk"}
+                onToggle={togglePipeline}
+                hasError={sectionHasError(`${strategyPath(selectedIndex)}.risk`)}
+              >
                 <SingletonComponentSection
+                  compact
                   title="Risk"
                   role="risk"
                   catalog={catalog!}
@@ -559,8 +832,18 @@ export function ComposerPanel() {
                   onSelect={(id) => setSingletonComponent(selectedIndex, "risk", id)}
                   onChange={(risk) => patchStrategy(selectedIndex, { risk })}
                 />
+              </ComposerCollapsible>
 
+              <ComposerCollapsible
+                id="exits"
+                title="Exits"
+                summary={listSummary(((strategy.exits as JsonObject[]) ?? []) as JsonObject[])}
+                open={openPipeline === "exits"}
+                onToggle={togglePipeline}
+                hasError={sectionHasError(`${strategyPath(selectedIndex)}.exits`)}
+              >
                 <ListComponentSection
+                  compact
                   title="Exits"
                   role="exits"
                   catalog={catalog!}
@@ -571,12 +854,14 @@ export function ComposerPanel() {
                   onRemove={(slot) => removeListSlot(selectedIndex, "exits", slot)}
                   onChange={(slot, next) => updateListSlot(selectedIndex, "exits", slot, next)}
                 />
-              </>
-            )}
-          </fieldset>
-        </div>
+              </ComposerCollapsible>
+            </fieldset>
+          )}
+            </div>
+          </div>
 
-        <div className="composer-preview">
+        {previewOpen && (
+          <div className="composer-preview">
           <div className="composer-preview-tabs">
             <button
               type="button"
@@ -593,7 +878,9 @@ export function ComposerPanel() {
               Serialized ({serializeFormat})
             </button>
           </div>
-          <pre>{previewTab === "draft" ? draftPreview : (serializeContent ?? "—")}</pre>
+            <pre>{previewTab === "draft" ? draftPreview : (serializeContent ?? "—")}</pre>
+          </div>
+        )}
         </div>
       </div>
     </section>
@@ -684,6 +971,7 @@ function TradeSidesFields({
 }
 
 function SingletonComponentSection({
+  compact = false,
   title,
   role,
   catalog,
@@ -693,6 +981,7 @@ function SingletonComponentSection({
   onSelect,
   onChange,
 }: {
+  compact?: boolean;
   title: string;
   role: ComponentSchema["role"];
   catalog: ComponentCatalog;
@@ -706,9 +995,8 @@ function SingletonComponentSection({
   const componentId = String(value.component_id ?? options[0]?.component_id ?? "");
   const schema = findComponentSchema(catalog, componentId);
 
-  return (
-    <fieldset className="composer-section composer-section--nested">
-      <legend>{title}</legend>
+  const inner = (
+    <>
       <SectionErrors errors={errors} pathPrefix={pathPrefix} />
       <label className="field">
         <span>component</span>
@@ -727,11 +1015,23 @@ function SingletonComponentSection({
           onChange={onChange}
         />
       )}
+    </>
+  );
+
+  if (compact) {
+    return <div className="composer-collapsible-inner">{inner}</div>;
+  }
+
+  return (
+    <fieldset className="composer-section composer-section--nested">
+      <legend>{title}</legend>
+      {inner}
     </fieldset>
   );
 }
 
 function ListComponentSection({
+  compact = false,
   title,
   role,
   catalog,
@@ -742,6 +1042,7 @@ function ListComponentSection({
   onRemove,
   onChange,
 }: {
+  compact?: boolean;
   title: string;
   role: "blockers" | "exits";
   catalog: ComponentCatalog;
@@ -754,11 +1055,22 @@ function ListComponentSection({
 }) {
   const options = componentsForRole(catalog, role);
   const [addId, setAddId] = useState(options[0]?.component_id ?? "");
+  const [expandedSlots, setExpandedSlots] = useState<Set<number>>(() => new Set());
 
-  return (
-    <fieldset className="composer-section composer-section--nested">
-      <legend>{title}</legend>
-      <div className="composer-list-add">
+  const toggleSlot = (slotIndex: number) => {
+    setExpandedSlots((prev) => {
+      const next = new Set(prev);
+      if (next.has(slotIndex)) {
+        next.delete(slotIndex);
+      } else {
+        next.add(slotIndex);
+      }
+      return next;
+    });
+  };
+
+  const listAdd = (
+    <div className="composer-list-add">
         <select value={addId} onChange={(e) => setAddId(e.target.value)}>
           {options.map((o) => (
             <option key={o.component_id} value={o.component_id}>
@@ -766,61 +1078,86 @@ function ListComponentSection({
             </option>
           ))}
         </select>
-        <button type="button" disabled={!addId} onClick={() => onAdd(addId)}>
-          + component
-        </button>
-      </div>
+      <button type="button" disabled={!addId} onClick={() => onAdd(addId)}>
+        + component
+      </button>
+    </div>
+  );
 
-      {slots.map((slot, slotIndex) => {
-        const componentId = String(slot.component_id ?? "");
-        const schema = findComponentSchema(catalog, componentId);
-        const path = listSlotPath(instanceIndex, role, slotIndex);
-        return (
-          <div key={`${componentId}-${slotIndex}`} className="composer-slot">
-            <div className="composer-slot__head">
-              <strong>{componentId || "component"}</strong>
-              <button type="button" onClick={() => onRemove(slotIndex)}>
-                Remove
-              </button>
-            </div>
-            <SectionErrors errors={errors} pathPrefix={path} />
-            <label className="field">
-              <span>instance_id</span>
-              <input
-                value={String(slot.instance_id ?? "")}
-                onChange={(e) => onChange(slotIndex, { ...slot, instance_id: e.target.value })}
-              />
-            </label>
-            <label className="field">
-              <span>component</span>
-              <select
-                value={componentId}
-                onChange={(e) => {
-                  const nextSchema = findComponentSchema(catalog, e.target.value);
-                  const base: JsonObject = {
-                    instance_id: String(slot.instance_id ?? e.target.value),
-                    component_id: e.target.value,
-                  };
-                  onChange(slotIndex, applyComponentDefaults(base, nextSchema));
-                }}
-              >
-                {options.map((o) => (
-                  <option key={o.component_id} value={o.component_id}>
-                    {o.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            {schema?.params_schema && (
-              <ParamFields
-                paramsSchema={schema.params_schema}
-                value={slot}
-                onChange={(next) => onChange(slotIndex, next)}
-              />
-            )}
-          </div>
-        );
-      })}
+  const slotList = slots.map((slot, slotIndex) => {
+    const componentId = String(slot.component_id ?? "");
+    const schema = findComponentSchema(catalog, componentId);
+    const path = listSlotPath(instanceIndex, role, slotIndex);
+    const expanded = expandedSlots.has(slotIndex);
+    const slotLabel = `${String(slot.instance_id ?? (componentId || "slot"))} · ${componentId || "component"}`;
+    return (
+      <div
+        key={`${componentId}-${slotIndex}`}
+        className={expanded ? "composer-slot" : "composer-slot composer-slot--collapsed"}
+      >
+        <div className="composer-slot__head">
+          <button type="button" className="composer-slot__toggle" onClick={() => toggleSlot(slotIndex)}>
+            {slotLabel}
+          </button>
+          <button type="button" onClick={() => onRemove(slotIndex)}>
+            Remove
+          </button>
+        </div>
+        <div className="composer-slot__params">
+          <SectionErrors errors={errors} pathPrefix={path} />
+          <label className="field">
+            <span>instance_id</span>
+            <input
+              value={String(slot.instance_id ?? "")}
+              onChange={(e) => onChange(slotIndex, { ...slot, instance_id: e.target.value })}
+            />
+          </label>
+          <label className="field">
+            <span>component</span>
+            <select
+              value={componentId}
+              onChange={(e) => {
+                const nextSchema = findComponentSchema(catalog, e.target.value);
+                const base: JsonObject = {
+                  instance_id: String(slot.instance_id ?? e.target.value),
+                  component_id: e.target.value,
+                };
+                onChange(slotIndex, applyComponentDefaults(base, nextSchema));
+              }}
+            >
+              {options.map((o) => (
+                <option key={o.component_id} value={o.component_id}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          {schema?.params_schema && (
+            <ParamFields
+              paramsSchema={schema.params_schema}
+              value={slot}
+              onChange={(next) => onChange(slotIndex, next)}
+            />
+          )}
+        </div>
+      </div>
+    );
+  });
+
+  if (compact) {
+    return (
+      <div className="composer-collapsible-inner">
+        {listAdd}
+        {slotList}
+      </div>
+    );
+  }
+
+  return (
+    <fieldset className="composer-section composer-section--nested">
+      <legend>{title}</legend>
+      {listAdd}
+      {slotList}
     </fieldset>
   );
 }

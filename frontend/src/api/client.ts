@@ -8,6 +8,7 @@ import {
   type RunSummary,
   type SignalTraceBundle,
   type BacktestResult,
+  type ConfigStateResponse,
   type SaveConfigResult,
   type SerializeResult,
   type StrategyConfigDraft,
@@ -192,6 +193,22 @@ export async function saveConfigDraft(
   draft: StrategyConfigDraft,
 ): Promise<SaveConfigResult> {
   return postJson<SaveConfigResult>("/api/research/config/save", { draft });
+}
+
+export async function fetchConfigState(family = "ema_pullback"): Promise<ConfigStateResponse> {
+  const qs = new URLSearchParams({ family });
+  return requestJson<ConfigStateResponse>(`/api/research/configs/state?${qs.toString()}`);
+}
+
+export async function selectSavedConfig(
+  family: string,
+  experimentId: string,
+): Promise<ConfigStateResponse> {
+  return requestJson<ConfigStateResponse>("/api/research/configs/selected", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ family, experiment_id: experimentId }),
+  });
 }
 
 export async function runBacktest(
