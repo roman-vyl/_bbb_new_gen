@@ -1,0 +1,175 @@
+"""Component catalog for Workbench Composer (ema_pullback MVP stub)."""
+
+from __future__ import annotations
+
+from research_api.contracts.catalog import (
+    ComponentCatalog,
+    ComponentSchema,
+    ComposerSectionSchema,
+    ParamFieldSchema,
+)
+
+_TF_ENUM = ["base", "5m", "15m", "1h", "4h"]
+
+
+def _tf_param(key: str, *, default: str = "base") -> ParamFieldSchema:
+    return ParamFieldSchema(type="string", label=key, enum=_TF_ENUM, default=default)
+
+
+def _int_param(label: str, *, default: int, min_val: int = 1) -> ParamFieldSchema:
+    return ParamFieldSchema(type="integer", label=label, min=float(min_val), default=default)
+
+
+def _num_param(label: str, *, default: float) -> ParamFieldSchema:
+    return ParamFieldSchema(type="number", label=label, default=default)
+
+
+def get_component_catalog(*, family: str = "ema_pullback") -> ComponentCatalog:
+    if family != "ema_pullback":
+        raise ValueError(f"unsupported family {family!r}; supported: ema_pullback")
+
+    sections = [
+        ComposerSectionSchema(section_id="envelope", label="Experiment"),
+        ComposerSectionSchema(section_id="instances", label="Instances"),
+        ComposerSectionSchema(section_id="market", label="Market"),
+        ComposerSectionSchema(section_id="anchor_stack", label="Anchor stack"),
+        ComposerSectionSchema(section_id="trade_sides", label="Trade sides"),
+        ComposerSectionSchema(section_id="direction", label="Direction", role="direction"),
+        ComposerSectionSchema(section_id="setup", label="Setup", role="setup"),
+        ComposerSectionSchema(section_id="trigger", label="Trigger", role="trigger"),
+        ComposerSectionSchema(
+            section_id="blockers",
+            label="Blockers",
+            role="blockers",
+            list_slot=True,
+        ),
+        ComposerSectionSchema(section_id="risk", label="Risk", role="risk"),
+        ComposerSectionSchema(
+            section_id="exits",
+            label="Exits",
+            role="exits",
+            list_slot=True,
+        ),
+    ]
+
+    components = [
+        ComponentSchema(
+            component_id="ema_anchor_stack_trend",
+            role="direction",
+            label="EMA anchor stack trend",
+            description="Long when fast > anchor > slow; short mirrors.",
+        ),
+        ComponentSchema(
+            component_id="pullback_to_anchor",
+            role="setup",
+            label="Pullback to anchor",
+            params_schema={
+                "lookback": _int_param("Lookback bars", default=3),
+            },
+        ),
+        ComponentSchema(
+            component_id="reclaim_anchor",
+            role="trigger",
+            label="Reclaim anchor",
+        ),
+        ComponentSchema(
+            component_id="touch_anchor",
+            role="trigger",
+            label="Touch anchor",
+        ),
+        ComponentSchema(
+            component_id="no_blockers",
+            role="blockers",
+            label="No blockers",
+            list_slot=True,
+        ),
+        ComponentSchema(
+            component_id="counter_candle_blocker",
+            role="blockers",
+            label="Counter candle blocker",
+            list_slot=True,
+        ),
+        ComponentSchema(
+            component_id="rsi_extreme_blocker",
+            role="blockers",
+            label="RSI extreme blocker",
+            list_slot=True,
+            params_schema={
+                "rsi.timeframe": _tf_param("RSI timeframe", default="5m"),
+                "rsi.period": _int_param("RSI period", default=14),
+                "lookback": _int_param("Lookback", default=20),
+                "long_min": _num_param("Long min RSI", default=20.0),
+                "short_max": _num_param("Short max RSI", default=80.0),
+            },
+        ),
+        ComponentSchema(
+            component_id="no_risk_filter",
+            role="risk",
+            label="No risk filter",
+        ),
+        ComponentSchema(
+            component_id="no_signal_exit",
+            role="exits",
+            label="No signal exit",
+            list_slot=True,
+        ),
+        ComponentSchema(
+            component_id="rsi_signal_exit",
+            role="exits",
+            label="RSI signal exit",
+            list_slot=True,
+            params_schema={
+                "rsi.timeframe": _tf_param("RSI timeframe", default="5m"),
+                "rsi.period": _int_param("RSI period", default=14),
+                "long_exit_above": _num_param("Long exit above", default=70.0),
+                "short_exit_below": _num_param("Short exit below", default=30.0),
+            },
+        ),
+        ComponentSchema(
+            component_id="atr_stop_loss",
+            role="exits",
+            label="ATR stop loss",
+            list_slot=True,
+            params_schema={
+                "distance.timeframe": _tf_param("ATR timeframe", default="5m"),
+                "distance.period": _int_param("ATR period", default=14),
+                "distance.multiplier": _num_param("ATR multiplier", default=2.0),
+            },
+        ),
+        ComponentSchema(
+            component_id="atr_take_profit",
+            role="exits",
+            label="ATR take profit",
+            list_slot=True,
+            params_schema={
+                "distance.timeframe": _tf_param("ATR timeframe", default="base"),
+                "distance.period": _int_param("ATR period", default=14),
+                "distance.multiplier": _num_param("ATR multiplier", default=4.0),
+            },
+        ),
+        ComponentSchema(
+            component_id="constant_usd_stop_loss",
+            role="exits",
+            label="Constant USD stop loss",
+            list_slot=True,
+            params_schema={
+                "usd_distance": _num_param("USD distance", default=100.0),
+            },
+        ),
+        ComponentSchema(
+            component_id="constant_usd_take_profit",
+            role="exits",
+            label="Constant USD take profit",
+            list_slot=True,
+            params_schema={
+                "usd_distance": _num_param("USD distance", default=200.0),
+            },
+        ),
+    ]
+
+    return ComponentCatalog(
+        family=family,
+        schema_version=1,
+        sections=sections,
+        components=components,
+    )

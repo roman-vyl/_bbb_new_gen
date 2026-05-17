@@ -251,6 +251,12 @@ select {
   border: 1px solid #1e40af;
 }
 
+.banner--error {
+  background: #3f1212;
+  color: #fca5a5;
+  border: 1px solid #7f1d1d;
+}
+
 .workbench-gate {
   display: flex;
   flex-direction: column;
@@ -455,6 +461,153 @@ select {
   font-size: 0.78rem;
   line-height: 1.4;
   color: #cbd5e1;
+}
+
+.composer-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.composer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.composer-actions button,
+.composer-instance-toolbar button,
+.composer-list-add button,
+.composer-slot__head button {
+  background: #1e293b;
+  color: #e8edf4;
+  border: 1px solid #334155;
+  border-radius: 6px;
+  padding: 0.35rem 0.65rem;
+  cursor: pointer;
+}
+
+.composer-actions button:disabled,
+.composer-save:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.composer-save:not(:disabled) {
+  border-color: #3b82f6;
+  color: #93c5fd;
+}
+
+.composer-status {
+  margin: 0 0 0.5rem;
+  font-size: 0.85rem;
+}
+
+.composer-status--ok {
+  color: #86efac;
+}
+
+.composer-status--err {
+  color: #fca5a5;
+}
+
+.composer-section {
+  border: 1px solid #243041;
+  border-radius: 8px;
+  padding: 0.65rem 0.75rem;
+  margin: 0 0 0.75rem;
+}
+
+.composer-section legend {
+  padding: 0 0.35rem;
+  color: #93c5fd;
+  font-size: 0.85rem;
+}
+
+.composer-section--nested {
+  margin-top: 0.5rem;
+  background: #0c1016;
+}
+
+.composer-subhead {
+  margin: 0.75rem 0 0.35rem;
+  font-size: 0.85rem;
+  color: #94a3b8;
+}
+
+.composer-instance-toolbar,
+.composer-list-add,
+.composer-preview-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.composer-preview-tabs button {
+  background: transparent;
+  border: 1px solid #334155;
+  border-radius: 6px;
+  color: #94a3b8;
+  padding: 0.3rem 0.55rem;
+  cursor: pointer;
+}
+
+.composer-preview-tabs button.is-active {
+  border-color: #3b82f6;
+  color: #e8edf4;
+}
+
+.composer-errors {
+  margin: 0 0 0.5rem;
+  padding-left: 1.1rem;
+  color: #fca5a5;
+  font-size: 0.78rem;
+}
+
+.composer-errors code {
+  color: #fbbf24;
+  margin-right: 0.25rem;
+}
+
+.composer-slot {
+  border: 1px dashed #334155;
+  border-radius: 6px;
+  padding: 0.5rem;
+  margin: 0.5rem 0;
+}
+
+.composer-slot__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.35rem;
+}
+
+.param-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  margin-top: 0.35rem;
+}
+
+.field--inline {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.composer-trade-sides {
+  display: flex;
+  gap: 1rem;
+}
+
+.banner--ok {
+  color: #86efac;
 }
 
 @media (max-width: 900px) {

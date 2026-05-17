@@ -108,15 +108,17 @@ export type RunSummary = {
   timeframe: string;
 };
 
+export type ExecutionDraft = {
+  init_cash?: number;
+  fees?: number;
+  slippage?: number;
+};
+
 export type StrategyConfigDraft = {
   config_version: number;
   experiment_id: string;
   family: string;
-  execution: {
-    init_cash: number;
-    fees: number;
-    slippage: number;
-  };
+  execution: ExecutionDraft;
   instances: StrategyInstanceDraft[];
 };
 
@@ -125,6 +127,61 @@ export type StrategyInstanceDraft = {
   variant: string;
   market: { symbol: string; base_timeframe: string };
   strategy: JsonObject;
+};
+
+export type ParamFieldSchema = {
+  type: "integer" | "number" | "string" | "boolean";
+  label?: string | null;
+  min?: number | null;
+  max?: number | null;
+  enum?: string[] | null;
+  default?: unknown;
+};
+
+export type ComponentSchema = {
+  component_id: string;
+  role: "direction" | "setup" | "trigger" | "blockers" | "exits" | "risk";
+  label: string;
+  description?: string | null;
+  params_schema?: Record<string, ParamFieldSchema>;
+  list_slot?: boolean;
+};
+
+export type ComposerSectionSchema = {
+  section_id: string;
+  label: string;
+  role?: string | null;
+  list_slot?: boolean;
+};
+
+export type ComponentCatalog = {
+  family: string;
+  schema_version: number;
+  sections: ComposerSectionSchema[];
+  components: ComponentSchema[];
+};
+
+export type ValidationErrorItem = {
+  path: string;
+  message: string;
+};
+
+export type ValidationResult = {
+  ok: boolean;
+  errors: ValidationErrorItem[];
+};
+
+export type SerializeResult = {
+  ok: boolean;
+  format: "json" | "yaml";
+  content: string;
+  errors: ValidationErrorItem[];
+};
+
+export type SaveConfigResult = {
+  ok: boolean;
+  path: string | null;
+  errors: ValidationErrorItem[];
 };
 
 export type WorkbenchTab = "chart" | "composer" | "reports";
