@@ -33,7 +33,7 @@ def test_registry_resolves_new_stage10_components() -> None:
     assert callable(resolve_component("direction", "ema_anchor_stack_trend").func)
     assert callable(resolve_component("blockers", "no_blockers").func)
     assert callable(resolve_component("blockers", "counter_candle_blocker").func)
-    assert callable(resolve_component("blockers", "rsi_extreme_blocker").func)
+    assert callable(resolve_component("blockers", "rsi_lookback_extreme_blocker").func)
     assert callable(resolve_component("setup", "pullback_to_anchor").func)
     assert callable(resolve_component("trigger", "reclaim_anchor").func)
     assert callable(resolve_component("trigger", "touch_anchor").func)
@@ -123,30 +123,60 @@ def test_counter_candle_blocker_supports_long_and_short_sides() -> None:
     assert fn(df, side="short").tolist() == [False, True, True, True]
 
 
-def test_rsi_extreme_blocker_uses_prepared_rsi_column() -> None:
-    idx = pd.date_range("2024-01-01", periods=4, freq="h", tz="UTC")
-    df = pd.DataFrame({"rsi_close_base_14": [20.0, 40.0, 80.0, 60.0]}, index=idx)
+def _rsi_lookback_blocker_allowed(
+    rsi_values: list[float],
+    side: str,
+    *,
+    lookback: int = 3,
+    long_block_above: float = 80.0,
+    short_block_below: float = 20.0,
+) -> list[bool]:
+    idx = pd.date_range("2024-01-01", periods=len(rsi_values), freq="h", tz="UTC")
+    df = pd.DataFrame({"rsi_close_base_14": rsi_values}, index=idx)
     rule = BlockerRuleSpec(
         instance_id="rsi_base",
-        component_id="rsi_extreme_blocker",
+        component_id="rsi_lookback_extreme_blocker",
         rsi=RsiFeatureSpec(timeframe="base", period=14),
-        lookback=2,
-        long_min=30.0,
-        short_max=70.0,
+        lookback=lookback,
+        long_block_above=long_block_above,
+        short_block_below=short_block_below,
     )
-    fn = resolve_component("blockers", "rsi_extreme_blocker").func
-    assert fn(df, side="long", rule=rule, rsi_col="rsi_close_base_14").tolist() == [
-        False,
-        False,
+    fn = resolve_component("blockers", "rsi_lookback_extreme_blocker").func
+    return fn(df, side=side, rule=rule, rsi_col="rsi_close_base_14").tolist()
+
+
+def test_rsi_lookback_extreme_blocker_long_blocked_after_overbought_in_lookback() -> None:
+    assert _rsi_lookback_blocker_allowed(
+        [75.0, 85.0, 50.0], "long", lookback=3, long_block_above=80.0
+    ) == [True, False, False]
+
+
+def test_rsi_lookback_extreme_blocker_long_not_blocked_on_low_rsi() -> None:
+    assert _rsi_lookback_blocker_allowed([25.0, 28.0, 29.0], "long", long_block_above=80.0) == [
+        True,
         True,
         True,
     ]
-    assert fn(df, side="short", rule=rule, rsi_col="rsi_close_base_14").tolist() == [
+
+
+def test_rsi_lookback_extreme_blocker_short_blocked_after_oversold_in_lookback() -> None:
+    assert _rsi_lookback_blocker_allowed(
+        [50.0, 15.0, 40.0], "short", lookback=3, short_block_below=20.0
+    ) == [True, False, False]
+
+
+def test_rsi_lookback_extreme_blocker_short_not_blocked_on_high_rsi() -> None:
+    assert _rsi_lookback_blocker_allowed([75.0, 80.0, 85.0], "short", short_block_below=20.0) == [
         True,
         True,
-        False,
-        False,
+        True,
     ]
+
+
+def test_rsi_lookback_extreme_blocker_lookback_catches_prior_bar_extreme() -> None:
+    assert _rsi_lookback_blocker_allowed(
+        [90.0, 50.0, 50.0], "long", lookback=2, long_block_above=80.0
+    ) == [False, False, True]
 
 
 def test_rsi_signal_exit_uses_prepared_rsi_column() -> None:

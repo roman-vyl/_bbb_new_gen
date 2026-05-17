@@ -8,7 +8,7 @@ from typing import Callable
 from research.strategies.ema_pullback.components.blockers import (
     counter_candle_blocker,
     no_blockers,
-    rsi_extreme_blocker,
+    rsi_lookback_extreme_blocker,
 )
 from research.strategies.ema_pullback.components.direction import (
     ema_anchor_stack_trend,
@@ -41,7 +41,7 @@ REQUIRED_COMPONENT_ROLES: tuple[str, ...] = (
 EMA_ANCHOR_STACK_TREND_COMPONENT = "ema_anchor_stack_trend"
 NO_BLOCKERS_COMPONENT = "no_blockers"
 COUNTER_CANDLE_BLOCKER_COMPONENT = "counter_candle_blocker"
-RSI_EXTREME_BLOCKER_COMPONENT = "rsi_extreme_blocker"
+RSI_LOOKBACK_EXTREME_BLOCKER_COMPONENT = "rsi_lookback_extreme_blocker"
 PULLBACK_TO_ANCHOR_COMPONENT = "pullback_to_anchor"
 RECLAIM_ANCHOR_COMPONENT = "reclaim_anchor"
 TOUCH_ANCHOR_COMPONENT = "touch_anchor"
@@ -84,11 +84,14 @@ COMPONENT_REGISTRY: dict[str, dict[str, ComponentDefinition]] = {
             func=counter_candle_blocker,
             description="Block long on bearish candles and short on bullish candles.",
         ),
-        RSI_EXTREME_BLOCKER_COMPONENT: ComponentDefinition(
+        RSI_LOOKBACK_EXTREME_BLOCKER_COMPONENT: ComponentDefinition(
             role="blockers",
-            component_id=RSI_EXTREME_BLOCKER_COMPONENT,
-            func=rsi_extreme_blocker,
-            description="Block entries on side-aware RSI extremes.",
+            component_id=RSI_LOOKBACK_EXTREME_BLOCKER_COMPONENT,
+            func=rsi_lookback_extreme_blocker,
+            description=(
+                "Block long after overbought RSI extreme or short after oversold "
+                "extreme within lookback."
+            ),
         ),
     },
     "setup": {
@@ -195,7 +198,7 @@ __all__ = [
     "PULLBACK_TO_ANCHOR_COMPONENT",
     "RECLAIM_ANCHOR_COMPONENT",
     "REQUIRED_COMPONENT_ROLES",
-    "RSI_EXTREME_BLOCKER_COMPONENT",
+    "RSI_LOOKBACK_EXTREME_BLOCKER_COMPONENT",
     "RSI_SIGNAL_EXIT_COMPONENT",
     "TOUCH_ANCHOR_COMPONENT",
     "no_risk_filter",

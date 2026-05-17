@@ -102,10 +102,10 @@ def test_base_rsi_feature_plan_and_calculation() -> None:
             blockers=(
                 BlockerRuleSpec(
                     instance_id="rsi_base",
-                    component_id="rsi_extreme_blocker",
+                    component_id="rsi_lookback_extreme_blocker",
                     rsi=RsiFeatureSpec(timeframe="base", period=3),
-                    long_min=30.0,
-                    short_max=70.0,
+                    long_block_above=80.0,
+                    short_block_below=20.0,
                 ),
             ),
             exits=(

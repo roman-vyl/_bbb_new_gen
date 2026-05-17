@@ -33,11 +33,11 @@
         "blockers": [
           {
             "instance_id": "rsi_base",
-            "component_id": "rsi_extreme_blocker",
+            "component_id": "rsi_lookback_extreme_blocker",
             "rsi": { "timeframe": "5m", "period": 14 },
             "lookback": 20,
-            "long_min": 20,
-            "short_max": 80
+            "long_block_above": 80,
+            "short_block_below": 20
           }
         ],
         "risk": { "component_id": "no_risk_filter" },

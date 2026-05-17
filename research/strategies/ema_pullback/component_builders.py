@@ -19,7 +19,7 @@ from research.strategies.ema_pullback.components.registry import (
     NO_SIGNAL_EXIT_COMPONENT,
     PULLBACK_TO_ANCHOR_COMPONENT,
     RECLAIM_ANCHOR_COMPONENT,
-    RSI_EXTREME_BLOCKER_COMPONENT,
+    RSI_LOOKBACK_EXTREME_BLOCKER_COMPONENT,
     RSI_SIGNAL_EXIT_COMPONENT,
     TOUCH_ANCHOR_COMPONENT,
 )
@@ -95,17 +95,17 @@ def blocker_rule(
     *,
     instance_id: str,
     rsi: RsiFeatureSpec | None = None,
-    lookback: int = 1,
-    long_min: float | None = None,
-    short_max: float | None = None,
+    lookback: int = 20,
+    long_block_above: float | None = None,
+    short_block_below: float | None = None,
 ) -> BlockerRuleSpec:
     return BlockerRuleSpec(
         instance_id=instance_id,
         component_id=component_id,
         rsi=rsi,
         lookback=lookback,
-        long_min=long_min,
-        short_max=short_max,
+        long_block_above=long_block_above,
+        short_block_below=short_block_below,
     )
 
 
@@ -122,17 +122,17 @@ def blocker_extreme_rsi(
     instance_id: str,
     timeframe: str = "base",
     period: int = 14,
-    lookback: int = 1,
-    long_min: float = 30.0,
-    short_max: float = 70.0,
+    lookback: int = 20,
+    long_block_above: float = 80.0,
+    short_block_below: float = 20.0,
 ) -> BlockerRuleSpec:
     return blocker_rule(
-        RSI_EXTREME_BLOCKER_COMPONENT,
+        RSI_LOOKBACK_EXTREME_BLOCKER_COMPONENT,
         instance_id=instance_id,
         rsi=rsi_feature(timeframe=timeframe, period=period),
         lookback=lookback,
-        long_min=long_min,
-        short_max=short_max,
+        long_block_above=long_block_above,
+        short_block_below=short_block_below,
     )
 
 

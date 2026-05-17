@@ -68,7 +68,9 @@ def test_component_catalog_returns_ema_pullback_components(client: TestClient) -
     assert res.status_code == 200
     body = res.json()
     assert body["family"] == "ema_pullback"
-    assert any(c["component_id"] == "rsi_extreme_blocker" for c in body["components"])
+    assert any(
+        c["component_id"] == "rsi_lookback_extreme_blocker" for c in body["components"]
+    )
 
 
 def test_validate_config_ok(client: TestClient) -> None:

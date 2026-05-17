@@ -18,7 +18,7 @@ from research.strategies.ema_pullback.components.registry import (
     NO_SIGNAL_EXIT_COMPONENT,
     PULLBACK_TO_ANCHOR_COMPONENT,
     RECLAIM_ANCHOR_COMPONENT,
-    RSI_EXTREME_BLOCKER_COMPONENT,
+    RSI_LOOKBACK_EXTREME_BLOCKER_COMPONENT,
     RSI_SIGNAL_EXIT_COMPONENT,
     TOUCH_ANCHOR_COMPONENT,
     resolve_component,
@@ -219,17 +219,24 @@ def _parse_blocker(index: int, value: Any) -> BlockerRuleSpec:
     if component_id == COUNTER_CANDLE_BLOCKER_COMPONENT:
         _reject_unknown_fields(f"blockers[{index}]", payload, common)
         return builders.blocker_counter_candle(instance_id=instance_id)
-    if component_id == RSI_EXTREME_BLOCKER_COMPONENT:
-        allowed = common | {"rsi", "timeframe", "period", "lookback", "long_min", "short_max"}
+    if component_id == RSI_LOOKBACK_EXTREME_BLOCKER_COMPONENT:
+        allowed = common | {
+            "rsi",
+            "timeframe",
+            "period",
+            "lookback",
+            "long_block_above",
+            "short_block_below",
+        }
         _reject_unknown_fields(f"blockers[{index}]", payload, allowed)
         rsi = _parse_rsi_payload(payload)
         return builders.blocker_extreme_rsi(
             instance_id=instance_id,
             timeframe=rsi["timeframe"],
             period=rsi["period"],
-            lookback=_optional_positive_int(payload, "lookback", default=1),
-            long_min=_optional_number(payload, "long_min", default=30.0),
-            short_max=_optional_number(payload, "short_max", default=70.0),
+            lookback=_optional_positive_int(payload, "lookback", default=20),
+            long_block_above=_optional_number(payload, "long_block_above", default=80.0),
+            short_block_below=_optional_number(payload, "short_block_below", default=20.0),
         )
     raise EmaPullbackInstanceValidationError(f"unsupported blocker component_id {component_id!r}")
 

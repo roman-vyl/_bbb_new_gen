@@ -193,7 +193,7 @@ Family-local registry (`components/registry.py`) включает, среди п
 direction: ema_anchor_stack_trend
 setup: pullback_to_anchor
 trigger: reclaim_anchor, touch_anchor
-blockers: no_blockers, counter_candle_blocker, rsi_extreme_blocker
+blockers: no_blockers, counter_candle_blocker, rsi_lookback_extreme_blocker
 exits: atr_stop_loss, atr_take_profit, constant_usd_stop_loss, constant_usd_take_profit, rsi_signal_exit
 time_stop (future)
 risk: no_risk_filter
@@ -201,6 +201,11 @@ risk: no_risk_filter
 
 RSI считается в `features/calculations.py` по `FeaturePlan`; компоненты получают
 готовую колонку через `rsi_col` (см. `execution/signals.py`).
+
+`rsi_lookback_extreme_blocker` — не лонговать после overbought-extreme / не шортить после
+oversold-extreme в окне `lookback` (параметры `long_block_above`, `short_block_below`).
+Высокий RSI сам по себе не блокирует short; низкий RSI не блокирует long. Lookback проверяет
+наличие экстремума на одном из предыдущих баров (rolling max), а не только на текущем.
 
 ## Запуск
 

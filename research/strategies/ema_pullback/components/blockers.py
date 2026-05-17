@@ -37,26 +37,30 @@ def counter_candle_blocker(
     return out.fillna(False).astype(bool)
 
 
-def rsi_extreme_blocker(
+def rsi_lookback_extreme_blocker(
     df: pd.DataFrame,
     side: TradeSide = "long",
     *,
     rule: BlockerRuleSpec,
     rsi_col: str | None = None,
 ) -> pd.Series:
-    """Block entries when prepared RSI is extreme for the requested side."""
+    """Block entries after overbought-extreme (long) or oversold-extreme (short) in lookback."""
 
     if rule.rsi is None or rsi_col is None:
-        raise ValueError("rsi_extreme_blocker requires rule.rsi and rsi_col")
+        raise ValueError("rsi_lookback_extreme_blocker requires rule.rsi and rsi_col")
     rsi = df[rsi_col].astype(float)
     if side == "long":
-        if rule.long_min is None:
-            raise ValueError("rsi_extreme_blocker requires long_min for long side")
-        extreme = rsi < float(rule.long_min)
+        if rule.long_block_above is None:
+            raise ValueError(
+                "rsi_lookback_extreme_blocker requires long_block_above for long side"
+            )
+        extreme = rsi > float(rule.long_block_above)
     elif side == "short":
-        if rule.short_max is None:
-            raise ValueError("rsi_extreme_blocker requires short_max for short side")
-        extreme = rsi > float(rule.short_max)
+        if rule.short_block_below is None:
+            raise ValueError(
+                "rsi_lookback_extreme_blocker requires short_block_below for short side"
+            )
+        extreme = rsi < float(rule.short_block_below)
     else:
         raise ValueError("side must be 'long' or 'short'")
 

@@ -96,9 +96,9 @@ class BlockerRuleSpec:
     instance_id: str
     component_id: str
     rsi: RsiFeatureSpec | None = None
-    lookback: int = 1
-    long_min: float | None = None
-    short_max: float | None = None
+    lookback: int = 20
+    long_block_above: float | None = None
+    short_block_below: float | None = None
 
     def __post_init__(self) -> None:
         if not self.instance_id.strip():
@@ -107,7 +107,7 @@ class BlockerRuleSpec:
             raise ValueError("blocker component_id must be non-empty")
         if self.lookback <= 0:
             raise ValueError("blocker lookback must be > 0")
-        for field_name in ("long_min", "short_max"):
+        for field_name in ("long_block_above", "short_block_below"):
             value = getattr(self, field_name)
             if value is not None and not (0 <= value <= 100):
                 raise ValueError(f"blocker {field_name} must be between 0 and 100")

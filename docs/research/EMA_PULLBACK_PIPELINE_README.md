@@ -383,10 +383,12 @@ counter_candle_blocker
   long: пропускает только bullish свечи (close >= open)
   short: пропускает только bearish свечи (close <= open)
 
-rsi_extreme_blocker
+rsi_lookback_extreme_blocker
   использует подготовленную RSI колонку (rsi_col)
-  long: блокирует вход, если RSI слишком низкий (ниже long_min), опционально с lookback
-  short: блокирует вход, если RSI слишком высокий (выше short_max), опционально с lookback
+  long: блокирует вход, если за lookback был RSI выше long_block_above (overbought-extreme)
+  short: блокирует вход, если за lookback был RSI ниже short_block_below (oversold-extreme)
+  высокий RSI сам по себе не блокирует short; низкий RSI не блокирует long
+  lookback: rolling max по булевому extreme — экстремум на предыдущих барах, не только текущий
 ```
 
 ### Risk

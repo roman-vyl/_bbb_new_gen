@@ -51,9 +51,9 @@ Shortcuts не размазывают raw string literals по коду: стр�
 
 ### Blocker
 
-- `blocker_rule(component_id: str, *, rsi=..., lookback=..., long_min=..., short_max=...) -> BlockerRuleSpec`
+- `blocker_rule(component_id: str, *, rsi=..., lookback=..., long_block_above=..., short_block_below=...) -> BlockerRuleSpec`
 - `blocker_none()`, `blocker_counter_candle()`
-- `blocker_extreme_rsi(*, timeframe=..., period=..., lookback=..., long_min=..., short_max=...) -> BlockerRuleSpec`
+- `blocker_extreme_rsi(*, timeframe=..., period=..., lookback=..., long_block_above=..., short_block_below=...) -> BlockerRuleSpec`
 
 ### Exit rules (`ExitRuleSpec`)
 

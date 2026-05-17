@@ -250,7 +250,10 @@ def test_blocker_and_trigger_shortcuts_return_expected_components() -> None:
     assert blocker_none().component_id == "no_blockers"
     assert blocker_none().instance_id == "no_blockers"
     assert blocker_counter_candle().component_id == "counter_candle_blocker"
-    assert blocker_extreme_rsi(instance_id="rsi_base").component_id == "rsi_extreme_blocker"
+    assert (
+        blocker_extreme_rsi(instance_id="rsi_base").component_id
+        == "rsi_lookback_extreme_blocker"
+    )
     assert trigger_reclaim_anchor().component_id == "reclaim_anchor"
     assert trigger_touch_anchor().component_id == "touch_anchor"
 
@@ -287,8 +290,8 @@ def test_repeated_components_require_explicit_distinct_instance_ids() -> None:
     )
 
     assert [rule.component_id for rule in stack.blockers] == [
-        "rsi_extreme_blocker",
-        "rsi_extreme_blocker",
+        "rsi_lookback_extreme_blocker",
+        "rsi_lookback_extreme_blocker",
     ]
     assert [rule.instance_id for rule in stack.blockers] == ["rsi_5m", "rsi_15m"]
     assert [rule.instance_id for rule in stack.exits] == [

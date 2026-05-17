@@ -90,16 +90,16 @@ def get_component_catalog(*, family: str = "ema_pullback") -> ComponentCatalog:
             list_slot=True,
         ),
         ComponentSchema(
-            component_id="rsi_extreme_blocker",
+            component_id="rsi_lookback_extreme_blocker",
             role="blockers",
-            label="RSI extreme blocker",
+            label="RSI lookback extreme blocker",
             list_slot=True,
             params_schema={
                 "rsi.timeframe": _tf_param("RSI timeframe", default="5m"),
                 "rsi.period": _int_param("RSI period", default=14),
                 "lookback": _int_param("Lookback", default=20),
-                "long_min": _num_param("Long min RSI", default=20.0),
-                "short_max": _num_param("Short max RSI", default=80.0),
+                "long_block_above": _num_param("Long block above RSI", default=80.0),
+                "short_block_below": _num_param("Short block below RSI", default=20.0),
             },
         ),
         ComponentSchema(
