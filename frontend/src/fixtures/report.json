@@ -20,7 +20,14 @@
       "strategy_spec": {
         "variant": "exp_06_ema_50_200_500_rsi_exit",
         "symbol": "BTCUSDT",
-        "base_timeframe": "5m"
+        "base_timeframe": "5m",
+        "anchor_stack": {
+          "source": "close",
+          "timeframe": "base",
+          "fast": { "source": "close", "timeframe": "base", "period": 50 },
+          "anchor": { "source": "close", "timeframe": "base", "period": 200 },
+          "slow": { "source": "close", "timeframe": "base", "period": 500 }
+        }
       },
       "metrics": {
         "long": {

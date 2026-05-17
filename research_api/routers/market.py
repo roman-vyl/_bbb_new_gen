@@ -43,11 +43,11 @@ def _range_end_ms(
 @router.get(
     "/chart-bundle",
     response_model=ChartMarketBundle,
-    summary="OHLC + chart overlay EMA (single DB read)",
+    summary="OHLC + anchor-stack chart overlay EMAs (single DB read)",
     description=(
         "Preferred Workbench chart payload: one SQLite ``range_get`` for candles, "
-        "then in-process chart overlay EMA. Avoid calling ``/candles`` and "
-        "``/indicators/ema`` separately for the same window."
+        "then three in-process chart overlay EMAs (fast/anchor/slow) from candle "
+        "closes. Not research strategy feature columns (``ema_close_*``)."
     ),
 )
 def get_chart_bundle(
@@ -56,7 +56,9 @@ def get_chart_bundle(
     from_ms: int = Query(..., alias="from", ge=0),
     to_ms: int | None = Query(None, alias="to", ge=1),
     to_open_time_ms: int | None = Query(None, ge=0),
-    ema_period: int = Query(..., ge=1, le=5000),
+    ema_fast: int = Query(..., ge=1, le=5000),
+    ema_anchor: int = Query(..., ge=1, le=5000),
+    ema_slow: int = Query(..., ge=1, le=5000),
 ) -> ChartMarketBundle:
     try:
         end_ms = _range_end_ms(timeframe=timeframe, to_ms=to_ms, to_open_time_ms=to_open_time_ms)
@@ -65,7 +67,9 @@ def get_chart_bundle(
             timeframe=timeframe,
             from_ms=from_ms,
             to_ms=end_ms,
-            ema_period=ema_period,
+            ema_fast=ema_fast,
+            ema_anchor=ema_anchor,
+            ema_slow=ema_slow,
         )
     except Exception as exc:
         raise _http_from_market(exc) from exc

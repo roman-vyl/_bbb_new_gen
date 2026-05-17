@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { ChartBar, IndicatorPoint } from "@/api/types";
+import type { ChartBar, ChartEmaOverlay, IndicatorPoint } from "@/api/types";
 import { CHART_OVERLAY_EMA_KIND } from "@/api/types";
 import {
   buildChartViewWindow,
@@ -8,6 +8,7 @@ import {
   findBarIndexAtOrBefore,
   sliceAroundTime,
   sliceEmaToCandleWindow,
+  sliceOverlaysToCandleWindow,
   sliceTailBars,
 } from "@/features/chart/chartViewWindow";
 
@@ -27,6 +28,15 @@ function makeEmaForBars(bars: ChartBar[]): IndicatorPoint[] {
     value: bar.close,
     kind: CHART_OVERLAY_EMA_KIND,
   }));
+}
+
+function makeOverlays(bars: ChartBar[]): ChartEmaOverlay[] {
+  const points = makeEmaForBars(bars);
+  return [
+    { role: "fast", period: 50, points },
+    { role: "anchor", period: 200, points },
+    { role: "slow", period: 500, points },
+  ];
 }
 
 describe("sliceTailBars", () => {
@@ -106,44 +116,59 @@ describe("sliceEmaToCandleWindow", () => {
   });
 });
 
+describe("sliceOverlaysToCandleWindow", () => {
+  it("slices each overlay series to candle window", () => {
+    const candles = makeBars(5, 1_000);
+    const overlays = makeOverlays(candles);
+    const sliced = sliceOverlaysToCandleWindow(overlays, candles);
+    expect(sliced).toHaveLength(3);
+    for (const overlay of sliced) {
+      expect(overlay.points).toHaveLength(5);
+    }
+  });
+});
+
 describe("buildChartViewWindow", () => {
   it("uses tail when no trade selected", () => {
     const candles = makeBars(CHART_RENDER_BAR_LIMIT + 100);
-    const ema = makeEmaForBars(candles);
+    const emaOverlays = makeOverlays(candles);
     const view = buildChartViewWindow({
       candles,
-      ema,
+      emaOverlays,
       selectedTradeEntryTimeMs: null,
     });
     expect(view.candles).toHaveLength(CHART_RENDER_BAR_LIMIT);
     expect(view.candles[0].time).toBe(candles[100].time);
+    expect(view.emaOverlays).toHaveLength(3);
+    expect(view.emaOverlays[0].points).toHaveLength(CHART_RENDER_BAR_LIMIT);
   });
 
   it("uses around-trade window when trade selected", () => {
     const candles = makeBars(200, 0);
-    const ema = makeEmaForBars(candles);
+    const emaOverlays = makeOverlays(candles);
     const entryMs = candles[100].time * 1000;
     const view = buildChartViewWindow({
       candles,
-      ema,
+      emaOverlays,
       selectedTradeEntryTimeMs: entryMs,
       limit: 40,
     });
     expect(view.candles).toHaveLength(40);
     expect(view.candles.some((b) => b.time === candles[100].time)).toBe(true);
     expect(view.candles[0].time).not.toBe(candles[0].time);
+    expect(view.emaOverlays.every((o) => o.points.length === 40)).toBe(true);
   });
 
   it("returns full series when shorter than limit", () => {
     const candles = makeBars(10);
-    const ema = makeEmaForBars(candles);
+    const emaOverlays = makeOverlays(candles);
     const view = buildChartViewWindow({
       candles,
-      ema,
+      emaOverlays,
       selectedTradeEntryTimeMs: null,
       limit: 5000,
     });
     expect(view.candles).toHaveLength(10);
-    expect(view.ema).toHaveLength(10);
+    expect(view.emaOverlays[0].points).toHaveLength(10);
   });
 });

@@ -25,19 +25,28 @@ export type IndicatorPoint = {
   kind: typeof CHART_OVERLAY_EMA_KIND;
 };
 
+export type AnchorStackEmaRole = "fast" | "anchor" | "slow";
+
+export type AnchorStackPeriods = {
+  fast: number;
+  anchor: number;
+  slow: number;
+};
+
+/** One anchor-stack overlay line (computed from chart candle closes, not research features). */
+export type ChartEmaOverlay = {
+  role: AnchorStackEmaRole;
+  period: number;
+  points: IndicatorPoint[];
+};
+
 export type ChartMarketBundle = {
   candles: ChartBar[];
-  ema: IndicatorPoint[];
+  ema_overlays: ChartEmaOverlay[];
 };
 
 /** MVP chart market timeframe (execution/research TF for Workbench). */
 export const CHART_MARKET_TIMEFRAME = "5m" as const;
-
-/**
- * Default chart overlay EMA period (BFF view-layer series).
- * Computed only over the loaded candle window; not `ema_close_*` strategy features.
- */
-export const CHART_EMA_PERIOD = 200;
 
 export type TradeOverlay = {
   trade_id: number;

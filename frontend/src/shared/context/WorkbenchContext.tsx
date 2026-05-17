@@ -15,16 +15,20 @@ import {
   fetchRunSummaries,
 } from "@/api/client";
 import {
-  CHART_EMA_PERIOD,
   CHART_MARKET_TIMEFRAME,
+  type AnchorStackPeriods,
   type ChartBar,
-  type IndicatorPoint,
+  type ChartEmaOverlay,
   type RunReport,
   type RunSummary,
   type RunVariant,
   type StrategyConfigDraft,
   type WorkbenchTab,
 } from "@/api/types";
+import {
+  AnchorStackParseError,
+  anchorStackPeriodsFromStrategySpec,
+} from "@/features/chart/anchorStackFromSpec";
 import { buildChartViewWindow } from "@/features/chart/chartViewWindow";
 import { candleRangeMs } from "@/features/chart/chartMarkers";
 import {
@@ -57,7 +61,7 @@ type WorkbenchState = {
   setSelectedRunId: (runId: string) => void;
   report: RunReport | null;
   chartCandles: ChartBar[];
-  chartEma: IndicatorPoint[];
+  chartEmaOverlays: ChartEmaOverlay[];
   marketCandlesCount: number;
   fullCandleRange: { min: number; max: number } | null;
   candlesSource: CandlesSource;
@@ -190,12 +194,40 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     };
   }, [loadReport, reloadToken]);
 
+  const selectedVariant = useMemo(() => {
+    if (!report) return null;
+    const found = report.variants.find((v) => v.variant === selectedVariantKey);
+    return found ?? report.variants[0] ?? null;
+  }, [report, selectedVariantKey]);
+
   useEffect(() => {
-    if (report === null || reportLoadStatus !== "ready") {
+    if (report === null || reportLoadStatus !== "ready" || selectedVariant === null) {
       return;
     }
     const snapshot: RunReport = report;
-    const key = buildMarketCacheKey(snapshot, chartTimeframe, reloadToken);
+    const variant = selectedVariant;
+
+    let periods: AnchorStackPeriods;
+    try {
+      periods = anchorStackPeriodsFromStrategySpec(variant.strategy_spec);
+    } catch (err) {
+      const message =
+        err instanceof AnchorStackParseError
+          ? err.message
+          : "Invalid strategy_spec.anchor_stack in run report";
+      setMarketError(message);
+      setMarketCacheKey(null);
+      setMarketLoadStatus("error");
+      return;
+    }
+
+    const key = buildMarketCacheKey(
+      snapshot,
+      chartTimeframe,
+      variant.variant,
+      periods,
+      reloadToken,
+    );
 
     let cancelled = false;
 
@@ -219,7 +251,9 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
           timeframe: chartTimeframe,
           fromMs,
           toOpenTimeMs,
-          emaPeriod: CHART_EMA_PERIOD,
+          emaFast: periods.fast,
+          emaAnchor: periods.anchor,
+          emaSlow: periods.slow,
         });
         if (cancelled) return;
         setMarketCacheIfAbsent(key, bundle);
@@ -237,7 +271,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [report, reportLoadStatus, chartTimeframe, reloadToken]);
+  }, [report, reportLoadStatus, chartTimeframe, reloadToken, selectedVariant]);
 
   const setSelectedRunId = useCallback(
     (runId: string) => {
@@ -261,12 +295,6 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     [loadReport],
   );
 
-  const selectedVariant = useMemo(() => {
-    if (!report) return null;
-    const found = report.variants.find((v) => v.variant === selectedVariantKey);
-    return found ?? report.variants[0] ?? null;
-  }, [report, selectedVariantKey]);
-
   const selectedTradeEntryTimeMs = useMemo(() => {
     if (selectedTradeId === null || !selectedVariant) {
       return null;
@@ -279,11 +307,11 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
 
   const chartView = useMemo(() => {
     if (!cachedBundle || marketLoadStatus !== "ready") {
-      return { candles: [] as ChartBar[], ema: [] as IndicatorPoint[] };
+      return { candles: [] as ChartBar[], emaOverlays: [] as ChartEmaOverlay[] };
     }
     return buildChartViewWindow({
       candles: cachedBundle.candles,
-      ema: cachedBundle.ema,
+      emaOverlays: cachedBundle.ema_overlays,
       selectedTradeEntryTimeMs,
     });
   }, [cachedBundle, marketLoadStatus, selectedTradeEntryTimeMs]);
@@ -325,7 +353,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       setSelectedRunId,
       report,
       chartCandles: chartView.candles,
-      chartEma: chartView.ema,
+      chartEmaOverlays: chartView.emaOverlays,
       marketCandlesCount,
       fullCandleRange,
       candlesSource,
@@ -355,7 +383,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       setSelectedRunId,
       report,
       chartView.candles,
-      chartView.ema,
+      chartView.emaOverlays,
       marketCandlesCount,
       fullCandleRange,
       candlesSource,

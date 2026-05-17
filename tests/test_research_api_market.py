@@ -153,12 +153,28 @@ def test_fetch_chart_market_bundle_single_read(tmp_path) -> None:
         timeframe=tf,
         from_ms=from_ms,
         to_ms=to_ms,
-        ema_period=2,
+        ema_fast=2,
+        ema_anchor=3,
+        ema_slow=4,
         db_path=tmp_path / "market.sqlite",
     )
     assert len(bundle.candles) == 5
-    assert len(bundle.ema) == 5
-    assert bundle.ema[0].kind == CHART_OVERLAY_EMA_KIND
+    assert len(bundle.ema_overlays) == 3
+    assert [o.role for o in bundle.ema_overlays] == ["fast", "anchor", "slow"]
+    assert bundle.ema_overlays[0].points[0].kind == CHART_OVERLAY_EMA_KIND
+
+
+def test_fetch_chart_market_bundle_rejects_invalid_stack_order() -> None:
+    with pytest.raises(ValueError, match="fast < anchor < slow"):
+        fetch_chart_market_bundle(
+            symbol="BTCUSDT",
+            timeframe="5m",
+            from_ms=0,
+            to_ms=1,
+            ema_fast=500,
+            ema_anchor=200,
+            ema_slow=1000,
+        )
 
 
 def test_http_chart_bundle_endpoint(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -181,13 +197,16 @@ def test_http_chart_bundle_endpoint(tmp_path, monkeypatch: pytest.MonkeyPatch) -
             "timeframe": tf,
             "from": from_ms,
             "to_open_time_ms": last_open,
-            "ema_period": 2,
+            "ema_fast": 2,
+            "ema_anchor": 3,
+            "ema_slow": 4,
         },
     )
     assert bundle.status_code == 200
     body = bundle.json()
     assert len(body["candles"]) == 5
-    assert len(body["ema"]) == 5
+    assert len(body["ema_overlays"]) == 3
+    assert {o["role"] for o in body["ema_overlays"]} == {"fast", "anchor", "slow"}
 
 
 def test_http_market_endpoints(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:

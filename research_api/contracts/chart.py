@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 # Series kind tags — chart view layer only (not strategy features / not Data Engine store).
 CHART_OVERLAY_EMA_KIND: Literal["chart_overlay_ema"] = "chart_overlay_ema"
+AnchorStackEmaRole = Literal["fast", "anchor", "slow"]
 
 
 class ChartBar(BaseModel):
@@ -26,15 +27,6 @@ class ChartBar(BaseModel):
     volume: float | None = None
 
 
-class ChartMarketBundle(BaseModel):
-    """OHLC bars + chart overlay EMA from a single storage read."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    candles: list[ChartBar]
-    ema: list[IndicatorPoint]
-
-
 class IndicatorPoint(BaseModel):
     """Indicator sample aligned to ``ChartBar.time``.
 
@@ -50,3 +42,22 @@ class IndicatorPoint(BaseModel):
         default=CHART_OVERLAY_EMA_KIND,
         description="Overlay series discriminator for Workbench chart only.",
     )
+
+
+class ChartEmaOverlay(BaseModel):
+    """One anchor-stack EMA line for Workbench chart (overlay on candle closes)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    role: AnchorStackEmaRole
+    period: int = Field(ge=1, description="EMA period (from run strategy_spec anchor_stack).")
+    points: list[IndicatorPoint]
+
+
+class ChartMarketBundle(BaseModel):
+    """OHLC bars + anchor-stack chart overlay EMAs from a single storage read."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    candles: list[ChartBar]
+    ema_overlays: list[ChartEmaOverlay]
