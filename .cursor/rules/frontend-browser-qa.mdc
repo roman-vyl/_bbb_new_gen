@@ -1,0 +1,27 @@
+---
+description: After frontend UI changes, verify in the browser without asking the user
+globs: frontend/**/*
+alwaysApply: false
+---
+
+# Frontend browser QA
+
+When you change UI under `frontend/`:
+
+1. Ensure dev servers are running:
+   - Vite: `http://127.0.0.1:5173/` (`npm run dev` in `frontend/`)
+   - API (if needed): `http://127.0.0.1:8000` via Vite proxy
+   Check terminals first; start only if down.
+
+2. Open the app with **Playwright MCP** (`playwright` server in `.cursor/mcp.json`). If Playwright MCP is unavailable, use Cursor **@browser** / native browser tools the same way.
+
+3. Exercise flows you touched (chart, workbench, context bar, signal lanes, etc.).
+
+4. Collect and fix regressions before reporting done:
+   - Browser console errors and warnings
+   - Failed or unexpected network requests
+   - Visible UI state (accessibility snapshot / DOM)
+   - Screenshots when something looks wrong or for before/after proof
+   - For **Chart** screenshots, follow `.cursor/rules/workbench-chart-screenshots.mdc` (wait for `Full report range cached` or fallback hints; 60s timeout).
+
+5. Do **not** ask the user to manually inspect the UI unless browser automation is unavailable or dev servers cannot be started after a reasonable attempt.

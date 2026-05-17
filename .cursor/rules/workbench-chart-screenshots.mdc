@@ -1,0 +1,40 @@
+---
+description: Wait for market data before Chart tab screenshots (Research Workbench)
+alwaysApply: true
+---
+
+# Workbench Chart screenshots
+
+When capturing screenshots of the Research Workbench **Chart** tab at `http://127.0.0.1:5173` (Playwright MCP, `npx playwright screenshot`, or @browser):
+
+## Ready signal (default)
+
+Wait until the page shows the info banner text **`Full report range cached`**.
+
+This means `candlesSource === "market"` and the full report candle bundle is cached (see `ChartPanel.tsx`). Market load often needs **15+ seconds** after navigation; use a **60s** timeout, not a short default wait.
+
+**Playwright CLI example:**
+
+```bash
+npx playwright screenshot "http://127.0.0.1:5173" "screenshot.png" \
+  --full-page --viewport-size "1920,1080" \
+  --wait-for-selector "text=Full report range cached" \
+  --timeout 60000
+```
+
+## Fallback (runs with ≤5000 bars)
+
+The `Full report range cached` banner never appears when `marketCandlesCount ≤ 5000`. Wait instead until:
+
+- Chart hint includes **`Showing`** and **`OHLC`**, and
+- **`Market data unavailable`** is not shown.
+
+Still use a **60s** timeout.
+
+## Failure
+
+If **Phase 5 — market unavailable** or *Market data unavailable* persists after the timeout, report that explicitly. Do not treat an empty chart as a successful capture.
+
+## Playwright MCP
+
+If MCP fails with missing system Chrome, use bundled Chromium via `npx playwright screenshot` (same wait criteria).

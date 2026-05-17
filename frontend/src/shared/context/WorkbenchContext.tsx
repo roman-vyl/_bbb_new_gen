@@ -13,6 +13,7 @@ import {
   fetchChartMarketBundle,
   fetchRunReport,
   fetchRunSummaries,
+  fetchSignalTrace,
 } from "@/api/client";
 import {
   CHART_MARKET_TIMEFRAME,
@@ -22,6 +23,7 @@ import {
   type RunReport,
   type RunSummary,
   type RunVariant,
+  type SignalTraceBundle,
   type StrategyConfigDraft,
   type WorkbenchTab,
 } from "@/api/types";
@@ -43,6 +45,7 @@ import configDraftFixture from "@/fixtures/config_draft.json";
 export type ReportLoadStatus = "loading" | "ready" | "error";
 export type MarketLoadStatus = "idle" | "loading" | "ready" | "error";
 export type CandlesSource = "market" | "unavailable";
+export type SignalTraceLoadStatus = "idle" | "loading" | "ready" | "error";
 
 type WorkbenchState = {
   symbol: string;
@@ -74,6 +77,11 @@ type WorkbenchState = {
   setConfigDraft: (draft: StrategyConfigDraft) => void;
   reloadReport: () => void;
   refreshRunsAndSelectRun: (runId: string) => Promise<void>;
+  signalTrace: SignalTraceBundle | null;
+  signalTraceStatus: SignalTraceLoadStatus;
+  signalTraceError: string | null;
+  selectedBarTimeSec: number | null;
+  selectBar: (timeSec: number | null) => void;
 };
 
 const WorkbenchContext = createContext<WorkbenchState | null>(null);
@@ -117,6 +125,10 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
   const [report, setReport] = useState<RunReport | null>(null);
   const [selectedVariantKey, setSelectedVariantKey] = useState("");
   const [selectedTradeId, setSelectedTradeId] = useState<number | null>(null);
+  const [selectedBarTimeSec, setSelectedBarTimeSec] = useState<number | null>(null);
+  const [signalTrace, setSignalTrace] = useState<SignalTraceBundle | null>(null);
+  const [signalTraceStatus, setSignalTraceStatus] = useState<SignalTraceLoadStatus>("idle");
+  const [signalTraceError, setSignalTraceError] = useState<string | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
 
   const chartTimeframe = CHART_MARKET_TIMEFRAME;
@@ -140,6 +152,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
         return loaded.variants[0]?.variant ?? "";
       });
       setSelectedTradeId(null);
+      setSelectedBarTimeSec(null);
       setReportLoadStatus("ready");
     } catch (err) {
       const message =
@@ -325,12 +338,93 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
   const candlesSource: CandlesSource =
     marketLoadStatus === "ready" && cachedBundle !== undefined ? "market" : "unavailable";
 
-  const selectTrade = useCallback((tradeId: number | null) => {
-    setSelectedTradeId(tradeId);
-    if (tradeId !== null) {
-      setActiveTab("chart");
-    }
+  const selectTrade = useCallback(
+    (tradeId: number | null) => {
+      setSelectedTradeId(tradeId);
+      if (tradeId !== null && selectedVariant) {
+        const trade = selectedVariant.trade_records.find((t) => t.trade_id === tradeId);
+        if (trade) {
+          setSelectedBarTimeSec(Math.floor(trade.entry_time_ms / 1000));
+        }
+        setActiveTab("chart");
+      }
+    },
+    [selectedVariant],
+  );
+
+  const selectBar = useCallback((timeSec: number | null) => {
+    setSelectedBarTimeSec(timeSec);
   }, []);
+
+  const chartWindowKey = useMemo(() => {
+    if (chartView.candles.length === 0) {
+      return null;
+    }
+    const first = chartView.candles[0]!.time;
+    const last = chartView.candles[chartView.candles.length - 1]!.time;
+    return `${selectedRunId}:${selectedVariantKey}:${first}:${last}`;
+  }, [chartView.candles, selectedRunId, selectedVariantKey]);
+
+  useEffect(() => {
+    if (
+      report === null ||
+      selectedRunId === null ||
+      selectedVariant === null ||
+      chartWindowKey === null ||
+      marketLoadStatus !== "ready"
+    ) {
+      setSignalTrace(null);
+      setSignalTraceStatus("idle");
+      setSignalTraceError(null);
+      return;
+    }
+
+    const candles = chartView.candles;
+    const fromMs = candles[0]!.time * 1000;
+    const toOpenTimeMs = candles[candles.length - 1]!.time * 1000;
+    const runId = selectedRunId;
+    const variantKey = selectedVariant.variant;
+    let cancelled = false;
+
+    async function loadTrace() {
+      setSignalTraceStatus("loading");
+      setSignalTraceError(null);
+      try {
+        const bundle = await fetchSignalTrace({
+          runId,
+          variant: variantKey,
+          fromMs,
+          toOpenTimeMs,
+        });
+        if (cancelled) return;
+        setSignalTrace(bundle);
+        setSignalTraceStatus("ready");
+      } catch (err) {
+        if (cancelled) return;
+        setSignalTrace(null);
+        setSignalTraceStatus("error");
+        setSignalTraceError(
+          err instanceof ApiError
+            ? err.detail
+            : err instanceof Error
+              ? err.message
+              : "Failed to load signal trace.",
+        );
+      }
+    }
+
+    void loadTrace();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    report,
+    selectedRunId,
+    selectedVariant,
+    chartWindowKey,
+    marketLoadStatus,
+    chartView.candles,
+  ]);
 
   const symbol = report?.symbol ?? "—";
   const timeframe = chartTimeframe;
@@ -366,6 +460,11 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       setConfigDraft,
       reloadReport,
       refreshRunsAndSelectRun,
+      signalTrace,
+      signalTraceStatus,
+      signalTraceError,
+      selectedBarTimeSec,
+      selectBar,
     }),
     [
       symbol,
@@ -394,6 +493,11 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       configDraft,
       reloadReport,
       refreshRunsAndSelectRun,
+      signalTrace,
+      signalTraceStatus,
+      signalTraceError,
+      selectedBarTimeSec,
+      selectBar,
     ],
   );
 

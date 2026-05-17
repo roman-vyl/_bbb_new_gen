@@ -10,7 +10,7 @@
 
 ## Цель
 
-Вертикальные срезы **фазы 0 → 4**: fixture → API → реальные отчёты → свечи → Composer → backtest.
+Вертикальные срезы **фазы 0 → 5**: fixture → API → реальные отчёты → свечи → Composer → backtest → **объяснение сигналов** на Chart.
 Граница: `Workbench (browser) → research_api/ (BFF) → research | data read`.
 
 **Запрещено:** Workbench → Python / SQLite / прямое редактирование `research/`.
@@ -294,6 +294,52 @@ CLI  →  python research/strategies/ema_pullback/run.py --config <тот же p
 
 ---
 
+## Фаза 5 — Signal explanation (X-Ray на Chart)
+
+**Цель:** поверх цикла run → chart → composer → backtest дать **объяснение entry-пайплайна** — почему на баре не было входа или почему вход был, хотя «на глаз» условие не выполнялось.
+
+Не новая вкладка: слой на **Chart** (Bar Inspector по клику на свечу + timeline-ленты под графиком). Тот же context bar (`run`, `variant`, `symbol`, `timeframe`).
+
+**Предусловие:** DoD фаз 0–4.
+
+### API
+
+| Method | Path |
+|--------|------|
+| GET | `/api/research/runs/{run_id}/signal-trace?variant=&from=&to=` |
+
+Контракт: `research_api/contracts/signal_trace.py` → `SignalTraceBundle` (колоночные `boolean[]` / `times[]` на окно ≤ 5000 баров, вровень с chart view).
+
+### Backend (research + BFF)
+
+| # | Задача |
+|---|--------|
+| 5.1 | `*_trace()` для setup / trigger / blockers / direction; `build_signal_trace_from_spec`; `strategy_spec_from_report_dict` |
+| 5.2 | On-demand trace в BFF (OHLCV + warmup, slice окна); кэш; **не** писать trace в `research/results/*.json` на первом заходе |
+| 5.3 | Parity-тест: `signal_entry` trace == `build_signals_from_spec`; сценарии «точка А / точка Б» |
+
+### Frontend
+
+| # | Задача |
+|---|--------|
+| 5.4 | `fetchSignalTrace` в `WorkbenchContext` по текущему chart window |
+| 5.5 | `ChartBarInspector`: OHLC, EMA, gates (`direction` → `blockers` → `setup` → `trigger` → `risk` → `stop_ready`), internals (`untouched_prior`, `crossed_back`, RSI, …) |
+| 5.6 | `chart.subscribeClick` → выбор бара; sync с trade focus из Reports |
+| 5.7 | `SignalTimelineLanes` под графиком (Direction / Setup / Trigger / Blockers / Portfolio Entry) |
+
+### DoD
+
+- [ ] Клик по свече → Inspector с первым blocking gate и раскрытием internals активных компонентов
+- [ ] Видны `signal_entry` и `portfolio_entry` (учёт `stop_ready` из backtest)
+- [ ] Timeline синхронен с timeScale графика
+- [ ] Trace только с API; Workbench не считает компоненты в браузере
+
+**Детальный дизайн:** план Cursor `strategy_signal_x-ray` (Bar Inspector + Timeline).
+
+**Оценка:** ~2 спринта (после фазы 4).
+
+---
+
 ## Сводка фаз
 
 | Фаза | Срез | API | Спринты (оценка) |
@@ -303,7 +349,8 @@ CLI  →  python research/strategies/ema_pullback/run.py --config <тот же p
 | 2 | Real candles + EMA | `GET /api/market/*` | 1 |
 | 3 | Composer + validate/save | catalog, config | 2–3 |
 | 4 | Backtest from UI | `POST /backtests` | 1–1.5 |
-| **Итого** | | | **~6–8** |
+| 5 | Signal explanation on Chart | `GET .../signal-trace` | ~2 |
+| **Итого** | | | **~8–10** |
 
 ---
 
@@ -317,6 +364,7 @@ CLI  →  python research/strategies/ema_pullback/run.py --config <тот же p
 Спринт 5–6: фаза 3 catalog + validate + Composer
 Спринт 7:  фаза 3 save + polish
 Спринт 8:  фаза 4 backtest sync
+Спринт 9–10: фаза 5 signal trace (research + BFF + Bar Inspector + timeline)
 ```
 
 **Не начинать следующую фазу**, пока не закрыт DoD предыдущей.
@@ -331,6 +379,10 @@ CLI  →  python research/strategies/ema_pullback/run.py --config <тот же p
 3. Фильтры по `exit_reason`.
 4. Draft в Composer → validate → save (без ручного YAML в repo).
 5. Backtest из UI → новый run в том же интерфейсе.
+
+**После MVP (фаза 5):**
+
+6. Клик по свече → объяснение, почему не было / был entry (gates + internals компонентов).
 
 ---
 

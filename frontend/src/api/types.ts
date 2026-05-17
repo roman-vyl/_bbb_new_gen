@@ -205,6 +205,45 @@ export type BacktestResult = {
   errors: ValidationErrorItem[];
 };
 
+export type SignalTraceGate =
+  | "direction_ok"
+  | "blockers_ok"
+  | "setup_ok"
+  | "trigger_ok"
+  | "risk_ok"
+  | "stop_ready";
+
+export type SignalTraceMeta = {
+  variant: string;
+  component_ids: {
+    direction: string;
+    setup: string;
+    trigger: string;
+    risk: string;
+  };
+  setup_params: { lookback: number; active_bars: number };
+  blocker_instances: { instance_id: string; component_id: string }[];
+};
+
+export type SideSignalTrace = {
+  direction_ok: boolean[];
+  blockers_ok: boolean[];
+  setup_ok: boolean[];
+  trigger_ok: boolean[];
+  risk_ok: boolean[];
+  signal_entry: boolean[];
+  stop_ready: boolean[];
+  portfolio_entry: boolean[];
+  internals: Record<string, unknown>;
+};
+
+export type SignalTraceBundle = {
+  times: number[];
+  meta: SignalTraceMeta;
+  long: SideSignalTrace;
+  short: SideSignalTrace;
+};
+
 export type WorkbenchTab = "chart" | "composer" | "reports";
 
 export function assertSupportedReportSchema(version: number): void {
