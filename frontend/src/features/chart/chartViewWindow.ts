@@ -1,4 +1,4 @@
-import type { ChartBar, IndicatorPoint } from "@/api/types";
+import type { ChartBar, ChartEmaOverlay, IndicatorPoint } from "@/api/types";
 
 export const CHART_RENDER_BAR_LIMIT = 5000;
 
@@ -73,21 +73,31 @@ export function sliceEmaToCandleWindow(
   return ema.filter((point) => point.time >= fromSec && point.time <= toSec);
 }
 
+export function sliceOverlaysToCandleWindow(
+  overlays: readonly ChartEmaOverlay[],
+  candles: readonly ChartBar[],
+): ChartEmaOverlay[] {
+  return overlays.map((overlay) => ({
+    ...overlay,
+    points: sliceEmaToCandleWindow(overlay.points, candles),
+  }));
+}
+
 export type BuildChartViewWindowParams = {
   candles: readonly ChartBar[];
-  ema: readonly IndicatorPoint[];
+  emaOverlays: readonly ChartEmaOverlay[];
   selectedTradeEntryTimeMs: number | null;
   limit?: number;
 };
 
 export type ChartViewWindow = {
   candles: ChartBar[];
-  ema: IndicatorPoint[];
+  emaOverlays: ChartEmaOverlay[];
 };
 
 export function buildChartViewWindow({
   candles,
-  ema,
+  emaOverlays,
   selectedTradeEntryTimeMs,
   limit = CHART_RENDER_BAR_LIMIT,
 }: BuildChartViewWindowParams): ChartViewWindow {
@@ -98,6 +108,6 @@ export function buildChartViewWindow({
 
   return {
     candles: viewCandles,
-    ema: sliceEmaToCandleWindow(ema, viewCandles),
+    emaOverlays: sliceOverlaysToCandleWindow(emaOverlays, viewCandles),
   };
 }

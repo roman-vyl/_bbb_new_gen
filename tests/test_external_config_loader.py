@@ -47,7 +47,11 @@ def _instance(
                 "slow": slow,
             },
             "direction": {"component_id": "ema_anchor_stack_trend"},
-            "setup": {"component_id": "pullback_to_anchor", "lookback": 3},
+            "setup": {
+                "component_id": "untouched_anchor_setup",
+                "lookback": 50,
+                "active_bars": 3,
+            },
             "trigger": {"component_id": "reclaim_anchor"},
             "blockers": [{"instance_id": "no_blockers", "component_id": "no_blockers"}],
             "risk": {"component_id": "no_risk_filter"},

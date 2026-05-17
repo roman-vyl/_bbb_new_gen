@@ -6,6 +6,7 @@ import {
   type IndicatorPoint,
   type RunReport,
   type RunSummary,
+  type BacktestResult,
   type SaveConfigResult,
   type SerializeResult,
   type StrategyConfigDraft,
@@ -93,31 +94,22 @@ function chartMarketQuery(params: {
   });
 }
 
-/** Single request: OHLC + chart overlay EMA (one BFF/SQLite read). */
+/** Single request: OHLC + anchor-stack chart overlay EMAs (one BFF/SQLite read). */
 export async function fetchChartMarketBundle(params: {
   symbol: string;
   timeframe: string;
   fromMs: number;
   toOpenTimeMs: number;
-  emaPeriod: number;
+  emaFast: number;
+  emaAnchor: number;
+  emaSlow: number;
 }): Promise<ChartMarketBundle> {
   const base = chartMarketQuery(params);
   const bundleQs = new URLSearchParams(base);
-  bundleQs.set("ema_period", String(params.emaPeriod));
-
-  try {
-    return await requestJson<ChartMarketBundle>(`/api/market/chart-bundle?${bundleQs.toString()}`);
-  } catch (err) {
-    // Phase 2 fixup added chart-bundle; older BFF only exposes /candles + /indicators/ema.
-    if (!(err instanceof ApiError) || err.status !== 404) {
-      throw err;
-    }
-    const [candles, ema] = await Promise.all([
-      fetchCandles(params),
-      fetchChartOverlayEma({ ...params, period: params.emaPeriod }),
-    ]);
-    return { candles, ema };
-  }
+  bundleQs.set("ema_fast", String(params.emaFast));
+  bundleQs.set("ema_anchor", String(params.emaAnchor));
+  bundleQs.set("ema_slow", String(params.emaSlow));
+  return requestJson<ChartMarketBundle>(`/api/market/chart-bundle?${bundleQs.toString()}`);
 }
 
 export async function fetchCandles(params: {
@@ -182,4 +174,10 @@ export async function saveConfigDraft(
   draft: StrategyConfigDraft,
 ): Promise<SaveConfigResult> {
   return postJson<SaveConfigResult>("/api/research/config/save", { draft });
+}
+
+export async function runBacktest(
+  body: { draft: StrategyConfigDraft } | { config_path: string },
+): Promise<BacktestResult> {
+  return postJson<BacktestResult>("/api/research/backtests", body);
 }

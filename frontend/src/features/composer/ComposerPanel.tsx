@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ApiError,
   fetchComponentCatalog,
+  runBacktest,
   saveConfigDraft,
   serializeConfigDraft,
   validateConfigDraft,
@@ -60,7 +61,7 @@ function SectionErrors({
 }
 
 export function ComposerPanel() {
-  const { configDraft, setConfigDraft } = useWorkbench();
+  const { configDraft, setConfigDraft, refreshRunsAndSelectRun, setActiveTab } = useWorkbench();
   const [catalog, setCatalog] = useState<ComponentCatalog | null>(null);
   const [catalogError, setCatalogError] = useState<string | null>(null);
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -68,8 +69,9 @@ export function ComposerPanel() {
   const [serializeContent, setSerializeContent] = useState<string | null>(null);
   const [serializeFormat, setSerializeFormat] = useState<"json" | "yaml">("json");
   const [previewTab, setPreviewTab] = useState<PreviewTab>("draft");
-  const [busy, setBusy] = useState<"validate" | "serialize" | "save" | null>(null);
+  const [busy, setBusy] = useState<"validate" | "serialize" | "save" | "backtest" | null>(null);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
+  const [backtestMessage, setBacktestMessage] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -95,6 +97,7 @@ export function ComposerPanel() {
   const draftPreview = useMemo(() => JSON.stringify(configDraft, null, 2), [configDraft]);
   const validationErrors = validation?.errors ?? [];
   const canSave = validation?.ok === true;
+  const canRunBacktest = validation?.ok === true;
 
   const instance = configDraft.instances[selectedIndex] ?? null;
   const strategy = (instance?.strategy ?? {}) as JsonObject;
@@ -104,6 +107,7 @@ export function ComposerPanel() {
       setValidation(null);
       setSerializeContent(null);
       setSaveMessage(null);
+      setBacktestMessage(null);
       setConfigDraft({ ...configDraft, ...patch });
     },
     [configDraft, setConfigDraft],
@@ -114,6 +118,7 @@ export function ComposerPanel() {
       setValidation(null);
       setSerializeContent(null);
       setSaveMessage(null);
+      setBacktestMessage(null);
       const instances = configDraft.instances.map((inst, i) =>
         i === index ? { ...inst, ...patch } : inst,
       );
@@ -171,6 +176,7 @@ export function ComposerPanel() {
     setBusy("save");
     setActionError(null);
     setSaveMessage(null);
+    setBacktestMessage(null);
     try {
       const result = await saveConfigDraft(configDraft);
       if (!result.ok) {
@@ -184,6 +190,34 @@ export function ComposerPanel() {
       setBusy(null);
     }
   }, [configDraft]);
+
+  const runBacktestAction = useCallback(async () => {
+    setBusy("backtest");
+    setActionError(null);
+    setBacktestMessage(null);
+    try {
+      const result = await runBacktest({ draft: configDraft });
+      if (!result.ok) {
+        setValidation({ ok: false, errors: result.errors });
+        return;
+      }
+      if (!result.run_id) {
+        setActionError("Backtest finished without a run id.");
+        return;
+      }
+      await refreshRunsAndSelectRun(result.run_id);
+      setBacktestMessage(
+        result.config_path
+          ? `Backtest complete — run ${result.run_id} (config: ${result.config_path})`
+          : `Backtest complete — run ${result.run_id}`,
+      );
+      setActiveTab("reports");
+    } catch (err) {
+      setActionError(err instanceof ApiError ? err.detail : "Backtest failed.");
+    } finally {
+      setBusy(null);
+    }
+  }, [configDraft, refreshRunsAndSelectRun, setActiveTab]);
 
   const addInstance = () => {
     const id = nextInstanceId(configDraft);
@@ -268,7 +302,7 @@ export function ComposerPanel() {
         <div>
           <h2>Strategy Composer</h2>
           <p className="panel__hint">
-            Draft → validate → serialize preview → save (server only). No backtest in this phase.
+            Draft → validate → save → run backtest. Results appear in Reports and Chart.
           </p>
         </div>
         <div className="composer-actions">
@@ -295,12 +329,22 @@ export function ComposerPanel() {
           >
             {busy === "save" ? "Saving…" : "Save"}
           </button>
+          <button
+            type="button"
+            className="composer-backtest"
+            disabled={!canRunBacktest || busy !== null}
+            title={canRunBacktest ? "Validate, save, and run backtest" : "Validate first"}
+            onClick={() => void runBacktestAction()}
+          >
+            {busy === "backtest" ? "Running backtest…" : "Run backtest"}
+          </button>
         </div>
       </div>
 
       {catalogError && <p className="banner banner--warn">{catalogError}</p>}
       {actionError && <p className="banner banner--error">{actionError}</p>}
       {saveMessage && <p className="banner banner--ok">{saveMessage}</p>}
+      {backtestMessage && <p className="banner banner--ok">{backtestMessage}</p>}
       {validation && (
         <p className={`composer-status ${validation.ok ? "composer-status--ok" : "composer-status--err"}`}>
           {validation.ok ? "Config is valid." : "Validation failed — fix errors below."}

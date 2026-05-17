@@ -29,12 +29,26 @@ def _frame() -> pd.DataFrame:
     )
 
 
+def _untouched_setup_frame() -> pd.DataFrame:
+    idx = pd.date_range("2024-01-01", periods=8, freq="h", tz="UTC")
+    anchor = 100.0
+    return pd.DataFrame(
+        {
+            "close": [105.0, 105.0, 105.0, 105.0, 101.0, 101.0, 101.0, 101.0],
+            "low": [105.0, 105.0, 105.0, 105.0, 99.0, 101.0, 102.0, 103.0],
+            "high": [106.0, 106.0, 106.0, 106.0, 102.0, 102.0, 103.0, 104.0],
+            "ema_close_base_200": [anchor] * 8,
+        },
+        index=idx,
+    )
+
+
 def test_registry_resolves_new_stage10_components() -> None:
     assert callable(resolve_component("direction", "ema_anchor_stack_trend").func)
     assert callable(resolve_component("blockers", "no_blockers").func)
     assert callable(resolve_component("blockers", "counter_candle_blocker").func)
     assert callable(resolve_component("blockers", "rsi_lookback_extreme_blocker").func)
-    assert callable(resolve_component("setup", "pullback_to_anchor").func)
+    assert callable(resolve_component("setup", "untouched_anchor_setup").func)
     assert callable(resolve_component("trigger", "reclaim_anchor").func)
     assert callable(resolve_component("trigger", "touch_anchor").func)
     assert callable(resolve_component("exits", "no_signal_exit").func)
@@ -60,7 +74,9 @@ def test_direction_component_supports_short_side() -> None:
 
 def test_setup_trigger_exit_risk_components_shape() -> None:
     df = _frame()
-    setup = resolve_component("setup", "pullback_to_anchor").func(df, "ema_close_base_200", 3)
+    setup = resolve_component("setup", "untouched_anchor_setup").func(
+        df, "ema_close_base_200", 50, 3
+    )
     trigger = resolve_component("trigger", "reclaim_anchor").func(df, "ema_close_base_200")
     exits = resolve_component("exits", "no_signal_exit").func(df, side="short")
     blockers = resolve_component("blockers", "no_blockers").func(df, side="short")
@@ -72,11 +88,57 @@ def test_setup_trigger_exit_risk_components_shape() -> None:
     assert bool(risk.all()) is True
 
 
-def test_setup_component_supports_short_side() -> None:
-    df = _frame()
-    fn = resolve_component("setup", "pullback_to_anchor").func
-    out = fn(df, "ema_close_base_200", 1, side="short")
-    assert out.tolist() == [True, True, True, True]
+def test_untouched_anchor_setup_long_reference_example() -> None:
+    df = _untouched_setup_frame()
+    fn = resolve_component("setup", "untouched_anchor_setup").func
+    out = fn(df, "ema_close_base_200", lookback=3, active_bars=3, side="long")
+    assert out.tolist() == [False, False, False, True, True, True, True, False]
+
+
+def test_untouched_anchor_setup_long_warmup_false() -> None:
+    df = _untouched_setup_frame()
+    fn = resolve_component("setup", "untouched_anchor_setup").func
+    out = fn(df, "ema_close_base_200", lookback=3, active_bars=3, side="long")
+    assert out.iloc[:3].tolist() == [False, False, False]
+
+
+def test_untouched_anchor_setup_long_armed_before_touch() -> None:
+    df = _untouched_setup_frame()
+    fn = resolve_component("setup", "untouched_anchor_setup").func
+    out = fn(df, "ema_close_base_200", lookback=3, active_bars=3, side="long")
+    assert bool(out.iloc[3]) is True
+    assert bool(out.iloc[2]) is False
+
+
+def test_untouched_anchor_setup_long_first_touch_true() -> None:
+    df = _untouched_setup_frame()
+    fn = resolve_component("setup", "untouched_anchor_setup").func
+    out = fn(df, "ema_close_base_200", lookback=3, active_bars=3, side="long")
+    assert bool(out.iloc[4]) is True
+
+
+def test_untouched_anchor_setup_active_bars_one() -> None:
+    df = _untouched_setup_frame()
+    fn = resolve_component("setup", "untouched_anchor_setup").func
+    out = fn(df, "ema_close_base_200", lookback=3, active_bars=1, side="long")
+    assert out.tolist() == [False, False, False, True, True, False, False, False]
+
+
+def test_untouched_anchor_setup_short_mirror() -> None:
+    idx = pd.date_range("2024-01-01", periods=8, freq="h", tz="UTC")
+    anchor = 100.0
+    df = pd.DataFrame(
+        {
+            "close": [95.0, 95.0, 95.0, 95.0, 99.0, 99.0, 99.0, 99.0],
+            "high": [95.0, 95.0, 95.0, 95.0, 101.0, 99.0, 98.0, 97.0],
+            "low": [94.0, 94.0, 94.0, 94.0, 98.0, 98.0, 97.0, 96.0],
+            "ema_close_base_200": [anchor] * 8,
+        },
+        index=idx,
+    )
+    fn = resolve_component("setup", "untouched_anchor_setup").func
+    out = fn(df, "ema_close_base_200", lookback=3, active_bars=3, side="short")
+    assert out.tolist() == [False, False, False, True, True, True, True, False]
 
 
 def test_trigger_component_supports_long_and_short_sides() -> None:

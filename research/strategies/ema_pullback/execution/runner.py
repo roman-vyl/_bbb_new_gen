@@ -23,7 +23,7 @@ from research.strategies.ema_pullback.spec import EmaPullbackStrategySpec
 _ROOT = Path(__file__).resolve().parents[4]
 
 
-def run_strategy_specs_from_config(config_source_file: str | Path, *, db_path: Path | None = None) -> None:
+def run_strategy_specs_from_config(config_source_file: str | Path, *, db_path: Path | None = None) -> str:
     loaded_config = load_strategy_config_file(config_source_file)
     specs = _validated_specs_for_single_market(loaded_config)
     ex = loaded_config.execution
@@ -78,6 +78,7 @@ def run_strategy_specs_from_config(config_source_file: str | Path, *, db_path: P
     print(f"results_artifact={latest_path.relative_to(_ROOT).as_posix()}")
     print(f"run_artifact={run_path.relative_to(_ROOT).as_posix()}")
     print("status=ok")
+    return run_id
 
 
 def _validated_specs_for_single_market(

@@ -48,7 +48,7 @@ research/strategies/ema_pullback/spec.py
 EmaSpec
 AnchorStackSpec
 ComponentStackSpec
-PullbackSetupSpec
+UntouchedAnchorSetupSpec
 ReclaimTriggerSpec
 AtrDistanceSpec
 DistanceExitRuleSpec
@@ -104,22 +104,24 @@ risk: str
 ```text
 direction = "ema_anchor_stack_trend"
 blockers = "no_blockers"
-setup = "pullback_to_anchor"
+setup = "untouched_anchor_setup"
 trigger = "reclaim_anchor"
 exits = "no_signal_exit"
 risk = "no_risk_filter"
 ```
 
-### PullbackSetupSpec
+### UntouchedAnchorSetupSpec
 
 ```text
-lookback: int = 3
+lookback: int = 50
+active_bars: int = 3
 ```
 
 Validation:
 
 ```text
 lookback > 0
+active_bars > 0
 ```
 
 ### ReclaimTriggerSpec
@@ -181,7 +183,7 @@ symbol: str
 base_timeframe: str
 anchor_stack: AnchorStackSpec
 components: ComponentStackSpec
-setup: PullbackSetupSpec
+setup: UntouchedAnchorSetupSpec
 trigger: ReclaimTriggerSpec
 trade_management: TradeManagementSpec
 ```
@@ -244,7 +246,7 @@ anchor_stack:
 components:
   direction = "ema_anchor_stack_trend"
   blockers = "no_blockers"
-  setup    = "pullback_to_anchor"
+  setup    = "untouched_anchor_setup"
   trigger  = "reclaim_anchor"
   exits    = "no_signal_exit"
   risk     = "no_risk_filter"
@@ -472,13 +474,13 @@ research/strategies/ema_pullback/components/setup.py
 Добавить или оставить:
 
 ```text
-pullback_to_anchor(df, anchor_col, lookback)
+untouched_anchor_setup(df, anchor_col, lookback, active_bars, side)
 ```
 
-Логика:
+Логика (armed regime):
 
 ```text
-low <= anchor хотя бы один раз за последние lookback свечей
+untouched_prior + armed_pre | touch_active (см. setup.py)
 ```
 
 ## trigger
@@ -554,7 +556,7 @@ blockers:
   no_blockers
 
 setup:
-  pullback_to_anchor
+  untouched_anchor_setup
 
 trigger:
   reclaim_anchor
@@ -621,7 +623,7 @@ build_signals_from_spec(df, spec, plan)
 
 10. direction = direction_component(df, fast_col, anchor_col, slow_col)
 11. blockers  = blockers_component(df)
-12. setup     = setup_component(df, anchor_col, spec.setup.lookback)
+12. setup     = setup_component(df, anchor_col, spec.setup.lookback, spec.setup.active_bars, side=...)
 13. trigger   = trigger_component(df, anchor_col)
 14. exits     = exits_component(df)
 15. risk      = risk_component(df)

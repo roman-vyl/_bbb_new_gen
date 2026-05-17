@@ -8,7 +8,13 @@ from data_engine.config import Settings
 from data_engine.contracts import Candle, TimeWindow, timeframe_ms, validate_timeframe
 from data_engine.store.db import Db
 
-from research_api.contracts.chart import ChartBar, ChartMarketBundle, IndicatorPoint
+from research_api.contracts.chart import (
+    AnchorStackEmaRole,
+    ChartBar,
+    ChartEmaOverlay,
+    ChartMarketBundle,
+    IndicatorPoint,
+)
 from research_api.services.indicators import compute_chart_overlay_ema
 from research_api.services.market_params import MarketParamError, normalize_symbol, parse_time_range_ms
 
@@ -55,19 +61,36 @@ def fetch_chart_bars(
     return [candle_to_chart_bar(c) for c in candles]
 
 
+def _validate_anchor_stack_periods(
+    ema_fast: int,
+    ema_anchor: int,
+    ema_slow: int,
+) -> tuple[int, int, int]:
+    if ema_fast < 1 or ema_anchor < 1 or ema_slow < 1:
+        raise ValueError("ema_fast, ema_anchor, and ema_slow must be >= 1")
+    if not (ema_fast < ema_anchor < ema_slow):
+        raise ValueError("anchor stack periods must satisfy fast < anchor < slow")
+    return ema_fast, ema_anchor, ema_slow
+
+
 def fetch_chart_market_bundle(
     *,
     symbol: str,
     timeframe: str,
     from_ms: int,
     to_ms: int,
-    ema_period: int,
+    ema_fast: int,
+    ema_anchor: int,
+    ema_slow: int,
     db_path: Path | None = None,
 ) -> ChartMarketBundle:
-    """One ``range_get`` pass: OHLC bars + chart overlay EMA for the same window."""
+    """One ``range_get`` pass: OHLC bars + anchor-stack chart overlay EMAs.
 
-    if ema_period < 1:
-        raise ValueError("ema_period must be >= 1")
+    Overlay EMA is computed from candle closes in the requested window only —
+    not research feature columns (``ema_close_*``).
+    """
+
+    fast, anchor, slow = _validate_anchor_stack_periods(ema_fast, ema_anchor, ema_slow)
     bars = fetch_chart_bars(
         symbol=symbol,
         timeframe=timeframe,
@@ -75,8 +98,20 @@ def fetch_chart_market_bundle(
         to_ms=to_ms,
         db_path=db_path,
     )
-    ema = compute_chart_overlay_ema(bars, period=ema_period)
-    return ChartMarketBundle(candles=bars, ema=ema)
+    overlays: list[ChartEmaOverlay] = []
+    for role, period in (
+        ("fast", fast),
+        ("anchor", anchor),
+        ("slow", slow),
+    ):
+        overlays.append(
+            ChartEmaOverlay(
+                role=role,  # type: ignore[arg-type]
+                period=period,
+                points=compute_chart_overlay_ema(bars, period=period),
+            )
+        )
+    return ChartMarketBundle(candles=bars, ema_overlays=overlays)
 
 
 def fetch_chart_overlay_ema(
@@ -90,18 +125,20 @@ def fetch_chart_overlay_ema(
 ) -> list[IndicatorPoint]:
     """Load OHLC window from Data Engine, then compute chart overlay EMA in-process.
 
-    Prefer ``fetch_chart_market_bundle`` when both candles and EMA are needed (single DB read).
+    Prefer ``fetch_chart_market_bundle`` when candles and anchor-stack overlays are needed.
     See ``compute_chart_overlay_ema`` for semantics and warmup limitations.
     """
 
-    return fetch_chart_market_bundle(
+    if period < 1:
+        raise ValueError("period must be >= 1")
+    bars = fetch_chart_bars(
         symbol=symbol,
         timeframe=timeframe,
         from_ms=from_ms,
         to_ms=to_ms,
-        ema_period=period,
         db_path=db_path,
-    ).ema
+    )
+    return compute_chart_overlay_ema(bars, period=period)
 
 
 # Back-compat alias for internal/tests naming.

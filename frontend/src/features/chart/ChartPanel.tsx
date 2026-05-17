@@ -10,8 +10,9 @@ import {
 } from "lightweight-charts";
 import { useEffect, useMemo, useRef } from "react";
 
-import { CHART_EMA_PERIOD } from "@/api/types";
+import type { AnchorStackEmaRole, ChartEmaOverlay } from "@/api/types";
 import { ChartMarkerLegend } from "@/features/chart/ChartMarkerLegend";
+import { anchorStackPeriodsFromStrategySpec } from "@/features/chart/anchorStackFromSpec";
 import { toCandlestickSeriesData } from "@/features/chart/chartCandleUtils";
 import {
   buildTradeMarkersForView,
@@ -20,15 +21,30 @@ import {
 import { CHART_RENDER_BAR_LIMIT } from "@/features/chart/chartViewWindow";
 import { useWorkbench } from "@/shared/context/WorkbenchContext";
 
+const EMA_OVERLAY_STYLE: Record<
+  AnchorStackEmaRole,
+  { color: string; lineWidth: 1 | 2 | 3 | 4 }
+> = {
+  fast: { color: "#86efac", lineWidth: 2 },
+  anchor: { color: "#38bdf8", lineWidth: 2 },
+  slow: { color: "#a78bfa", lineWidth: 2 },
+};
+
+function overlaySeriesTitle(overlay: ChartEmaOverlay): string {
+  return `EMA ${overlay.role} ${overlay.period} (overlay)`;
+}
+
 export function ChartPanel() {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
-  const emaSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const emaSeriesByRoleRef = useRef<Partial<Record<AnchorStackEmaRole, ISeriesApi<"Line">>>>(
+    {},
+  );
   const markersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
   const {
     chartCandles,
-    chartEma,
+    chartEmaOverlays,
     candlesSource,
     marketError,
     marketCandlesCount,
@@ -46,6 +62,21 @@ export function ChartPanel() {
   const rangeWarning =
     selectedTrade && tradeOutsideCandleRange(selectedTrade.entry_time_ms, fullCandleRange);
 
+  const stackPeriodsLabel = useMemo(() => {
+    if (chartEmaOverlays.length === 3) {
+      return chartEmaOverlays.map((o) => o.period).join("/");
+    }
+    if (selectedVariant) {
+      try {
+        const p = anchorStackPeriodsFromStrategySpec(selectedVariant.strategy_spec);
+        return `${p.fast}/${p.anchor}/${p.slow}`;
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  }, [chartEmaOverlays, selectedVariant]);
+
   const chartHint = useMemo(() => {
     if (candlesSource !== "market") {
       return "Market data unavailable · trade markers from report";
@@ -56,8 +87,11 @@ export function ChartPanel() {
       total > shown
         ? `Showing ${shown} of ${total} bars`
         : `Showing ${shown} bar${shown === 1 ? "" : "s"}`;
-    return `${windowNote} · OHLC + chart overlay EMA(${CHART_EMA_PERIOD}) · trade markers from report`;
-  }, [candlesSource, chartCandles.length, marketCandlesCount]);
+    const emaNote = stackPeriodsLabel
+      ? `OHLC + EMA stack ${stackPeriodsLabel} (overlay, periods from run strategy_spec)`
+      : "OHLC · overlay EMA requires anchor_stack in strategy_spec";
+    return `${windowNote} · ${emaNote} · trade markers from report`;
+  }, [candlesSource, chartCandles.length, marketCandlesCount, stackPeriodsLabel]);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -85,15 +119,19 @@ export function ChartPanel() {
       wickDownColor: "#ef4444",
     });
 
-    const emaSeries = chart.addSeries(LineSeries, {
-      color: "#38bdf8",
-      lineWidth: 2,
-      title: `EMA ${CHART_EMA_PERIOD} (overlay)`,
-    });
+    const emaSeriesByRole: Partial<Record<AnchorStackEmaRole, ISeriesApi<"Line">>> = {};
+    for (const role of ["fast", "anchor", "slow"] as const) {
+      const style = EMA_OVERLAY_STYLE[role];
+      emaSeriesByRole[role] = chart.addSeries(LineSeries, {
+        color: style.color,
+        lineWidth: style.lineWidth,
+        title: `EMA ${role} (overlay)`,
+      });
+    }
 
     chartRef.current = chart;
     seriesRef.current = series;
-    emaSeriesRef.current = emaSeries;
+    emaSeriesByRoleRef.current = emaSeriesByRole;
     markersRef.current = createSeriesMarkers(series);
 
     const ro = new ResizeObserver((entries) => {
@@ -107,25 +145,36 @@ export function ChartPanel() {
       chart.remove();
       chartRef.current = null;
       seriesRef.current = null;
-      emaSeriesRef.current = null;
+      emaSeriesByRoleRef.current = {};
       markersRef.current = null;
     };
   }, []);
 
   useEffect(() => {
     const series = seriesRef.current;
-    const emaSeries = emaSeriesRef.current;
+    const emaByRole = emaSeriesByRoleRef.current;
     const chart = chartRef.current;
     const markersPlugin = markersRef.current;
-    if (!series || !emaSeries || !chart || !markersPlugin || !selectedVariant) return;
+    if (!series || !chart || !markersPlugin || !selectedVariant) return;
 
     series.setData(toCandlestickSeriesData(chartCandles));
-    emaSeries.setData(
-      chartEma.map((p) => ({
-        time: p.time as Time,
-        value: p.value,
-      })),
-    );
+
+    for (const role of ["fast", "anchor", "slow"] as const) {
+      const lineSeries = emaByRole[role];
+      if (!lineSeries) continue;
+      const overlay = chartEmaOverlays.find((o) => o.role === role);
+      if (!overlay) {
+        lineSeries.setData([]);
+        continue;
+      }
+      lineSeries.applyOptions({ title: overlaySeriesTitle(overlay) });
+      lineSeries.setData(
+        overlay.points.map((p) => ({
+          time: p.time as Time,
+          value: p.value,
+        })),
+      );
+    }
 
     const markers = buildTradeMarkersForView(
       selectedVariant.trade_records,
@@ -135,7 +184,7 @@ export function ChartPanel() {
     markersPlugin.setMarkers(markers);
 
     chart.timeScale().fitContent();
-  }, [chartCandles, chartEma, selectedVariant, selectedTradeId]);
+  }, [chartCandles, chartEmaOverlays, selectedVariant, selectedTradeId]);
 
   if (!selectedVariant) {
     return null;

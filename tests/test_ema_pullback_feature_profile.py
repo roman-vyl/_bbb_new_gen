@@ -27,7 +27,7 @@ def test_default_spec_factory_is_valid_strategy_spec() -> None:
     stack = spec.anchor_stack
     assert stack.fast.period < stack.anchor.period < stack.slow.period
     assert spec.components.direction == "ema_anchor_stack_trend"
-    assert spec.components.setup == "pullback_to_anchor"
+    assert spec.components.setup == "untouched_anchor_setup"
     assert spec.components.trigger.component_id == "reclaim_anchor"
     assert [b.component_id for b in spec.components.blockers] == ["no_blockers"]
     assert [e.component_id for e in spec.components.exits] == ["atr_stop_loss", "atr_take_profit"]

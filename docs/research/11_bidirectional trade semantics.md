@@ -108,8 +108,8 @@ isProject: false
 - Component semantics:
   - `ema_anchor_stack_trend(..., side="long")`: `fast > anchor > slow`;
   - тот же component с `side="short"`: `fast < anchor < slow`;
-  - `pullback_to_anchor(..., side="long")`: `low <= anchor`;
-  - `pullback_to_anchor(..., side="short")`: `high >= anchor`;
+  - `untouched_anchor_setup(..., side="long")`: armed regime — anchor untouched `lookback` bars, then through first touch and `active_bars` window (`low <= anchor` defines touch);
+  - `untouched_anchor_setup(..., side="short")`: mirror with `high >= anchor` and `close < anchor` while armed.
   - `reclaim_anchor(..., side="long")`: close crosses above anchor;
   - `reclaim_anchor(..., side="short")`: close crosses below anchor;
   - neutral components accept side and preserve all-True/all-False behavior.

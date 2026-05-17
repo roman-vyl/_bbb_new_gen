@@ -207,7 +207,7 @@ def test_component_stack_default_matches_baseline_defaults() -> None:
     assert stack.direction == "ema_anchor_stack_trend"
     assert [b.component_id for b in stack.blockers] == ["no_blockers"]
     assert [b.instance_id for b in stack.blockers] == ["no_blockers"]
-    assert stack.setup == "pullback_to_anchor"
+    assert stack.setup == "untouched_anchor_setup"
     assert stack.trigger.component_id == "reclaim_anchor"
     assert stack.exits == exits_atr_default(
         atr_period=14,

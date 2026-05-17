@@ -10,11 +10,11 @@ from research.strategies.ema_pullback.component_builders import (
     component_stack,
     direction_ema_anchor_stack,
     exits_atr_default,
-    pullback_setup,
     risk_no_filter,
-    setup_pullback_to_anchor,
+    setup_untouched_anchor,
     trade_sides,
     trigger_reclaim_anchor,
+    untouched_anchor_setup_spec,
 )
 from research.strategies.ema_pullback.spec import (
     ComponentStackSpec,
@@ -50,7 +50,8 @@ def make_ema_pullback_strategy_spec(
     slow_period: int = 1000,
     anchor_source: str = "close",
     anchor_timeframe: str = "base",
-    setup_lookback: int = 3,
+    setup_lookback: int = 50,
+    setup_active_bars: int = 3,
     atr_period: int = 14,
     stop_atr_multiplier: float = 1.5,
     take_atr_multiplier: float = 4.0,
@@ -61,7 +62,7 @@ def make_ema_pullback_strategy_spec(
         component_stack(
             direction=direction_ema_anchor_stack(),
             blockers=(blocker_none(),),
-            setup=setup_pullback_to_anchor(),
+            setup=setup_untouched_anchor(),
             trigger=trigger_reclaim_anchor(),
             exits=exits_atr_default(
                 atr_period=atr_period,
@@ -91,5 +92,8 @@ def make_ema_pullback_strategy_spec(
         ),
         components=resolved_components,
         trade_sides=trade_sides(enabled_sides),
-        setup=pullback_setup(lookback=setup_lookback),
+        setup=untouched_anchor_setup_spec(
+            lookback=setup_lookback,
+            active_bars=setup_active_bars,
+        ),
     )

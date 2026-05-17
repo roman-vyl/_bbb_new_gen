@@ -71,7 +71,7 @@ ema_pullback_fast{fast.period}_anchor{anchor.period}_slow{slow.period}
 Числовые research-параметры задаются в `make_ema_pullback_strategy_spec(...)` и
 внутри фабрики собираются через builders (`anchor_stack_from_periods(...)`,
 `component_stack(...)`, `exits_atr_default(...)`, `trade_sides(...)`,
-`pullback_setup(...)`). Если caller не задаёт `variant`, он выводится из фактических
+`untouched_anchor_setup_spec(...)`). Если caller не задаёт `variant`, он выводится из фактических
 `fast / anchor / slow` периодов; внешний config может передать человекочитаемый
 variant label, а semantic uniqueness остаётся за `config_id`:
 
@@ -86,7 +86,7 @@ anchor_stack:
 components:
   direction = ema_anchor_stack_trend
   blockers  = (BlockerRuleSpec(no_blockers),)
-  setup     = pullback_to_anchor
+  setup     = untouched_anchor_setup
   trigger   = ReclaimTriggerSpec()  # component_id reclaim_anchor
   exits     = (
     ExitRuleSpec(atr_stop_loss, exit_kind=stop_loss, ATR distance from factory params),
@@ -119,13 +119,14 @@ context:
 ```text
 long:
   direction = fast > anchor > slow
-  setup     = low touches anchor
+  setup     = armed regime: anchor untouched lookback bars, then active through
+              first touch and active_bars window (close > anchor while armed)
   trigger   = reclaim_anchor: close crosses above anchor
               touch_anchor: low touches anchor и close закрепилась выше anchor
 
 short:
   direction = fast < anchor < slow
-  setup     = high touches anchor
+  setup     = armed regime mirror (close < anchor while armed)
   trigger   = reclaim_anchor: close crosses below anchor
               touch_anchor: high touches anchor и close закрепилась ниже anchor
 ```
@@ -191,7 +192,7 @@ Family-local registry (`components/registry.py`) включает, среди п
 
 ```text
 direction: ema_anchor_stack_trend
-setup: pullback_to_anchor
+setup: untouched_anchor_setup
 trigger: reclaim_anchor, touch_anchor
 blockers: no_blockers, counter_candle_blocker, rsi_lookback_extreme_blocker
 exits: atr_stop_loss, atr_take_profit, constant_usd_stop_loss, constant_usd_take_profit, rsi_signal_exit

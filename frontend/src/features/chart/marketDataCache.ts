@@ -1,4 +1,4 @@
-import type { ChartMarketBundle, RunReport } from "@/api/types";
+import type { AnchorStackPeriods, ChartMarketBundle, RunReport } from "@/api/types";
 
 export type MarketCacheKey = string;
 
@@ -7,6 +7,8 @@ const cache = new Map<MarketCacheKey, ChartMarketBundle>();
 export function buildMarketCacheKey(
   report: RunReport,
   chartTimeframe: string,
+  variantKey: string,
+  periods: AnchorStackPeriods,
   reloadToken = 0,
 ): MarketCacheKey {
   const { from_open_time_ms, to_open_time_ms } = report.data_range;
@@ -14,6 +16,10 @@ export function buildMarketCacheKey(
     report.run_id,
     report.symbol,
     chartTimeframe,
+    variantKey,
+    periods.fast,
+    periods.anchor,
+    periods.slow,
     from_open_time_ms,
     to_open_time_ms,
     reloadToken,
