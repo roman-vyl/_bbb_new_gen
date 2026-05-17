@@ -17,7 +17,7 @@ from research.strategies.ema_pullback.components.registry import (
     NO_BLOCKERS_COMPONENT,
     NO_RISK_FILTER_COMPONENT,
     NO_SIGNAL_EXIT_COMPONENT,
-    PULLBACK_TO_ANCHOR_COMPONENT,
+    UNTOUCHED_ANCHOR_SETUP_COMPONENT,
     RECLAIM_ANCHOR_COMPONENT,
     RSI_LOOKBACK_EXTREME_BLOCKER_COMPONENT,
     RSI_SIGNAL_EXIT_COMPONENT,
@@ -31,7 +31,7 @@ from research.strategies.ema_pullback.spec import (
     EmaSpec,
     ExitKind,
     ExitRuleSpec,
-    PullbackSetupSpec,
+    UntouchedAnchorSetupSpec,
     RsiFeatureSpec,
     TradeSide,
     TradeSideSpec,
@@ -82,8 +82,8 @@ def direction_ema_anchor_stack() -> str:
     return EMA_ANCHOR_STACK_TREND_COMPONENT
 
 
-def setup_pullback_to_anchor() -> str:
-    return PULLBACK_TO_ANCHOR_COMPONENT
+def setup_untouched_anchor() -> str:
+    return UNTOUCHED_ANCHOR_SETUP_COMPONENT
 
 
 def risk_no_filter() -> str:
@@ -263,8 +263,10 @@ def trade_sides(enabled: Sequence[TradeSide] = ("long",)) -> TradeSideSpec:
     return TradeSideSpec(enabled=_normalize_sequence("trade_sides.enabled", enabled))
 
 
-def pullback_setup(*, lookback: int = 3) -> PullbackSetupSpec:
-    return PullbackSetupSpec(lookback=lookback)
+def untouched_anchor_setup_spec(
+    *, lookback: int = 50, active_bars: int = 3
+) -> UntouchedAnchorSetupSpec:
+    return UntouchedAnchorSetupSpec(lookback=lookback, active_bars=active_bars)
 
 
 def component_stack(
@@ -293,7 +295,7 @@ def component_stack(
     return ComponentStackSpec(
         direction=direction_ema_anchor_stack() if direction is None else direction,
         blockers=normalized_blockers,
-        setup=setup_pullback_to_anchor() if setup is None else setup,
+        setup=setup_untouched_anchor() if setup is None else setup,
         trigger=trigger_reclaim_anchor() if trigger is None else trigger,
         exits=normalized_exits,
         risk=risk_no_filter() if risk is None else risk,

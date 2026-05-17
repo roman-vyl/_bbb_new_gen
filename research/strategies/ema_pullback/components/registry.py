@@ -21,7 +21,7 @@ from research.strategies.ema_pullback.components.exits import (
 )
 from research.strategies.ema_pullback.components.risk import no_risk_filter
 from research.strategies.ema_pullback.components.setup import (
-    pullback_to_anchor,
+    untouched_anchor_setup,
 )
 from research.strategies.ema_pullback.components.triggers import (
     reclaim_anchor,
@@ -42,7 +42,7 @@ EMA_ANCHOR_STACK_TREND_COMPONENT = "ema_anchor_stack_trend"
 NO_BLOCKERS_COMPONENT = "no_blockers"
 COUNTER_CANDLE_BLOCKER_COMPONENT = "counter_candle_blocker"
 RSI_LOOKBACK_EXTREME_BLOCKER_COMPONENT = "rsi_lookback_extreme_blocker"
-PULLBACK_TO_ANCHOR_COMPONENT = "pullback_to_anchor"
+UNTOUCHED_ANCHOR_SETUP_COMPONENT = "untouched_anchor_setup"
 RECLAIM_ANCHOR_COMPONENT = "reclaim_anchor"
 TOUCH_ANCHOR_COMPONENT = "touch_anchor"
 NO_SIGNAL_EXIT_COMPONENT = "no_signal_exit"
@@ -95,11 +95,14 @@ COMPONENT_REGISTRY: dict[str, dict[str, ComponentDefinition]] = {
         ),
     },
     "setup": {
-        PULLBACK_TO_ANCHOR_COMPONENT: ComponentDefinition(
+        UNTOUCHED_ANCHOR_SETUP_COMPONENT: ComponentDefinition(
             role="setup",
-            component_id=PULLBACK_TO_ANCHOR_COMPONENT,
-            func=pullback_to_anchor,
-            description="Recent pullback to anchor in rolling window.",
+            component_id=UNTOUCHED_ANCHOR_SETUP_COMPONENT,
+            func=untouched_anchor_setup,
+            description=(
+                "Armed regime after anchor was untouched for lookback bars; "
+                "active through first touch and active_bars window."
+            ),
         ),
     },
     "trigger": {
@@ -195,7 +198,7 @@ __all__ = [
     "NO_BLOCKERS_COMPONENT",
     "NO_SIGNAL_EXIT_COMPONENT",
     "NO_RISK_FILTER_COMPONENT",
-    "PULLBACK_TO_ANCHOR_COMPONENT",
+    "UNTOUCHED_ANCHOR_SETUP_COMPONENT",
     "RECLAIM_ANCHOR_COMPONENT",
     "REQUIRED_COMPONENT_ROLES",
     "RSI_LOOKBACK_EXTREME_BLOCKER_COMPONENT",

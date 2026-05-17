@@ -130,19 +130,25 @@ def test_exit_outputs_include_boolean_and_distance_instance_counters() -> None:
 
 
 def test_build_signals_from_spec_can_emit_short_entries_when_enabled() -> None:
-    spec = make_ema_pullback_strategy_spec(enabled_sides=("long", "short"))
+    spec = make_ema_pullback_strategy_spec(
+        enabled_sides=("long", "short"),
+        setup_lookback=3,
+        setup_active_bars=3,
+    )
     plan = build_feature_plan_from_strategy_spec(spec)
     df = add_feature_columns_from_plan(_ohlcv(), plan)
 
-    df["close"] = [102.0, 101.0, 99.0, 98.0, 97.0, 96.0, 95.0, 94.0]
-    df["high"] = [101.0] * len(df)
+    # Short stack + armed setup: untouched bars 0-2, touch at bar 4, reclaim short at bar 5.
+    df["close"] = [95.0, 95.0, 95.0, 95.0, 101.0, 98.0, 97.0, 96.0]
+    df["high"] = [95.0, 95.0, 95.0, 95.0, 101.0, 99.0, 98.0, 97.0]
+    df["low"] = [94.0, 94.0, 94.0, 94.0, 98.0, 97.0, 96.0, 95.0]
     df[plan.anchor_columns["fast"]] = [90.0] * len(df)
     df[plan.anchor_columns["anchor"]] = [100.0] * len(df)
     df[plan.anchor_columns["slow"]] = [110.0] * len(df)
 
     signals = build_signals_from_spec(df, spec, plan)
     assert bool(signals.entries.any()) is False
-    assert signals.short_entries.tolist() == [False, False, True, False, False, False, False, False]
+    assert signals.short_entries.tolist() == [False, False, False, False, False, True, False, False]
     assert bool(signals.short_entries.isna().any()) is False
 
 

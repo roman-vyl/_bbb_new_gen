@@ -36,7 +36,11 @@ def _valid_draft() -> dict[str, object]:
                         "slow": 1000,
                     },
                     "direction": {"component_id": "ema_anchor_stack_trend"},
-                    "setup": {"component_id": "pullback_to_anchor", "lookback": 3},
+                    "setup": {
+                        "component_id": "untouched_anchor_setup",
+                        "lookback": 50,
+                        "active_bars": 3,
+                    },
                     "trigger": {"component_id": "reclaim_anchor"},
                     "blockers": [{"instance_id": "no_blockers", "component_id": "no_blockers"}],
                     "risk": {"component_id": "no_risk_filter"},
@@ -71,6 +75,12 @@ def test_component_catalog_returns_ema_pullback_components(client: TestClient) -
     assert any(
         c["component_id"] == "rsi_lookback_extreme_blocker" for c in body["components"]
     )
+    setup_components = [c for c in body["components"] if c.get("role") == "setup"]
+    assert [c["component_id"] for c in setup_components] == ["untouched_anchor_setup"]
+    params = setup_components[0]["params_schema"]
+    assert set(params) == {"lookback", "active_bars"}
+    assert params["lookback"]["default"] == 50
+    assert params["active_bars"]["default"] == 3
 
 
 def test_validate_config_ok(client: TestClient) -> None:

@@ -16,7 +16,7 @@ from research.strategies.ema_pullback.components.registry import (
     NO_BLOCKERS_COMPONENT,
     NO_RISK_FILTER_COMPONENT,
     NO_SIGNAL_EXIT_COMPONENT,
-    PULLBACK_TO_ANCHOR_COMPONENT,
+    UNTOUCHED_ANCHOR_SETUP_COMPONENT,
     RECLAIM_ANCHOR_COMPONENT,
     RSI_LOOKBACK_EXTREME_BLOCKER_COMPONENT,
     RSI_SIGNAL_EXIT_COMPONENT,
@@ -28,6 +28,7 @@ from research.strategies.ema_pullback.spec import (
     EmaPullbackStrategySpec,
     ExitRuleSpec,
     TradeSide,
+    UntouchedAnchorSetupSpec,
     strategy_spec_config_id,
 )
 from research.strategies.ema_pullback.spec_instances import (
@@ -90,7 +91,7 @@ def load_ema_pullback_instance(instance: Mapping[str, Any]) -> EmaPullbackStrate
     strategy = _parse_strategy(payload["strategy"])
     periods = _parse_anchor_stack(strategy["anchor_stack"])
     direction = _parse_direction(strategy["direction"])
-    setup_component, setup_lookback = _parse_setup(strategy["setup"])
+    setup_component, setup_params = _parse_setup(strategy["setup"])
     trigger = _parse_trigger(strategy["trigger"])
     blockers = _parse_blockers(strategy["blockers"])
     risk = _parse_risk(strategy["risk"])
@@ -114,7 +115,8 @@ def load_ema_pullback_instance(instance: Mapping[str, Any]) -> EmaPullbackStrate
         slow_period=periods["slow"],
         anchor_source=periods["source"],
         anchor_timeframe=periods["timeframe"],
-        setup_lookback=setup_lookback,
+        setup_lookback=setup_params.lookback,
+        setup_active_bars=setup_params.active_bars,
         enabled_sides=_parse_trade_sides(strategy["trade_sides"]),
         components=components,
     )
@@ -183,14 +185,18 @@ def _parse_direction(value: Any) -> str:
     return builders.direction_ema_anchor_stack()
 
 
-def _parse_setup(value: Any) -> tuple[str, int]:
-    payload = _component_mapping("setup", value, extra_fields={"lookback"})
+def _parse_setup(value: Any) -> tuple[str, UntouchedAnchorSetupSpec]:
+    payload = _component_mapping("setup", value, extra_fields={"lookback", "active_bars"})
     component_id = _require_non_empty_str(payload, "component_id")
     _assert_known_component("setup", component_id)
-    if component_id != PULLBACK_TO_ANCHOR_COMPONENT:
+    if component_id != UNTOUCHED_ANCHOR_SETUP_COMPONENT:
         raise EmaPullbackInstanceValidationError(f"unsupported setup component_id {component_id!r}")
-    lookback = _optional_positive_int(payload, "lookback", default=3)
-    return builders.setup_pullback_to_anchor(), builders.pullback_setup(lookback=lookback).lookback
+    lookback = _optional_positive_int(payload, "lookback", default=50)
+    active_bars = _optional_positive_int(payload, "active_bars", default=3)
+    return (
+        builders.setup_untouched_anchor(),
+        builders.untouched_anchor_setup_spec(lookback=lookback, active_bars=active_bars),
+    )
 
 
 def _parse_trigger(value: Any) -> Any:

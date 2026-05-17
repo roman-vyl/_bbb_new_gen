@@ -107,7 +107,13 @@ def _build_side_signals(
         for rule, signal in zip(spec.components.blockers, blocker_signals, strict=True)
     )
     blockers = compose_blocker_signals(blocker_signals)
-    setup = setup_fn(df, anchor_col, spec.setup.lookback, side=side)
+    setup = setup_fn(
+        df,
+        anchor_col,
+        spec.setup.lookback,
+        spec.setup.active_bars,
+        side=side,
+    )
     trigger = trigger_fn(df, anchor_col, side=side)
     risk = risk_fn(df, side=side)
 

@@ -46,7 +46,7 @@ Shortcuts не размазывают raw string literals по коду: стр�
 ### Direction / setup / risk (component id как `str`)
 
 - **`direction_ema_anchor_stack() -> str`** — возвращает **`ema_anchor_stack_trend`** (`EMA_ANCHOR_STACK_TREND_COMPONENT` в registry). После Step 11 компонент direction **side-aware** (long: fast > anchor > slow; short: fast < anchor < slow); старый id `ema_anchor_stack_bullish` **не используется**, alias нет.
-- `setup_pullback_to_anchor() -> str`
+- `setup_untouched_anchor() -> str`
 - `risk_no_filter() -> str`
 
 ### Blocker
@@ -69,14 +69,14 @@ Shortcuts не размазывают raw string literals по коду: стр�
 
 - `atr_distance(*, timeframe: str = "base", period: int, multiplier: float) -> AtrDistanceSpec`
 - `trade_sides(enabled: Sequence[TradeSide] = ("long",)) -> TradeSideSpec`
-- `pullback_setup(*, lookback: int = 3) -> PullbackSetupSpec`
+- `untouched_anchor_setup_spec(*, lookback: int = 50, active_bars: int = 3) -> UntouchedAnchorSetupSpec`
 - **`component_stack(*, direction=None, blockers=None, setup=None, trigger=None, exits=None, risk=None) -> ComponentStackSpec`**
 
 Дефолты при вызове `component_stack()` без аргументов (или с `None` на соответствующих полях):
 
 - `direction` → `direction_ema_anchor_stack()` → **`ema_anchor_stack_trend`**
 - `blockers` → `(blocker_none(),)`
-- `setup` → `setup_pullback_to_anchor()`
+- `setup` → `setup_untouched_anchor()`
 - `trigger` → `trigger_reclaim_anchor()`
 - `exits` → `exits_atr_default(atr_period=14, stop_atr_multiplier=1.5, take_atr_multiplier=4.0)` (совпадает с дефолтами `make_ema_pullback_strategy_spec`)
 - `risk` → `risk_no_filter()`

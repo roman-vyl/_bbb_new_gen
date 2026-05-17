@@ -148,7 +148,9 @@ instances:
       direction:
         component_id: ema_anchor_stack_trend
       setup:
-        component_id: pullback_to_anchor
+        component_id: untouched_anchor_setup
+        lookback: 50
+        active_bars: 3
         lookback: 3
       trigger:
         component_id: reclaim_anchor

@@ -60,11 +60,16 @@ def get_component_catalog(*, family: str = "ema_pullback") -> ComponentCatalog:
             description="Long when fast > anchor > slow; short mirrors.",
         ),
         ComponentSchema(
-            component_id="pullback_to_anchor",
+            component_id="untouched_anchor_setup",
             role="setup",
-            label="Pullback to anchor",
+            label="Untouched anchor setup",
+            description=(
+                "Armed regime: anchor untouched for lookback bars, "
+                "then active through first touch and active_bars window."
+            ),
             params_schema={
-                "lookback": _int_param("Lookback bars", default=3),
+                "lookback": _int_param("Untouched lookback bars", default=50),
+                "active_bars": _int_param("Active bars after first touch", default=3),
             },
         ),
         ComponentSchema(

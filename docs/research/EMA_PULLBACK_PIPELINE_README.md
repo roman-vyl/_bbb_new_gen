@@ -61,7 +61,7 @@ anchor_stack:
 components:
   direction = ema_anchor_stack_trend
   blockers = (BlockerRuleSpec(component_id=no_blockers),)
-  setup    = pullback_to_anchor
+  setup    = untouched_anchor_setup
   trigger  = TriggerSpec(component_id=reclaim_anchor)
   exits    = (
     ExitRuleSpec(component_id=atr_stop_loss, exit_kind=stop_loss, distance=ATR14 * 1.5),
@@ -73,7 +73,8 @@ trade_sides:
   enabled = long
 
 setup:
-  lookback = 3
+  lookback = 50
+  active_bars = 3
 
 trade_management:
   profile = reserved
@@ -247,7 +248,7 @@ MTF сейчас строится **внутри research** из уже загр
 
 ```text
 direction = ema_anchor_stack_trend
-setup    = pullback_to_anchor
+setup    = untouched_anchor_setup
 trigger  = reclaim_anchor
 ```
 
@@ -321,20 +322,25 @@ slow_col
 
 ### Setup
 
-`pullback_to_anchor` получает:
+`untouched_anchor_setup` получает:
 
 ```text
 anchor_col = ema_close_base_200
-lookback = 3
+lookback = 50
+active_bars = 3
 ```
 
-И проверяет:
+И проверяет **armed regime**, а не «недавнее касание»:
 
 ```text
-за последние 3 свечи low <= anchor
+untouched_prior: anchor не касали lookback предыдущих баров (shift(1))
+armed_pre:       цена по стороне сделки (long: close > anchor) и ещё нет touch
+first_touch:     первое касание после untouched окна
+touch_active:    rolling max(first_touch, active_bars) — включает бар касания
+setup = armed_pre | touch_active
 ```
 
-То есть цена реально откатывалась к EMA200.
+Triggers (`touch_anchor`, `reclaim_anchor`) ловят вход **внутри** этого setup-режима.
 
 ### Trigger
 
@@ -459,7 +465,7 @@ planned later:
 ```text
 direction = ema_anchor_stack_trend(..., side)
 blockers  = AND(blocker_i(..., side, rule=..., rsi_col=...))
-setup     = pullback_to_anchor(..., side)
+setup     = untouched_anchor_setup(..., lookback, active_bars, side)
 trigger   = resolve(components.trigger.component_id)(..., side)
 risk      = no_risk_filter(..., side)
 ```

@@ -147,12 +147,15 @@ class TradeSideSpec:
 
 
 @dataclass(frozen=True)
-class PullbackSetupSpec:
-    lookback: int = 3
+class UntouchedAnchorSetupSpec:
+    lookback: int = 50
+    active_bars: int = 3
 
     def __post_init__(self) -> None:
         if self.lookback <= 0:
             raise ValueError("setup.lookback must be > 0")
+        if self.active_bars <= 0:
+            raise ValueError("setup.active_bars must be > 0")
 
 
 @dataclass(frozen=True)
@@ -240,7 +243,7 @@ class EmaPullbackStrategySpec:
     anchor_stack: AnchorStackSpec
     components: ComponentStackSpec
     trade_sides: TradeSideSpec
-    setup: PullbackSetupSpec
+    setup: UntouchedAnchorSetupSpec
     trade_management: TradeManagementSpec = field(default_factory=TradeManagementSpec)
 
     def __post_init__(self) -> None:
