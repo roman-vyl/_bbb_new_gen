@@ -33,6 +33,20 @@ _CONFIG_EXTENSIONS = frozenset({".json", ".yaml", ".yml"})
 _PATH_RE = re.compile(
     r"^(?P<prefix>(?:instances\[\d+\]|blockers\[\d+\]|exits\[\d+\]|strategy|market|execution|experiment_id|family|schema_version)[^\s]*)?"
 )
+SUPPORTED_CONFIG_FAMILIES = {"ema_pullback"}
+
+
+def validate_config_family(family: str) -> str:
+    family_key = family.strip()
+    if not family_key:
+        raise ValueError("family must be a non-empty string")
+    if "/" in family_key or "\\" in family_key or ".." in family_key:
+        supported = ", ".join(sorted(SUPPORTED_CONFIG_FAMILIES))
+        raise ValueError(f"unsupported family {family!r}; supported: {supported}")
+    if family_key not in SUPPORTED_CONFIG_FAMILIES:
+        supported = ", ".join(sorted(SUPPORTED_CONFIG_FAMILIES))
+        raise ValueError(f"unsupported family {family!r}; supported: {supported}")
+    return family_key
 
 
 def canonical_to_draft(payload: Mapping[str, Any]) -> StrategyConfigDraft:
@@ -181,7 +195,8 @@ def set_selected_experiment_id(family: str, experiment_id: str) -> None:
 
 
 def find_config_file(family: str, experiment_id: str) -> Path | None:
-    family_dir = _CONFIGS_ROOT / family.strip()
+    family_key = validate_config_family(family)
+    family_dir = _CONFIGS_ROOT / family_key
     if not family_dir.is_dir():
         return None
 
@@ -207,7 +222,8 @@ def load_draft_from_file(path: Path) -> StrategyConfigDraft:
 
 
 def list_config_entries(family: str) -> list[ConfigListEntry]:
-    family_dir = _CONFIGS_ROOT / family.strip()
+    family_key = validate_config_family(family)
+    family_dir = _CONFIGS_ROOT / family_key
     entries: list[ConfigListEntry] = []
     for path in _list_config_files(family_dir):
         try:
@@ -236,7 +252,7 @@ def resolve_selected_experiment_id(family: str, entries: list[ConfigListEntry]) 
 
 
 def get_config_state(family: str) -> ConfigStateResponse:
-    family_key = family.strip()
+    family_key = validate_config_family(family)
     entries = list_config_entries(family_key)
     selected_id = resolve_selected_experiment_id(family_key, entries)
     if selected_id is None:
@@ -259,7 +275,7 @@ def get_config_state(family: str) -> ConfigStateResponse:
 
 
 def select_config(family: str, experiment_id: str) -> ConfigStateResponse:
-    family_key = family.strip()
+    family_key = validate_config_family(family)
     experiment_key = experiment_id.strip()
     config_file = find_config_file(family_key, experiment_key)
     if config_file is None:
@@ -271,11 +287,11 @@ def select_config(family: str, experiment_id: str) -> ConfigStateResponse:
 
 
 def save_draft(draft: StrategyConfigDraft) -> SaveConfigResult:
+    family = validate_config_family(draft.family)
     validation = validate_draft(draft)
     if not validation.ok:
         return SaveConfigResult(ok=False, errors=validation.errors)
 
-    family = draft.family.strip()
     filename = f"{_safe_experiment_filename(draft.experiment_id)}.json"
     target_dir = _CONFIGS_ROOT / family
     target_dir.mkdir(parents=True, exist_ok=True)

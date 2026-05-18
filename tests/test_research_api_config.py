@@ -159,6 +159,54 @@ def test_save_config_rejects_invalid_draft(client: TestClient) -> None:
     assert body["path"] is None
 
 
+@pytest.mark.parametrize(
+    "family",
+    [
+        "unknown_family",
+        "../ema_pullback",
+        "ema_pullback/../../../etc",
+        "foo/bar",
+    ],
+)
+def test_config_state_rejects_bad_family(client: TestClient, family: str) -> None:
+    res = client.get(f"/api/research/configs/state?family={family}")
+    assert res.status_code == 400
+    assert "unsupported family" in res.json()["detail"]
+
+
+@pytest.mark.parametrize(
+    "family",
+    [
+        "unknown_family",
+        "../ema_pullback",
+        "ema_pullback/foo",
+    ],
+)
+def test_select_config_rejects_bad_family(client: TestClient, family: str) -> None:
+    res = client.put(
+        "/api/research/configs/selected",
+        json={"family": family, "experiment_id": "any"},
+    )
+    assert res.status_code == 400
+    assert "unsupported family" in res.json()["detail"]
+
+
+def test_save_config_selects_saved_ema_pullback(
+    client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    configs_root = tmp_path / "configs"
+    selection_file = configs_root / ".workbench_selection.json"
+    monkeypatch.setattr(config_service, "_CONFIGS_ROOT", configs_root)
+    monkeypatch.setattr(config_service, "_SELECTION_FILE", selection_file)
+
+    res = client.post("/api/research/config/save", json={"draft": _valid_draft()})
+    assert res.status_code == 200
+    assert res.json()["ok"] is True
+    assert selection_file.is_file()
+    store = json.loads(selection_file.read_text(encoding="utf-8"))
+    assert store["ema_pullback"] == "api_config_smoke"
+
+
 def test_config_state_empty(client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     configs_root = tmp_path / "configs"
     monkeypatch.setattr(config_service, "_CONFIGS_ROOT", configs_root)
