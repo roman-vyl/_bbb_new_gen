@@ -37,3 +37,62 @@ export function resolveSelectedTradeEntryTimeMs(
   const trade = findTradeById(trades, tradeId);
   return { trade, entryTimeMs: resolveTradeEntryTimeMs(trade) };
 }
+
+function normalizeTradeId(raw: number | string): number | null {
+  const id = typeof raw === "number" ? raw : Number(raw);
+  return Number.isFinite(id) ? id : null;
+}
+
+/** Last closed trade in report order (typical backtest: final closed position). */
+export function findLastClosedTradeId(trades: readonly TradeRecord[]): number | null {
+  for (let i = trades.length - 1; i >= 0; i--) {
+    const trade = trades[i]!;
+    if (trade.status !== "closed") {
+      continue;
+    }
+    const id = normalizeTradeId(trade.trade_id);
+    if (id !== null) {
+      return id;
+    }
+  }
+  return null;
+}
+
+export type TradeFocusSelection = {
+  tradeId: number | null;
+  barTimeSec: number | null;
+};
+
+/** Default chart focus: last closed trade and its entry bar. */
+export function defaultClosedTradeSelection(trades: readonly TradeRecord[]): TradeFocusSelection {
+  const tradeId = findLastClosedTradeId(trades);
+  if (tradeId === null) {
+    return { tradeId: null, barTimeSec: null };
+  }
+  const trade = findTradeById(trades, tradeId);
+  const entryMs = resolveTradeEntryTimeMs(trade);
+  return {
+    tradeId,
+    barTimeSec: entryMs !== null ? Math.floor(entryMs / 1000) : null,
+  };
+}
+
+/** Previous (-1) or next (+1) trade id in report order; null at list ends or unknown current. */
+export function getAdjacentTradeId(
+  trades: readonly TradeRecord[],
+  currentId: number | string | null | undefined,
+  direction: -1 | 1,
+): number | null {
+  if (currentId === null || currentId === undefined || trades.length === 0) {
+    return null;
+  }
+  const index = trades.findIndex((t) => tradeIdsEqual(t.trade_id, currentId));
+  if (index < 0) {
+    return null;
+  }
+  const nextIndex = index + direction;
+  if (nextIndex < 0 || nextIndex >= trades.length) {
+    return null;
+  }
+  return normalizeTradeId(trades[nextIndex]!.trade_id);
+}

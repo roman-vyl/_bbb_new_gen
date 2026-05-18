@@ -25,6 +25,7 @@ import { useCallback, useEffect, useMemo, useRef } from "react";
 import type { AnchorStackEmaRole, ChartBar, ChartEmaOverlay } from "@/api/types";
 
 import { ChartBarInspector } from "@/features/chart/ChartBarInspector";
+import { ChartTradeFocusNav } from "@/features/chart/ChartTradeFocusNav";
 
 import { ChartMarkerLegend } from "@/features/chart/ChartMarkerLegend";
 
@@ -657,6 +658,14 @@ export function ChartPanel() {
 
           />
 
+          {selectedTradeId !== null && (
+            <ChartTradeFocusNav
+              trades={trades}
+              selectedTradeId={selectedTradeId}
+              onSelectTrade={selectTrade}
+            />
+          )}
+
         </div>
 
         <ChartBarInspector
@@ -678,22 +687,6 @@ export function ChartPanel() {
         />
 
       </div>
-
-      {selectedTradeId !== null && (
-
-        <p className="chart-focus">
-
-          Focused trade #{selectedTradeId}. Click another row in Reports or clear selection.
-
-          <button type="button" className="link-btn" onClick={() => selectTrade(null)}>
-
-            Clear
-
-          </button>
-
-        </p>
-
-      )}
 
     </section>
 

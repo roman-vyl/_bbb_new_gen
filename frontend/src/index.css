@@ -423,6 +423,60 @@ select {
   color: #94a3b8;
 }
 
+.chart-trade-nav {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0;
+  padding-top: 0.5rem;
+  border-top: 1px solid #243041;
+  font-size: 0.85rem;
+  color: #94a3b8;
+  flex-shrink: 0;
+}
+
+.chart-trade-nav__controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+}
+
+.chart-trade-nav__btn {
+  background: #151c26;
+  border: 1px solid #2a3544;
+  color: #cbd5e1;
+  border-radius: 6px;
+  min-width: 2.25rem;
+  padding: 0.35rem 0.5rem;
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.chart-trade-nav__btn:hover:not(:disabled) {
+  border-color: #3b82f6;
+  color: #dbeafe;
+}
+
+.chart-trade-nav__btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.chart-trade-nav__label {
+  font-weight: 600;
+  color: #e2e8f0;
+  min-width: 5.5rem;
+  text-align: center;
+}
+
+.chart-trade-nav__clear {
+  margin: 0;
+  font-size: 0.8rem;
+}
+
 .link-btn {
   background: none;
   border: none;

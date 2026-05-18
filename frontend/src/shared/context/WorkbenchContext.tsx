@@ -4,6 +4,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -27,6 +28,7 @@ import {
   type RunReport,
   type RunSummary,
   type RunVariant,
+  type TradeRecord,
   type SignalTraceBundle,
   type StrategyConfigDraft,
   type WorkbenchTab,
@@ -39,6 +41,7 @@ import {
 import { buildChartViewWindow, emptyChartViewWindow, type ChartViewMode } from "@/features/chart/chartViewWindow";
 import { candleRangeMs } from "@/features/chart/chartMarkers";
 import {
+  defaultClosedTradeSelection,
   findTradeById,
   resolveSelectedTradeEntryTimeMs,
   resolveTradeEntryTimeMs,
@@ -154,6 +157,13 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
   const [signalTraceStatus, setSignalTraceStatus] = useState<SignalTraceLoadStatus>("idle");
   const [signalTraceError, setSignalTraceError] = useState<string | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
+  const prevVariantKeyRef = useRef("");
+
+  const applyTradeFocusSelection = useCallback((trades: readonly TradeRecord[]) => {
+    const { tradeId, barTimeSec } = defaultClosedTradeSelection(trades);
+    setSelectedTradeId(tradeId);
+    setSelectedBarTimeSec(barTimeSec);
+  }, []);
 
   const applyConfigState = useCallback((state: ConfigStateResponse) => {
     setConfigList(state.configs);
@@ -227,14 +237,19 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     try {
       const loaded = await fetchRunReport(runId);
       setReport(loaded);
-      setSelectedVariantKey((prev) => {
-        if (loaded.variants.some((v) => v.variant === prev)) {
-          return prev;
-        }
-        return loaded.variants[0]?.variant ?? "";
-      });
-      setSelectedTradeId(null);
-      setSelectedBarTimeSec(null);
+      const nextVariantKey = loaded.variants.some((v) => v.variant === selectedVariantKey)
+        ? selectedVariantKey
+        : (loaded.variants[0]?.variant ?? "");
+      const variant =
+        loaded.variants.find((v) => v.variant === nextVariantKey) ?? loaded.variants[0];
+      setSelectedVariantKey(nextVariantKey);
+      prevVariantKeyRef.current = nextVariantKey;
+      if (variant) {
+        applyTradeFocusSelection(variant.trade_records);
+      } else {
+        setSelectedTradeId(null);
+        setSelectedBarTimeSec(null);
+      }
       setReportLoadStatus("ready");
     } catch (err) {
       const message =
@@ -247,7 +262,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       setReportError(message);
       setReportLoadStatus("error");
     }
-  }, []);
+  }, [applyTradeFocusSelection, selectedVariantKey]);
 
   useEffect(() => {
     let cancelled = false;
@@ -294,6 +309,22 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     const found = report.variants.find((v) => v.variant === selectedVariantKey);
     return found ?? report.variants[0] ?? null;
   }, [report, selectedVariantKey]);
+
+  useEffect(() => {
+    if (reportLoadStatus !== "ready" || selectedVariant === null) {
+      return;
+    }
+    if (prevVariantKeyRef.current === selectedVariantKey) {
+      return;
+    }
+    prevVariantKeyRef.current = selectedVariantKey;
+    applyTradeFocusSelection(selectedVariant.trade_records);
+  }, [
+    selectedVariantKey,
+    selectedVariant,
+    reportLoadStatus,
+    applyTradeFocusSelection,
+  ]);
 
   useEffect(() => {
     if (report === null || reportLoadStatus !== "ready" || selectedVariant === null) {

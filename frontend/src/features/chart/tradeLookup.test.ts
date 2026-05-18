@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import type { TradeRecord } from "@/api/types";
 import {
+  defaultClosedTradeSelection,
+  findLastClosedTradeId,
   findTradeById,
+  getAdjacentTradeId,
   resolveSelectedTradeEntryTimeMs,
   resolveTradeEntryTimeMs,
   tradeIdsEqual,
@@ -66,5 +69,67 @@ describe("resolveSelectedTradeEntryTimeMs", () => {
     const { trade, entryTimeMs } = resolveSelectedTradeEntryTimeMs(trades, "10");
     expect(trade?.trade_id).toBe(10);
     expect(entryTimeMs).toBe(5_000_000);
+  });
+});
+
+describe("findLastClosedTradeId", () => {
+  it("returns last closed trade in report order", () => {
+    const trades = [
+      makeTrade(1, 1_000),
+      { ...makeTrade(2, 2_000), status: "open" as const },
+      makeTrade(3, 3_000),
+    ];
+    expect(findLastClosedTradeId(trades)).toBe(3);
+  });
+
+  it("skips trailing open trades", () => {
+    const trades = [makeTrade(1, 1_000), { ...makeTrade(2, 2_000), status: "open" as const }];
+    expect(findLastClosedTradeId(trades)).toBe(1);
+  });
+
+  it("returns null when no closed trades", () => {
+    const trades = [{ ...makeTrade(1, 1_000), status: "open" as const }];
+    expect(findLastClosedTradeId(trades)).toBeNull();
+  });
+});
+
+describe("defaultClosedTradeSelection", () => {
+  it("includes entry bar time for last closed trade", () => {
+    const trades = [makeTrade(5, 5_000_000)];
+    expect(defaultClosedTradeSelection(trades)).toEqual({
+      tradeId: 5,
+      barTimeSec: 5_000,
+    });
+  });
+});
+
+describe("getAdjacentTradeId", () => {
+  const trades = [makeTrade(1, 1_000), makeTrade(2, 2_000), makeTrade("3", 3_000)];
+
+  it("returns null for empty list", () => {
+    expect(getAdjacentTradeId([], 1, 1)).toBeNull();
+  });
+
+  it("returns null for unknown current id", () => {
+    expect(getAdjacentTradeId(trades, 99, 1)).toBeNull();
+  });
+
+  it("returns null when navigating before first", () => {
+    expect(getAdjacentTradeId(trades, 1, -1)).toBeNull();
+  });
+
+  it("returns null when navigating after last", () => {
+    expect(getAdjacentTradeId(trades, 3, 1)).toBeNull();
+  });
+
+  it("returns next and previous ids in report order", () => {
+    expect(getAdjacentTradeId(trades, 1, 1)).toBe(2);
+    expect(getAdjacentTradeId(trades, 2, -1)).toBe(1);
+    expect(getAdjacentTradeId(trades, 2, 1)).toBe(3);
+  });
+
+  it("matches string selected id to numeric record id", () => {
+    expect(getAdjacentTradeId(trades, "2", -1)).toBe(1);
+    expect(getAdjacentTradeId(trades, "2", 1)).toBe(3);
   });
 });

@@ -10,7 +10,6 @@ export function ContextBar() {
     setSelectedRunId,
     selectedVariantKey,
     setSelectedVariantKey,
-    selectedTradeId,
     candlesSource,
   } = useWorkbench();
 
@@ -56,9 +55,6 @@ export function ContextBar() {
             ))}
           </select>
         </label>
-        {selectedTradeId !== null && (
-          <span className="context-pill">Trade #{selectedTradeId}</span>
-        )}
       </div>
       <span className="context-bar__phase">
         Phase 5 · {candlesSource === "market" ? "market + signal trace" : "market unavailable"}
