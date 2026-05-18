@@ -137,8 +137,10 @@ describe("buildChartViewWindow", () => {
       emaOverlays,
       selectedTradeEntryTimeMs: null,
     });
+    expect(view.mode).toBe("tail");
     expect(view.candles).toHaveLength(CHART_RENDER_BAR_LIMIT);
     expect(view.candles[0].time).toBe(candles[100].time);
+    expect(view.centerTimeSec).toBeNull();
     expect(view.emaOverlays).toHaveLength(3);
     expect(view.emaOverlays[0].points).toHaveLength(CHART_RENDER_BAR_LIMIT);
   });
@@ -153,6 +155,8 @@ describe("buildChartViewWindow", () => {
       selectedTradeEntryTimeMs: entryMs,
       limit: 40,
     });
+    expect(view.mode).toBe("around-trade");
+    expect(view.centerTimeSec).toBe(candles[100].time);
     expect(view.candles).toHaveLength(40);
     expect(view.candles.some((b) => b.time === candles[100].time)).toBe(true);
     expect(view.candles[0].time).not.toBe(candles[0].time);
@@ -168,12 +172,28 @@ describe("buildChartViewWindow", () => {
       emaOverlays,
       selectedTradeEntryTimeMs: entryMs,
     });
+    expect(view.mode).toBe("around-trade");
     expect(view.candles).toHaveLength(CHART_RENDER_BAR_LIMIT);
     expect(view.candles.some((b) => b.time === candles[5000].time)).toBe(true);
-    expect(view.candles[0].time).toBeGreaterThan(candles[0].time);
-    expect(view.candles[view.candles.length - 1].time).toBeLessThan(
-      candles[candles.length - 1].time,
-    );
+    expect(view.firstTimeSec).toBeGreaterThan(candles[0].time);
+    expect(view.lastTimeSec).toBeLessThan(candles[candles.length - 1].time);
+  });
+
+  it("centers entry far from tail in 646k-like series", () => {
+    const candles = makeBars(646_029, 1_000_000);
+    const centerIdx = 50_000;
+    const entryMs = candles[centerIdx].time * 1000;
+    const view = buildChartViewWindow({
+      candles,
+      emaOverlays: makeOverlays(candles.slice(centerIdx - 100, centerIdx + 100)),
+      selectedTradeEntryTimeMs: entryMs,
+    });
+    const tail = sliceTailBars(candles, CHART_RENDER_BAR_LIMIT);
+    expect(view.mode).toBe("around-trade");
+    expect(view.count).toBe(CHART_RENDER_BAR_LIMIT);
+    expect(view.candles.some((b) => b.time === candles[centerIdx].time)).toBe(true);
+    expect(view.firstTimeSec).not.toBe(tail[0]!.time);
+    expect(view.lastTimeSec).not.toBe(tail[tail.length - 1]!.time);
   });
 
   it("returns full series when shorter than limit", () => {
@@ -185,6 +205,7 @@ describe("buildChartViewWindow", () => {
       selectedTradeEntryTimeMs: null,
       limit: 5000,
     });
+    expect(view.mode).toBe("tail");
     expect(view.candles).toHaveLength(10);
     expect(view.emaOverlays[0].points).toHaveLength(10);
   });

@@ -37,4 +37,6 @@ If **Phase 5 — market unavailable** or *Market data unavailable* persists afte
 
 ## Playwright MCP
 
-If MCP fails with missing system Chrome, use bundled Chromium via `npx playwright screenshot` (same wait criteria).
+Prefer MCP (`browser_navigate`, `browser_wait_for`, `browser_take_screenshot`). Do **not** run `npm install` or `playwright install` before MCP or CLI — they are already set up in this repo.
+
+If MCP fails with missing system Chrome, use bundled Chromium via `npx playwright screenshot` from `frontend/` (same wait criteria). Install browsers only when the CLI error explicitly says they are missing.

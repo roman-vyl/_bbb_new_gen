@@ -18,11 +18,11 @@ import {
 
 } from "lightweight-charts";
 
-import { useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 
 
 
-import type { AnchorStackEmaRole, ChartEmaOverlay } from "@/api/types";
+import type { AnchorStackEmaRole, ChartBar, ChartEmaOverlay } from "@/api/types";
 
 import { ChartBarInspector } from "@/features/chart/ChartBarInspector";
 
@@ -42,7 +42,10 @@ import {
 
 } from "@/features/chart/chartMarkers";
 
-import { CHART_RENDER_BAR_LIMIT } from "@/features/chart/chartViewWindow";
+import { buildChartDataKey } from "@/features/chart/chartDataKey";
+import { applyChartViewport } from "@/features/chart/chartViewport";
+import { CHART_RENDER_BAR_LIMIT, type ChartViewMode } from "@/features/chart/chartViewWindow";
+import { findTradeById } from "@/features/chart/tradeLookup";
 
 import { useWorkbench } from "@/shared/context/WorkbenchContext";
 
@@ -72,7 +75,12 @@ function overlaySeriesTitle(overlay: ChartEmaOverlay): string {
 
 }
 
-
+type ViewportPlan = {
+  key: string;
+  mode: ChartViewMode;
+  centerTimeSec: number | null;
+  candles: ChartBar[];
+};
 
 export function ChartPanel() {
 
@@ -90,7 +98,38 @@ export function ChartPanel() {
 
   const markersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
 
-  const fitContentKeyRef = useRef<string | null>(null);
+  const viewportKeyRef = useRef<string | null>(null);
+
+  const viewportPlanRef = useRef<ViewportPlan | null>(null);
+
+  const applyViewportFromPlan = useCallback((chart: IChartApi) => {
+    const plan = viewportPlanRef.current;
+    if (!plan || plan.key === "" || plan.candles.length === 0) {
+      return null;
+    }
+
+    return applyChartViewport({
+      chart,
+      mode: plan.mode,
+      candles: plan.candles,
+      centerTimeSec: plan.centerTimeSec,
+    });
+  }, []);
+
+  const scheduleViewportApply = useCallback(
+    (chart: IChartApi) => {
+      const run = () => applyViewportFromPlan(chart);
+      requestAnimationFrame(() => {
+        run();
+        requestAnimationFrame(() => {
+          run();
+          window.setTimeout(run, 50);
+          window.setTimeout(run, 150);
+        });
+      });
+    },
+    [applyViewportFromPlan],
+  );
 
   const {
 
@@ -116,6 +155,18 @@ export function ChartPanel() {
 
     selectTrade,
 
+    chartViewMode,
+
+    chartViewCenterTimeSec,
+
+    chartViewFirstTimeSec,
+
+    chartViewLastTimeSec,
+
+    chartViewCount,
+
+    chartTradeFocusWarning,
+
     fullCandleRange,
 
     signalTrace,
@@ -134,7 +185,7 @@ export function ChartPanel() {
 
   const trades = selectedVariant?.trade_records ?? [];
 
-  const selectedTrade = trades.find((t) => t.trade_id === selectedTradeId);
+  const selectedTrade = findTradeById(trades, selectedTradeId);
 
   const rangeWarning =
 
@@ -142,17 +193,23 @@ export function ChartPanel() {
 
 
 
-  const chartDataKey = useMemo(() => {
-
-    if (chartCandles.length === 0) {
-
-      return "";
-
-    }
-
-    return `${chartCandles[0]!.time}:${chartCandles[chartCandles.length - 1]!.time}:${chartCandles.length}`;
-
-  }, [chartCandles]);
+  const chartDataKey = useMemo(
+    () =>
+      buildChartDataKey({
+        firstTimeSec: chartViewFirstTimeSec,
+        lastTimeSec: chartViewLastTimeSec,
+        count: chartViewCount,
+        selectedTradeId,
+        centerTimeSec: chartViewCenterTimeSec,
+      }),
+    [
+      chartViewFirstTimeSec,
+      chartViewLastTimeSec,
+      chartViewCount,
+      selectedTradeId,
+      chartViewCenterTimeSec,
+    ],
+  );
 
 
 
@@ -198,6 +255,18 @@ export function ChartPanel() {
 
     const total = marketCandlesCount;
 
+    const modeNote =
+      chartViewMode === "around-trade" && chartViewCenterTimeSec !== null
+        ? `trade focus · center ${chartViewCenterTimeSec}`
+        : chartViewMode === "tail"
+          ? "tail view"
+          : "";
+
+    const rangeNote =
+      chartViewFirstTimeSec !== null && chartViewLastTimeSec !== null
+        ? `range ${chartViewFirstTimeSec}–${chartViewLastTimeSec}`
+        : "";
+
     const windowNote =
 
       total > shown
@@ -224,7 +293,11 @@ export function ChartPanel() {
 
           : "";
 
-    return `${windowNote} · ${emaNote} · trade markers from report${traceNote}`;
+    const parts = [windowNote, modeNote, rangeNote, emaNote, "trade markers from report", traceNote].filter(
+      Boolean,
+    );
+
+    return parts.join(" · ");
 
   }, [
 
@@ -233,6 +306,14 @@ export function ChartPanel() {
     chartCandles.length,
 
     marketCandlesCount,
+
+    chartViewMode,
+
+    chartViewCenterTimeSec,
+
+    chartViewFirstTimeSec,
+
+    chartViewLastTimeSec,
 
     stackPeriodsLabel,
 
@@ -348,6 +429,8 @@ export function ChartPanel() {
 
       chart.applyOptions({ width, height });
 
+      scheduleViewportApply(chart);
+
     });
 
     ro.observe(el);
@@ -370,7 +453,7 @@ export function ChartPanel() {
 
     };
 
-  }, [selectBar]);
+  }, [selectBar, scheduleViewportApply]);
 
 
 
@@ -382,9 +465,7 @@ export function ChartPanel() {
 
     const chart = chartRef.current;
 
-    const markersPlugin = markersRef.current;
-
-    if (!series || !chart || !markersPlugin || !selectedVariant) return;
+    if (!series || !chart || !selectedVariant || chartDataKey === "") return;
 
 
 
@@ -426,6 +507,38 @@ export function ChartPanel() {
 
 
 
+    viewportPlanRef.current = {
+      key: chartDataKey,
+      mode: chartViewMode,
+      centerTimeSec: chartViewCenterTimeSec,
+      candles: chartCandles,
+    };
+
+    if (viewportKeyRef.current !== chartDataKey) {
+      viewportKeyRef.current = chartDataKey;
+      scheduleViewportApply(chart);
+    }
+
+  }, [
+    chartCandles,
+    chartEmaOverlays,
+    selectedVariant,
+    chartDataKey,
+    chartViewMode,
+    chartViewCenterTimeSec,
+    scheduleViewportApply,
+  ]);
+
+
+
+  useEffect(() => {
+
+    const markersPlugin = markersRef.current;
+
+    if (!markersPlugin || !selectedVariant || chartCandles.length === 0) return;
+
+
+
     const markers = buildTradeMarkersForView(
 
       selectedVariant.trade_records,
@@ -438,17 +551,7 @@ export function ChartPanel() {
 
     markersPlugin.setMarkers(markers);
 
-
-
-    if (fitContentKeyRef.current !== chartDataKey) {
-
-      chart.timeScale().fitContent();
-
-      fitContentKeyRef.current = chartDataKey;
-
-    }
-
-  }, [chartCandles, chartEmaOverlays, selectedVariant, selectedTradeId, chartDataKey]);
+  }, [chartCandles, selectedVariant, selectedTradeId]);
 
 
 
@@ -517,6 +620,16 @@ export function ChartPanel() {
       )}
 
       <ChartMarkerLegend />
+
+      {chartTradeFocusWarning && (
+
+        <p className="banner banner--warn" role="status">
+
+          {chartTradeFocusWarning}
+
+        </p>
+
+      )}
 
       {rangeWarning && (
 

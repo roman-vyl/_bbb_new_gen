@@ -13,7 +13,13 @@ When you change UI under `frontend/`:
    - API (if needed): `http://127.0.0.1:8000` via Vite proxy
    Check terminals first; start only if down.
 
-2. Open the app with **Playwright MCP** (`playwright` server in `.cursor/mcp.json`). If Playwright MCP is unavailable, use Cursor **@browser** / native browser tools the same way.
+2. Open the app with **Playwright MCP** (`playwright` server in `.cursor/mcp.json`):
+   - `browser_navigate` → `browser_wait_for` / `browser_snapshot` → `browser_take_screenshot`
+   - Call MCP tools directly. **Do not** run shell install commands first.
+
+   If Playwright MCP is unavailable, use Cursor **@browser** / native browser tools the same way.
+
+   **Shell fallback only** (MCP down): from `frontend/`, run the command directly — e.g. `npx playwright test e2e/...` or `npx playwright screenshot ...`. **Never** prepend `npm install @playwright/test` or `npx playwright install` — Playwright and Chromium are already in the project (`devDependencies`) and `%LOCALAPPDATA%\ms-playwright`. Reinstall only if a command fails with a missing-package or missing-browser error.
 
 3. Exercise flows you touched (chart, workbench, context bar, signal lanes, etc.).
 

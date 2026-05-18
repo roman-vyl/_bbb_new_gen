@@ -36,8 +36,13 @@ import {
   AnchorStackParseError,
   anchorStackPeriodsFromStrategySpec,
 } from "@/features/chart/anchorStackFromSpec";
-import { buildChartViewWindow } from "@/features/chart/chartViewWindow";
+import { buildChartViewWindow, emptyChartViewWindow, type ChartViewMode } from "@/features/chart/chartViewWindow";
 import { candleRangeMs } from "@/features/chart/chartMarkers";
+import {
+  findTradeById,
+  resolveSelectedTradeEntryTimeMs,
+  resolveTradeEntryTimeMs,
+} from "@/features/chart/tradeLookup";
 import {
   buildMarketCacheKey,
   getMarketCache,
@@ -69,6 +74,12 @@ type WorkbenchState = {
   report: RunReport | null;
   chartCandles: ChartBar[];
   chartEmaOverlays: ChartEmaOverlay[];
+  chartViewMode: ChartViewMode;
+  chartViewCenterTimeSec: number | null;
+  chartViewFirstTimeSec: number | null;
+  chartViewLastTimeSec: number | null;
+  chartViewCount: number;
+  chartTradeFocusWarning: string | null;
   marketCandlesCount: number;
   fullCandleRange: { min: number; max: number } | null;
   candlesSource: CandlesSource;
@@ -379,19 +390,43 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     [loadReport],
   );
 
-  const selectedTradeEntryTimeMs = useMemo(() => {
+  const selectedTradeResolution = useMemo(() => {
     if (selectedTradeId === null || !selectedVariant) {
-      return null;
+      return {
+        trade: undefined,
+        entryTimeMs: null as number | null,
+        warning: null as string | null,
+      };
     }
-    const trade = selectedVariant.trade_records.find((t) => t.trade_id === selectedTradeId);
-    return trade?.entry_time_ms ?? null;
+    const { trade, entryTimeMs } = resolveSelectedTradeEntryTimeMs(
+      selectedVariant.trade_records,
+      selectedTradeId,
+    );
+    if (!trade) {
+      return {
+        trade: undefined,
+        entryTimeMs: null,
+        warning: `Trade #${selectedTradeId} not found in variant trade_records.`,
+      };
+    }
+    if (entryTimeMs === null) {
+      return {
+        trade,
+        entryTimeMs: null,
+        warning: `Trade #${trade.trade_id} has no valid entry_time_ms in report.`,
+      };
+    }
+    return { trade, entryTimeMs, warning: null };
   }, [selectedVariant, selectedTradeId]);
+
+  const selectedTradeEntryTimeMs = selectedTradeResolution.entryTimeMs;
+  const chartTradeFocusWarning = selectedTradeResolution.warning;
 
   const cachedBundle = marketCacheKey !== null ? getMarketCache(marketCacheKey) : undefined;
 
   const chartView = useMemo(() => {
     if (!cachedBundle || marketLoadStatus !== "ready") {
-      return { candles: [] as ChartBar[], emaOverlays: [] as ChartEmaOverlay[] };
+      return emptyChartViewWindow();
     }
     return buildChartViewWindow({
       candles: cachedBundle.candles,
@@ -413,9 +448,10 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     (tradeId: number | null) => {
       setSelectedTradeId(tradeId);
       if (tradeId !== null && selectedVariant) {
-        const trade = selectedVariant.trade_records.find((t) => t.trade_id === tradeId);
-        if (trade) {
-          setSelectedBarTimeSec(Math.floor(trade.entry_time_ms / 1000));
+        const trade = findTradeById(selectedVariant.trade_records, tradeId);
+        const entryTimeMs = resolveTradeEntryTimeMs(trade);
+        if (entryTimeMs !== null) {
+          setSelectedBarTimeSec(Math.floor(entryTimeMs / 1000));
         }
         setActiveTab("chart");
       }
@@ -519,6 +555,12 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       report,
       chartCandles: chartView.candles,
       chartEmaOverlays: chartView.emaOverlays,
+      chartViewMode: chartView.mode,
+      chartViewCenterTimeSec: chartView.centerTimeSec,
+      chartViewFirstTimeSec: chartView.firstTimeSec,
+      chartViewLastTimeSec: chartView.lastTimeSec,
+      chartViewCount: chartView.count,
+      chartTradeFocusWarning,
       marketCandlesCount,
       fullCandleRange,
       candlesSource,
@@ -561,6 +603,12 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       report,
       chartView.candles,
       chartView.emaOverlays,
+      chartView.mode,
+      chartView.centerTimeSec,
+      chartView.firstTimeSec,
+      chartView.lastTimeSec,
+      chartView.count,
+      chartTradeFocusWarning,
       marketCandlesCount,
       fullCandleRange,
       candlesSource,
