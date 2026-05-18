@@ -735,6 +735,7 @@ select {
   justify-content: space-between;
   gap: 0.5rem;
   width: 100%;
+  min-width: 0;
   padding: 0.45rem 0.65rem;
   background: transparent;
   border: none;
@@ -745,22 +746,31 @@ select {
   cursor: pointer;
 }
 
+.composer-collapsible__head > span:first-child {
+  flex-shrink: 0;
+}
+
 .composer-collapsible__head:hover {
   color: #f8fafc;
 }
 
 .composer-collapsible__summary {
+  flex: 1;
+  min-width: 0;
   font-size: 0.72rem;
   font-weight: 400;
   color: #64748b;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  text-align: right;
 }
 
 .composer-collapsible__body {
   padding: 0 0.65rem 0.65rem;
   border-top: 1px solid #1e2836;
+  min-width: 0;
+  overflow-x: auto;
 }
 
 .composer-collapsible__body .composer-section--nested {
@@ -770,31 +780,97 @@ select {
   background: transparent;
 }
 
-.composer-slot--collapsed .composer-slot__params {
-  display: none;
+.composer-collapsible-inner {
+  padding-top: 0.35rem;
 }
 
-.composer-slot__toggle {
-  flex: 1;
+.composer-pipeline {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.composer-instance-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 0.65rem;
+  align-items: start;
   min-width: 0;
+  width: 100%;
+}
+
+.composer-instance-card {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid #243041;
+  border-radius: 8px;
   padding: 0;
-  border: none;
-  background: transparent;
-  color: #cbd5e1;
-  font-size: 0.78rem;
-  text-align: left;
-  cursor: pointer;
+  background: #0c1016;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.composer-instance-card.is-selected {
+  border-color: #3b82f6;
+  box-shadow: inset 0 0 0 1px rgba(59, 130, 246, 0.35);
+}
+
+.composer-instance-card__title {
+  flex-shrink: 0;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #93c5fd;
+  padding: 0.4rem 0.65rem;
+  background: #151c26;
+  border-bottom: 1px solid #1e2836;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.composer-slot__toggle:hover {
-  color: #f8fafc;
+.composer-instance-card__body {
+  min-width: 0;
+  padding: 0.55rem 0.65rem;
 }
 
-.composer-collapsible-inner {
-  padding-top: 0.35rem;
+.composer-instance-card__body .field,
+.composer-instance-card__body .composer-list-add,
+.composer-instance-card__body .composer-component-slots {
+  min-width: 0;
+}
+
+.composer-instance-card__body input,
+.composer-instance-card__body select {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.composer-component-slots {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 0.5rem;
+  align-items: start;
+  min-width: 0;
+  width: 100%;
+}
+
+.composer-list-add select {
+  flex: 1;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.composer-slot__label {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: #94a3b8;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .field {
@@ -971,7 +1047,8 @@ select {
   border: 1px dashed #334155;
   border-radius: 6px;
   padding: 0.5rem;
-  margin: 0.5rem 0;
+  margin: 0;
+  min-width: 0;
 }
 
 .composer-slot__head {

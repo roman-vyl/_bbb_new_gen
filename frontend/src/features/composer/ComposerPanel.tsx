@@ -60,34 +60,61 @@ function SectionErrors({
   return <ValidationMessages errors={scoped} />;
 }
 
-function firstPipelineSectionFromErrors(
-  errors: ValidationErrorItem[],
-  instanceIndex: number,
-): string | null {
-  const prefix = `instances[${instanceIndex}].strategy.`;
+function firstPipelineSectionFromErrors(errors: ValidationErrorItem[]): string | null {
   for (const err of errors) {
-    if (!err.path?.startsWith(prefix)) {
+    const path = err.path ?? "";
+    if (/instances\[\d+\]\.(instance_id|variant)\b/.test(path)) {
+      return "instance-meta";
+    }
+    const marketMatch = path.match(/instances\[\d+\]\.market\b/);
+    if (marketMatch) {
+      return "instance-setup";
+    }
+    const strategyMatch = path.match(/instances\[\d+\]\.strategy\.([^.[]+)/);
+    if (!strategyMatch) {
       continue;
     }
-    const rest = err.path.slice(prefix.length);
-    const key = rest.split(".")[0]?.split("[")[0];
+    const key = strategyMatch[1];
+    if (key === "anchor_stack" || key === "trade_sides") {
+      return "instance-setup";
+    }
     if (
       key === "direction" ||
       key === "setup" ||
       key === "trigger" ||
       key === "blockers" ||
       key === "risk" ||
-      key === "exits" ||
-      key === "anchor_stack" ||
-      key === "trade_sides"
+      key === "exits"
     ) {
-      return key === "anchor_stack" || key === "trade_sides" ? "instance-setup" : key;
-    }
-    if (rest.startsWith("market")) {
-      return "instance-setup";
+      return key;
     }
   }
   return null;
+}
+
+function anyInstancePathHasError(
+  errors: ValidationErrorItem[],
+  instanceCount: number,
+  pathForIndex: (index: number) => string,
+): boolean {
+  for (let i = 0; i < instanceCount; i++) {
+    if (errorsForPath(errors, pathForIndex(i)).length > 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function joinInstanceSummaries(parts: string[]): string {
+  const trimmed = parts.map((p) => p.trim()).filter(Boolean);
+  if (trimmed.length === 0) {
+    return "—";
+  }
+  const unique = [...new Set(trimmed)];
+  if (unique.length === 1) {
+    return unique[0];
+  }
+  return trimmed.join(" · ");
 }
 
 function singletonSummary(value: JsonObject): string {
@@ -100,6 +127,32 @@ function listSummary(slots: JsonObject[]): string {
     return "none";
   }
   return slots.map((s) => String(s.instance_id || s.component_id || "?")).join(", ");
+}
+
+function ComposerInstanceGrid({
+  instances,
+  selectedIndex,
+  children,
+}: {
+  instances: StrategyInstanceDraft[];
+  selectedIndex: number;
+  children: (index: number, inst: StrategyInstanceDraft) => ReactNode;
+}) {
+  return (
+    <div className="composer-instance-grid">
+      {instances.map((inst, index) => (
+        <div
+          key={`${inst.instance_id}-${index}`}
+          className={`composer-instance-card${index === selectedIndex ? " is-selected" : ""}`}
+        >
+          <div className="composer-instance-card__title" title={inst.instance_id}>
+            {inst.instance_id}
+          </div>
+          <div className="composer-instance-card__body">{children(index, inst)}</div>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 function ComposerCollapsible({
@@ -192,26 +245,20 @@ export function ComposerPanel() {
   const canRunBacktest = validation?.ok === true;
 
   const instance = configDraft?.instances[selectedIndex] ?? null;
-  const strategy = (instance?.strategy ?? {}) as JsonObject;
 
   const togglePipeline = useCallback((id: string) => {
     setOpenPipeline((cur) => (cur === id ? "" : id));
   }, []);
 
-  const sectionHasError = useCallback(
-    (pathPrefix: string) => errorsForPath(validationErrors, pathPrefix).length > 0,
-    [validationErrors],
-  );
-
   useEffect(() => {
     if (!validation || validation.ok) {
       return;
     }
-    const first = firstPipelineSectionFromErrors(validation.errors, selectedIndex);
+    const first = firstPipelineSectionFromErrors(validation.errors);
     if (first) {
       setOpenPipeline(first);
     }
-  }, [validation, selectedIndex]);
+  }, [validation]);
 
   const patchDraft = useCallback(
     (patch: Partial<StrategyConfigDraft>) => {
@@ -660,202 +707,361 @@ export function ComposerPanel() {
             </label>
           </details>
 
-          {instance && (
-            <fieldset className="composer-section">
-              <legend>Instance</legend>
-              <SectionErrors errors={validationErrors} pathPrefix={instancePath(selectedIndex)} />
-              <label className="field">
-                <span>instance_id</span>
-                <input
-                  value={instance.instance_id}
-                  onChange={(e) => patchInstance(selectedIndex, { instance_id: e.target.value })}
-                />
-              </label>
-              <label className="field">
-                <span>variant</span>
-                <input
-                  value={instance.variant}
-                  onChange={(e) => patchInstance(selectedIndex, { variant: e.target.value })}
-                />
-              </label>
+          {catalog && (
+            <div className="composer-pipeline">
+              <ComposerCollapsible
+                id="instance-meta"
+                title="Instance"
+                summary={joinInstanceSummaries(
+                  configDraft.instances.map((inst) => inst.variant || inst.instance_id),
+                )}
+                open={openPipeline === "instance-meta"}
+                onToggle={togglePipeline}
+                hasError={anyInstancePathHasError(
+                  validationErrors,
+                  configDraft.instances.length,
+                  (i) => instancePath(i),
+                )}
+              >
+                <ComposerInstanceGrid
+                  instances={configDraft.instances}
+                  selectedIndex={selectedIndex}
+                >
+                  {(index, inst) => (
+                    <>
+                      <SectionErrors errors={validationErrors} pathPrefix={instancePath(index)} />
+                      <label className="field">
+                        <span>instance_id</span>
+                        <input
+                          value={inst.instance_id}
+                          onChange={(e) => patchInstance(index, { instance_id: e.target.value })}
+                        />
+                      </label>
+                      <label className="field">
+                        <span>variant</span>
+                        <input
+                          value={inst.variant}
+                          onChange={(e) => patchInstance(index, { variant: e.target.value })}
+                        />
+                      </label>
+                    </>
+                  )}
+                </ComposerInstanceGrid>
+              </ComposerCollapsible>
 
               <ComposerCollapsible
                 id="instance-setup"
                 title="Market & anchor"
-                summary={`${instance.market.symbol} · ${instance.market.base_timeframe}`}
+                summary={joinInstanceSummaries(
+                  configDraft.instances.map(
+                    (inst) => `${inst.market.symbol} · ${inst.market.base_timeframe}`,
+                  ),
+                )}
                 open={openPipeline === "instance-setup"}
                 onToggle={togglePipeline}
                 hasError={
-                  sectionHasError(`${instancePath(selectedIndex)}.market`) ||
-                  sectionHasError(`${strategyPath(selectedIndex)}.anchor_stack`) ||
-                  sectionHasError(`${strategyPath(selectedIndex)}.trade_sides`)
+                  anyInstancePathHasError(
+                    validationErrors,
+                    configDraft.instances.length,
+                    (i) => `${instancePath(i)}.market`,
+                  ) ||
+                  anyInstancePathHasError(
+                    validationErrors,
+                    configDraft.instances.length,
+                    (i) => `${strategyPath(i)}.anchor_stack`,
+                  ) ||
+                  anyInstancePathHasError(
+                    validationErrors,
+                    configDraft.instances.length,
+                    (i) => `${strategyPath(i)}.trade_sides`,
+                  )
                 }
               >
-                <h4 className="composer-subhead">Market</h4>
-                <label className="field">
-                  <span>symbol</span>
-                  <input
-                    value={instance.market.symbol}
-                    onChange={(e) =>
-                      patchInstance(selectedIndex, {
-                        market: { ...instance.market, symbol: e.target.value },
-                      })
-                    }
-                  />
-                </label>
-                <label className="field">
-                  <span>base_timeframe</span>
-                  <input
-                    value={instance.market.base_timeframe}
-                    onChange={(e) =>
-                      patchInstance(selectedIndex, {
-                        market: { ...instance.market, base_timeframe: e.target.value },
-                      })
-                    }
-                  />
-                </label>
-                <h4 className="composer-subhead">Anchor stack</h4>
-                <AnchorStackFields
-                  stack={(strategy.anchor_stack as JsonObject) ?? {}}
-                  pathPrefix={`${strategyPath(selectedIndex)}.anchor_stack`}
-                  errors={validationErrors}
-                  onChange={(anchor_stack) => patchStrategy(selectedIndex, { anchor_stack })}
-                />
-                <h4 className="composer-subhead">Trade sides</h4>
-                <TradeSidesFields
-                  value={(strategy.trade_sides as JsonObject) ?? {}}
-                  onChange={(trade_sides) => patchStrategy(selectedIndex, { trade_sides })}
-                />
+                <ComposerInstanceGrid
+                  instances={configDraft.instances}
+                  selectedIndex={selectedIndex}
+                >
+                  {(index, inst) => {
+                    const instStrategy = (inst.strategy ?? {}) as JsonObject;
+                    return (
+                      <>
+                        <h4 className="composer-subhead">Market</h4>
+                        <label className="field">
+                          <span>symbol</span>
+                          <input
+                            value={inst.market.symbol}
+                            onChange={(e) =>
+                              patchInstance(index, {
+                                market: { ...inst.market, symbol: e.target.value },
+                              })
+                            }
+                          />
+                        </label>
+                        <label className="field">
+                          <span>base_timeframe</span>
+                          <input
+                            value={inst.market.base_timeframe}
+                            onChange={(e) =>
+                              patchInstance(index, {
+                                market: { ...inst.market, base_timeframe: e.target.value },
+                              })
+                            }
+                          />
+                        </label>
+                        <h4 className="composer-subhead">Anchor stack</h4>
+                        <AnchorStackFields
+                          stack={(instStrategy.anchor_stack as JsonObject) ?? {}}
+                          pathPrefix={`${strategyPath(index)}.anchor_stack`}
+                          errors={validationErrors}
+                          onChange={(anchor_stack) => patchStrategy(index, { anchor_stack })}
+                        />
+                        <h4 className="composer-subhead">Trade sides</h4>
+                        <TradeSidesFields
+                          value={(instStrategy.trade_sides as JsonObject) ?? {}}
+                          onChange={(trade_sides) => patchStrategy(index, { trade_sides })}
+                        />
+                      </>
+                    );
+                  }}
+                </ComposerInstanceGrid>
               </ComposerCollapsible>
 
               <ComposerCollapsible
                 id="direction"
                 title="Direction"
-                summary={singletonSummary((strategy.direction as JsonObject) ?? {})}
+                summary={joinInstanceSummaries(
+                  configDraft.instances.map((inst) =>
+                    singletonSummary((inst.strategy.direction as JsonObject) ?? {}),
+                  ),
+                )}
                 open={openPipeline === "direction"}
                 onToggle={togglePipeline}
-                hasError={sectionHasError(`${strategyPath(selectedIndex)}.direction`)}
+                hasError={anyInstancePathHasError(
+                  validationErrors,
+                  configDraft.instances.length,
+                  (i) => `${strategyPath(i)}.direction`,
+                )}
               >
-                <SingletonComponentSection
-                  compact
-                  title="Direction"
-                  role="direction"
-                  catalog={catalog!}
-                  value={(strategy.direction as JsonObject) ?? {}}
-                  pathPrefix={`${strategyPath(selectedIndex)}.direction`}
-                  errors={validationErrors}
-                  onSelect={(id) => setSingletonComponent(selectedIndex, "direction", id)}
-                  onChange={(direction) => patchStrategy(selectedIndex, { direction })}
-                />
+                <ComposerInstanceGrid
+                  instances={configDraft.instances}
+                  selectedIndex={selectedIndex}
+                >
+                  {(index, inst) => {
+                    const instStrategy = (inst.strategy ?? {}) as JsonObject;
+                    return (
+                      <SingletonComponentSection
+                        compact
+                        title="Direction"
+                        role="direction"
+                        catalog={catalog}
+                        value={(instStrategy.direction as JsonObject) ?? {}}
+                        pathPrefix={`${strategyPath(index)}.direction`}
+                        errors={validationErrors}
+                        onSelect={(id) => setSingletonComponent(index, "direction", id)}
+                        onChange={(direction) => patchStrategy(index, { direction })}
+                      />
+                    );
+                  }}
+                </ComposerInstanceGrid>
               </ComposerCollapsible>
 
               <ComposerCollapsible
                 id="setup"
                 title="Setup"
-                summary={singletonSummary((strategy.setup as JsonObject) ?? {})}
+                summary={joinInstanceSummaries(
+                  configDraft.instances.map((inst) =>
+                    singletonSummary((inst.strategy.setup as JsonObject) ?? {}),
+                  ),
+                )}
                 open={openPipeline === "setup"}
                 onToggle={togglePipeline}
-                hasError={sectionHasError(`${strategyPath(selectedIndex)}.setup`)}
+                hasError={anyInstancePathHasError(
+                  validationErrors,
+                  configDraft.instances.length,
+                  (i) => `${strategyPath(i)}.setup`,
+                )}
               >
-                <SingletonComponentSection
-                  compact
-                  title="Setup"
-                  role="setup"
-                  catalog={catalog!}
-                  value={(strategy.setup as JsonObject) ?? {}}
-                  pathPrefix={`${strategyPath(selectedIndex)}.setup`}
-                  errors={validationErrors}
-                  onSelect={(id) => setSingletonComponent(selectedIndex, "setup", id)}
-                  onChange={(setup) => patchStrategy(selectedIndex, { setup })}
-                />
+                <ComposerInstanceGrid
+                  instances={configDraft.instances}
+                  selectedIndex={selectedIndex}
+                >
+                  {(index, inst) => {
+                    const instStrategy = (inst.strategy ?? {}) as JsonObject;
+                    return (
+                      <SingletonComponentSection
+                        compact
+                        title="Setup"
+                        role="setup"
+                        catalog={catalog}
+                        value={(instStrategy.setup as JsonObject) ?? {}}
+                        pathPrefix={`${strategyPath(index)}.setup`}
+                        errors={validationErrors}
+                        onSelect={(id) => setSingletonComponent(index, "setup", id)}
+                        onChange={(setup) => patchStrategy(index, { setup })}
+                      />
+                    );
+                  }}
+                </ComposerInstanceGrid>
               </ComposerCollapsible>
 
               <ComposerCollapsible
                 id="trigger"
                 title="Trigger"
-                summary={singletonSummary((strategy.trigger as JsonObject) ?? {})}
+                summary={joinInstanceSummaries(
+                  configDraft.instances.map((inst) =>
+                    singletonSummary((inst.strategy.trigger as JsonObject) ?? {}),
+                  ),
+                )}
                 open={openPipeline === "trigger"}
                 onToggle={togglePipeline}
-                hasError={sectionHasError(`${strategyPath(selectedIndex)}.trigger`)}
+                hasError={anyInstancePathHasError(
+                  validationErrors,
+                  configDraft.instances.length,
+                  (i) => `${strategyPath(i)}.trigger`,
+                )}
               >
-                <SingletonComponentSection
-                  compact
-                  title="Trigger"
-                  role="trigger"
-                  catalog={catalog!}
-                  value={(strategy.trigger as JsonObject) ?? {}}
-                  pathPrefix={`${strategyPath(selectedIndex)}.trigger`}
-                  errors={validationErrors}
-                  onSelect={(id) => setSingletonComponent(selectedIndex, "trigger", id)}
-                  onChange={(trigger) => patchStrategy(selectedIndex, { trigger })}
-                />
+                <ComposerInstanceGrid
+                  instances={configDraft.instances}
+                  selectedIndex={selectedIndex}
+                >
+                  {(index, inst) => {
+                    const instStrategy = (inst.strategy ?? {}) as JsonObject;
+                    return (
+                      <SingletonComponentSection
+                        compact
+                        title="Trigger"
+                        role="trigger"
+                        catalog={catalog}
+                        value={(instStrategy.trigger as JsonObject) ?? {}}
+                        pathPrefix={`${strategyPath(index)}.trigger`}
+                        errors={validationErrors}
+                        onSelect={(id) => setSingletonComponent(index, "trigger", id)}
+                        onChange={(trigger) => patchStrategy(index, { trigger })}
+                      />
+                    );
+                  }}
+                </ComposerInstanceGrid>
               </ComposerCollapsible>
 
               <ComposerCollapsible
                 id="blockers"
                 title="Blockers"
-                summary={listSummary(((strategy.blockers as JsonObject[]) ?? []) as JsonObject[])}
+                summary={joinInstanceSummaries(
+                  configDraft.instances.map((inst) =>
+                    listSummary(((inst.strategy.blockers as JsonObject[]) ?? []) as JsonObject[]),
+                  ),
+                )}
                 open={openPipeline === "blockers"}
                 onToggle={togglePipeline}
-                hasError={sectionHasError(`${strategyPath(selectedIndex)}.blockers`)}
+                hasError={anyInstancePathHasError(
+                  validationErrors,
+                  configDraft.instances.length,
+                  (i) => `${strategyPath(i)}.blockers`,
+                )}
               >
-                <ListComponentSection
-                  compact
-                  title="Blockers"
-                  role="blockers"
-                  catalog={catalog!}
-                  slots={((strategy.blockers as JsonObject[]) ?? []) as JsonObject[]}
-                  instanceIndex={selectedIndex}
-                  errors={validationErrors}
-                  onAdd={(id) => addListSlot(selectedIndex, "blockers", id)}
-                  onRemove={(slot) => removeListSlot(selectedIndex, "blockers", slot)}
-                  onChange={(slot, next) => updateListSlot(selectedIndex, "blockers", slot, next)}
-                />
+                <ComposerInstanceGrid
+                  instances={configDraft.instances}
+                  selectedIndex={selectedIndex}
+                >
+                  {(index, inst) => {
+                    const instStrategy = (inst.strategy ?? {}) as JsonObject;
+                    return (
+                      <ListComponentSection
+                        compact
+                        title="Blockers"
+                        role="blockers"
+                        catalog={catalog}
+                        slots={((instStrategy.blockers as JsonObject[]) ?? []) as JsonObject[]}
+                        instanceIndex={index}
+                        errors={validationErrors}
+                        onAdd={(id) => addListSlot(index, "blockers", id)}
+                        onRemove={(slot) => removeListSlot(index, "blockers", slot)}
+                        onChange={(slot, next) => updateListSlot(index, "blockers", slot, next)}
+                      />
+                    );
+                  }}
+                </ComposerInstanceGrid>
               </ComposerCollapsible>
 
               <ComposerCollapsible
                 id="risk"
                 title="Risk"
-                summary={singletonSummary((strategy.risk as JsonObject) ?? {})}
+                summary={joinInstanceSummaries(
+                  configDraft.instances.map((inst) =>
+                    singletonSummary((inst.strategy.risk as JsonObject) ?? {}),
+                  ),
+                )}
                 open={openPipeline === "risk"}
                 onToggle={togglePipeline}
-                hasError={sectionHasError(`${strategyPath(selectedIndex)}.risk`)}
+                hasError={anyInstancePathHasError(
+                  validationErrors,
+                  configDraft.instances.length,
+                  (i) => `${strategyPath(i)}.risk`,
+                )}
               >
-                <SingletonComponentSection
-                  compact
-                  title="Risk"
-                  role="risk"
-                  catalog={catalog!}
-                  value={(strategy.risk as JsonObject) ?? {}}
-                  pathPrefix={`${strategyPath(selectedIndex)}.risk`}
-                  errors={validationErrors}
-                  onSelect={(id) => setSingletonComponent(selectedIndex, "risk", id)}
-                  onChange={(risk) => patchStrategy(selectedIndex, { risk })}
-                />
+                <ComposerInstanceGrid
+                  instances={configDraft.instances}
+                  selectedIndex={selectedIndex}
+                >
+                  {(index, inst) => {
+                    const instStrategy = (inst.strategy ?? {}) as JsonObject;
+                    return (
+                      <SingletonComponentSection
+                        compact
+                        title="Risk"
+                        role="risk"
+                        catalog={catalog}
+                        value={(instStrategy.risk as JsonObject) ?? {}}
+                        pathPrefix={`${strategyPath(index)}.risk`}
+                        errors={validationErrors}
+                        onSelect={(id) => setSingletonComponent(index, "risk", id)}
+                        onChange={(risk) => patchStrategy(index, { risk })}
+                      />
+                    );
+                  }}
+                </ComposerInstanceGrid>
               </ComposerCollapsible>
 
               <ComposerCollapsible
                 id="exits"
                 title="Exits"
-                summary={listSummary(((strategy.exits as JsonObject[]) ?? []) as JsonObject[])}
+                summary={joinInstanceSummaries(
+                  configDraft.instances.map((inst) =>
+                    listSummary(((inst.strategy.exits as JsonObject[]) ?? []) as JsonObject[]),
+                  ),
+                )}
                 open={openPipeline === "exits"}
                 onToggle={togglePipeline}
-                hasError={sectionHasError(`${strategyPath(selectedIndex)}.exits`)}
+                hasError={anyInstancePathHasError(
+                  validationErrors,
+                  configDraft.instances.length,
+                  (i) => `${strategyPath(i)}.exits`,
+                )}
               >
-                <ListComponentSection
-                  compact
-                  title="Exits"
-                  role="exits"
-                  catalog={catalog!}
-                  slots={((strategy.exits as JsonObject[]) ?? []) as JsonObject[]}
-                  instanceIndex={selectedIndex}
-                  errors={validationErrors}
-                  onAdd={(id) => addListSlot(selectedIndex, "exits", id)}
-                  onRemove={(slot) => removeListSlot(selectedIndex, "exits", slot)}
-                  onChange={(slot, next) => updateListSlot(selectedIndex, "exits", slot, next)}
-                />
+                <ComposerInstanceGrid
+                  instances={configDraft.instances}
+                  selectedIndex={selectedIndex}
+                >
+                  {(index, inst) => {
+                    const instStrategy = (inst.strategy ?? {}) as JsonObject;
+                    return (
+                      <ListComponentSection
+                        compact
+                        title="Exits"
+                        role="exits"
+                        catalog={catalog}
+                        slots={((instStrategy.exits as JsonObject[]) ?? []) as JsonObject[]}
+                        instanceIndex={index}
+                        errors={validationErrors}
+                        onAdd={(id) => addListSlot(index, "exits", id)}
+                        onRemove={(slot) => removeListSlot(index, "exits", slot)}
+                        onChange={(slot, next) => updateListSlot(index, "exits", slot, next)}
+                      />
+                    );
+                  }}
+                </ComposerInstanceGrid>
               </ComposerCollapsible>
-            </fieldset>
+            </div>
           )}
             </div>
           </div>
@@ -1055,19 +1261,6 @@ function ListComponentSection({
 }) {
   const options = componentsForRole(catalog, role);
   const [addId, setAddId] = useState(options[0]?.component_id ?? "");
-  const [expandedSlots, setExpandedSlots] = useState<Set<number>>(() => new Set());
-
-  const toggleSlot = (slotIndex: number) => {
-    setExpandedSlots((prev) => {
-      const next = new Set(prev);
-      if (next.has(slotIndex)) {
-        next.delete(slotIndex);
-      } else {
-        next.add(slotIndex);
-      }
-      return next;
-    });
-  };
 
   const listAdd = (
     <div className="composer-list-add">
@@ -1084,21 +1277,19 @@ function ListComponentSection({
     </div>
   );
 
-  const slotList = slots.map((slot, slotIndex) => {
-    const componentId = String(slot.component_id ?? "");
-    const schema = findComponentSchema(catalog, componentId);
-    const path = listSlotPath(instanceIndex, role, slotIndex);
-    const expanded = expandedSlots.has(slotIndex);
-    const slotLabel = `${String(slot.instance_id ?? (componentId || "slot"))} · ${componentId || "component"}`;
-    return (
-      <div
-        key={`${componentId}-${slotIndex}`}
-        className={expanded ? "composer-slot" : "composer-slot composer-slot--collapsed"}
-      >
+  const slotList = (
+    <div className="composer-component-slots">
+      {slots.map((slot, slotIndex) => {
+        const componentId = String(slot.component_id ?? "");
+        const schema = findComponentSchema(catalog, componentId);
+        const path = listSlotPath(instanceIndex, role, slotIndex);
+        const slotLabel = String(slot.instance_id ?? (componentId || "slot"));
+        return (
+          <div key={`${componentId}-${slotIndex}`} className="composer-slot">
         <div className="composer-slot__head">
-          <button type="button" className="composer-slot__toggle" onClick={() => toggleSlot(slotIndex)}>
+          <span className="composer-slot__label" title={slotLabel}>
             {slotLabel}
-          </button>
+          </span>
           <button type="button" onClick={() => onRemove(slotIndex)}>
             Remove
           </button>
@@ -1142,7 +1333,9 @@ function ListComponentSection({
         </div>
       </div>
     );
-  });
+      })}
+    </div>
+  );
 
   if (compact) {
     return (

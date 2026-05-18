@@ -40,22 +40,20 @@ export function sliceAroundTime<T extends TimeBar>(
   if (bars.length === 0) {
     return [];
   }
-  if (bars.length <= limit) {
-    return [...bars];
-  }
 
+  const windowSize = Math.min(limit, bars.length);
   const centerIdx = findBarIndexAtOrBefore(bars, centerTimeSec);
-  const half = Math.floor(limit / 2);
+  const half = Math.floor(windowSize / 2);
   let start = centerIdx - half;
-  let end = start + limit;
+  let end = start + windowSize;
 
   if (start < 0) {
     start = 0;
-    end = limit;
+    end = windowSize;
   }
   if (end > bars.length) {
     end = bars.length;
-    start = Math.max(0, end - limit);
+    start = Math.max(0, end - windowSize);
   }
 
   return bars.slice(start, end);

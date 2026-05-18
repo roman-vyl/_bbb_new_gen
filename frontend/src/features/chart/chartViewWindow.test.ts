@@ -159,6 +159,23 @@ describe("buildChartViewWindow", () => {
     expect(view.emaOverlays.every((o) => o.points.length === 40)).toBe(true);
   });
 
+  it("centers trade focus up to render limit when cache is larger", () => {
+    const candles = makeBars(10_000, 1_000_000);
+    const emaOverlays = makeOverlays(candles);
+    const entryMs = candles[5000].time * 1000;
+    const view = buildChartViewWindow({
+      candles,
+      emaOverlays,
+      selectedTradeEntryTimeMs: entryMs,
+    });
+    expect(view.candles).toHaveLength(CHART_RENDER_BAR_LIMIT);
+    expect(view.candles.some((b) => b.time === candles[5000].time)).toBe(true);
+    expect(view.candles[0].time).toBeGreaterThan(candles[0].time);
+    expect(view.candles[view.candles.length - 1].time).toBeLessThan(
+      candles[candles.length - 1].time,
+    );
+  });
+
   it("returns full series when shorter than limit", () => {
     const candles = makeBars(10);
     const emaOverlays = makeOverlays(candles);
