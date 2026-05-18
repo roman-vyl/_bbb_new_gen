@@ -26,6 +26,8 @@ import {
   duplicateInstance,
   errorsForPath,
   findComponentSchema,
+  anyInstanceMetaHasError,
+  errorsForInstanceMeta,
   instancePath,
   listSlotPath,
   nextInstanceId,
@@ -51,11 +53,14 @@ function ValidationMessages({ errors }: { errors: ValidationErrorItem[] }) {
 function SectionErrors({
   errors,
   pathPrefix,
+  scoped: scopedOverride,
 }: {
   errors: ValidationErrorItem[];
-  pathPrefix: string;
+  pathPrefix?: string;
+  /** When set, shown as-is (no pathPrefix filter). */
+  scoped?: ValidationErrorItem[];
 }) {
-  const scoped = errorsForPath(errors, pathPrefix);
+  const scoped = scopedOverride ?? errorsForPath(errors, pathPrefix ?? "");
   if (scoped.length === 0) return null;
   return <ValidationMessages errors={scoped} />;
 }
@@ -207,7 +212,9 @@ export function ComposerPanel() {
   const [serializeFormat, setSerializeFormat] = useState<"json" | "yaml">("json");
   const [previewTab, setPreviewTab] = useState<PreviewTab>("draft");
   const [previewOpen, setPreviewOpen] = useState(false);
-  const [openPipeline, setOpenPipeline] = useState("direction");
+  const [openPipelineSections, setOpenPipelineSections] = useState<Set<string>>(
+    () => new Set(["direction"]),
+  );
   const [busy, setBusy] = useState<"validate" | "serialize" | "save" | "backtest" | null>(null);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [backtestMessage, setBacktestMessage] = useState<string | null>(null);
@@ -247,7 +254,15 @@ export function ComposerPanel() {
   const instance = configDraft?.instances[selectedIndex] ?? null;
 
   const togglePipeline = useCallback((id: string) => {
-    setOpenPipeline((cur) => (cur === id ? "" : id));
+    setOpenPipelineSections((cur) => {
+      const next = new Set(cur);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
   }, []);
 
   useEffect(() => {
@@ -256,7 +271,14 @@ export function ComposerPanel() {
     }
     const first = firstPipelineSectionFromErrors(validation.errors);
     if (first) {
-      setOpenPipeline(first);
+      setOpenPipelineSections((cur) => {
+        if (cur.has(first)) {
+          return cur;
+        }
+        const next = new Set(cur);
+        next.add(first);
+        return next;
+      });
     }
   }, [validation]);
 
@@ -715,12 +737,11 @@ export function ComposerPanel() {
                 summary={joinInstanceSummaries(
                   configDraft.instances.map((inst) => inst.variant || inst.instance_id),
                 )}
-                open={openPipeline === "instance-meta"}
+                open={openPipelineSections.has("instance-meta")}
                 onToggle={togglePipeline}
-                hasError={anyInstancePathHasError(
+                hasError={anyInstanceMetaHasError(
                   validationErrors,
                   configDraft.instances.length,
-                  (i) => instancePath(i),
                 )}
               >
                 <ComposerInstanceGrid
@@ -729,7 +750,10 @@ export function ComposerPanel() {
                 >
                   {(index, inst) => (
                     <>
-                      <SectionErrors errors={validationErrors} pathPrefix={instancePath(index)} />
+                      <SectionErrors
+                        errors={validationErrors}
+                        scoped={errorsForInstanceMeta(validationErrors, index)}
+                      />
                       <label className="field">
                         <span>instance_id</span>
                         <input
@@ -757,7 +781,7 @@ export function ComposerPanel() {
                     (inst) => `${inst.market.symbol} · ${inst.market.base_timeframe}`,
                   ),
                 )}
-                open={openPipeline === "instance-setup"}
+                open={openPipelineSections.has("instance-setup")}
                 onToggle={togglePipeline}
                 hasError={
                   anyInstancePathHasError(
@@ -834,7 +858,7 @@ export function ComposerPanel() {
                     singletonSummary((inst.strategy.direction as JsonObject) ?? {}),
                   ),
                 )}
-                open={openPipeline === "direction"}
+                open={openPipelineSections.has("direction")}
                 onToggle={togglePipeline}
                 hasError={anyInstancePathHasError(
                   validationErrors,
@@ -873,7 +897,7 @@ export function ComposerPanel() {
                     singletonSummary((inst.strategy.setup as JsonObject) ?? {}),
                   ),
                 )}
-                open={openPipeline === "setup"}
+                open={openPipelineSections.has("setup")}
                 onToggle={togglePipeline}
                 hasError={anyInstancePathHasError(
                   validationErrors,
@@ -912,7 +936,7 @@ export function ComposerPanel() {
                     singletonSummary((inst.strategy.trigger as JsonObject) ?? {}),
                   ),
                 )}
-                open={openPipeline === "trigger"}
+                open={openPipelineSections.has("trigger")}
                 onToggle={togglePipeline}
                 hasError={anyInstancePathHasError(
                   validationErrors,
@@ -951,7 +975,7 @@ export function ComposerPanel() {
                     listSummary(((inst.strategy.blockers as JsonObject[]) ?? []) as JsonObject[]),
                   ),
                 )}
-                open={openPipeline === "blockers"}
+                open={openPipelineSections.has("blockers")}
                 onToggle={togglePipeline}
                 hasError={anyInstancePathHasError(
                   validationErrors,
@@ -991,7 +1015,7 @@ export function ComposerPanel() {
                     singletonSummary((inst.strategy.risk as JsonObject) ?? {}),
                   ),
                 )}
-                open={openPipeline === "risk"}
+                open={openPipelineSections.has("risk")}
                 onToggle={togglePipeline}
                 hasError={anyInstancePathHasError(
                   validationErrors,
@@ -1030,7 +1054,7 @@ export function ComposerPanel() {
                     listSummary(((inst.strategy.exits as JsonObject[]) ?? []) as JsonObject[]),
                   ),
                 )}
-                open={openPipeline === "exits"}
+                open={openPipelineSections.has("exits")}
                 onToggle={togglePipeline}
                 hasError={anyInstancePathHasError(
                   validationErrors,
@@ -1225,13 +1249,17 @@ function SingletonComponentSection({
   );
 
   if (compact) {
-    return <div className="composer-collapsible-inner">{inner}</div>;
+    return (
+      <div className="composer-collapsible-inner">
+        <div className="composer-component-panel">{inner}</div>
+      </div>
+    );
   }
 
   return (
     <fieldset className="composer-section composer-section--nested">
       <legend>{title}</legend>
-      {inner}
+      <div className="composer-component-panel">{inner}</div>
     </fieldset>
   );
 }

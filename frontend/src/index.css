@@ -782,6 +782,8 @@ select {
 
 .composer-collapsible-inner {
   padding-top: 0.35rem;
+  min-width: 0;
+  width: 100%;
 }
 
 .composer-pipeline {
@@ -792,7 +794,8 @@ select {
 
 .composer-instance-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  /* auto-fit (not auto-fill): one instance card spans full section width */
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 0.65rem;
   align-items: start;
   min-width: 0;
@@ -847,13 +850,21 @@ select {
   min-width: 0;
 }
 
+/* Component cards: fixed comfortable width; do not stretch with 1fr when count is low */
 .composer-component-slots {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
   gap: 0.5rem;
-  align-items: start;
+  align-items: flex-start;
   min-width: 0;
   width: 100%;
+}
+
+.composer-component-panel {
+  width: min(100%, var(--composer-component-width, 320px));
+  max-width: var(--composer-component-width, 320px);
+  min-width: min(100%, 260px);
 }
 
 .composer-list-add select {
@@ -1044,11 +1055,15 @@ select {
 }
 
 .composer-slot {
+  flex: 0 1 var(--composer-component-width, 320px);
+  width: min(100%, var(--composer-component-width, 320px));
+  max-width: var(--composer-component-width, 320px);
+  min-width: min(100%, 260px);
   border: 1px dashed #334155;
   border-radius: 6px;
   padding: 0.5rem;
   margin: 0;
-  min-width: 0;
+  box-sizing: border-box;
 }
 
 .composer-slot__head {
