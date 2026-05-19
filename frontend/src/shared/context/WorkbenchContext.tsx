@@ -42,9 +42,11 @@ import { buildChartViewWindow, emptyChartViewWindow, type ChartViewMode } from "
 import { candleRangeMs } from "@/features/chart/chartMarkers";
 import {
   defaultClosedTradeSelection,
+  deriveSelectedVariant,
   findTradeById,
   resolveSelectedTradeEntryTimeMs,
   resolveTradeEntryTimeMs,
+  resolveVariantKeyForReport,
 } from "@/features/chart/tradeLookup";
 import {
   buildMarketCacheKey,
@@ -158,6 +160,11 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
   const [signalTraceError, setSignalTraceError] = useState<string | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
   const prevVariantKeyRef = useRef("");
+  const selectedVariantKeyRef = useRef("");
+
+  useEffect(() => {
+    selectedVariantKeyRef.current = selectedVariantKey;
+  }, [selectedVariantKey]);
 
   const applyTradeFocusSelection = useCallback((trades: readonly TradeRecord[]) => {
     const { tradeId, barTimeSec } = defaultClosedTradeSelection(trades);
@@ -228,67 +235,69 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
   const timeframeMismatch =
     reportTimeframe !== null && reportTimeframe !== chartTimeframe;
 
-  const loadReport = useCallback(async (runId: string) => {
-    setReportLoadStatus("loading");
-    setReportError(null);
-    setMarketError(null);
-    setMarketLoadStatus("idle");
-    setMarketCacheKey(null);
-    try {
-      const loaded = await fetchRunReport(runId);
-      setReport(loaded);
-
-      let nextVariantKey = "";
-      setSelectedVariantKey((prev) => {
-        nextVariantKey = loaded.variants.some((v) => v.variant === prev)
-          ? prev
-          : (loaded.variants[0]?.variant ?? "");
-        return nextVariantKey;
-      });
-      prevVariantKeyRef.current = nextVariantKey;
-      const variant =
-        loaded.variants.find((v) => v.variant === nextVariantKey) ?? loaded.variants[0];
-      if (variant) {
-        applyTradeFocusSelection(variant.trade_records);
-      } else {
-        setSelectedTradeId(null);
-        setSelectedBarTimeSec(null);
-      }
-      setReportLoadStatus("ready");
-    } catch (err) {
-      const message =
-        err instanceof ApiError
-          ? err.detail
-          : err instanceof Error
-            ? err.message
-            : "Failed to load run report.";
-      setReport(null);
-      setReportError(message);
-      setReportLoadStatus("error");
+  // REPORT_LOAD_DEPS: selectedRunId, reloadToken only — do not add UI/report/market state.
+  useEffect(() => {
+    if (selectedRunId === null) {
+      return;
     }
-  }, [applyTradeFocusSelection]);
+    const runId = selectedRunId;
+    let cancelled = false;
+
+    async function loadReportRemote() {
+      setReportLoadStatus("loading");
+      setReportError(null);
+      setMarketError(null);
+      setMarketLoadStatus("idle");
+      setMarketCacheKey(null);
+      try {
+        const loaded = await fetchRunReport(runId);
+        if (cancelled) return;
+        setReport(loaded);
+        setReportLoadStatus("ready");
+      } catch (err) {
+        if (cancelled) return;
+        const message =
+          err instanceof ApiError
+            ? err.detail
+            : err instanceof Error
+              ? err.message
+              : "Failed to load run report.";
+        setReport(null);
+        setReportError(message);
+        setReportLoadStatus("error");
+      }
+    }
+
+    void loadReportRemote();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedRunId, reloadToken]);
 
   useEffect(() => {
     let cancelled = false;
 
-    async function bootstrap() {
-      setReportLoadStatus("loading");
-      setReportError(null);
+    async function bootstrapRuns() {
       try {
         const listed = await fetchRunSummaries();
         if (cancelled) return;
 
         setRuns(listed);
-        const runId = pickDefaultRunId(listed);
-        if (runId === null) {
+        const defaultRunId = pickDefaultRunId(listed);
+        if (defaultRunId === null) {
           setReport(null);
+          setSelectedRunIdState(null);
           setReportError(EMPTY_RUNS_HINT);
           setReportLoadStatus("error");
           return;
         }
 
-        setSelectedRunIdState(runId);
-        await loadReport(runId);
+        setSelectedRunIdState((prev) => {
+          if (prev !== null && listed.some((r) => r.run_id === prev)) {
+            return prev;
+          }
+          return defaultRunId;
+        });
       } catch (err) {
         if (cancelled) return;
         const message =
@@ -302,20 +311,29 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       }
     }
 
-    void bootstrap();
+    void bootstrapRuns();
     return () => {
       cancelled = true;
     };
-  }, [loadReport, reloadToken]);
+  }, [reloadToken]);
 
-  const selectedVariant = useMemo(() => {
-    if (!report) return null;
-    const found = report.variants.find((v) => v.variant === selectedVariantKey);
-    return found ?? report.variants[0] ?? null;
-  }, [report, selectedVariantKey]);
+  const selectedVariant = useMemo(
+    () => deriveSelectedVariant(report, selectedVariantKey),
+    [report, selectedVariantKey],
+  );
 
   useEffect(() => {
-    if (reportLoadStatus !== "ready" || selectedVariant === null) {
+    if (report === null) {
+      return;
+    }
+    const next = resolveVariantKeyForReport(report, selectedVariantKeyRef.current);
+    setSelectedVariantKey(next);
+    selectedVariantKeyRef.current = next;
+    prevVariantKeyRef.current = "";
+  }, [report]);
+
+  useEffect(() => {
+    if (report === null || selectedVariant === null) {
       return;
     }
     if (prevVariantKeyRef.current === selectedVariantKey) {
@@ -323,12 +341,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     }
     prevVariantKeyRef.current = selectedVariantKey;
     applyTradeFocusSelection(selectedVariant.trade_records);
-  }, [
-    selectedVariantKey,
-    selectedVariant,
-    reportLoadStatus,
-    applyTradeFocusSelection,
-  ]);
+  }, [report?.run_id, selectedVariantKey, selectedVariant, applyTradeFocusSelection]);
 
   useEffect(() => {
     if (report === null || reportLoadStatus !== "ready" || selectedVariant === null) {
@@ -403,27 +416,19 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     };
   }, [report, reportLoadStatus, chartTimeframe, reloadToken, selectedVariant]);
 
-  const setSelectedRunId = useCallback(
-    (runId: string) => {
-      setSelectedRunIdState(runId);
-      void loadReport(runId);
-    },
-    [loadReport],
-  );
+  const setSelectedRunId = useCallback((runId: string) => {
+    setSelectedRunIdState(runId);
+  }, []);
 
   const reloadReport = useCallback(() => {
     setReloadToken((t) => t + 1);
   }, []);
 
-  const refreshRunsAndSelectRun = useCallback(
-    async (runId: string) => {
-      const listed = await fetchRunSummaries();
-      setRuns(listed);
-      setSelectedRunIdState(runId);
-      await loadReport(runId);
-    },
-    [loadReport],
-  );
+  const refreshRunsAndSelectRun = useCallback(async (runId: string) => {
+    const listed = await fetchRunSummaries();
+    setRuns(listed);
+    setSelectedRunIdState(runId);
+  }, []);
 
   const selectedTradeResolution = useMemo(() => {
     if (selectedTradeId === null || !selectedVariant) {

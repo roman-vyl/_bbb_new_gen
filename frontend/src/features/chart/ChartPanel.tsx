@@ -468,8 +468,6 @@ export function ChartPanel() {
 
     if (!series || !chart || !selectedVariant || chartDataKey === "") return;
 
-
-
     series.setData(toCandlestickSeriesData(chartCandles));
 
 

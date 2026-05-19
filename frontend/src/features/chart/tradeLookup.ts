@@ -1,4 +1,4 @@
-import type { TradeRecord } from "@/api/types";
+import type { RunReport, RunVariant, TradeRecord } from "@/api/types";
 
 /** Stable trade id comparison (JSON may coerce ids to string). */
 export function tradeIdsEqual(a: unknown, b: unknown): boolean {
@@ -41,6 +41,26 @@ export function resolveSelectedTradeEntryTimeMs(
 function normalizeTradeId(raw: number | string): number | null {
   const id = typeof raw === "number" ? raw : Number(raw);
   return Number.isFinite(id) ? id : null;
+}
+
+/** Local selection: report + UI variant key → active variant (no fetch). */
+export function deriveSelectedVariant(
+  report: RunReport | null,
+  variantKey: string,
+): RunVariant | null {
+  if (!report) {
+    return null;
+  }
+  const found = report.variants.find((v) => v.variant === variantKey);
+  return found ?? report.variants[0] ?? null;
+}
+
+/** Keep current instance when switching runs if it exists in the new report. */
+export function resolveVariantKeyForReport(loaded: RunReport, previousKey: string): string {
+  if (previousKey !== "" && loaded.variants.some((v) => v.variant === previousKey)) {
+    return previousKey;
+  }
+  return loaded.variants[0]?.variant ?? "";
 }
 
 /** Last closed trade in report order (typical backtest: final closed position). */

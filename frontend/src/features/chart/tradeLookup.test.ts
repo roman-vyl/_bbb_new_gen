@@ -1,13 +1,15 @@
 import { describe, expect, it } from "vitest";
 
-import type { TradeRecord } from "@/api/types";
+import type { RunReport, TradeRecord } from "@/api/types";
 import {
   defaultClosedTradeSelection,
+  deriveSelectedVariant,
   findLastClosedTradeId,
   findTradeById,
   getAdjacentTradeId,
   resolveSelectedTradeEntryTimeMs,
   resolveTradeEntryTimeMs,
+  resolveVariantKeyForReport,
   tradeIdsEqual,
 } from "@/features/chart/tradeLookup";
 
@@ -69,6 +71,42 @@ describe("resolveSelectedTradeEntryTimeMs", () => {
     const { trade, entryTimeMs } = resolveSelectedTradeEntryTimeMs(trades, "10");
     expect(trade?.trade_id).toBe(10);
     expect(entryTimeMs).toBe(5_000_000);
+  });
+});
+
+describe("deriveSelectedVariant", () => {
+  const loaded = {
+    variants: [
+      { variant: "exp_a", trade_records: [] },
+      { variant: "exp_b", trade_records: [] },
+    ],
+  } as RunReport;
+
+  it("returns null when report is null", () => {
+    expect(deriveSelectedVariant(null, "exp_a")).toBeNull();
+  });
+
+  it("returns matching variant by key", () => {
+    expect(deriveSelectedVariant(loaded, "exp_b")?.variant).toBe("exp_b");
+  });
+
+  it("falls back to first variant when key is missing", () => {
+    expect(deriveSelectedVariant(loaded, "missing")?.variant).toBe("exp_a");
+  });
+});
+
+describe("resolveVariantKeyForReport", () => {
+  const loaded = {
+    variants: [{ variant: "exp_a" }, { variant: "exp_b" }],
+  } as RunReport;
+
+  it("keeps previous key when present in report", () => {
+    expect(resolveVariantKeyForReport(loaded, "exp_b")).toBe("exp_b");
+  });
+
+  it("falls back to first variant when previous key is missing", () => {
+    expect(resolveVariantKeyForReport(loaded, "missing")).toBe("exp_a");
+    expect(resolveVariantKeyForReport(loaded, "")).toBe("exp_a");
   });
 });
 
