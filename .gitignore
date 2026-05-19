@@ -64,8 +64,14 @@ market.sqlite
 /research/results/*.json
 /research/results/runs/*.json
 /research/experiments/configs/ema_pullback/
+/research/experiments/configs/.workbench_selection.json
 
 # Research Workbench (frontend)
 frontend/node_modules/
 frontend/dist/
 frontend/.vite/
+frontend/test-results/
+
+# Playwright / agent screenshots (repo root, e.g. npx playwright screenshot)
+/screenshot.png
+/screenshot-*.png

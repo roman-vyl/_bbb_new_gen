@@ -6,6 +6,7 @@ import {
   matchesExitReasonFilter,
   type ExitReasonFilterId,
 } from "@/features/reports/exitReasonFilters";
+import { findTradeById, tradeIdsEqual } from "@/features/chart/tradeLookup";
 import { useWorkbench } from "@/shared/context/WorkbenchContext";
 
 function formatMs(ms: number | null): string {
@@ -97,7 +98,7 @@ export function ReportsPanel() {
               <TradeRow
                 key={trade.trade_id}
                 trade={trade}
-                selected={selectedTradeId === trade.trade_id}
+                selected={tradeIdsEqual(selectedTradeId, trade.trade_id)}
                 onSelect={() => selectTrade(trade.trade_id)}
               />
             ))}
@@ -108,7 +109,7 @@ export function ReportsPanel() {
 
       {selectedTradeId !== null && (
         <TradeDetail
-          trade={selectedVariant.trade_records.find((t) => t.trade_id === selectedTradeId)}
+          trade={findTradeById(selectedVariant.trade_records, selectedTradeId)}
         />
       )}
     </section>

@@ -7,6 +7,18 @@ import type {
   ValidationErrorItem,
 } from "@/api/types";
 
+export const COMPOSER_DEFAULT_FAMILY = "ema_pullback";
+
+export function createBlankConfigDraft(family = COMPOSER_DEFAULT_FAMILY): StrategyConfigDraft {
+  return {
+    config_version: 1,
+    experiment_id: "",
+    family,
+    execution: {},
+    instances: [createDefaultInstance("instance_1")],
+  };
+}
+
 export function createDefaultInstance(instanceId: string): StrategyInstanceDraft {
   return {
     instance_id: instanceId,
@@ -141,6 +153,48 @@ export function errorsForPath(
 
 export function instancePath(index: number): string {
   return `instances[${index}]`;
+}
+
+export function instanceMetaPath(
+  index: number,
+  field: "instance_id" | "variant",
+): string {
+  return `${instancePath(index)}.${field}`;
+}
+
+/** Validation paths for instance_id / variant only (not market, strategy, …). */
+export function errorsForInstanceMeta(
+  errors: ValidationErrorItem[],
+  index: number,
+): ValidationErrorItem[] {
+  const prefix = instancePath(index);
+  return errors.filter((e) => {
+    const path = e.path ?? "";
+    if (!path.startsWith(`${prefix}.`)) {
+      return false;
+    }
+    const rest = path.slice(prefix.length + 1);
+    return (
+      rest === "instance_id" ||
+      rest.startsWith("instance_id.") ||
+      rest.startsWith("instance_id[") ||
+      rest === "variant" ||
+      rest.startsWith("variant.") ||
+      rest.startsWith("variant[")
+    );
+  });
+}
+
+export function anyInstanceMetaHasError(
+  errors: ValidationErrorItem[],
+  instanceCount: number,
+): boolean {
+  for (let i = 0; i < instanceCount; i++) {
+    if (errorsForInstanceMeta(errors, i).length > 0) {
+      return true;
+    }
+  }
+  return false;
 }
 
 export function strategyPath(index: number): string {

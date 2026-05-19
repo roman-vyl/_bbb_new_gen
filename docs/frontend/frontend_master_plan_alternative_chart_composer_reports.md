@@ -30,12 +30,12 @@ Workbench (browser) → research_api/ (FastAPI BFF) → research layer | data re
 
 ## Принцип планирования
 
-- **Вертикальные срезы (фазы 0–4)**: одна фаза = один релизопригодный сценарий + минимальный API-slice. Следующая фаза **не начинается**, пока не закрыт DoD предыдущей. Не строить параллельные «дорожки» из полуготовых подсистем.
+- **Вертикальные срезы (фазы 0–5)**: одна фаза = один релизопригодный сценарий + минимальный API-slice. Следующая фаза **не начинается**, пока не закрыт DoD предыдущей. Не строить параллельные «дорожки» из полуготовых подсистем.
 - **Схема важнее формы API**: экраны и сериализация привязаны к **OpenAPI / JSON Schema**; эндпоинты догоняют по фазам.
 - **Конфиг из UI = draft** до `POST /validate`; persist и backtest — только после `ok` на бэкенде.
 - График и оверлеи сделок **не откладываются** «на потом» (фаза 0 — fixtures с маркерами).
 
-Сквозные **опоры** (ниже) задают направление; **реализация идёт по фазам 0–4**, не параллельно по трём столбцам.
+Сквозные **опоры** (ниже) задают направление; **реализация идёт по фазам 0–5**, не параллельно по трём столбцам.
 
 ---
 
@@ -45,7 +45,7 @@ Workbench (browser) → research_api/ (FastAPI BFF) → research layer | data re
 
 | Вкладка | Содержание |
 |---------|------------|
-| **Chart** | Свечи, EMA overlays (с фазы 2), entry/exit markers, exit_reason badges, highlight выбранной сделки |
+| **Chart** | Свечи, EMA overlays (фаза 2), entry/exit markers, highlight сделки; **фаза 5:** Bar Inspector (клик по свече), signal timeline-ленты |
 | **Strategy Composer** | Instances, sections, component slots, params, validate, draft JSON / serialize preview |
 | **Reports** | Summary, variants, trade table, filters, selected trade details |
 
@@ -86,7 +86,9 @@ frontend/
 
 Технология графика: **Lightweight Charts** (TradingView) или эквивалент (OHLC, zoom, markers).
 
-**Chart — будущие overlays** (после MVP): SL/TP levels, entry/exit price lines, touch zones.
+**Chart — фаза 5 (signal explanation):** per-bar trace entry-пайплайна (gates + internals компонентов); Bar Inspector + timeline под графиком. Данные с `GET /api/research/runs/{run_id}/signal-trace`, расчёт в research (не в браузере).
+
+**Chart — позже:** SL/TP levels, entry/exit price lines на графике.
 
 ---
 
@@ -342,6 +344,9 @@ Banner виден на вкладке Chart (и при необходимост�
 | **2** | Real candles + EMA | GET `/api/market/*` |
 | **3** | Draft composer → validate → save | catalog, validate, serialize, save |
 | **4** | Backtest from UI | POST backtests (+ optional job poll) |
+| **5** | Signal explanation on Chart | GET `.../signal-trace` (Bar Inspector + timeline) |
+
+Фаза 5 — естественное продолжение после цикла «прогнал → смотрю сделки на графике»: ответ на *почему* стратегия молчала или вошла на конкретном баре. Детали: [`implementation_plan.md`](implementation_plan.md) § Фаза 5.
 
 ---
 

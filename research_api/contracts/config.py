@@ -62,3 +62,30 @@ class SaveConfigResult(BaseModel):
     ok: bool
     path: str | None = None
     errors: list[ValidationErrorItem] = Field(default_factory=list)
+
+
+class ConfigListEntry(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    experiment_id: str
+    path: str
+    updated_at: str
+
+
+class ConfigStateResponse(BaseModel):
+    """Saved configs for a family plus the Workbench-selected draft (if any)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    family: str
+    selected_experiment_id: str | None = None
+    selected_path: str | None = None
+    draft: StrategyConfigDraft | None = None
+    configs: list[ConfigListEntry] = Field(default_factory=list)
+
+
+class SelectConfigRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    family: str
+    experiment_id: str

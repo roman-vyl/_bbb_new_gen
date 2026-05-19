@@ -10,8 +10,9 @@ export default mergeConfig(
   viteConfig,
   defineConfig({
     test: {
+      include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
       environment: "node",
-      include: ["src/**/*.test.ts"],
+      environmentMatchGlobs: [["src/**/*.test.tsx", "jsdom"]],
     },
     resolve: {
       alias: {

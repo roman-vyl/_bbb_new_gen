@@ -6,14 +6,22 @@ from fastapi import APIRouter, HTTPException, Query
 
 from research_api.contracts.catalog import ComponentCatalog
 from research_api.contracts.config import (
+    ConfigStateResponse,
     SaveConfigRequest,
     SaveConfigResult,
+    SelectConfigRequest,
     SerializeResult,
     StrategyConfigDraft,
     ValidationResult,
 )
 from research_api.services.component_catalog import get_component_catalog
-from research_api.services.config_service import save_draft, serialize_draft, validate_draft
+from research_api.services.config_service import (
+    get_config_state,
+    save_draft,
+    select_config,
+    serialize_draft,
+    validate_draft,
+)
 
 router = APIRouter(prefix="/api/research", tags=["research-config"])
 
@@ -44,4 +52,25 @@ def serialize_config(
 
 @router.post("/config/save", response_model=SaveConfigResult)
 def save_config(body: SaveConfigRequest) -> SaveConfigResult:
-    return save_draft(body.draft)
+    try:
+        return save_draft(body.draft)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/configs/state", response_model=ConfigStateResponse)
+def config_state(family: str = Query(default="ema_pullback")) -> ConfigStateResponse:
+    try:
+        return get_config_state(family=family)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.put("/configs/selected", response_model=ConfigStateResponse)
+def set_selected_config(body: SelectConfigRequest) -> ConfigStateResponse:
+    try:
+        return select_config(family=body.family, experiment_id=body.experiment_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc

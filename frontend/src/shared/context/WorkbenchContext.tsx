@@ -4,6 +4,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -11,26 +12,42 @@ import {
 import {
   ApiError,
   fetchChartMarketBundle,
+  fetchConfigState,
   fetchRunReport,
   fetchRunSummaries,
+  fetchSignalTrace,
+  selectSavedConfig,
 } from "@/api/client";
 import {
   CHART_MARKET_TIMEFRAME,
   type AnchorStackPeriods,
   type ChartBar,
   type ChartEmaOverlay,
+  type ConfigListEntry,
+  type ConfigStateResponse,
   type RunReport,
   type RunSummary,
   type RunVariant,
+  type TradeRecord,
+  type SignalTraceBundle,
   type StrategyConfigDraft,
   type WorkbenchTab,
 } from "@/api/types";
+import { COMPOSER_DEFAULT_FAMILY, createBlankConfigDraft } from "@/features/composer/composerDraft";
 import {
   AnchorStackParseError,
   anchorStackPeriodsFromStrategySpec,
 } from "@/features/chart/anchorStackFromSpec";
-import { buildChartViewWindow } from "@/features/chart/chartViewWindow";
+import { buildChartViewWindow, emptyChartViewWindow, type ChartViewMode } from "@/features/chart/chartViewWindow";
 import { candleRangeMs } from "@/features/chart/chartMarkers";
+import {
+  defaultClosedTradeSelection,
+  deriveSelectedVariant,
+  findTradeById,
+  resolveSelectedTradeEntryTimeMs,
+  resolveTradeEntryTimeMs,
+  resolveVariantKeyForReport,
+} from "@/features/chart/tradeLookup";
 import {
   buildMarketCacheKey,
   getMarketCache,
@@ -38,11 +55,11 @@ import {
   setMarketCacheIfAbsent,
   type MarketCacheKey,
 } from "@/features/chart/marketDataCache";
-import configDraftFixture from "@/fixtures/config_draft.json";
-
 export type ReportLoadStatus = "loading" | "ready" | "error";
+export type ConfigLoadStatus = "loading" | "ready" | "empty" | "error";
 export type MarketLoadStatus = "idle" | "loading" | "ready" | "error";
 export type CandlesSource = "market" | "unavailable";
+export type SignalTraceLoadStatus = "idle" | "loading" | "ready" | "error";
 
 type WorkbenchState = {
   symbol: string;
@@ -62,6 +79,12 @@ type WorkbenchState = {
   report: RunReport | null;
   chartCandles: ChartBar[];
   chartEmaOverlays: ChartEmaOverlay[];
+  chartViewMode: ChartViewMode;
+  chartViewCenterTimeSec: number | null;
+  chartViewFirstTimeSec: number | null;
+  chartViewLastTimeSec: number | null;
+  chartViewCount: number;
+  chartTradeFocusWarning: string | null;
   marketCandlesCount: number;
   fullCandleRange: { min: number; max: number } | null;
   candlesSource: CandlesSource;
@@ -70,10 +93,22 @@ type WorkbenchState = {
   selectedTradeId: number | null;
   selectTrade: (tradeId: number | null) => void;
   selectedVariant: RunVariant | null;
-  configDraft: StrategyConfigDraft;
+  configDraft: StrategyConfigDraft | null;
   setConfigDraft: (draft: StrategyConfigDraft) => void;
+  configLoadStatus: ConfigLoadStatus;
+  configLoadError: string | null;
+  configList: ConfigListEntry[];
+  selectedConfigPath: string | null;
+  reloadConfig: () => Promise<void>;
+  selectConfig: (experimentId: string) => Promise<void>;
+  createNewConfig: () => void;
   reloadReport: () => void;
   refreshRunsAndSelectRun: (runId: string) => Promise<void>;
+  signalTrace: SignalTraceBundle | null;
+  signalTraceStatus: SignalTraceLoadStatus;
+  signalTraceError: string | null;
+  selectedBarTimeSec: number | null;
+  selectBar: (timeSec: number | null) => void;
 };
 
 const WorkbenchContext = createContext<WorkbenchState | null>(null);
@@ -103,9 +138,11 @@ function marketErrorMessage(err: unknown): string {
 
 export function WorkbenchProvider({ children }: { children: ReactNode }) {
   const [activeTab, setActiveTab] = useState<WorkbenchTab>("chart");
-  const [configDraft, setConfigDraft] = useState(
-    () => configDraftFixture as StrategyConfigDraft,
-  );
+  const [configDraft, setConfigDraft] = useState<StrategyConfigDraft | null>(null);
+  const [configLoadStatus, setConfigLoadStatus] = useState<ConfigLoadStatus>("loading");
+  const [configLoadError, setConfigLoadError] = useState<string | null>(null);
+  const [configList, setConfigList] = useState<ConfigListEntry[]>([]);
+  const [selectedConfigPath, setSelectedConfigPath] = useState<string | null>(null);
 
   const [reportLoadStatus, setReportLoadStatus] = useState<ReportLoadStatus>("loading");
   const [reportError, setReportError] = useState<string | null>(null);
@@ -117,64 +154,150 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
   const [report, setReport] = useState<RunReport | null>(null);
   const [selectedVariantKey, setSelectedVariantKey] = useState("");
   const [selectedTradeId, setSelectedTradeId] = useState<number | null>(null);
+  const [selectedBarTimeSec, setSelectedBarTimeSec] = useState<number | null>(null);
+  const [signalTrace, setSignalTrace] = useState<SignalTraceBundle | null>(null);
+  const [signalTraceStatus, setSignalTraceStatus] = useState<SignalTraceLoadStatus>("idle");
+  const [signalTraceError, setSignalTraceError] = useState<string | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
+  const prevVariantKeyRef = useRef("");
+  const selectedVariantKeyRef = useRef("");
+
+  useEffect(() => {
+    selectedVariantKeyRef.current = selectedVariantKey;
+  }, [selectedVariantKey]);
+
+  const applyTradeFocusSelection = useCallback((trades: readonly TradeRecord[]) => {
+    const { tradeId, barTimeSec } = defaultClosedTradeSelection(trades);
+    setSelectedTradeId(tradeId);
+    setSelectedBarTimeSec(barTimeSec);
+  }, []);
+
+  const applyConfigState = useCallback((state: ConfigStateResponse) => {
+    setConfigList(state.configs);
+    setSelectedConfigPath(state.selected_path);
+    if (state.draft) {
+      setConfigDraft(state.draft);
+      setConfigLoadStatus("ready");
+      setConfigLoadError(null);
+      return;
+    }
+    setConfigDraft(null);
+    if (state.configs.length === 0) {
+      setConfigLoadStatus("empty");
+      setConfigLoadError(null);
+      return;
+    }
+    setConfigLoadStatus("error");
+    setConfigLoadError("Saved config could not be loaded.");
+  }, []);
+
+  const reloadConfig = useCallback(async () => {
+    setConfigLoadStatus((status) => (status === "ready" ? status : "loading"));
+    try {
+      const state = await fetchConfigState(COMPOSER_DEFAULT_FAMILY);
+      applyConfigState(state);
+    } catch (err) {
+      setConfigLoadError(
+        err instanceof ApiError ? err.detail : "Failed to load saved strategy config.",
+      );
+      setConfigLoadStatus("error");
+    }
+  }, [applyConfigState]);
+
+  const selectConfig = useCallback(
+    async (experimentId: string) => {
+      try {
+        const state = await selectSavedConfig(COMPOSER_DEFAULT_FAMILY, experimentId);
+        applyConfigState(state);
+        setConfigLoadError(null);
+      } catch (err) {
+        setConfigLoadError(
+          err instanceof ApiError ? err.detail : "Failed to switch strategy config.",
+        );
+      }
+    },
+    [applyConfigState],
+  );
+
+  const createNewConfig = useCallback(() => {
+    setConfigDraft(createBlankConfigDraft(COMPOSER_DEFAULT_FAMILY));
+    setSelectedConfigPath(null);
+    setConfigLoadStatus("ready");
+    setConfigLoadError(null);
+  }, []);
+
+  useEffect(() => {
+    void reloadConfig();
+  }, [reloadConfig]);
 
   const chartTimeframe = CHART_MARKET_TIMEFRAME;
   const reportTimeframe = report?.timeframe ?? null;
   const timeframeMismatch =
     reportTimeframe !== null && reportTimeframe !== chartTimeframe;
 
-  const loadReport = useCallback(async (runId: string) => {
-    setReportLoadStatus("loading");
-    setReportError(null);
-    setMarketError(null);
-    setMarketLoadStatus("idle");
-    setMarketCacheKey(null);
-    try {
-      const loaded = await fetchRunReport(runId);
-      setReport(loaded);
-      setSelectedVariantKey((prev) => {
-        if (loaded.variants.some((v) => v.variant === prev)) {
-          return prev;
-        }
-        return loaded.variants[0]?.variant ?? "";
-      });
-      setSelectedTradeId(null);
-      setReportLoadStatus("ready");
-    } catch (err) {
-      const message =
-        err instanceof ApiError
-          ? err.detail
-          : err instanceof Error
-            ? err.message
-            : "Failed to load run report.";
-      setReport(null);
-      setReportError(message);
-      setReportLoadStatus("error");
+  // REPORT_LOAD_DEPS: selectedRunId, reloadToken only — do not add UI/report/market state.
+  useEffect(() => {
+    if (selectedRunId === null) {
+      return;
     }
-  }, []);
+    const runId = selectedRunId;
+    let cancelled = false;
+
+    async function loadReportRemote() {
+      setReportLoadStatus("loading");
+      setReportError(null);
+      setMarketError(null);
+      setMarketLoadStatus("idle");
+      setMarketCacheKey(null);
+      try {
+        const loaded = await fetchRunReport(runId);
+        if (cancelled) return;
+        setReport(loaded);
+        setReportLoadStatus("ready");
+      } catch (err) {
+        if (cancelled) return;
+        const message =
+          err instanceof ApiError
+            ? err.detail
+            : err instanceof Error
+              ? err.message
+              : "Failed to load run report.";
+        setReport(null);
+        setReportError(message);
+        setReportLoadStatus("error");
+      }
+    }
+
+    void loadReportRemote();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedRunId, reloadToken]);
 
   useEffect(() => {
     let cancelled = false;
 
-    async function bootstrap() {
-      setReportLoadStatus("loading");
-      setReportError(null);
+    async function bootstrapRuns() {
       try {
         const listed = await fetchRunSummaries();
         if (cancelled) return;
 
         setRuns(listed);
-        const runId = pickDefaultRunId(listed);
-        if (runId === null) {
+        const defaultRunId = pickDefaultRunId(listed);
+        if (defaultRunId === null) {
           setReport(null);
+          setSelectedRunIdState(null);
           setReportError(EMPTY_RUNS_HINT);
           setReportLoadStatus("error");
           return;
         }
 
-        setSelectedRunIdState(runId);
-        await loadReport(runId);
+        setSelectedRunIdState((prev) => {
+          if (prev !== null && listed.some((r) => r.run_id === prev)) {
+            return prev;
+          }
+          return defaultRunId;
+        });
       } catch (err) {
         if (cancelled) return;
         const message =
@@ -188,17 +311,37 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       }
     }
 
-    void bootstrap();
+    void bootstrapRuns();
     return () => {
       cancelled = true;
     };
-  }, [loadReport, reloadToken]);
+  }, [reloadToken]);
 
-  const selectedVariant = useMemo(() => {
-    if (!report) return null;
-    const found = report.variants.find((v) => v.variant === selectedVariantKey);
-    return found ?? report.variants[0] ?? null;
-  }, [report, selectedVariantKey]);
+  const selectedVariant = useMemo(
+    () => deriveSelectedVariant(report, selectedVariantKey),
+    [report, selectedVariantKey],
+  );
+
+  useEffect(() => {
+    if (report === null) {
+      return;
+    }
+    const next = resolveVariantKeyForReport(report, selectedVariantKeyRef.current);
+    setSelectedVariantKey(next);
+    selectedVariantKeyRef.current = next;
+    prevVariantKeyRef.current = "";
+  }, [report]);
+
+  useEffect(() => {
+    if (report === null || selectedVariant === null) {
+      return;
+    }
+    if (prevVariantKeyRef.current === selectedVariantKey) {
+      return;
+    }
+    prevVariantKeyRef.current = selectedVariantKey;
+    applyTradeFocusSelection(selectedVariant.trade_records);
+  }, [report?.run_id, selectedVariantKey, selectedVariant, applyTradeFocusSelection]);
 
   useEffect(() => {
     if (report === null || reportLoadStatus !== "ready" || selectedVariant === null) {
@@ -273,41 +416,57 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     };
   }, [report, reportLoadStatus, chartTimeframe, reloadToken, selectedVariant]);
 
-  const setSelectedRunId = useCallback(
-    (runId: string) => {
-      setSelectedRunIdState(runId);
-      void loadReport(runId);
-    },
-    [loadReport],
-  );
+  const setSelectedRunId = useCallback((runId: string) => {
+    setSelectedRunIdState(runId);
+  }, []);
 
   const reloadReport = useCallback(() => {
     setReloadToken((t) => t + 1);
   }, []);
 
-  const refreshRunsAndSelectRun = useCallback(
-    async (runId: string) => {
-      const listed = await fetchRunSummaries();
-      setRuns(listed);
-      setSelectedRunIdState(runId);
-      await loadReport(runId);
-    },
-    [loadReport],
-  );
+  const refreshRunsAndSelectRun = useCallback(async (runId: string) => {
+    const listed = await fetchRunSummaries();
+    setRuns(listed);
+    setSelectedRunIdState(runId);
+  }, []);
 
-  const selectedTradeEntryTimeMs = useMemo(() => {
+  const selectedTradeResolution = useMemo(() => {
     if (selectedTradeId === null || !selectedVariant) {
-      return null;
+      return {
+        trade: undefined,
+        entryTimeMs: null as number | null,
+        warning: null as string | null,
+      };
     }
-    const trade = selectedVariant.trade_records.find((t) => t.trade_id === selectedTradeId);
-    return trade?.entry_time_ms ?? null;
+    const { trade, entryTimeMs } = resolveSelectedTradeEntryTimeMs(
+      selectedVariant.trade_records,
+      selectedTradeId,
+    );
+    if (!trade) {
+      return {
+        trade: undefined,
+        entryTimeMs: null,
+        warning: `Trade #${selectedTradeId} not found in variant trade_records.`,
+      };
+    }
+    if (entryTimeMs === null) {
+      return {
+        trade,
+        entryTimeMs: null,
+        warning: `Trade #${trade.trade_id} has no valid entry_time_ms in report.`,
+      };
+    }
+    return { trade, entryTimeMs, warning: null };
   }, [selectedVariant, selectedTradeId]);
+
+  const selectedTradeEntryTimeMs = selectedTradeResolution.entryTimeMs;
+  const chartTradeFocusWarning = selectedTradeResolution.warning;
 
   const cachedBundle = marketCacheKey !== null ? getMarketCache(marketCacheKey) : undefined;
 
   const chartView = useMemo(() => {
     if (!cachedBundle || marketLoadStatus !== "ready") {
-      return { candles: [] as ChartBar[], emaOverlays: [] as ChartEmaOverlay[] };
+      return emptyChartViewWindow();
     }
     return buildChartViewWindow({
       candles: cachedBundle.candles,
@@ -325,12 +484,94 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
   const candlesSource: CandlesSource =
     marketLoadStatus === "ready" && cachedBundle !== undefined ? "market" : "unavailable";
 
-  const selectTrade = useCallback((tradeId: number | null) => {
-    setSelectedTradeId(tradeId);
-    if (tradeId !== null) {
-      setActiveTab("chart");
-    }
+  const selectTrade = useCallback(
+    (tradeId: number | null) => {
+      setSelectedTradeId(tradeId);
+      if (tradeId !== null && selectedVariant) {
+        const trade = findTradeById(selectedVariant.trade_records, tradeId);
+        const entryTimeMs = resolveTradeEntryTimeMs(trade);
+        if (entryTimeMs !== null) {
+          setSelectedBarTimeSec(Math.floor(entryTimeMs / 1000));
+        }
+        setActiveTab("chart");
+      }
+    },
+    [selectedVariant],
+  );
+
+  const selectBar = useCallback((timeSec: number | null) => {
+    setSelectedBarTimeSec(timeSec);
   }, []);
+
+  const chartWindowKey = useMemo(() => {
+    if (chartView.candles.length === 0) {
+      return null;
+    }
+    const first = chartView.candles[0]!.time;
+    const last = chartView.candles[chartView.candles.length - 1]!.time;
+    return `${selectedRunId}:${selectedVariantKey}:${first}:${last}`;
+  }, [chartView.candles, selectedRunId, selectedVariantKey]);
+
+  useEffect(() => {
+    if (
+      report === null ||
+      selectedRunId === null ||
+      selectedVariant === null ||
+      chartWindowKey === null ||
+      marketLoadStatus !== "ready"
+    ) {
+      setSignalTrace(null);
+      setSignalTraceStatus("idle");
+      setSignalTraceError(null);
+      return;
+    }
+
+    const candles = chartView.candles;
+    const fromMs = candles[0]!.time * 1000;
+    const toOpenTimeMs = candles[candles.length - 1]!.time * 1000;
+    const runId = selectedRunId;
+    const variantKey = selectedVariant.variant;
+    let cancelled = false;
+
+    async function loadTrace() {
+      setSignalTraceStatus("loading");
+      setSignalTraceError(null);
+      try {
+        const bundle = await fetchSignalTrace({
+          runId,
+          variant: variantKey,
+          fromMs,
+          toOpenTimeMs,
+        });
+        if (cancelled) return;
+        setSignalTrace(bundle);
+        setSignalTraceStatus("ready");
+      } catch (err) {
+        if (cancelled) return;
+        setSignalTrace(null);
+        setSignalTraceStatus("error");
+        setSignalTraceError(
+          err instanceof ApiError
+            ? err.detail
+            : err instanceof Error
+              ? err.message
+              : "Failed to load signal trace.",
+        );
+      }
+    }
+
+    void loadTrace();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    report,
+    selectedRunId,
+    selectedVariant,
+    chartWindowKey,
+    marketLoadStatus,
+    chartView.candles,
+  ]);
 
   const symbol = report?.symbol ?? "—";
   const timeframe = chartTimeframe;
@@ -354,6 +595,12 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       report,
       chartCandles: chartView.candles,
       chartEmaOverlays: chartView.emaOverlays,
+      chartViewMode: chartView.mode,
+      chartViewCenterTimeSec: chartView.centerTimeSec,
+      chartViewFirstTimeSec: chartView.firstTimeSec,
+      chartViewLastTimeSec: chartView.lastTimeSec,
+      chartViewCount: chartView.count,
+      chartTradeFocusWarning,
       marketCandlesCount,
       fullCandleRange,
       candlesSource,
@@ -364,8 +611,20 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       selectedVariant,
       configDraft,
       setConfigDraft,
+      configLoadStatus,
+      configLoadError,
+      configList,
+      selectedConfigPath,
+      reloadConfig,
+      selectConfig,
+      createNewConfig,
       reloadReport,
       refreshRunsAndSelectRun,
+      signalTrace,
+      signalTraceStatus,
+      signalTraceError,
+      selectedBarTimeSec,
+      selectBar,
     }),
     [
       symbol,
@@ -384,6 +643,12 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       report,
       chartView.candles,
       chartView.emaOverlays,
+      chartView.mode,
+      chartView.centerTimeSec,
+      chartView.firstTimeSec,
+      chartView.lastTimeSec,
+      chartView.count,
+      chartTradeFocusWarning,
       marketCandlesCount,
       fullCandleRange,
       candlesSource,
@@ -392,8 +657,20 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       selectTrade,
       selectedVariant,
       configDraft,
+      configLoadStatus,
+      configLoadError,
+      configList,
+      selectedConfigPath,
+      reloadConfig,
+      selectConfig,
+      createNewConfig,
       reloadReport,
       refreshRunsAndSelectRun,
+      signalTrace,
+      signalTraceStatus,
+      signalTraceError,
+      selectedBarTimeSec,
+      selectBar,
     ],
   );
 

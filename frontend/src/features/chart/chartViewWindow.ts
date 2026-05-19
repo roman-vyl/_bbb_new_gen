@@ -2,7 +2,31 @@ import type { ChartBar, ChartEmaOverlay, IndicatorPoint } from "@/api/types";
 
 export const CHART_RENDER_BAR_LIMIT = 5000;
 
+export type ChartViewMode = "empty" | "tail" | "around-trade";
+
 export type TimeBar = { time: number };
+
+export type ChartViewWindow = {
+  mode: ChartViewMode;
+  candles: ChartBar[];
+  emaOverlays: ChartEmaOverlay[];
+  centerTimeSec: number | null;
+  firstTimeSec: number | null;
+  lastTimeSec: number | null;
+  count: number;
+};
+
+export function emptyChartViewWindow(): ChartViewWindow {
+  return {
+    mode: "empty",
+    candles: [],
+    emaOverlays: [],
+    centerTimeSec: null,
+    firstTimeSec: null,
+    lastTimeSec: null,
+    count: 0,
+  };
+}
 
 export function sliceTailBars<T extends TimeBar>(bars: readonly T[], limit: number): T[] {
   if (bars.length <= limit) {
@@ -40,22 +64,20 @@ export function sliceAroundTime<T extends TimeBar>(
   if (bars.length === 0) {
     return [];
   }
-  if (bars.length <= limit) {
-    return [...bars];
-  }
 
+  const windowSize = Math.min(limit, bars.length);
   const centerIdx = findBarIndexAtOrBefore(bars, centerTimeSec);
-  const half = Math.floor(limit / 2);
+  const half = Math.floor(windowSize / 2);
   let start = centerIdx - half;
-  let end = start + limit;
+  let end = start + windowSize;
 
   if (start < 0) {
     start = 0;
-    end = limit;
+    end = windowSize;
   }
   if (end > bars.length) {
     end = bars.length;
-    start = Math.max(0, end - limit);
+    start = Math.max(0, end - windowSize);
   }
 
   return bars.slice(start, end);
@@ -90,10 +112,18 @@ export type BuildChartViewWindowParams = {
   limit?: number;
 };
 
-export type ChartViewWindow = {
-  candles: ChartBar[];
-  emaOverlays: ChartEmaOverlay[];
-};
+function viewMeta(candles: ChartBar[], centerTimeSec: number | null, mode: ChartViewMode): ChartViewWindow {
+  const count = candles.length;
+  return {
+    mode,
+    candles,
+    emaOverlays: [],
+    centerTimeSec,
+    firstTimeSec: count > 0 ? candles[0]!.time : null,
+    lastTimeSec: count > 0 ? candles[count - 1]!.time : null,
+    count,
+  };
+}
 
 export function buildChartViewWindow({
   candles,
@@ -101,13 +131,24 @@ export function buildChartViewWindow({
   selectedTradeEntryTimeMs,
   limit = CHART_RENDER_BAR_LIMIT,
 }: BuildChartViewWindowParams): ChartViewWindow {
-  const viewCandles =
-    selectedTradeEntryTimeMs === null
-      ? sliceTailBars(candles, limit)
-      : sliceAroundTime(candles, Math.floor(selectedTradeEntryTimeMs / 1000), limit);
+  if (candles.length === 0) {
+    return emptyChartViewWindow();
+  }
 
+  if (selectedTradeEntryTimeMs === null) {
+    const viewCandles = sliceTailBars(candles, limit);
+    const base = viewMeta(viewCandles, null, "tail");
+    return {
+      ...base,
+      emaOverlays: sliceOverlaysToCandleWindow(emaOverlays, viewCandles),
+    };
+  }
+
+  const centerTimeSec = Math.floor(selectedTradeEntryTimeMs / 1000);
+  const viewCandles = sliceAroundTime(candles, centerTimeSec, limit);
+  const base = viewMeta(viewCandles, centerTimeSec, "around-trade");
   return {
-    candles: viewCandles,
+    ...base,
     emaOverlays: sliceOverlaysToCandleWindow(emaOverlays, viewCandles),
   };
 }

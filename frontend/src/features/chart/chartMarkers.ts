@@ -1,6 +1,7 @@
 import type { SeriesMarker, Time } from "lightweight-charts";
 
 import { msToChartTime, type TradeRecord } from "@/api/types";
+import { tradeIdsEqual } from "@/features/chart/tradeLookup";
 
 export type ExitReasonMarkerKind = "stop_loss" | "take_profit" | "signal" | "unknown" | "open";
 
@@ -64,7 +65,7 @@ export function buildTradeMarkers(
   const markers: SeriesMarker<Time>[] = [];
 
   for (const trade of trades) {
-    const highlighted = selectedTradeId === trade.trade_id;
+    const highlighted = tradeIdsEqual(selectedTradeId, trade.trade_id);
     const entryTime = msToChartTime(trade.entry_time_ms) as Time;
 
     markers.push({

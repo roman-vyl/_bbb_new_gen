@@ -2,7 +2,7 @@ import type { CandlestickData, Time } from "lightweight-charts";
 
 import type { ChartBar } from "@/api/types";
 
-/** Bars visible on each side of trade entry when focusing the chart. */
+/** Bars on each side of trade entry when focusing the chart (logical-range helpers). */
 export const TRADE_FOCUS_VISIBLE_BARS = 15;
 
 const DEFAULT_CANDLE_INTERVAL_SEC = 300;

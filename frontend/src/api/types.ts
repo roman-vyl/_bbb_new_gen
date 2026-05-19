@@ -193,6 +193,20 @@ export type SaveConfigResult = {
   errors: ValidationErrorItem[];
 };
 
+export type ConfigListEntry = {
+  experiment_id: string;
+  path: string;
+  updated_at: string;
+};
+
+export type ConfigStateResponse = {
+  family: string;
+  selected_experiment_id: string | null;
+  selected_path: string | null;
+  draft: StrategyConfigDraft | null;
+  configs: ConfigListEntry[];
+};
+
 /** Exactly one field — mutual exclusion enforced by BFF (422 if both or neither). */
 export type RunBacktestRequest =
   | { draft: StrategyConfigDraft; config_path?: never }
@@ -203,6 +217,45 @@ export type BacktestResult = {
   run_id: string | null;
   config_path: string | null;
   errors: ValidationErrorItem[];
+};
+
+export type SignalTraceGate =
+  | "direction_ok"
+  | "blockers_ok"
+  | "setup_ok"
+  | "trigger_ok"
+  | "risk_ok"
+  | "stop_ready";
+
+export type SignalTraceMeta = {
+  variant: string;
+  component_ids: {
+    direction: string;
+    setup: string;
+    trigger: string;
+    risk: string;
+  };
+  setup_params: { lookback: number; active_bars: number };
+  blocker_instances: { instance_id: string; component_id: string }[];
+};
+
+export type SideSignalTrace = {
+  direction_ok: boolean[];
+  blockers_ok: boolean[];
+  setup_ok: boolean[];
+  trigger_ok: boolean[];
+  risk_ok: boolean[];
+  signal_entry: boolean[];
+  stop_ready: boolean[];
+  portfolio_entry: boolean[];
+  internals: Record<string, unknown>;
+};
+
+export type SignalTraceBundle = {
+  times: number[];
+  meta: SignalTraceMeta;
+  long: SideSignalTrace;
+  short: SideSignalTrace;
 };
 
 export type WorkbenchTab = "chart" | "composer" | "reports";

@@ -1,0 +1,6 @@
+---
+description: UI layout mockups via Canvas, not ASCII in chat
+alwaysApply: true
+---
+
+When the user wants a UI mockup or layout (макет, wireframe, расположение), deliver a visual `canvases/*.canvas.tsx` — not ASCII box diagrams in chat.
