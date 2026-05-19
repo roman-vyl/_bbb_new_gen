@@ -237,13 +237,17 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     try {
       const loaded = await fetchRunReport(runId);
       setReport(loaded);
-      const nextVariantKey = loaded.variants.some((v) => v.variant === selectedVariantKey)
-        ? selectedVariantKey
-        : (loaded.variants[0]?.variant ?? "");
+
+      let nextVariantKey = "";
+      setSelectedVariantKey((prev) => {
+        nextVariantKey = loaded.variants.some((v) => v.variant === prev)
+          ? prev
+          : (loaded.variants[0]?.variant ?? "");
+        return nextVariantKey;
+      });
+      prevVariantKeyRef.current = nextVariantKey;
       const variant =
         loaded.variants.find((v) => v.variant === nextVariantKey) ?? loaded.variants[0];
-      setSelectedVariantKey(nextVariantKey);
-      prevVariantKeyRef.current = nextVariantKey;
       if (variant) {
         applyTradeFocusSelection(variant.trade_records);
       } else {
@@ -262,7 +266,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       setReportError(message);
       setReportLoadStatus("error");
     }
-  }, [applyTradeFocusSelection, selectedVariantKey]);
+  }, [applyTradeFocusSelection]);
 
   useEffect(() => {
     let cancelled = false;
