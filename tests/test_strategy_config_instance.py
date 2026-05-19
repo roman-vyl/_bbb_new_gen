@@ -254,8 +254,32 @@ def test_blocker_and_trigger_shortcuts_return_expected_components() -> None:
         blocker_extreme_rsi(instance_id="rsi_base").component_id
         == "rsi_lookback_extreme_blocker"
     )
-    assert trigger_reclaim_anchor().component_id == "reclaim_anchor"
+    from research.strategies.ema_pullback.spec import ReclaimTriggerSpec
+
+    reclaim = trigger_reclaim_anchor()
+    assert reclaim.component_id == "reclaim_anchor"
+    assert isinstance(reclaim, ReclaimTriggerSpec)
+    assert reclaim.lookback == 1
+    assert trigger_reclaim_anchor(lookback=2).lookback == 2
     assert trigger_touch_anchor().component_id == "touch_anchor"
+
+
+def test_make_ema_pullback_strategy_spec_trigger_lookback_default_path() -> None:
+    from research.strategies.ema_pullback.spec import ReclaimTriggerSpec
+
+    spec = make_ema_pullback_strategy_spec(trigger_lookback=3)
+    assert isinstance(spec.components.trigger, ReclaimTriggerSpec)
+    assert spec.components.trigger.lookback == 3
+
+
+def test_make_ema_pullback_strategy_spec_preserves_custom_components_trigger() -> None:
+    from research.strategies.ema_pullback.component_builders import component_stack, trigger_touch_anchor
+    from research.strategies.ema_pullback.spec import TriggerSpec
+
+    custom = component_stack(trigger=trigger_touch_anchor())
+    spec = make_ema_pullback_strategy_spec(components=custom, trigger_lookback=99)
+    assert isinstance(spec.components.trigger, TriggerSpec)
+    assert spec.components.trigger.component_id == "touch_anchor"
 
 
 def test_component_stack_rejects_duplicate_instance_ids_per_role() -> None:

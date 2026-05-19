@@ -76,6 +76,12 @@ def get_component_catalog(*, family: str = "ema_pullback") -> ComponentCatalog:
             component_id="reclaim_anchor",
             role="trigger",
             label="Reclaim anchor",
+            description=(
+                "Wick probed anchor within prior lookback bars; entry on close reclaim."
+            ),
+            params_schema={
+                "lookback": _int_param("Wick probe lookback bars", default=1),
+            },
         ),
         ComponentSchema(
             component_id="touch_anchor",

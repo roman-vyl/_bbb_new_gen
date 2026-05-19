@@ -52,6 +52,7 @@ def make_ema_pullback_strategy_spec(
     anchor_timeframe: str = "base",
     setup_lookback: int = 50,
     setup_active_bars: int = 3,
+    trigger_lookback: int = 1,
     atr_period: int = 14,
     stop_atr_multiplier: float = 1.5,
     take_atr_multiplier: float = 4.0,
@@ -63,7 +64,7 @@ def make_ema_pullback_strategy_spec(
             direction=direction_ema_anchor_stack(),
             blockers=(blocker_none(),),
             setup=setup_untouched_anchor(),
-            trigger=trigger_reclaim_anchor(),
+            trigger=trigger_reclaim_anchor(lookback=trigger_lookback),
             exits=exits_atr_default(
                 atr_period=atr_period,
                 stop_atr_multiplier=stop_atr_multiplier,

@@ -110,7 +110,9 @@ COMPONENT_REGISTRY: dict[str, dict[str, ComponentDefinition]] = {
             role="trigger",
             component_id=RECLAIM_ANCHOR_COMPONENT,
             func=reclaim_anchor,
-            description="Entry when close reclaims anchor from below.",
+            description=(
+                "Wick probed anchor within prior lookback bars; entry on close reclaim."
+            ),
         ),
         TOUCH_ANCHOR_COMPONENT: ComponentDefinition(
             role="trigger",

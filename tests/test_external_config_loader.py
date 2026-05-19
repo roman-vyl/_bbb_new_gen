@@ -321,6 +321,49 @@ def test_load_external_config_rejects_non_bool_trade_side_flags() -> None:
         load_strategy_config(_bundle([_instance("bad_side_flags", trade_sides={"long": "yes"})]))
 
 
+def test_load_external_config_reclaim_anchor_accepts_lookback() -> None:
+    instance = _instance("reclaim_lb")
+    strategy = instance["strategy"]
+    assert isinstance(strategy, dict)
+    strategy["trigger"] = {"component_id": "reclaim_anchor", "lookback": 3}
+
+    loaded = load_strategy_config(_bundle([instance]))
+    trigger = loaded.specs[0].components.trigger
+    from research.strategies.ema_pullback.spec import ReclaimTriggerSpec
+
+    assert isinstance(trigger, ReclaimTriggerSpec)
+    assert trigger.lookback == 3
+
+
+def test_load_external_config_reclaim_anchor_default_lookback() -> None:
+    loaded = load_strategy_config(_bundle([_instance("reclaim_default")]))
+    trigger = loaded.specs[0].components.trigger
+    from research.strategies.ema_pullback.spec import ReclaimTriggerSpec
+
+    assert isinstance(trigger, ReclaimTriggerSpec)
+    assert trigger.lookback == 1
+
+
+def test_load_external_config_reclaim_anchor_rejects_non_positive_lookback() -> None:
+    instance = _instance("reclaim_bad_lb")
+    strategy = instance["strategy"]
+    assert isinstance(strategy, dict)
+    strategy["trigger"] = {"component_id": "reclaim_anchor", "lookback": 0}
+
+    with pytest.raises(EmaPullbackInstanceValidationError, match="lookback"):
+        load_strategy_config(_bundle([instance]))
+
+
+def test_load_external_config_touch_anchor_rejects_lookback() -> None:
+    instance = _instance("touch_lb")
+    strategy = instance["strategy"]
+    assert isinstance(strategy, dict)
+    strategy["trigger"] = {"component_id": "touch_anchor", "lookback": 1}
+
+    with pytest.raises(EmaPullbackInstanceValidationError, match="unknown field"):
+        load_strategy_config(_bundle([instance]))
+
+
 def test_load_external_config_rejects_component_alias() -> None:
     instance = _instance("component_alias")
     strategy = instance["strategy"]

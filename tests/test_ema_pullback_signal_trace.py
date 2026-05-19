@@ -15,7 +15,7 @@ from research.strategies.ema_pullback.execution.signal_trace import (
 from research.strategies.ema_pullback.execution.signals import build_signals_from_spec
 from research.strategies.ema_pullback.features.calculations import add_feature_columns_from_plan
 from research.strategies.ema_pullback.features.plan import build_feature_plan_from_strategy_spec
-from research.strategies.ema_pullback.spec import strategy_spec_to_dict
+from research.strategies.ema_pullback.spec import ReclaimTriggerSpec, strategy_spec_to_dict
 from research.strategies.ema_pullback.spec_instances import make_ema_pullback_strategy_spec
 from research.strategies.ema_pullback.spec_report import strategy_spec_from_report_dict
 
@@ -46,6 +46,15 @@ def test_signal_entry_trace_matches_build_signals_from_spec() -> None:
     assert trace.long.signal_entry == signals.entries.fillna(False).astype(bool).tolist()
     assert trace.short.signal_entry == signals.short_entries.fillna(False).astype(bool).tolist()
     assert len(trace.times) == len(df)
+
+
+def test_signal_trace_meta_includes_trigger_params_for_reclaim() -> None:
+    spec = make_ema_pullback_strategy_spec(trigger_lookback=2)
+    assert isinstance(spec.components.trigger, ReclaimTriggerSpec)
+    plan = build_feature_plan_from_strategy_spec(spec)
+    df = add_feature_columns_from_plan(_ohlcv(periods=30), plan)
+    trace = build_signal_trace_from_spec(df, spec, plan)
+    assert trace.meta["trigger_params"] == {"lookback": 2}
 
 
 def test_strategy_spec_roundtrip_from_report_dict() -> None:

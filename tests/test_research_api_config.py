@@ -81,6 +81,11 @@ def test_component_catalog_returns_ema_pullback_components(client: TestClient) -
     assert set(params) == {"lookback", "active_bars"}
     assert params["lookback"]["default"] == 50
     assert params["active_bars"]["default"] == 3
+    reclaim_components = [c for c in body["components"] if c.get("component_id") == "reclaim_anchor"]
+    assert len(reclaim_components) == 1
+    reclaim_params = reclaim_components[0]["params_schema"]
+    assert reclaim_params["lookback"]["default"] == 1
+    assert reclaim_params["lookback"]["min"] == 1
 
 
 def test_validate_config_ok(client: TestClient) -> None:

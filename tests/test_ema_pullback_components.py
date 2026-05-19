@@ -77,7 +77,7 @@ def test_setup_trigger_exit_risk_components_shape() -> None:
     setup = resolve_component("setup", "untouched_anchor_setup").func(
         df, "ema_close_base_200", 50, 3
     )
-    trigger = resolve_component("trigger", "reclaim_anchor").func(df, "ema_close_base_200")
+    trigger = resolve_component("trigger", "reclaim_anchor").func(df, "ema_close_base_200", 1)
     exits = resolve_component("exits", "no_signal_exit").func(df, side="short")
     blockers = resolve_component("blockers", "no_blockers").func(df, side="short")
     risk = resolve_component("risk", "no_risk_filter").func(df, side="short")
@@ -141,18 +141,123 @@ def test_untouched_anchor_setup_short_mirror() -> None:
     assert out.tolist() == [False, False, False, True, True, True, True, False]
 
 
-def test_trigger_component_supports_long_and_short_sides() -> None:
-    idx = pd.date_range("2024-01-01", periods=4, freq="h", tz="UTC")
+def _reclaim_fn():
+    return resolve_component("trigger", "reclaim_anchor").func
+
+
+def test_reclaim_anchor_current_wick_does_not_count() -> None:
+    """Anti-lookahead: same-bar wick + reclaim without prior probe must not fire."""
+    idx = pd.date_range("2024-01-01", periods=3, freq="h", tz="UTC")
+    anchor = 10.0
     df = pd.DataFrame(
         {
-            "close": [9.0, 11.0, 11.0, 9.0],
-            "ema_close_base_200": [10.0, 10.0, 10.0, 10.0],
+            "low": [10.5, 10.5, 9.5],
+            "high": [11.0, 11.0, 11.0],
+            "close": [10.5, 10.5, 10.5],
+            "ema_close_base_200": [anchor, anchor, anchor],
         },
         index=idx,
     )
-    fn = resolve_component("trigger", "reclaim_anchor").func
-    assert fn(df, "ema_close_base_200", side="long").tolist() == [False, True, False, False]
-    assert fn(df, "ema_close_base_200", side="short").tolist() == [False, False, False, True]
+    fn = _reclaim_fn()
+    assert fn(df, "ema_close_base_200", 1, side="long").tolist() == [False, False, False]
+
+
+def test_reclaim_anchor_long_prior_probe_and_reclaim() -> None:
+    idx = pd.date_range("2024-01-01", periods=3, freq="h", tz="UTC")
+    anchor = 10.0
+    df = pd.DataFrame(
+        {
+            "low": [9.5, 10.5, 10.5],
+            "high": [11.0, 11.0, 11.0],
+            "close": [10.5, 10.5, 10.5],
+            "ema_close_base_200": [anchor, anchor, anchor],
+        },
+        index=idx,
+    )
+    fn = _reclaim_fn()
+    assert fn(df, "ema_close_base_200", 1, side="long").tolist() == [False, True, False]
+
+
+def test_reclaim_anchor_long_no_prior_probe() -> None:
+    idx = pd.date_range("2024-01-01", periods=2, freq="h", tz="UTC")
+    anchor = 10.0
+    df = pd.DataFrame(
+        {
+            "low": [10.5, 10.5],
+            "high": [11.0, 11.0],
+            "close": [10.5, 10.5],
+            "ema_close_base_200": [anchor, anchor],
+        },
+        index=idx,
+    )
+    fn = _reclaim_fn()
+    assert fn(df, "ema_close_base_200", 1, side="long").tolist() == [False, False]
+
+
+def test_reclaim_anchor_long_prior_wick_despite_prior_close_above_anchor() -> None:
+    idx = pd.date_range("2024-01-01", periods=3, freq="h", tz="UTC")
+    anchor = 10.0
+    df = pd.DataFrame(
+        {
+            "low": [9.5, 10.5, 10.5],
+            "high": [11.0, 11.0, 11.0],
+            "close": [10.5, 11.0, 10.5],
+            "ema_close_base_200": [anchor, anchor, anchor],
+        },
+        index=idx,
+    )
+    fn = _reclaim_fn()
+    assert fn(df, "ema_close_base_200", 1, side="long").tolist() == [False, True, False]
+
+
+def test_reclaim_anchor_short_mirror() -> None:
+    idx = pd.date_range("2024-01-01", periods=3, freq="h", tz="UTC")
+    anchor = 10.0
+    df = pd.DataFrame(
+        {
+            "low": [9.0, 9.0, 9.0],
+            "high": [10.5, 9.5, 9.5],
+            "close": [9.5, 9.5, 9.5],
+            "ema_close_base_200": [anchor, anchor, anchor],
+        },
+        index=idx,
+    )
+    fn = _reclaim_fn()
+    assert fn(df, "ema_close_base_200", 1, side="short").tolist() == [False, True, False]
+
+
+def test_reclaim_anchor_lookback_two_probe_at_t_minus_two() -> None:
+    idx = pd.date_range("2024-01-01", periods=4, freq="h", tz="UTC")
+    anchor = 10.0
+    df = pd.DataFrame(
+        {
+            "low": [10.5, 9.5, 10.5, 10.5],
+            "high": [11.0, 11.0, 11.0, 11.0],
+            "close": [10.5, 10.5, 9.5, 10.5],
+            "ema_close_base_200": [anchor] * 4,
+        },
+        index=idx,
+    )
+    fn = _reclaim_fn()
+    # Probe at bar 1; reclaim only at bar 3 (lookback=2 window bars 1-2).
+    assert fn(df, "ema_close_base_200", 2, side="long").tolist() == [False, False, False, True]
+
+
+def test_reclaim_anchor_probe_outside_lookback_window() -> None:
+    idx = pd.date_range("2024-01-01", periods=4, freq="h", tz="UTC")
+    anchor = 10.0
+    df = pd.DataFrame(
+        {
+            "low": [9.5, 10.5, 10.5, 10.5],
+            "high": [11.0, 11.0, 11.0, 11.0],
+            "close": [10.5, 10.5, 9.5, 10.5],
+            "ema_close_base_200": [anchor] * 4,
+        },
+        index=idx,
+    )
+    fn = _reclaim_fn()
+    # Probe only at bar 0; at bar 3 lookback=2 prior window is bars 1-2 — no probe.
+    assert fn(df, "ema_close_base_200", 2, side="long").tolist() == [False, False, False, False]
 
 
 def test_touch_anchor_trigger_supports_long_and_short_sides() -> None:

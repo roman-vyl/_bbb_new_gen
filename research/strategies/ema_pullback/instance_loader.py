@@ -200,11 +200,27 @@ def _parse_setup(value: Any) -> tuple[str, UntouchedAnchorSetupSpec]:
 
 
 def _parse_trigger(value: Any) -> Any:
-    component_id = _parse_component_id("trigger", value)
+    if isinstance(value, str):
+        if not value.strip():
+            raise EmaPullbackInstanceValidationError("trigger component_id must be non-empty")
+        component_id = value.strip()
+        payload: Mapping[str, Any] | None = None
+    else:
+        payload = _require_mapping("trigger", value)
+        component_id = _require_non_empty_str(payload, "component_id")
     _assert_known_component("trigger", component_id)
-    if component_id not in {RECLAIM_ANCHOR_COMPONENT, TOUCH_ANCHOR_COMPONENT}:
-        raise EmaPullbackInstanceValidationError(f"unsupported trigger component_id {component_id!r}")
-    return builders.trigger(component_id)
+    if component_id == RECLAIM_ANCHOR_COMPONENT:
+        if payload is not None:
+            _reject_unknown_fields("trigger", payload, {"component_id", "lookback"})
+            lookback = _optional_positive_int(payload, "lookback", default=1)
+        else:
+            lookback = 1
+        return builders.trigger_reclaim_anchor(lookback=lookback)
+    if component_id == TOUCH_ANCHOR_COMPONENT:
+        if payload is not None:
+            _reject_unknown_fields("trigger", payload, {"component_id"})
+        return builders.trigger_touch_anchor()
+    raise EmaPullbackInstanceValidationError(f"unsupported trigger component_id {component_id!r}")
 
 
 def _parse_blockers(value: Any) -> tuple[BlockerRuleSpec, ...]:

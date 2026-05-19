@@ -13,6 +13,7 @@ class SignalTraceMeta(BaseModel):
     variant: str
     component_ids: dict[str, str]
     setup_params: dict[str, int]
+    trigger_params: dict[str, int] = Field(default_factory=dict)
     blocker_instances: list[dict[str, str]]
 
 

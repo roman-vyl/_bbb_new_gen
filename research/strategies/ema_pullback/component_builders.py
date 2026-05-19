@@ -34,6 +34,7 @@ from research.strategies.ema_pullback.spec import (
     UntouchedAnchorSetupSpec,
     RsiFeatureSpec,
     TradeSide,
+    ReclaimTriggerSpec,
     TradeSideSpec,
     TriggerSpec,
 )
@@ -74,8 +75,8 @@ def trigger_touch_anchor() -> TriggerSpec:
     return trigger(TOUCH_ANCHOR_COMPONENT)
 
 
-def trigger_reclaim_anchor() -> TriggerSpec:
-    return trigger(RECLAIM_ANCHOR_COMPONENT)
+def trigger_reclaim_anchor(*, lookback: int = 1) -> ReclaimTriggerSpec:
+    return ReclaimTriggerSpec(lookback=lookback)
 
 
 def direction_ema_anchor_stack() -> str:

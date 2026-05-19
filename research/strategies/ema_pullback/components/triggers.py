@@ -10,38 +10,57 @@ from research.strategies.ema_pullback.spec import TradeSide
 def reclaim_anchor_trace(
     df: pd.DataFrame,
     anchor_col: str,
+    lookback: int,
+    *,
     side: TradeSide = "long",
 ) -> dict[str, pd.Series]:
-    """Per-bar internals for reclaim_anchor."""
+    """Per-bar internals for reclaim_anchor (wick probe in prior window + close reclaim)."""
+
+    if lookback <= 0:
+        raise ValueError("lookback must be > 0")
 
     close = df["close"].astype(float)
     anchor = df[anchor_col].astype(float)
-    prev_close = close.shift(1)
-    prev_anchor = anchor.shift(1)
+
     if side == "long":
-        crossed_back = (prev_close <= prev_anchor) & (close > anchor)
+        probed = df["low"].astype(float) <= anchor
+        reclaimed = close > anchor
     elif side == "short":
-        crossed_back = (prev_close >= prev_anchor) & (close < anchor)
+        probed = df["high"].astype(float) >= anchor
+        reclaimed = close < anchor
     else:
         raise ValueError("side must be 'long' or 'short'")
+
+    had_prior_probe = (
+        probed.astype(int)
+        .rolling(lookback, min_periods=lookback)
+        .max()
+        .shift(1)
+        .fillna(0)
+        .astype(bool)
+    )
+    trigger = had_prior_probe & reclaimed.fillna(False).astype(bool)
+
     return {
-        "prev_close": prev_close,
-        "prev_anchor": prev_anchor,
         "close": close,
         "anchor": anchor,
-        "crossed_back": crossed_back.fillna(False).astype(bool),
-        "trigger": crossed_back.fillna(False).astype(bool),
+        "probed": probed.fillna(False).astype(bool),
+        "had_prior_probe": had_prior_probe,
+        "reclaimed": reclaimed.fillna(False).astype(bool),
+        "trigger": trigger,
     }
 
 
 def reclaim_anchor(
     df: pd.DataFrame,
     anchor_col: str,
+    lookback: int,
+    *,
     side: TradeSide = "long",
 ) -> pd.Series:
-    """True when close reclaims anchor in the requested direction."""
+    """True when anchor was wick-probed in the prior lookback window and close reclaims."""
 
-    return reclaim_anchor_trace(df, anchor_col, side=side)["trigger"]
+    return reclaim_anchor_trace(df, anchor_col, lookback, side=side)["trigger"]
 
 
 def touch_anchor_trace(

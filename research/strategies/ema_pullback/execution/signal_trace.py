@@ -16,7 +16,6 @@ from research.strategies.ema_pullback.components.direction import ema_anchor_sta
 from research.strategies.ema_pullback.components.registry import (
     COUNTER_CANDLE_BLOCKER_COMPONENT,
     NO_BLOCKERS_COMPONENT,
-    RECLAIM_ANCHOR_COMPONENT,
     RSI_LOOKBACK_EXTREME_BLOCKER_COMPONENT,
     TOUCH_ANCHOR_COMPONENT,
     UNTOUCHED_ANCHOR_SETUP_COMPONENT,
@@ -30,7 +29,12 @@ from research.strategies.ema_pullback.components.risk import no_risk_filter
 from research.strategies.ema_pullback.execution.exits import build_exit_outputs_from_spec
 from research.strategies.ema_pullback.execution.signals import compose_blocker_signals, compose_final_signals
 from research.strategies.ema_pullback.features.plan import FeaturePlan
-from research.strategies.ema_pullback.spec import EmaPullbackStrategySpec, RsiFeatureSpec, TradeSide
+from research.strategies.ema_pullback.spec import (
+    EmaPullbackStrategySpec,
+    ReclaimTriggerSpec,
+    RsiFeatureSpec,
+    TradeSide,
+)
 
 
 class UnsupportedTraceComponentError(ValueError):
@@ -48,7 +52,6 @@ _SETUP_TRACE: dict[str, Callable[..., dict[str, pd.Series]]] = {
 }
 
 _TRIGGER_TRACE: dict[str, Callable[..., dict[str, pd.Series]]] = {
-    RECLAIM_ANCHOR_COMPONENT: reclaim_anchor_trace,
     TOUCH_ANCHOR_COMPONENT: touch_anchor_trace,
 }
 
@@ -153,10 +156,11 @@ def _build_side_trace(
         )
 
     setup_id = spec.components.setup
-    trigger_id = spec.components.trigger.component_id
+    trigger_rule = spec.components.trigger
+    trigger_id = trigger_rule.component_id
     if setup_id not in _SETUP_TRACE:
         raise UnsupportedTraceComponentError(f"setup trace not implemented: {setup_id!r}")
-    if trigger_id not in _TRIGGER_TRACE:
+    if not isinstance(trigger_rule, ReclaimTriggerSpec) and trigger_id not in _TRIGGER_TRACE:
         raise UnsupportedTraceComponentError(f"trigger trace not implemented: {trigger_id!r}")
 
     direction_trace = ema_anchor_stack_trend_trace(
@@ -195,7 +199,12 @@ def _build_side_trace(
     )
     setup = setup_trace["setup"]
 
-    trigger_trace = _TRIGGER_TRACE[trigger_id](df, anchor_col, side=side)
+    if isinstance(trigger_rule, ReclaimTriggerSpec):
+        trigger_trace = reclaim_anchor_trace(
+            df, anchor_col, trigger_rule.lookback, side=side
+        )
+    else:
+        trigger_trace = _TRIGGER_TRACE[trigger_id](df, anchor_col, side=side)
     trigger = trigger_trace["trigger"]
 
     risk = no_risk_filter(df, side=side)
@@ -271,6 +280,7 @@ def build_signal_trace_from_spec(
         stop_ready=stop_ready,
     )
 
+    trigger_rule = spec.components.trigger
     meta = {
         "variant": spec.variant,
         "component_ids": {
@@ -283,6 +293,11 @@ def build_signal_trace_from_spec(
             "lookback": spec.setup.lookback,
             "active_bars": spec.setup.active_bars,
         },
+        "trigger_params": (
+            {"lookback": trigger_rule.lookback}
+            if isinstance(trigger_rule, ReclaimTriggerSpec)
+            else {}
+        ),
         "blocker_instances": [
             {"instance_id": rule.instance_id, "component_id": rule.component_id}
             for rule in spec.components.blockers

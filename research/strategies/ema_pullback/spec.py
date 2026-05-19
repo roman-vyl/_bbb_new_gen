@@ -161,6 +161,12 @@ class UntouchedAnchorSetupSpec:
 @dataclass(frozen=True)
 class ReclaimTriggerSpec(TriggerSpec):
     component_id: str = "reclaim_anchor"
+    lookback: int = 1
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        if self.lookback <= 0:
+            raise ValueError("trigger.lookback must be > 0")
 
 
 @dataclass(frozen=True)

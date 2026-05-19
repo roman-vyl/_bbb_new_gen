@@ -236,6 +236,7 @@ export type SignalTraceMeta = {
     risk: string;
   };
   setup_params: { lookback: number; active_bars: number };
+  trigger_params?: { lookback: number };
   blocker_instances: { instance_id: string; component_id: string }[];
 };
 
