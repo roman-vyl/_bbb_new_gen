@@ -18,7 +18,6 @@ from research.strategies.ema_pullback.components.registry import (
     NO_BLOCKERS_COMPONENT,
     RSI_LOOKBACK_EXTREME_BLOCKER_COMPONENT,
     TOUCH_ANCHOR_COMPONENT,
-    PULLBACK_TO_ANCHOR_SETUP_ALIAS,
     UNTOUCHED_ANCHOR_SETUP_COMPONENT,
 )
 from research.strategies.ema_pullback.components.setup import untouched_anchor_setup_trace
@@ -50,7 +49,6 @@ _BLOCKER_TRACE: dict[str, Callable[..., dict[str, pd.Series]]] = {
 
 _SETUP_TRACE: dict[str, Callable[..., dict[str, pd.Series]]] = {
     UNTOUCHED_ANCHOR_SETUP_COMPONENT: untouched_anchor_setup_trace,
-    PULLBACK_TO_ANCHOR_SETUP_ALIAS: untouched_anchor_setup_trace,
 }
 
 _TRIGGER_TRACE: dict[str, Callable[..., dict[str, pd.Series]]] = {

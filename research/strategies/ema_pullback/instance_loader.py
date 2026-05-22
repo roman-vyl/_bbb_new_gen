@@ -16,7 +16,6 @@ from research.strategies.ema_pullback.components.registry import (
     NO_BLOCKERS_COMPONENT,
     NO_RISK_FILTER_COMPONENT,
     NO_SIGNAL_EXIT_COMPONENT,
-    PULLBACK_TO_ANCHOR_SETUP_ALIAS,
     UNTOUCHED_ANCHOR_SETUP_COMPONENT,
     RECLAIM_ANCHOR_COMPONENT,
     RSI_LOOKBACK_EXTREME_BLOCKER_COMPONENT,
@@ -190,7 +189,7 @@ def _parse_setup(value: Any) -> tuple[str, UntouchedAnchorSetupSpec]:
     payload = _component_mapping("setup", value, extra_fields={"lookback", "active_bars"})
     component_id = _require_non_empty_str(payload, "component_id")
     _assert_known_component("setup", component_id)
-    if component_id not in {UNTOUCHED_ANCHOR_SETUP_COMPONENT, PULLBACK_TO_ANCHOR_SETUP_ALIAS}:
+    if component_id != UNTOUCHED_ANCHOR_SETUP_COMPONENT:
         raise EmaPullbackInstanceValidationError(f"unsupported setup component_id {component_id!r}")
     lookback = _optional_positive_int(payload, "lookback", default=50)
     active_bars = _optional_positive_int(payload, "active_bars", default=3)

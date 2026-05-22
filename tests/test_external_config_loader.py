@@ -321,8 +321,8 @@ def test_load_external_config_rejects_non_bool_trade_side_flags() -> None:
         load_strategy_config(_bundle([_instance("bad_side_flags", trade_sides={"long": "yes"})]))
 
 
-def test_load_external_config_accepts_pullback_to_anchor_setup_alias() -> None:
-    instance = _instance("setup_alias")
+def test_load_external_config_rejects_pullback_to_anchor_setup_id() -> None:
+    instance = _instance("setup_legacy")
     strategy = instance["strategy"]
     assert isinstance(strategy, dict)
     strategy["setup"] = {
@@ -331,8 +331,8 @@ def test_load_external_config_accepts_pullback_to_anchor_setup_alias() -> None:
         "active_bars": 3,
     }
 
-    loaded = load_strategy_config(_bundle([instance]))
-    assert loaded.specs[0].components.setup == "untouched_anchor_setup"
+    with pytest.raises(EmaPullbackInstanceValidationError, match="pullback_to_anchor"):
+        load_strategy_config(_bundle([instance]))
 
 
 def test_load_external_config_reclaim_anchor_accepts_lookback() -> None:

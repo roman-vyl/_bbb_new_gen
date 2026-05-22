@@ -43,8 +43,6 @@ NO_BLOCKERS_COMPONENT = "no_blockers"
 COUNTER_CANDLE_BLOCKER_COMPONENT = "counter_candle_blocker"
 RSI_LOOKBACK_EXTREME_BLOCKER_COMPONENT = "rsi_lookback_extreme_blocker"
 UNTOUCHED_ANCHOR_SETUP_COMPONENT = "untouched_anchor_setup"
-# Legacy alias accepted in external configs (same implementation as untouched_anchor_setup).
-PULLBACK_TO_ANCHOR_SETUP_ALIAS = "pullback_to_anchor"
 RECLAIM_ANCHOR_COMPONENT = "reclaim_anchor"
 TOUCH_ANCHOR_COMPONENT = "touch_anchor"
 NO_SIGNAL_EXIT_COMPONENT = "no_signal_exit"
@@ -104,14 +102,6 @@ COMPONENT_REGISTRY: dict[str, dict[str, ComponentDefinition]] = {
             description=(
                 "Armed regime after anchor was untouched for lookback bars; "
                 "active through first touch and active_bars window."
-            ),
-        ),
-        PULLBACK_TO_ANCHOR_SETUP_ALIAS: ComponentDefinition(
-            role="setup",
-            component_id=PULLBACK_TO_ANCHOR_SETUP_ALIAS,
-            func=untouched_anchor_setup,
-            description=(
-                "Alias for untouched_anchor_setup (legacy id pullback_to_anchor)."
             ),
         ),
     },
@@ -211,7 +201,6 @@ __all__ = [
     "NO_SIGNAL_EXIT_COMPONENT",
     "NO_RISK_FILTER_COMPONENT",
     "UNTOUCHED_ANCHOR_SETUP_COMPONENT",
-    "PULLBACK_TO_ANCHOR_SETUP_ALIAS",
     "RECLAIM_ANCHOR_COMPONENT",
     "REQUIRED_COMPONENT_ROLES",
     "RSI_LOOKBACK_EXTREME_BLOCKER_COMPONENT",
