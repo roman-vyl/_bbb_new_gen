@@ -76,7 +76,10 @@ def test_component_catalog_returns_ema_pullback_components(client: TestClient) -
         c["component_id"] == "rsi_lookback_extreme_blocker" for c in body["components"]
     )
     setup_components = [c for c in body["components"] if c.get("role") == "setup"]
-    assert [c["component_id"] for c in setup_components] == ["untouched_anchor_setup"]
+    assert {c["component_id"] for c in setup_components} == {
+        "untouched_anchor_setup",
+        "pullback_to_anchor",
+    }
     params = setup_components[0]["params_schema"]
     assert set(params) == {"lookback", "active_bars"}
     assert params["lookback"]["default"] == 50

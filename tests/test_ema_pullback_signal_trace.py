@@ -58,12 +58,24 @@ def test_signal_trace_meta_includes_trigger_params_for_reclaim() -> None:
 
 
 def test_strategy_spec_roundtrip_from_report_dict() -> None:
-    spec = make_ema_pullback_strategy_spec(variant="roundtrip_test")
+    spec = make_ema_pullback_strategy_spec(variant="roundtrip_test", trigger_lookback=3)
     restored = strategy_spec_from_report_dict(strategy_spec_to_dict(spec))
     assert restored.variant == spec.variant
     assert restored.components.setup == spec.components.setup
     assert restored.components.trigger.component_id == spec.components.trigger.component_id
+    assert isinstance(restored.components.trigger, ReclaimTriggerSpec)
+    assert restored.components.trigger.lookback == 3
     assert len(restored.components.blockers) == len(spec.components.blockers)
+
+
+def test_signal_trace_after_strategy_spec_report_roundtrip() -> None:
+    spec = make_ema_pullback_strategy_spec(trigger_lookback=2)
+    restored = strategy_spec_from_report_dict(strategy_spec_to_dict(spec))
+    plan = build_feature_plan_from_strategy_spec(restored)
+    df = add_feature_columns_from_plan(_ohlcv(periods=30), plan)
+    trace = build_signal_trace_from_spec(df, restored, plan)
+    assert trace.meta["trigger_params"] == {"lookback": 2}
+    assert len(trace.times) == len(df)
 
 
 def test_portfolio_entry_false_when_stop_not_ready() -> None:

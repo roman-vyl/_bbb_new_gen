@@ -73,6 +73,18 @@ def get_component_catalog(*, family: str = "ema_pullback") -> ComponentCatalog:
             },
         ),
         ComponentSchema(
+            component_id="pullback_to_anchor",
+            role="setup",
+            label="Pullback to anchor (legacy id)",
+            description=(
+                "Same as untouched_anchor_setup; use untouched_anchor_setup for new configs."
+            ),
+            params_schema={
+                "lookback": _int_param("Untouched lookback bars", default=50),
+                "active_bars": _int_param("Active bars after first touch", default=3),
+            },
+        ),
+        ComponentSchema(
             component_id="reclaim_anchor",
             role="trigger",
             label="Reclaim anchor",

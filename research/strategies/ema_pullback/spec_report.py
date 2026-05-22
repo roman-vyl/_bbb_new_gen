@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Mapping
 
+from research.strategies.ema_pullback.components.registry import RECLAIM_ANCHOR_COMPONENT
 from research.strategies.ema_pullback.spec import (
     AnchorStackSpec,
     AtrDistanceSpec,
@@ -12,6 +13,7 @@ from research.strategies.ema_pullback.spec import (
     EmaPullbackStrategySpec,
     EmaSpec,
     ExitRuleSpec,
+    ReclaimTriggerSpec,
     RsiFeatureSpec,
     TradeManagementSpec,
     TradeSideSpec,
@@ -81,6 +83,13 @@ def _exit_rule(payload: Mapping[str, Any]) -> ExitRuleSpec:
     )
 
 
+def _trigger_spec(payload: Mapping[str, Any]) -> TriggerSpec | ReclaimTriggerSpec:
+    component_id = str(payload["component_id"])
+    if component_id == RECLAIM_ANCHOR_COMPONENT:
+        return ReclaimTriggerSpec(lookback=int(payload.get("lookback", 1)))
+    return TriggerSpec(component_id=component_id)
+
+
 def strategy_spec_from_report_dict(payload: Mapping[str, Any]) -> EmaPullbackStrategySpec:
     """Rebuild spec from ``RunVariant.strategy_spec`` (``strategy_spec_to_dict`` shape)."""
 
@@ -125,7 +134,7 @@ def strategy_spec_from_report_dict(payload: Mapping[str, Any]) -> EmaPullbackStr
             direction=str(components_raw["direction"]),
             blockers=tuple(_blocker_rule(b) for b in blockers_raw),
             setup=str(components_raw["setup"]),
-            trigger=TriggerSpec(component_id=str(trigger_raw["component_id"])),
+            trigger=_trigger_spec(trigger_raw),
             exits=tuple(_exit_rule(e) for e in exits_raw),
             risk=str(components_raw["risk"]),
         ),
