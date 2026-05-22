@@ -8,11 +8,12 @@ import type {
 } from "@/api/types";
 
 export const COMPOSER_DEFAULT_FAMILY = "ema_pullback";
+export const COMPOSER_DEFAULT_EXPERIMENT_ID = "draft_ema_pullback";
 
 export function createBlankConfigDraft(family = COMPOSER_DEFAULT_FAMILY): StrategyConfigDraft {
   return {
     config_version: 1,
-    experiment_id: "",
+    experiment_id: COMPOSER_DEFAULT_EXPERIMENT_ID,
     family,
     execution: {},
     instances: [createDefaultInstance("instance_1")],
@@ -39,7 +40,7 @@ export function createDefaultInstance(instanceId: string): StrategyInstanceDraft
         lookback: 50,
         active_bars: 3,
       },
-      trigger: { component_id: "touch_anchor" },
+      trigger: { component_id: "reclaim_anchor", lookback: 1 },
       blockers: [{ instance_id: "no_blockers", component_id: "no_blockers" }],
       risk: { component_id: "no_risk_filter" },
       exits: [

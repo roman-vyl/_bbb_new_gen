@@ -605,6 +605,9 @@ export function ComposerPanel() {
           {validation.ok ? "Config is valid." : "Validation failed — fix errors below."}
         </p>
       )}
+      {validation && !validation.ok && validation.errors.length > 0 && (
+        <ValidationMessages errors={validation.errors} />
+      )}
       </div>
 
       <div className="composer-body">

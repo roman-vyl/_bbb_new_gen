@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import type { ValidationErrorItem } from "../../api/types";
 import {
   anyInstanceMetaHasError,
+  COMPOSER_DEFAULT_EXPERIMENT_ID,
+  createBlankConfigDraft,
   errorsForInstanceMeta,
   errorsForPath,
 } from "./composerDraft";
@@ -9,6 +11,23 @@ import {
 function err(path: string): ValidationErrorItem {
   return { path, message: path };
 }
+
+describe("createBlankConfigDraft", () => {
+  it("uses non-empty experiment_id and canonical reclaim_anchor trigger", () => {
+    const draft = createBlankConfigDraft();
+    expect(draft.experiment_id).toBe(COMPOSER_DEFAULT_EXPERIMENT_ID);
+    expect(draft.experiment_id.trim().length).toBeGreaterThan(0);
+    const strategy = draft.instances[0]?.strategy;
+    expect(strategy?.setup).toMatchObject({
+      component_id: "untouched_anchor_setup",
+    });
+    expect(strategy?.trigger).toEqual({
+      component_id: "reclaim_anchor",
+      lookback: 1,
+    });
+    expect(strategy?.blockers?.[0]).toMatchObject({ component_id: "no_blockers" });
+  });
+});
 
 describe("errorsForInstanceMeta", () => {
   it("includes instance_id and variant only", () => {
