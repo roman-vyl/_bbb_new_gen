@@ -12,7 +12,7 @@ from research.strategies.ema_pullback.components.registry import (
 )
 from research.strategies.ema_pullback.features.plan import FeaturePlan
 from research.strategies.ema_pullback.spec import EmaPullbackStrategySpec
-from research.strategies.ema_pullback.spec import ReclaimTriggerSpec
+from research.strategies.ema_pullback.spec import ReclaimTriggerSpec, StrongReclaimTriggerSpec
 from research.strategies.ema_pullback.spec import RsiFeatureSpec
 from research.strategies.ema_pullback.spec import TradeSide
 
@@ -116,7 +116,7 @@ def _build_side_signals(
         side=side,
     )
     trigger_rule = spec.components.trigger
-    if isinstance(trigger_rule, ReclaimTriggerSpec):
+    if isinstance(trigger_rule, ReclaimTriggerSpec | StrongReclaimTriggerSpec):
         trigger = trigger_fn(df, anchor_col, trigger_rule.lookback, side=side)
     else:
         trigger = trigger_fn(df, anchor_col, side=side)

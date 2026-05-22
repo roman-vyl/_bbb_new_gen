@@ -7,15 +7,14 @@ import pandas as pd
 from research.strategies.ema_pullback.spec import TradeSide
 
 
-def reclaim_anchor_trace(
+def _reclaim_anchor_rolling_trace(
     df: pd.DataFrame,
     anchor_col: str,
     lookback: int,
+    probed: pd.Series,
     *,
-    side: TradeSide = "long",
+    side: TradeSide,
 ) -> dict[str, pd.Series]:
-    """Per-bar internals for reclaim_anchor (wick probe in prior window + close reclaim)."""
-
     if lookback <= 0:
         raise ValueError("lookback must be > 0")
 
@@ -23,10 +22,8 @@ def reclaim_anchor_trace(
     anchor = df[anchor_col].astype(float)
 
     if side == "long":
-        probed = df["low"].astype(float) <= anchor
         reclaimed = close > anchor
     elif side == "short":
-        probed = df["high"].astype(float) >= anchor
         reclaimed = close < anchor
     else:
         raise ValueError("side must be 'long' or 'short'")
@@ -51,6 +48,26 @@ def reclaim_anchor_trace(
     }
 
 
+def reclaim_anchor_trace(
+    df: pd.DataFrame,
+    anchor_col: str,
+    lookback: int,
+    *,
+    side: TradeSide = "long",
+) -> dict[str, pd.Series]:
+    """Per-bar internals for reclaim_anchor (wick probe in prior window + close reclaim)."""
+
+    anchor = df[anchor_col].astype(float)
+    if side == "long":
+        probed = df["low"].astype(float) <= anchor
+    elif side == "short":
+        probed = df["high"].astype(float) >= anchor
+    else:
+        raise ValueError("side must be 'long' or 'short'")
+
+    return _reclaim_anchor_rolling_trace(df, anchor_col, lookback, probed, side=side)
+
+
 def reclaim_anchor(
     df: pd.DataFrame,
     anchor_col: str,
@@ -61,6 +78,39 @@ def reclaim_anchor(
     """True when anchor was wick-probed in the prior lookback window and close reclaims."""
 
     return reclaim_anchor_trace(df, anchor_col, lookback, side=side)["trigger"]
+
+
+def strong_reclaim_anchor_trace(
+    df: pd.DataFrame,
+    anchor_col: str,
+    lookback: int,
+    *,
+    side: TradeSide = "long",
+) -> dict[str, pd.Series]:
+    """Per-bar internals for strong_reclaim_anchor (close probe in prior window + close reclaim)."""
+
+    close = df["close"].astype(float)
+    anchor = df[anchor_col].astype(float)
+    if side == "long":
+        probed = close <= anchor
+    elif side == "short":
+        probed = close >= anchor
+    else:
+        raise ValueError("side must be 'long' or 'short'")
+
+    return _reclaim_anchor_rolling_trace(df, anchor_col, lookback, probed, side=side)
+
+
+def strong_reclaim_anchor(
+    df: pd.DataFrame,
+    anchor_col: str,
+    lookback: int,
+    *,
+    side: TradeSide = "long",
+) -> pd.Series:
+    """True when anchor was close-probed in the prior lookback window and close reclaims."""
+
+    return strong_reclaim_anchor_trace(df, anchor_col, lookback, side=side)["trigger"]
 
 
 def touch_anchor_trace(

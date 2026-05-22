@@ -18,6 +18,7 @@ from research.strategies.ema_pullback.components.registry import (
     NO_SIGNAL_EXIT_COMPONENT,
     UNTOUCHED_ANCHOR_SETUP_COMPONENT,
     RECLAIM_ANCHOR_COMPONENT,
+    STRONG_RECLAIM_ANCHOR_COMPONENT,
     RSI_LOOKBACK_EXTREME_BLOCKER_COMPONENT,
     RSI_SIGNAL_EXIT_COMPONENT,
     TOUCH_ANCHOR_COMPONENT,
@@ -216,6 +217,13 @@ def _parse_trigger(value: Any) -> Any:
         else:
             lookback = 1
         return builders.trigger_reclaim_anchor(lookback=lookback)
+    if component_id == STRONG_RECLAIM_ANCHOR_COMPONENT:
+        if payload is not None:
+            _reject_unknown_fields("trigger", payload, {"component_id", "lookback"})
+            lookback = _optional_positive_int(payload, "lookback", default=1)
+        else:
+            lookback = 1
+        return builders.trigger_strong_reclaim_anchor(lookback=lookback)
     if component_id == TOUCH_ANCHOR_COMPONENT:
         if payload is not None:
             _reject_unknown_fields("trigger", payload, {"component_id"})

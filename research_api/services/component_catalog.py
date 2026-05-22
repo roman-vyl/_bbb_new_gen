@@ -84,6 +84,17 @@ def get_component_catalog(*, family: str = "ema_pullback") -> ComponentCatalog:
             },
         ),
         ComponentSchema(
+            component_id="strong_reclaim_anchor",
+            role="trigger",
+            label="Strong reclaim anchor",
+            description=(
+                "Close lost anchor within prior lookback bars; entry on close reclaim."
+            ),
+            params_schema={
+                "lookback": _int_param("Close probe lookback bars", default=1),
+            },
+        ),
+        ComponentSchema(
             component_id="touch_anchor",
             role="trigger",
             label="Touch anchor",

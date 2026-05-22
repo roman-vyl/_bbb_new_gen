@@ -25,6 +25,7 @@ from research.strategies.ema_pullback.components.setup import (
 )
 from research.strategies.ema_pullback.components.triggers import (
     reclaim_anchor,
+    strong_reclaim_anchor,
     touch_anchor,
 )
 
@@ -44,6 +45,7 @@ COUNTER_CANDLE_BLOCKER_COMPONENT = "counter_candle_blocker"
 RSI_LOOKBACK_EXTREME_BLOCKER_COMPONENT = "rsi_lookback_extreme_blocker"
 UNTOUCHED_ANCHOR_SETUP_COMPONENT = "untouched_anchor_setup"
 RECLAIM_ANCHOR_COMPONENT = "reclaim_anchor"
+STRONG_RECLAIM_ANCHOR_COMPONENT = "strong_reclaim_anchor"
 TOUCH_ANCHOR_COMPONENT = "touch_anchor"
 NO_SIGNAL_EXIT_COMPONENT = "no_signal_exit"
 RSI_SIGNAL_EXIT_COMPONENT = "rsi_signal_exit"
@@ -112,6 +114,14 @@ COMPONENT_REGISTRY: dict[str, dict[str, ComponentDefinition]] = {
             func=reclaim_anchor,
             description=(
                 "Wick probed anchor within prior lookback bars; entry on close reclaim."
+            ),
+        ),
+        STRONG_RECLAIM_ANCHOR_COMPONENT: ComponentDefinition(
+            role="trigger",
+            component_id=STRONG_RECLAIM_ANCHOR_COMPONENT,
+            func=strong_reclaim_anchor,
+            description=(
+                "Close lost anchor within prior lookback bars; entry on close reclaim."
             ),
         ),
         TOUCH_ANCHOR_COMPONENT: ComponentDefinition(
@@ -202,6 +212,7 @@ __all__ = [
     "NO_RISK_FILTER_COMPONENT",
     "UNTOUCHED_ANCHOR_SETUP_COMPONENT",
     "RECLAIM_ANCHOR_COMPONENT",
+    "STRONG_RECLAIM_ANCHOR_COMPONENT",
     "REQUIRED_COMPONENT_ROLES",
     "RSI_LOOKBACK_EXTREME_BLOCKER_COMPONENT",
     "RSI_SIGNAL_EXIT_COMPONENT",

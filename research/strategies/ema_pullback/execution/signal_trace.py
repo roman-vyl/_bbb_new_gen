@@ -23,6 +23,7 @@ from research.strategies.ema_pullback.components.registry import (
 from research.strategies.ema_pullback.components.setup import untouched_anchor_setup_trace
 from research.strategies.ema_pullback.components.triggers import (
     reclaim_anchor_trace,
+    strong_reclaim_anchor_trace,
     touch_anchor_trace,
 )
 from research.strategies.ema_pullback.components.risk import no_risk_filter
@@ -32,6 +33,7 @@ from research.strategies.ema_pullback.features.plan import FeaturePlan
 from research.strategies.ema_pullback.spec import (
     EmaPullbackStrategySpec,
     ReclaimTriggerSpec,
+    StrongReclaimTriggerSpec,
     RsiFeatureSpec,
     TradeSide,
 )
@@ -160,7 +162,10 @@ def _build_side_trace(
     trigger_id = trigger_rule.component_id
     if setup_id not in _SETUP_TRACE:
         raise UnsupportedTraceComponentError(f"setup trace not implemented: {setup_id!r}")
-    if not isinstance(trigger_rule, ReclaimTriggerSpec) and trigger_id not in _TRIGGER_TRACE:
+    if (
+        not isinstance(trigger_rule, ReclaimTriggerSpec | StrongReclaimTriggerSpec)
+        and trigger_id not in _TRIGGER_TRACE
+    ):
         raise UnsupportedTraceComponentError(f"trigger trace not implemented: {trigger_id!r}")
 
     direction_trace = ema_anchor_stack_trend_trace(
@@ -201,6 +206,10 @@ def _build_side_trace(
 
     if isinstance(trigger_rule, ReclaimTriggerSpec):
         trigger_trace = reclaim_anchor_trace(
+            df, anchor_col, trigger_rule.lookback, side=side
+        )
+    elif isinstance(trigger_rule, StrongReclaimTriggerSpec):
+        trigger_trace = strong_reclaim_anchor_trace(
             df, anchor_col, trigger_rule.lookback, side=side
         )
     else:
@@ -295,7 +304,7 @@ def build_signal_trace_from_spec(
         },
         "trigger_params": (
             {"lookback": trigger_rule.lookback}
-            if isinstance(trigger_rule, ReclaimTriggerSpec)
+            if isinstance(trigger_rule, ReclaimTriggerSpec | StrongReclaimTriggerSpec)
             else {}
         ),
         "blocker_instances": [

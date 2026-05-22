@@ -368,6 +368,44 @@ def test_load_external_config_reclaim_anchor_rejects_non_positive_lookback() -> 
         load_strategy_config(_bundle([instance]))
 
 
+def test_load_external_config_strong_reclaim_anchor_accepts_lookback() -> None:
+    instance = _instance("strong_reclaim_lb")
+    strategy = instance["strategy"]
+    assert isinstance(strategy, dict)
+    strategy["trigger"] = {"component_id": "strong_reclaim_anchor", "lookback": 3}
+
+    loaded = load_strategy_config(_bundle([instance]))
+    trigger = loaded.specs[0].components.trigger
+    from research.strategies.ema_pullback.spec import StrongReclaimTriggerSpec
+
+    assert isinstance(trigger, StrongReclaimTriggerSpec)
+    assert trigger.lookback == 3
+
+
+def test_load_external_config_strong_reclaim_anchor_default_lookback() -> None:
+    instance = _instance("strong_reclaim_default")
+    strategy = instance["strategy"]
+    assert isinstance(strategy, dict)
+    strategy["trigger"] = {"component_id": "strong_reclaim_anchor"}
+
+    loaded = load_strategy_config(_bundle([instance]))
+    trigger = loaded.specs[0].components.trigger
+    from research.strategies.ema_pullback.spec import StrongReclaimTriggerSpec
+
+    assert isinstance(trigger, StrongReclaimTriggerSpec)
+    assert trigger.lookback == 1
+
+
+def test_load_external_config_strong_reclaim_anchor_rejects_non_positive_lookback() -> None:
+    instance = _instance("strong_reclaim_bad_lb")
+    strategy = instance["strategy"]
+    assert isinstance(strategy, dict)
+    strategy["trigger"] = {"component_id": "strong_reclaim_anchor", "lookback": 0}
+
+    with pytest.raises(EmaPullbackInstanceValidationError, match="lookback"):
+        load_strategy_config(_bundle([instance]))
+
+
 def test_load_external_config_touch_anchor_rejects_lookback() -> None:
     instance = _instance("touch_lb")
     strategy = instance["strategy"]

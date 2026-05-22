@@ -170,6 +170,17 @@ class ReclaimTriggerSpec(TriggerSpec):
 
 
 @dataclass(frozen=True)
+class StrongReclaimTriggerSpec(TriggerSpec):
+    component_id: str = "strong_reclaim_anchor"
+    lookback: int = 1
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        if self.lookback <= 0:
+            raise ValueError("trigger.lookback must be > 0")
+
+
+@dataclass(frozen=True)
 class AtrDistanceSpec:
     timeframe: str
     period: int

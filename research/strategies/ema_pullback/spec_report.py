@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from typing import Any, Mapping
 
-from research.strategies.ema_pullback.components.registry import RECLAIM_ANCHOR_COMPONENT
+from research.strategies.ema_pullback.components.registry import (
+    RECLAIM_ANCHOR_COMPONENT,
+    STRONG_RECLAIM_ANCHOR_COMPONENT,
+)
 from research.strategies.ema_pullback.spec import (
     AnchorStackSpec,
     AtrDistanceSpec,
@@ -14,6 +17,7 @@ from research.strategies.ema_pullback.spec import (
     EmaSpec,
     ExitRuleSpec,
     ReclaimTriggerSpec,
+    StrongReclaimTriggerSpec,
     RsiFeatureSpec,
     TradeManagementSpec,
     TradeSideSpec,
@@ -83,10 +87,14 @@ def _exit_rule(payload: Mapping[str, Any]) -> ExitRuleSpec:
     )
 
 
-def _trigger_spec(payload: Mapping[str, Any]) -> TriggerSpec | ReclaimTriggerSpec:
+def _trigger_spec(
+    payload: Mapping[str, Any],
+) -> TriggerSpec | ReclaimTriggerSpec | StrongReclaimTriggerSpec:
     component_id = str(payload["component_id"])
     if component_id == RECLAIM_ANCHOR_COMPONENT:
         return ReclaimTriggerSpec(lookback=int(payload.get("lookback", 1)))
+    if component_id == STRONG_RECLAIM_ANCHOR_COMPONENT:
+        return StrongReclaimTriggerSpec(lookback=int(payload.get("lookback", 1)))
     return TriggerSpec(component_id=component_id)
 
 
