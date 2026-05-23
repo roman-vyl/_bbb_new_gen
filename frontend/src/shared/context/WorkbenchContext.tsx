@@ -333,7 +333,11 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
   }, [report]);
 
   useEffect(() => {
-    if (report === null || selectedVariant === null) {
+    if (report === null) {
+      return;
+    }
+    const variant = deriveSelectedVariant(report, selectedVariantKey);
+    if (variant === null) {
       return;
     }
     const runId = report.run_id;
@@ -344,8 +348,8 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     }
     prevVariantKeyRef.current = selectedVariantKey;
     prevRunIdForTradeBootstrapRef.current = runId;
-    applyTradeFocusSelection(selectedVariant.trade_records);
-  }, [report?.run_id, selectedVariantKey, selectedVariant, applyTradeFocusSelection]);
+    applyTradeFocusSelection(variant.trade_records);
+  }, [report, report?.run_id, selectedVariantKey, applyTradeFocusSelection]);
 
   useEffect(() => {
     if (report === null || reportLoadStatus !== "ready" || selectedVariant === null) {

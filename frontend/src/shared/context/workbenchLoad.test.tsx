@@ -278,6 +278,9 @@ describe("Workbench report-load invariant", () => {
     await waitFor(() => {
       expect(workbenchRef?.reportLoadStatus).toBe("ready");
     });
+    await waitFor(() => {
+      expect(workbenchRef?.selectedTradeId).toBe(2);
+    });
     const callsAfterReady = fetchRunReport.mock.calls.length;
 
     act(() => {
