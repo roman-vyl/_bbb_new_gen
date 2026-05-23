@@ -9,6 +9,9 @@ from pathlib import Path
 import pytest
 
 from research.strategies.ema_pullback.execution.results import (
+    build_exit_reason_breakdown,
+    build_fee_diagnostics,
+    build_profile_breakdown,
     build_research_run_payload,
     build_run_id,
     extract_trade_records,
@@ -128,7 +131,7 @@ def test_build_research_run_payload_top_level_keys() -> None:
         variants=[variant],
     )
     assert tuple(payload.keys()) == REQUIRED_TOP
-    assert payload["report_schema_version"] == 3
+    assert payload["report_schema_version"] == 4
     assert payload["data_range"] == {"from_open_time_ms": 1, "to_open_time_ms": 2}
     assert payload["variants_count"] == 1
     v0 = payload["variants"][0]
@@ -180,7 +183,7 @@ def test_extract_trade_records_closed_and_open() -> None:
     entries = pd.Series([False, True, False, False, False], index=idx)
     exits_closed = pd.Series([False, False, False, True, False], index=idx)
     pf_c = vbt.Portfolio.from_signals(close, entries, exits_closed, freq="1h")
-    rec_c = extract_trade_records(pf_c, close)
+    rec_c = extract_trade_records(pf_c, close, base_timeframe="1h")
     assert len(rec_c) == 1
     t0 = rec_c[0]
     for k in REQUIRED_TRADE_FIELDS:
@@ -215,6 +218,53 @@ def test_extract_trade_records_closed_and_open() -> None:
     assert rec_s[0]["status"] == "closed"
     assert rec_s[0]["direction"] == "short"
     assert rec_s[0]["exit_reason"] == "unknown"
+    assert rec_c[0]["hold_bars"] == 3
+    assert rec_c[0]["hold_minutes"] == 180
+
+
+def test_profile_and_exit_reason_breakdown_sums() -> None:
+    records = [
+        {
+            "status": "closed",
+            "entry_profile": "aligned",
+            "exit_reason": "signal:a",
+            "pnl": 1.0,
+            "gross_pnl": 1.0,
+            "fees_paid": 0.0,
+            "return_pct": 0.01,
+            "hold_bars": 3,
+        },
+        {
+            "status": "closed",
+            "entry_profile": "neutral",
+            "exit_reason": "stop_loss:sl",
+            "pnl": -0.5,
+            "gross_pnl": -0.5,
+            "fees_paid": 0.0,
+            "return_pct": -0.005,
+            "hold_bars": 5,
+        },
+        {"status": "open", "entry_profile": "aligned", "exit_reason": "open"},
+    ]
+    profile = build_profile_breakdown(records)
+    assert profile["aligned"]["trades"] + profile["neutral"]["trades"] + profile["countertrend"]["trades"] == 2
+    reasons = build_exit_reason_breakdown(records)
+    assert sum(bucket["trades"] for bucket in reasons.values()) == 2
+
+
+def test_fee_diagnostics_identity() -> None:
+    records = [
+        {
+            "status": "closed",
+            "pnl": 9.0,
+            "gross_pnl": 10.0,
+            "fees_paid": 1.0,
+            "return_pct": 0.09,
+        }
+    ]
+    diag = build_fee_diagnostics(records, fees_rate=0.001)
+    assert diag["fees_rate"] == 0.001
+    assert abs(float(diag["gross_pnl"]) - float(diag["net_pnl"]) - float(diag["total_fees_paid"])) < 1e-9
 
 
 def test_variant_payload_from_instance_matches_schema() -> None:

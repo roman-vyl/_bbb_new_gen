@@ -54,17 +54,27 @@ class VariantMetrics:
     sharpe: float
     max_drawdown: float
     open_trades: OpenTradesBreakdown
+    profile_breakdown: dict[str, Any] | None = None
+    exit_reason_breakdown: dict[str, Any] | None = None
+    fee_diagnostics: dict[str, Any] | None = None
 
     def to_payload(self) -> dict[str, Any]:
         total_payload = self.total.to_payload()
         total_payload["sharpe"] = self.sharpe
         total_payload["max_drawdown"] = self.max_drawdown
-        return {
+        payload: dict[str, Any] = {
             "long": self.long.to_payload(),
             "short": self.short.to_payload(),
             "total": total_payload,
             "open_trades": self.open_trades.to_payload(),
         }
+        if self.profile_breakdown is not None:
+            payload["profile_breakdown"] = self.profile_breakdown
+        if self.exit_reason_breakdown is not None:
+            payload["exit_reason_breakdown"] = self.exit_reason_breakdown
+        if self.fee_diagnostics is not None:
+            payload["fee_diagnostics"] = self.fee_diagnostics
+        return payload
 
 
 @dataclass(frozen=True)

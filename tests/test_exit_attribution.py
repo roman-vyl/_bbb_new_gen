@@ -8,6 +8,7 @@ import pandas as pd
 
 from research.strategies.ema_pullback.execution.exit_attribution import (
     ExitAttributionContext,
+    classify_exit_attribution,
     classify_exit_reason,
 )
 from research.strategies.ema_pullback.execution.results import (
@@ -38,6 +39,94 @@ def test_classify_open_trade() -> None:
     close = pd.Series([100.0, 101.0, 102.0], index=idx)
     o = h = l = close
     assert classify_exit_reason(row=row, close=close, high=h, low=l, open_=o, ctx=ctx) == "open"
+
+
+def test_classify_exit_attribution_stop_metadata() -> None:
+    idx = pd.date_range("2024-01-01", periods=5, freq="h", tz="UTC")
+    sl = 0.02
+    ctx = _ctx_one_sl(idx=idx, sl=sl, inst="atr_stop_1")
+    close = pd.Series([100.0, 100.0, 100.0, 100.0, 100.0], index=idx)
+    high = pd.Series([100.0, 100.0, 100.0, 100.0, 100.0], index=idx)
+    low = pd.Series([100.0, 100.0, 100.0, 97.0, 100.0], index=idx)
+    open_ = pd.Series([100.0, 100.0, 100.0, 99.0, 100.0], index=idx)
+    row = {"status": 1, "direction": 0, "entry_idx": 1, "exit_idx": 3}
+    attr = classify_exit_attribution(
+        row=row,
+        close=close,
+        high=high,
+        low=low,
+        open_=open_,
+        ctx=ctx,
+        component_map={"atr_stop_1": "atr_stop_loss"},
+    )
+    assert attr.exit_reason == "stop_loss:atr_stop_1"
+    assert attr.exit_kind == "stop_loss"
+    assert attr.exit_instance_id == "atr_stop_1"
+    assert attr.exit_component_id == "atr_stop_loss"
+    assert attr.exit_group == "always_on"
+    assert attr.exit_profile is None
+
+
+def test_classify_exit_attribution_signal_metadata() -> None:
+    idx = pd.date_range("2024-01-01", periods=4, freq="h", tz="UTC")
+    nan_s = pd.Series(float("nan"), index=idx, dtype=float)
+    sig = pd.Series([False, False, True, False], index=idx, dtype=bool)
+    context = pd.Series(["neutral", "up", "up", "neutral"], index=idx, dtype=object)
+    ctx = ExitAttributionContext(
+        index=idx,
+        instance_ids=("rsi_exit_1",),
+        exit_kinds=("signal",),
+        long_signal_by_rule=(sig,),
+        short_signal_by_rule=(pd.Series(False, index=idx),),
+        distance_ratio_by_rule=(None,),
+        rule_groups=("aligned",),
+        context_state=context,
+        sl_stop_agg=nan_s,
+        tp_stop_agg=nan_s,
+    )
+    close = pd.Series([100.0, 100.0, 100.0, 100.0], index=idx)
+    high = low = open_ = close
+    row = {"status": 1, "direction": 0, "entry_idx": 1, "exit_idx": 2}
+    attr = classify_exit_attribution(
+        row=row,
+        close=close,
+        high=high,
+        low=low,
+        open_=open_,
+        ctx=ctx,
+        component_map={"rsi_exit_1": "rsi_signal_exit"},
+    )
+    assert attr.exit_reason == "signal:rsi_exit_1"
+    assert attr.exit_kind == "signal"
+    assert attr.exit_group == "profile"
+    assert attr.exit_profile == "aligned"
+    assert attr.exit_instance_id == "rsi_exit_1"
+    assert attr.exit_component_id == "rsi_signal_exit"
+
+
+def test_classify_exit_attribution_unknown_null_metadata() -> None:
+    idx = pd.date_range("2024-01-01", periods=4, freq="h", tz="UTC")
+    nan_s = pd.Series(float("nan"), index=idx, dtype=float)
+    ctx = ExitAttributionContext(
+        index=idx,
+        instance_ids=("x",),
+        exit_kinds=("signal",),
+        long_signal_by_rule=(pd.Series(False, index=idx),),
+        short_signal_by_rule=(None,),
+        distance_ratio_by_rule=(None,),
+        sl_stop_agg=nan_s,
+        tp_stop_agg=nan_s,
+    )
+    close = pd.Series([100.0, 100.0, 100.0, 100.0], index=idx)
+    high = low = open_ = close
+    row = {"status": 1, "direction": 0, "entry_idx": 1, "exit_idx": 2}
+    attr = classify_exit_attribution(row=row, close=close, high=high, low=low, open_=open_, ctx=ctx)
+    assert attr.exit_reason == "unknown"
+    assert attr.exit_group is None
+    assert attr.exit_profile is None
+    assert attr.exit_component_id is None
+    assert attr.exit_instance_id is None
+    assert attr.exit_kind is None
 
 
 def test_classify_long_stop_loss_hit() -> None:

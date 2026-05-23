@@ -15,7 +15,13 @@ from research.strategies.ema_pullback.execution.result_models import (
     VariantMetrics,
     VariantResult,
 )
-from research.strategies.ema_pullback.execution.results import extract_trade_records
+from research.strategies.ema_pullback.execution.exit_attribution import build_exit_instance_component_map
+from research.strategies.ema_pullback.execution.results import (
+    build_exit_reason_breakdown,
+    build_fee_diagnostics,
+    build_profile_breakdown,
+    extract_trade_records,
+)
 from research.strategies.ema_pullback.execution.exits import build_exit_outputs_from_spec
 from research.strategies.ema_pullback.execution.signals import build_signals_from_spec
 from research.strategies.ema_pullback.features.calculations import add_feature_columns_from_plan
@@ -98,6 +104,7 @@ def build_trade_side_metrics(
     *,
     sharpe: float,
     max_drawdown: float,
+    fees_rate: float = 0.0,
 ) -> VariantMetrics:
     """Realized PnL / PF / win_rate use ``status == \"closed\"`` only; open rows are counted in ``open_trades``."""
 
@@ -118,6 +125,9 @@ def build_trade_side_metrics(
         sharpe=ensure_finite_metric("sharpe_ratio", sharpe),
         max_drawdown=ensure_finite_metric("max_drawdown", max_drawdown),
         open_trades=open_trades,
+        profile_breakdown=build_profile_breakdown(trade_records),
+        exit_reason_breakdown=build_exit_reason_breakdown(trade_records),
+        fee_diagnostics=build_fee_diagnostics(trade_records, fees_rate=fees_rate),
     )
 
 
@@ -315,6 +325,7 @@ def run_strategy_spec(
         ),
     )
 
+    exit_component_map = build_exit_instance_component_map(spec)
     trade_records = extract_trade_records(
         pf,
         close,
@@ -322,6 +333,11 @@ def run_strategy_spec(
         low=low_s,
         open_s=open_s,
         attribution=exit_outputs.attribution,
+        profile_long=exit_outputs.profile_long,
+        profile_short=exit_outputs.profile_short,
+        context_state=exit_outputs.context_state,
+        base_timeframe=spec.base_timeframe,
+        exit_component_map=exit_component_map,
     )
 
     sharpe = ensure_finite_metric("sharpe_ratio", float(pf.sharpe_ratio()))
@@ -340,6 +356,7 @@ def run_strategy_spec(
             float(init_cash),
             sharpe=sharpe,
             max_drawdown=max_dd_f,
+            fees_rate=float(fees),
         ),
         component_counters=list(signals.output_counters + exit_outputs.output_counters),
         trade_records=trade_records,

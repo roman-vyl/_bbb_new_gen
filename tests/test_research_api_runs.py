@@ -108,6 +108,12 @@ def test_list_and_load_run(tmp_path: Path) -> None:
     assert report.variants[0].trade_overlays[0].exit_reason == "stop_loss:sl1"
 
 
+def test_load_schema_v4_report(tmp_path: Path) -> None:
+    run_id = _write_artifacts(tmp_path, schema_version=4)
+    report = load_run_report(run_id=run_id, results_dir=tmp_path)
+    assert report.report_schema_version == 4
+
+
 def test_unsupported_schema_version(tmp_path: Path) -> None:
     _write_artifacts(tmp_path, schema_version=99)
     with pytest.raises(UnsupportedSchemaVersionError):

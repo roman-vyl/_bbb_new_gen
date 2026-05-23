@@ -92,6 +92,36 @@ signal:<instance_id>
 
 Для открытых сделок (выхода ещё нет): `exit_reason = "open"`. Если контекст атрибуции недоступен или режим не поддержан — по-прежнему `unknown`. Приоритет отчёта согласован с vectorbt: стоп важнее boolean signal exit на том же баре; внутри стопов — сначала stop loss, затем take profit (см. план Step 16).
 
+## Schema v4 (report diagnostics)
+
+Новые запуски ema_pullback пишут `report_schema_version: 4`. Исторические артефакты v3 остаются читаемыми без новых полей.
+
+Дополнительные поля **закрытой** сделки (`status == "closed"`):
+
+```text
+entry_profile              # aligned | countertrend | neutral — lock at entry
+entry_context_state        # up | down | neutral | unknown
+active_exit_profile        # locked trade profile for position lifetime
+exit_group                   # always_on | profile | null
+exit_profile                 # winning exit rule bucket | null (not active_exit_profile)
+exit_component_id            # string | null
+exit_instance_id             # string | null
+exit_kind                    # string | null
+gross_pnl
+fees_paid
+gross_return_pct             # before fees; return_pct remains net
+hold_bars                    # exit_idx - entry_idx + 1
+hold_minutes                 # hold_bars * base_timeframe_minutes
+```
+
+`variant.metrics` (только из closed `trade_records`):
+
+```text
+profile_breakdown            # aligned | countertrend | neutral buckets
+exit_reason_breakdown        # keyed by full exit_reason
+fee_diagnostics              # total_fees_paid, gross_pnl, net_pnl, fees_rate, ...
+```
+
 ## Где писать код
 
 Добавить маленький модуль:
