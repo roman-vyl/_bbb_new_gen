@@ -113,6 +113,12 @@ def test_component_catalog_returns_ema_pullback_components(client: TestClient) -
     assert strong_params["lookback"]["default"] == 1
     assert strong_params["lookback"]["min"] == 1
     assert all(c["component_id"] != "htf_context" for c in body["components"])
+    close_loss = next(c for c in body["components"] if c["component_id"] == "ema_close_loss_exit")
+    assert close_loss["params_schema"]["confirm_bars"]["default"] == 1
+    assert "ema.timeframe" in close_loss["params_schema"]
+    cross_loss = next(c for c in body["components"] if c["component_id"] == "ema_cross_loss_exit")
+    assert cross_loss["params_schema"]["confirm_bars"]["default"] == 1
+    assert cross_loss["params_schema"]["fast_ema.timeframe"]["default"] == "base"
 
 
 def test_validate_config_ok(client: TestClient) -> None:

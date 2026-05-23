@@ -78,12 +78,27 @@ def _atr_distance(payload: Mapping[str, Any] | None) -> AtrDistanceSpec | None:
     )
 
 
+def _ema_spec(name: str, payload: Any) -> EmaSpec | None:
+    if payload is None:
+        return None
+    ema = _require_mapping(name, payload)
+    return EmaSpec(
+        source=str(ema.get("source", "close")),
+        timeframe=str(ema["timeframe"]),
+        period=int(ema["period"]),
+    )
+
+
 def _exit_rule(payload: Mapping[str, Any]) -> ExitRuleSpec:
     return ExitRuleSpec(
         instance_id=str(payload["instance_id"]),
         component_id=str(payload["component_id"]),
         exit_kind=str(payload.get("exit_kind", "signal")),
         rsi=_rsi_spec(payload.get("rsi")),
+        ema=_ema_spec("ema", payload.get("ema")),
+        fast_ema=_ema_spec("fast_ema", payload.get("fast_ema")),
+        slow_ema=_ema_spec("slow_ema", payload.get("slow_ema")),
+        confirm_bars=int(payload.get("confirm_bars", 1)),
         long_exit_above=payload.get("long_exit_above"),
         short_exit_below=payload.get("short_exit_below"),
         distance=_atr_distance(payload.get("distance")),

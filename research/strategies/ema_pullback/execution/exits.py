@@ -11,7 +11,13 @@ from research.strategies.ema_pullback.components.context import htf_context
 from research.strategies.ema_pullback.components.registry import resolve_component
 from research.strategies.ema_pullback.execution.exit_attribution import ExitAttributionContext
 from research.strategies.ema_pullback.features.plan import FeaturePlan
-from research.strategies.ema_pullback.spec import EmaPullbackStrategySpec, ExitRuleSpec, RsiFeatureSpec, TradeSide
+from research.strategies.ema_pullback.spec import (
+    EmaPullbackStrategySpec,
+    EmaSpec,
+    ExitRuleSpec,
+    RsiFeatureSpec,
+    TradeSide,
+)
 
 PROFILE_ORDER = ("aligned", "countertrend", "neutral")
 STATE_ORDER = ("up", "down", "neutral")
@@ -73,6 +79,12 @@ def _distance_column(plan: FeaturePlan, rule: ExitRuleSpec) -> str | None:
     return plan.exit_distance_columns[rule.instance_id]
 
 
+def _ema_column(plan: FeaturePlan, ema: EmaSpec | None) -> str | None:
+    if ema is None:
+        return None
+    return plan.ema_column(ema)
+
+
 def _signal_series_for_side(
     df: pd.DataFrame,
     *,
@@ -91,6 +103,9 @@ def _signal_series_for_side(
         side=side,
         rule=rule,
         rsi_col=_rsi_column(plan, rule.rsi),
+        ema_col=_ema_column(plan, rule.ema),
+        fast_col=_ema_column(plan, rule.fast_ema),
+        slow_col=_ema_column(plan, rule.slow_ema),
     )
     return s.fillna(False).astype(bool)
 
@@ -189,12 +204,27 @@ def _selected_series_by_profile(
 
 
 def _stop_ready(sl: pd.Series, tp: pd.Series) -> pd.Series:
+    """Readiness for one exit-policy group (always_on or a single profile).
+
+    Uses global ``.any()`` only within this group's series. NaN SL on a bar means
+    this group has no SL rule for that bar, not a missing warmup value.
+    """
     ready = pd.Series(True, index=sl.index, dtype=bool)
     if sl.notna().any():
         ready = ready & sl.notna()
     if tp.notna().any():
         ready = ready & tp.notna()
     return ready
+
+
+def _stop_ready_by_profile(
+    sl_by_profile: dict[str, pd.Series],
+    tp_by_profile: dict[str, pd.Series],
+) -> dict[str, pd.Series]:
+    return {
+        profile: _stop_ready(sl_by_profile[profile], tp_by_profile[profile])
+        for profile in PROFILE_ORDER
+    }
 
 
 def build_exit_outputs_from_spec(
@@ -380,8 +410,17 @@ def build_exit_outputs_from_spec(
         values_by_profile=tp_by_profile,
         default=nan_series,
     ).astype(float)
-    stop_ready_long = _stop_ready(sl_stop_long, tp_stop_long)
-    stop_ready_short = _stop_ready(sl_stop_short, tp_stop_short)
+    stop_ready_by_profile = _stop_ready_by_profile(sl_by_profile, tp_by_profile)
+    stop_ready_long = _selected_series_by_profile(
+        profile_series=profile_long,
+        values_by_profile=stop_ready_by_profile,
+        default=pd.Series(True, index=index, dtype=bool),
+    ).fillna(False).astype(bool)
+    stop_ready_short = _selected_series_by_profile(
+        profile_series=profile_short,
+        values_by_profile=stop_ready_by_profile,
+        default=pd.Series(True, index=index, dtype=bool),
+    ).fillna(False).astype(bool)
 
     attribution = ExitAttributionContext(
         index=index,

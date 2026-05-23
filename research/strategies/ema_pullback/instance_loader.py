@@ -20,12 +20,15 @@ from research.strategies.ema_pullback.components.registry import (
     RECLAIM_ANCHOR_COMPONENT,
     STRONG_RECLAIM_ANCHOR_COMPONENT,
     RSI_LOOKBACK_EXTREME_BLOCKER_COMPONENT,
+    EMA_CLOSE_LOSS_EXIT_COMPONENT,
+    EMA_CROSS_LOSS_EXIT_COMPONENT,
     RSI_SIGNAL_EXIT_COMPONENT,
     TOUCH_ANCHOR_COMPONENT,
     resolve_component,
 )
 from research.strategies.ema_pullback.spec import (
     BlockerRuleSpec,
+    EmaSpec,
     EmaPullbackStrategySpec,
     ExitPolicySpec,
     ExitPolicyProfilesSpec,
@@ -410,7 +413,45 @@ def _parse_exit(index: int, value: Any, *, path: str = "exits") -> ExitRuleSpec:
         if component_id == CONSTANT_USD_STOP_LOSS_COMPONENT:
             return builders.exit_constant_usd_stop_loss(instance_id=instance_id, usd_distance=usd_distance)
         return builders.exit_constant_usd_take_profit(instance_id=instance_id, usd_distance=usd_distance)
+    if component_id == EMA_CLOSE_LOSS_EXIT_COMPONENT:
+        allowed = common | {"ema", "confirm_bars"}
+        _reject_unknown_fields(f"{path}[{index}]", payload, allowed)
+        ema = _parse_ema_block(payload, key="ema", path=f"{path}[{index}]")
+        confirm_bars = _optional_positive_int(payload, "confirm_bars", default=1)
+        return builders.exit_ema_close_loss(
+            instance_id=instance_id,
+            ema=ema,
+            confirm_bars=confirm_bars,
+        )
+    if component_id == EMA_CROSS_LOSS_EXIT_COMPONENT:
+        allowed = common | {"fast_ema", "slow_ema", "confirm_bars"}
+        _reject_unknown_fields(f"{path}[{index}]", payload, allowed)
+        fast_ema = _parse_ema_block(payload, key="fast_ema", path=f"{path}[{index}]")
+        slow_ema = _parse_ema_block(payload, key="slow_ema", path=f"{path}[{index}]")
+        confirm_bars = _optional_positive_int(payload, "confirm_bars", default=1)
+        return builders.exit_ema_cross_loss(
+            instance_id=instance_id,
+            fast_ema=fast_ema,
+            slow_ema=slow_ema,
+            confirm_bars=confirm_bars,
+        )
     raise EmaPullbackInstanceValidationError(f"unsupported exit component_id {component_id!r}")
+
+
+def _parse_ema_block(payload: Mapping[str, Any], *, key: str, path: str) -> EmaSpec:
+    nested = payload.get(key)
+    if nested is None:
+        raise EmaPullbackInstanceValidationError(f"{path} requires nested {key!r} object")
+    ema_payload = _require_mapping(f"{path}.{key}", nested)
+    _reject_unknown_fields(f"{path}.{key}", ema_payload, {"timeframe", "period", "source"})
+    source = _optional_non_empty_str(ema_payload, "source", default="close")
+    if source != "close":
+        raise EmaPullbackInstanceValidationError(f"{path}.{key}.source must be 'close'")
+    return builders.ema(
+        _require_positive_int(ema_payload, "period"),
+        timeframe=_optional_non_empty_str(ema_payload, "timeframe", default="base"),
+        source=source,
+    )
 
 
 def _parse_rsi_payload(payload: Mapping[str, Any]) -> dict[str, Any]:

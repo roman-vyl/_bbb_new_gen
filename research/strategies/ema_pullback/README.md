@@ -225,13 +225,41 @@ direction: ema_anchor_stack_trend
 setup: untouched_anchor_setup
 trigger: reclaim_anchor, touch_anchor
 blockers: no_blockers, counter_candle_blocker, rsi_lookback_extreme_blocker
-exits: atr_stop_loss, atr_take_profit, constant_usd_stop_loss, constant_usd_take_profit, rsi_signal_exit
+exits: atr_stop_loss, atr_take_profit, constant_usd_stop_loss, constant_usd_take_profit,
+       rsi_signal_exit, ema_close_loss_exit, ema_cross_loss_exit
 time_stop (future)
 risk: no_risk_filter
 ```
 
-RSI считается в `features/calculations.py` по `FeaturePlan`; компоненты получают
-готовую колонку через `rsi_col` (см. `execution/signals.py`).
+RSI и EMA для exits считаются в feature layer по `FeaturePlan`; компоненты получают
+готовые колонки (`rsi_col`, `ema_col`, `fast_col` / `slow_col` — см. `execution/exits.py`).
+
+### EMA trend signal exits (v1)
+
+**`ema_close_loss_exit`** — base `close` против aligned EMA: long выходит, если `close < EMA`
+`confirm_bars` **base-свечей** подряд; short зеркально. `ema.timeframe` задаёт TF расчёта EMA
+(после align на base index). HTF-candle confirmation (три 1h-close на 5m base) **не** v1.
+
+**`ema_cross_loss_exit`** — fast/slow EMA на **одном** timeframe, `source=close`, `fast.period < slow.period`.
+`confirm_bars=1`: классический cross на base bar; `confirm_bars>1`: adverse side (`fast < slow` для long)
+удерживается N **base bars** подряд.
+
+Контрактный default `confirm_bars=1`. Для close loss в экспериментах часто ставят `2`–`3`.
+
+**Profile placement:** правила можно добавить в любой слот `exit_policy` (`always_on`, `aligned`,
+`countertrend`, `neutral`). Типичный trend-hold пример — `profiles.aligned.exits`, но это не ограничение API.
+
+Пример instance (nested `ema`):
+
+```yaml
+- instance_id: ema_close_aligned
+  component_id: ema_close_loss_exit
+  ema:
+    timeframe: 1h
+    source: close
+    period: 200
+  confirm_bars: 3
+```
 
 `rsi_lookback_extreme_blocker` — не лонговать после overbought-extreme / не шортить после
 oversold-extreme в окне `lookback` (параметры `long_block_above`, `short_block_below`).

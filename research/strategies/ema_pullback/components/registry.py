@@ -16,6 +16,8 @@ from research.strategies.ema_pullback.components.direction import (
 from research.strategies.ema_pullback.components.exits import (
     atr_distance_exit,
     constant_usd_distance_exit,
+    ema_close_loss_exit,
+    ema_cross_loss_exit,
     no_signal_exit,
     rsi_signal_exit,
 )
@@ -50,6 +52,8 @@ TOUCH_ANCHOR_COMPONENT = "touch_anchor"
 HTF_CONTEXT_COMPONENT = "htf_context"
 NO_SIGNAL_EXIT_COMPONENT = "no_signal_exit"
 RSI_SIGNAL_EXIT_COMPONENT = "rsi_signal_exit"
+EMA_CLOSE_LOSS_EXIT_COMPONENT = "ema_close_loss_exit"
+EMA_CROSS_LOSS_EXIT_COMPONENT = "ema_cross_loss_exit"
 ATR_STOP_LOSS_COMPONENT = "atr_stop_loss"
 ATR_TAKE_PROFIT_COMPONENT = "atr_take_profit"
 CONSTANT_USD_STOP_LOSS_COMPONENT = "constant_usd_stop_loss"
@@ -145,6 +149,22 @@ COMPONENT_REGISTRY: dict[str, dict[str, ComponentDefinition]] = {
             func=rsi_signal_exit,
             description="Signal exit on side-aware RSI thresholds.",
         ),
+        EMA_CLOSE_LOSS_EXIT_COMPONENT: ComponentDefinition(
+            role="exits",
+            component_id=EMA_CLOSE_LOSS_EXIT_COMPONENT,
+            func=ema_close_loss_exit,
+            description=(
+                "Trend exit when base close violates aligned EMA for N consecutive base bars."
+            ),
+        ),
+        EMA_CROSS_LOSS_EXIT_COMPONENT: ComponentDefinition(
+            role="exits",
+            component_id=EMA_CROSS_LOSS_EXIT_COMPONENT,
+            func=ema_cross_loss_exit,
+            description=(
+                "Trend exit on fast/slow EMA cross or adverse EMA order held N base bars."
+            ),
+        ),
         ATR_STOP_LOSS_COMPONENT: ComponentDefinition(
             role="exits",
             component_id=ATR_STOP_LOSS_COMPONENT,
@@ -217,6 +237,8 @@ __all__ = [
     "REQUIRED_COMPONENT_ROLES",
     "RSI_LOOKBACK_EXTREME_BLOCKER_COMPONENT",
     "RSI_SIGNAL_EXIT_COMPONENT",
+    "EMA_CLOSE_LOSS_EXIT_COMPONENT",
+    "EMA_CROSS_LOSS_EXIT_COMPONENT",
     "TOUCH_ANCHOR_COMPONENT",
     "HTF_CONTEXT_COMPONENT",
     "no_risk_filter",

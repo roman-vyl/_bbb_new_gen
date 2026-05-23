@@ -115,11 +115,16 @@ ExitKind = Literal["signal", "stop_loss", "take_profit"]
 _EXIT_COMPONENT_KINDS: dict[str, ExitKind] = {
     "no_signal_exit": "signal",
     "rsi_signal_exit": "signal",
+    "ema_close_loss_exit": "signal",
+    "ema_cross_loss_exit": "signal",
     "atr_stop_loss": "stop_loss",
     "atr_take_profit": "take_profit",
     "constant_usd_stop_loss": "stop_loss",
     "constant_usd_take_profit": "take_profit",
 }
+
+EMA_CLOSE_LOSS_EXIT_COMPONENT = "ema_close_loss_exit"
+EMA_CROSS_LOSS_EXIT_COMPONENT = "ema_cross_loss_exit"
 
 
 @dataclass(frozen=True)
@@ -191,12 +196,56 @@ class AtrDistanceSpec:
             raise ValueError("atr distance multiplier must be > 0")
 
 
+def _validate_ema_exit_rule_fields(rule: "ExitRuleSpec") -> None:
+    if rule.component_id == EMA_CLOSE_LOSS_EXIT_COMPONENT:
+        if rule.ema is None:
+            raise ValueError("ema_close_loss_exit requires ema")
+        if rule.fast_ema is not None or rule.slow_ema is not None:
+            raise ValueError("ema_close_loss_exit must not define fast_ema or slow_ema")
+        forbidden = (
+            ("rsi", rule.rsi),
+            ("long_exit_above", rule.long_exit_above),
+            ("short_exit_below", rule.short_exit_below),
+        )
+        for name, value in forbidden:
+            if value is not None:
+                raise ValueError(f"ema_close_loss_exit must not define {name}")
+        if rule.confirm_bars < 1:
+            raise ValueError("ema_close_loss_exit requires confirm_bars >= 1")
+        return
+    if rule.component_id == EMA_CROSS_LOSS_EXIT_COMPONENT:
+        if rule.ema is not None:
+            raise ValueError("ema_cross_loss_exit must not define ema")
+        if rule.fast_ema is None or rule.slow_ema is None:
+            raise ValueError("ema_cross_loss_exit requires fast_ema and slow_ema")
+        if rule.fast_ema.timeframe != rule.slow_ema.timeframe:
+            raise ValueError("ema_cross_loss_exit requires fast_ema and slow_ema on the same timeframe")
+        if rule.fast_ema.source != "close" or rule.slow_ema.source != "close":
+            raise ValueError("ema_cross_loss_exit requires fast_ema and slow_ema source 'close'")
+        if rule.fast_ema.period >= rule.slow_ema.period:
+            raise ValueError("ema_cross_loss_exit requires fast_ema.period < slow_ema.period")
+        forbidden = (
+            ("rsi", rule.rsi),
+            ("long_exit_above", rule.long_exit_above),
+            ("short_exit_below", rule.short_exit_below),
+        )
+        for name, value in forbidden:
+            if value is not None:
+                raise ValueError(f"ema_cross_loss_exit must not define {name}")
+        if rule.confirm_bars < 1:
+            raise ValueError("ema_cross_loss_exit requires confirm_bars >= 1")
+
+
 @dataclass(frozen=True)
 class ExitRuleSpec:
     instance_id: str
     component_id: str
     exit_kind: ExitKind = "signal"
     rsi: RsiFeatureSpec | None = None
+    ema: EmaSpec | None = None
+    fast_ema: EmaSpec | None = None
+    slow_ema: EmaSpec | None = None
+    confirm_bars: int = 1
     long_exit_above: float | None = None
     short_exit_below: float | None = None
     distance: AtrDistanceSpec | None = None
@@ -237,6 +286,8 @@ class ExitRuleSpec:
             value = getattr(self, field_name)
             if value is not None and not (0 <= value <= 100):
                 raise ValueError(f"exit {field_name} must be between 0 and 100")
+        if self.component_id in {EMA_CLOSE_LOSS_EXIT_COMPONENT, EMA_CROSS_LOSS_EXIT_COMPONENT}:
+            _validate_ema_exit_rule_fields(self)
 
 
 @dataclass(frozen=True)

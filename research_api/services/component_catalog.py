@@ -178,6 +178,30 @@ def get_component_catalog(*, family: str = "ema_pullback") -> ComponentCatalog:
             },
         ),
         ComponentSchema(
+            component_id="ema_close_loss_exit",
+            role="exits",
+            label="EMA close loss (trend)",
+            list_slot=True,
+            params_schema={
+                "ema.timeframe": _tf_param("EMA timeframe", default="base"),
+                "ema.period": _int_param("EMA period", default=200),
+                "confirm_bars": _int_param("Confirm bars (base)", default=1),
+            },
+        ),
+        ComponentSchema(
+            component_id="ema_cross_loss_exit",
+            role="exits",
+            label="EMA cross loss (trend)",
+            list_slot=True,
+            params_schema={
+                "fast_ema.timeframe": _tf_param("Fast EMA timeframe", default="base"),
+                "fast_ema.period": _int_param("Fast EMA period", default=100),
+                "slow_ema.timeframe": _tf_param("Slow EMA timeframe", default="base"),
+                "slow_ema.period": _int_param("Slow EMA period", default=200),
+                "confirm_bars": _int_param("Confirm bars (base)", default=1),
+            },
+        ),
+        ComponentSchema(
             component_id="atr_stop_loss",
             role="exits",
             label="ATR stop loss",

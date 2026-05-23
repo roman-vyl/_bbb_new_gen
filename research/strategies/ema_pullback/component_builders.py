@@ -20,6 +20,8 @@ from research.strategies.ema_pullback.components.registry import (
     UNTOUCHED_ANCHOR_SETUP_COMPONENT,
     RECLAIM_ANCHOR_COMPONENT,
     RSI_LOOKBACK_EXTREME_BLOCKER_COMPONENT,
+    EMA_CLOSE_LOSS_EXIT_COMPONENT,
+    EMA_CROSS_LOSS_EXIT_COMPONENT,
     RSI_SIGNAL_EXIT_COMPONENT,
     TOUCH_ANCHOR_COMPONENT,
 )
@@ -157,6 +159,10 @@ def exit_rule(
     instance_id: str,
     exit_kind: ExitKind = "signal",
     rsi: RsiFeatureSpec | None = None,
+    ema: EmaSpec | None = None,
+    fast_ema: EmaSpec | None = None,
+    slow_ema: EmaSpec | None = None,
+    confirm_bars: int = 1,
     long_exit_above: float | None = None,
     short_exit_below: float | None = None,
     distance: AtrDistanceSpec | None = None,
@@ -167,6 +173,10 @@ def exit_rule(
         component_id=component_id,
         exit_kind=exit_kind,
         rsi=rsi,
+        ema=ema,
+        fast_ema=fast_ema,
+        slow_ema=slow_ema,
+        confirm_bars=confirm_bars,
         long_exit_above=long_exit_above,
         short_exit_below=short_exit_below,
         distance=distance,
@@ -193,6 +203,38 @@ def exit_rsi(
         rsi=rsi_feature(timeframe=timeframe, period=period),
         long_exit_above=long_exit_above,
         short_exit_below=short_exit_below,
+    )
+
+
+def exit_ema_close_loss(
+    *,
+    instance_id: str,
+    ema: EmaSpec,
+    confirm_bars: int = 1,
+) -> ExitRuleSpec:
+    return exit_rule(
+        EMA_CLOSE_LOSS_EXIT_COMPONENT,
+        instance_id=instance_id,
+        exit_kind="signal",
+        ema=ema,
+        confirm_bars=confirm_bars,
+    )
+
+
+def exit_ema_cross_loss(
+    *,
+    instance_id: str,
+    fast_ema: EmaSpec,
+    slow_ema: EmaSpec,
+    confirm_bars: int = 1,
+) -> ExitRuleSpec:
+    return exit_rule(
+        EMA_CROSS_LOSS_EXIT_COMPONENT,
+        instance_id=instance_id,
+        exit_kind="signal",
+        fast_ema=fast_ema,
+        slow_ema=slow_ema,
+        confirm_bars=confirm_bars,
     )
 
 

@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
-from research.strategies.ema_pullback.spec import EmaPullbackStrategySpec
+from research.strategies.ema_pullback.spec import EmaPullbackStrategySpec, EmaSpec, ExitRuleSpec
 
 
 @dataclass(frozen=True)
@@ -28,7 +29,14 @@ class FeaturePlan:
     anchor_columns: dict[str, str]
     exit_distance_columns: dict[str, str]
     rsi_columns: dict[tuple[str, int], str]
+    ema_columns: dict[tuple[str, int], str] = field(default_factory=dict)
     htf_context_columns: dict[str, str] = field(default_factory=dict)
+
+    def ema_column(self, ema: EmaSpec) -> str:
+        key = (ema.timeframe, ema.period)
+        if key not in self.ema_columns:
+            raise KeyError(f"EMA column not planned for timeframe={ema.timeframe!r} period={ema.period}")
+        return self.ema_columns[key]
 
 
 def _ema_feature_id(timeframe: str, period: int) -> str:
@@ -45,6 +53,36 @@ def _rsi_feature_id(timeframe: str, period: int) -> str:
 
 def _multiplier_token(multiplier: float) -> str:
     return str(float(multiplier)).replace(".", "_")
+
+
+def _add_ema_feature(
+    add: Callable[[PlannedFeature], None],
+    ema: EmaSpec,
+    ema_columns: dict[tuple[str, int], str],
+) -> None:
+    add(
+        PlannedFeature(
+            feature_id=_ema_feature_id(ema.timeframe, ema.period),
+            kind="ema",
+            source=ema.source,
+            timeframe=ema.timeframe,
+            period=ema.period,
+            base_feature_id=None,
+            multiplier=None,
+        )
+    )
+    ema_columns[(ema.timeframe, ema.period)] = _ema_feature_id(ema.timeframe, ema.period)
+
+
+def _ema_specs_from_exit_rule(rule: ExitRuleSpec) -> list[EmaSpec]:
+    specs: list[EmaSpec] = []
+    if rule.ema is not None:
+        specs.append(rule.ema)
+    if rule.fast_ema is not None:
+        specs.append(rule.fast_ema)
+    if rule.slow_ema is not None:
+        specs.append(rule.slow_ema)
+    return specs
 
 
 def build_feature_plan_from_strategy_spec(spec: EmaPullbackStrategySpec) -> FeaturePlan:
@@ -121,6 +159,7 @@ def build_feature_plan_from_strategy_spec(spec: EmaPullbackStrategySpec) -> Feat
         exit_columns[rule.instance_id] = distance_id
         exit_columns.setdefault(rule.exit_kind, distance_id)
 
+    ema_columns: dict[tuple[str, int], str] = {}
     rsi_columns: dict[tuple[str, int], str] = {}
     rsi_specs = []
     for rule in spec.components.blockers:
@@ -129,6 +168,8 @@ def build_feature_plan_from_strategy_spec(spec: EmaPullbackStrategySpec) -> Feat
     for rule in all_exit_rules:
         if rule.rsi is not None:
             rsi_specs.append(rule.rsi)
+        for ema in _ema_specs_from_exit_rule(rule):
+            _add_ema_feature(add, ema, ema_columns)
 
     for rsi in rsi_specs:
         feature_id = _rsi_feature_id(rsi.timeframe, rsi.period)
@@ -159,4 +200,5 @@ def build_feature_plan_from_strategy_spec(spec: EmaPullbackStrategySpec) -> Feat
         },
         exit_distance_columns=exit_columns,
         rsi_columns=rsi_columns,
+        ema_columns=ema_columns,
     )

@@ -372,6 +372,34 @@ def test_build_exit_outputs_supports_signal_exit_with_take_profit_distance() -> 
     assert exits.exits.tolist() == [False, True, False, False]
 
 
+def test_stop_ready_is_per_profile_not_global_sl_tp_requirement() -> None:
+    """TP-only aligned profile must not require SL readiness on aligned bars (draft config shape)."""
+    spec = make_ema_pullback_strategy_spec(
+        trade_management_spec=trade_management(
+            exit_policy_spec=exit_policy(
+                context=htf_context_config(timeframe="4h", fast_period=20, anchor_period=50, slow_period=200),
+                always_on=(),
+                aligned=(exit_atr_take_profit(atr_period=14, atr_multiplier=4.0, instance_id="aligned_tp"),),
+                countertrend=(exit_atr_stop_loss(atr_period=14, atr_multiplier=2.0, instance_id="counter_sl"),),
+                neutral=(),
+            )
+        ),
+    )
+    plan = build_feature_plan_from_strategy_spec(spec)
+    df = add_feature_columns_from_plan(_ohlcv(120), plan)
+    exits = build_exit_outputs_from_spec(df, spec, plan)
+
+    aligned_mask = exits.profile_long == "aligned"
+    assert aligned_mask.any()
+    assert exits.stop_ready_long[aligned_mask].any()
+    expected = exits.tp_stop_by_profile["aligned"][aligned_mask].notna()
+    pd.testing.assert_series_equal(
+        exits.stop_ready_long[aligned_mask],
+        expected,
+        check_names=False,
+    )
+
+
 def test_feature_plan_does_not_require_atr_for_signal_only_exits() -> None:
     spec = _spec_with_exits(
         (
