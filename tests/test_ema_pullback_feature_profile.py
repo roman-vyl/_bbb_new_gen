@@ -9,7 +9,6 @@ from research.strategies.ema_pullback.spec import (
     AtrDistanceSpec,
     EmaSpec,
     ExitRuleSpec,
-    TradeManagementSpec,
     strategy_spec_config_id,
 )
 from research.strategies.ema_pullback.spec_instances import (
@@ -30,9 +29,10 @@ def test_default_spec_factory_is_valid_strategy_spec() -> None:
     assert spec.components.setup == "untouched_anchor_setup"
     assert spec.components.trigger.component_id == "reclaim_anchor"
     assert [b.component_id for b in spec.components.blockers] == ["no_blockers"]
-    assert [e.component_id for e in spec.components.exits] == ["atr_stop_loss", "atr_take_profit"]
-    stop = [r for r in spec.components.exits if r.exit_kind == "stop_loss"]
-    take = [r for r in spec.components.exits if r.exit_kind == "take_profit"]
+    always_on = spec.trade_management.exit_policy.always_on.exits
+    assert [e.component_id for e in always_on] == ["atr_stop_loss", "atr_take_profit"]
+    stop = [r for r in always_on if r.exit_kind == "stop_loss"]
+    take = [r for r in always_on if r.exit_kind == "take_profit"]
     assert len(stop) == 1 and len(take) == 1
 
 
@@ -111,19 +111,18 @@ def test_atr_stop_rejects_usd_distance() -> None:
         )
 
 
-def test_trade_management_is_reserved_stub() -> None:
-    assert TradeManagementSpec().profile == "reserved"
-    with pytest.raises(ValueError, match="profile must be non-empty"):
-        TradeManagementSpec(profile="")
+def test_trade_management_requires_exit_policy() -> None:
+    spec = make_ema_pullback_strategy_spec()
+    assert spec.trade_management.exit_policy.context.component_id == "htf_context"
 
 
 def test_component_stack_uses_typed_rule_specs() -> None:
     spec = make_ema_pullback_strategy_spec()
     assert spec.components.trigger.component_id == "reclaim_anchor"
     assert isinstance(spec.components.blockers, tuple)
-    assert isinstance(spec.components.exits, tuple)
     assert spec.components.blockers[0].component_id == "no_blockers"
-    assert spec.components.exits[0].component_id == "atr_stop_loss"
+    assert isinstance(spec.trade_management.exit_policy.always_on.exits, tuple)
+    assert spec.trade_management.exit_policy.always_on.exits[0].component_id == "atr_stop_loss"
 
 
 def test_strategy_spec_requires_non_empty_identity_fields() -> None:

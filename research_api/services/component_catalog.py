@@ -45,8 +45,38 @@ def get_component_catalog(*, family: str = "ema_pullback") -> ComponentCatalog:
         ),
         ComposerSectionSchema(section_id="risk", label="Risk", role="risk"),
         ComposerSectionSchema(
-            section_id="exits",
-            label="Exits",
+            section_id="trade_management",
+            label="Trade management",
+        ),
+        ComposerSectionSchema(
+            section_id="exit_policy_context",
+            label="Exit policy context",
+        ),
+        ComposerSectionSchema(
+            section_id="exit_policy_always_on",
+            label="Exit policy always-on exits",
+            role="exits",
+            list_slot=True,
+        ),
+        ComposerSectionSchema(
+            section_id="exit_policy_profiles",
+            label="Exit policy profiles",
+        ),
+        ComposerSectionSchema(
+            section_id="exit_policy_profile_aligned",
+            label="Profile aligned exits",
+            role="exits",
+            list_slot=True,
+        ),
+        ComposerSectionSchema(
+            section_id="exit_policy_profile_countertrend",
+            label="Profile countertrend exits",
+            role="exits",
+            list_slot=True,
+        ),
+        ComposerSectionSchema(
+            section_id="exit_policy_profile_neutral",
+            label="Profile neutral exits",
             role="exits",
             list_slot=True,
         ),
@@ -76,6 +106,23 @@ def get_component_catalog(*, family: str = "ema_pullback") -> ComponentCatalog:
             component_id="reclaim_anchor",
             role="trigger",
             label="Reclaim anchor",
+            description=(
+                "Wick probed anchor within prior lookback bars; entry on close reclaim."
+            ),
+            params_schema={
+                "lookback": _int_param("Wick probe lookback bars", default=1),
+            },
+        ),
+        ComponentSchema(
+            component_id="strong_reclaim_anchor",
+            role="trigger",
+            label="Strong reclaim anchor",
+            description=(
+                "Close lost anchor within prior lookback bars; entry on close reclaim."
+            ),
+            params_schema={
+                "lookback": _int_param("Close probe lookback bars", default=1),
+            },
         ),
         ComponentSchema(
             component_id="touch_anchor",
@@ -128,6 +175,30 @@ def get_component_catalog(*, family: str = "ema_pullback") -> ComponentCatalog:
                 "rsi.period": _int_param("RSI period", default=14),
                 "long_exit_above": _num_param("Long exit above", default=70.0),
                 "short_exit_below": _num_param("Short exit below", default=30.0),
+            },
+        ),
+        ComponentSchema(
+            component_id="ema_close_loss_exit",
+            role="exits",
+            label="EMA close loss (trend)",
+            list_slot=True,
+            params_schema={
+                "ema.timeframe": _tf_param("EMA timeframe", default="base"),
+                "ema.period": _int_param("EMA period", default=200),
+                "confirm_bars": _int_param("Confirm bars (base)", default=1),
+            },
+        ),
+        ComponentSchema(
+            component_id="ema_cross_loss_exit",
+            role="exits",
+            label="EMA cross loss (trend)",
+            list_slot=True,
+            params_schema={
+                "fast_ema.timeframe": _tf_param("Fast EMA timeframe", default="base"),
+                "fast_ema.period": _int_param("Fast EMA period", default=100),
+                "slow_ema.timeframe": _tf_param("Slow EMA timeframe", default="base"),
+                "slow_ema.period": _int_param("Slow EMA period", default=200),
+                "confirm_bars": _int_param("Confirm bars (base)", default=1),
             },
         ),
         ComponentSchema(

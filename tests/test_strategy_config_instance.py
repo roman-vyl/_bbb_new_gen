@@ -18,6 +18,9 @@ from research.strategies.ema_pullback.component_builders import (
     exit_constant_usd_take_profit,
     exit_no_signal,
     exit_rsi,
+    exit_policy,
+    htf_context_config,
+    trade_management,
     exits_atr_default,
     trade_sides,
     trigger_reclaim_anchor,
@@ -209,11 +212,6 @@ def test_component_stack_default_matches_baseline_defaults() -> None:
     assert [b.instance_id for b in stack.blockers] == ["no_blockers"]
     assert stack.setup == "untouched_anchor_setup"
     assert stack.trigger.component_id == "reclaim_anchor"
-    assert stack.exits == exits_atr_default(
-        atr_period=14,
-        stop_atr_multiplier=1.5,
-        take_atr_multiplier=4.0,
-    )
     assert stack.risk == "no_risk_filter"
 
 
@@ -224,16 +222,10 @@ def test_builders_normalize_sequences_to_tuples() -> None:
         blocker_counter_candle(),
         blocker_extreme_rsi(instance_id="rsi_base"),
     ]
-    exits_list = [exit_no_signal(), exit_rsi(instance_id="rsi_exit_base")]
-    stack = component_stack(
-        blockers=blockers_list,
-        exits=exits_list,
-        trigger=trigger_touch_anchor(),
-    )
+    stack = component_stack(blockers=blockers_list, trigger=trigger_touch_anchor())
 
     assert sides.enabled == ("long", "short")
     assert isinstance(stack.blockers, tuple)
-    assert isinstance(stack.exits, tuple)
     assert stack.trigger == trigger_touch_anchor()
 
 
@@ -242,8 +234,6 @@ def test_builders_reject_str_and_bytes_for_sequence_inputs() -> None:
         trade_sides("long")  # type: ignore[arg-type]
     with pytest.raises(TypeError, match="str/bytes"):
         component_stack(blockers="no_blockers")  # type: ignore[arg-type]
-    with pytest.raises(TypeError, match="str/bytes"):
-        component_stack(exits=b"atr_stop_loss")  # type: ignore[arg-type]
 
 
 def test_blocker_and_trigger_shortcuts_return_expected_components() -> None:
@@ -254,8 +244,32 @@ def test_blocker_and_trigger_shortcuts_return_expected_components() -> None:
         blocker_extreme_rsi(instance_id="rsi_base").component_id
         == "rsi_lookback_extreme_blocker"
     )
-    assert trigger_reclaim_anchor().component_id == "reclaim_anchor"
+    from research.strategies.ema_pullback.spec import ReclaimTriggerSpec
+
+    reclaim = trigger_reclaim_anchor()
+    assert reclaim.component_id == "reclaim_anchor"
+    assert isinstance(reclaim, ReclaimTriggerSpec)
+    assert reclaim.lookback == 1
+    assert trigger_reclaim_anchor(lookback=2).lookback == 2
     assert trigger_touch_anchor().component_id == "touch_anchor"
+
+
+def test_make_ema_pullback_strategy_spec_trigger_lookback_default_path() -> None:
+    from research.strategies.ema_pullback.spec import ReclaimTriggerSpec
+
+    spec = make_ema_pullback_strategy_spec(trigger_lookback=3)
+    assert isinstance(spec.components.trigger, ReclaimTriggerSpec)
+    assert spec.components.trigger.lookback == 3
+
+
+def test_make_ema_pullback_strategy_spec_preserves_custom_components_trigger() -> None:
+    from research.strategies.ema_pullback.component_builders import component_stack, trigger_touch_anchor
+    from research.strategies.ema_pullback.spec import TriggerSpec
+
+    custom = component_stack(trigger=trigger_touch_anchor())
+    spec = make_ema_pullback_strategy_spec(components=custom, trigger_lookback=99)
+    assert isinstance(spec.components.trigger, TriggerSpec)
+    assert spec.components.trigger.component_id == "touch_anchor"
 
 
 def test_component_stack_rejects_duplicate_instance_ids_per_role() -> None:
@@ -267,11 +281,19 @@ def test_component_stack_rejects_duplicate_instance_ids_per_role() -> None:
             )
         )
 
-    with pytest.raises(ValueError, match="components.exits instance_id must be unique"):
-        component_stack(
-            exits=(
-                exit_no_signal(),
-                exit_rsi(instance_id="no_signal_exit"),
+    with pytest.raises(ValueError, match="globally unique"):
+        trade_management(
+            exit_policy_spec=exit_policy(
+                context=htf_context_config(
+                    timeframe="4h",
+                    fast_period=20,
+                    anchor_period=50,
+                    slow_period=200,
+                ),
+                always_on=(exit_no_signal(),),
+                aligned=(exit_rsi(instance_id="no_signal_exit"),),
+                countertrend=(),
+                neutral=(),
             )
         )
 
@@ -281,12 +303,7 @@ def test_repeated_components_require_explicit_distinct_instance_ids() -> None:
         blockers=(
             blocker_extreme_rsi(instance_id="rsi_5m", timeframe="5m", lookback=20),
             blocker_extreme_rsi(instance_id="rsi_15m", timeframe="15m", lookback=40),
-        ),
-        exits=(
-            exit_atr_stop_loss(atr_period=14, atr_multiplier=1.5, instance_id="atr_sl_fast"),
-            exit_atr_stop_loss(atr_period=14, atr_multiplier=2.0, instance_id="atr_sl_slow"),
-            exit_atr_take_profit(atr_period=14, atr_multiplier=4.0),
-        ),
+        )
     )
 
     assert [rule.component_id for rule in stack.blockers] == [
@@ -294,8 +311,8 @@ def test_repeated_components_require_explicit_distinct_instance_ids() -> None:
         "rsi_lookback_extreme_blocker",
     ]
     assert [rule.instance_id for rule in stack.blockers] == ["rsi_5m", "rsi_15m"]
-    assert [rule.instance_id for rule in stack.exits] == [
-        "atr_sl_fast",
-        "atr_sl_slow",
+    spec = make_ema_pullback_strategy_spec()
+    assert [rule.instance_id for rule in spec.trade_management.exit_policy.always_on.exits] == [
+        "atr_stop_loss",
         "atr_take_profit",
     ]

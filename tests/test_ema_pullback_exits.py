@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import replace
-
 import pytest
 
 pytest.importorskip("pandas")
@@ -9,18 +7,41 @@ pytest.importorskip("pandas")
 import pandas as pd
 
 from research.strategies.ema_pullback.component_builders import (
-    component_stack,
     exit_atr_stop_loss,
     exit_atr_take_profit,
     exit_constant_usd_stop_loss,
     exit_constant_usd_take_profit,
+    exit_policy,
     exit_rsi,
     exits_atr_default,
+    htf_context_config,
+    trade_management,
 )
 from research.strategies.ema_pullback.execution.exits import build_exit_outputs_from_spec
 from research.strategies.ema_pullback.features.calculations import add_feature_columns_from_plan
 from research.strategies.ema_pullback.features.plan import build_feature_plan_from_strategy_spec
 from research.strategies.ema_pullback.spec_instances import make_ema_pullback_strategy_spec
+
+
+def _spec_with_exits(exits: tuple) -> object:
+    base = make_ema_pullback_strategy_spec()
+    return make_ema_pullback_strategy_spec(
+        components=base.components,
+        trade_management_spec=trade_management(
+            exit_policy_spec=exit_policy(
+                context=htf_context_config(
+                    timeframe=base.trade_management.exit_policy.context.timeframe,
+                    fast_period=base.trade_management.exit_policy.context.fast_period,
+                    anchor_period=base.trade_management.exit_policy.context.anchor_period,
+                    slow_period=base.trade_management.exit_policy.context.slow_period,
+                ),
+                always_on=exits,
+                aligned=(),
+                countertrend=(),
+                neutral=(),
+            )
+        ),
+    )
 
 
 def _ohlcv(n: int = 30) -> pd.DataFrame:
@@ -64,12 +85,10 @@ def test_build_exit_outputs_supports_stop_loss_and_take_profit_distances() -> No
 
 
 def test_build_exit_outputs_constant_usd_distances() -> None:
-    spec = make_ema_pullback_strategy_spec(
-        components=component_stack(
-            exits=(
-                exit_constant_usd_stop_loss(usd_distance=500.0),
-                exit_constant_usd_take_profit(usd_distance=1200.0),
-            )
+    spec = _spec_with_exits(
+        (
+            exit_constant_usd_stop_loss(usd_distance=500.0),
+            exit_constant_usd_take_profit(usd_distance=1200.0),
         )
     )
     plan = build_feature_plan_from_strategy_spec(spec)
@@ -92,7 +111,7 @@ def test_build_exit_outputs_constant_usd_distances() -> None:
 
 def test_default_factory_exit_rules_match_atr_shortcut_defaults() -> None:
     spec = make_ema_pullback_strategy_spec()
-    assert spec.components.exits == exits_atr_default(
+    assert spec.trade_management.exit_policy.always_on.exits == exits_atr_default(
         atr_period=14,
         stop_atr_multiplier=1.5,
         take_atr_multiplier=4.0,
@@ -100,18 +119,23 @@ def test_default_factory_exit_rules_match_atr_shortcut_defaults() -> None:
 
 
 def test_build_exit_outputs_skips_boolean_counters_for_disabled_trade_side() -> None:
-    base = make_ema_pullback_strategy_spec(enabled_sides=("long",))
-    spec = replace(
-        base,
-        components=component_stack(
-            exits=(
-                exit_rsi(
-                    instance_id="rsi_long_only",
-                    timeframe="base",
-                    period=14,
-                    long_exit_above=70.0,
-                    short_exit_below=30.0,
+    spec = make_ema_pullback_strategy_spec(
+        enabled_sides=("long",),
+        trade_management_spec=trade_management(
+            exit_policy_spec=exit_policy(
+                context=htf_context_config(timeframe="4h", fast_period=20, anchor_period=50, slow_period=200),
+                always_on=(
+                    exit_rsi(
+                        instance_id="rsi_long_only",
+                        timeframe="base",
+                        period=14,
+                        long_exit_above=70.0,
+                        short_exit_below=30.0,
+                    ),
                 ),
+                aligned=(),
+                countertrend=(),
+                neutral=(),
             )
         ),
     )
@@ -139,15 +163,11 @@ def test_build_exit_outputs_skips_boolean_counters_for_disabled_trade_side() -> 
 def test_build_exit_outputs_attribution_matches_aggregated_stops() -> None:
     """Attribution context must come from the same single pass as portfolio stops."""
 
-    base = make_ema_pullback_strategy_spec()
-    spec = replace(
-        base,
-        components=component_stack(
-            exits=(
-                exit_atr_stop_loss(atr_period=14, atr_multiplier=1.5, instance_id="atr_sl_fast"),
-                exit_atr_stop_loss(atr_period=14, atr_multiplier=2.0, instance_id="atr_sl_slow"),
-            )
-        ),
+    spec = _spec_with_exits(
+        (
+            exit_atr_stop_loss(atr_period=14, atr_multiplier=1.5, instance_id="atr_sl_fast"),
+            exit_atr_stop_loss(atr_period=14, atr_multiplier=2.0, instance_id="atr_sl_slow"),
+        )
     )
     plan = build_feature_plan_from_strategy_spec(spec)
     idx = pd.date_range("2024-01-01", periods=4, freq="h", tz="UTC")
@@ -172,16 +192,12 @@ def test_build_exit_outputs_attribution_matches_aggregated_stops() -> None:
 
 
 def test_build_exit_outputs_aggregates_repeated_distance_instances_by_kind() -> None:
-    base = make_ema_pullback_strategy_spec()
-    spec = replace(
-        base,
-        components=component_stack(
-            exits=(
-                exit_atr_stop_loss(atr_period=14, atr_multiplier=1.5, instance_id="atr_sl_fast"),
-                exit_atr_stop_loss(atr_period=14, atr_multiplier=2.0, instance_id="atr_sl_slow"),
-                exit_atr_take_profit(atr_period=14, atr_multiplier=4.0),
-            )
-        ),
+    spec = _spec_with_exits(
+        (
+            exit_atr_stop_loss(atr_period=14, atr_multiplier=1.5, instance_id="atr_sl_fast"),
+            exit_atr_stop_loss(atr_period=14, atr_multiplier=2.0, instance_id="atr_sl_slow"),
+            exit_atr_take_profit(atr_period=14, atr_multiplier=4.0),
+        )
     )
     plan = build_feature_plan_from_strategy_spec(spec)
 
@@ -213,13 +229,7 @@ def test_build_exit_outputs_aggregates_repeated_distance_instances_by_kind() -> 
 
 
 def test_build_exit_outputs_supports_only_stop_loss_distance() -> None:
-    base = make_ema_pullback_strategy_spec()
-    spec = replace(
-        base,
-        components=component_stack(
-            exits=(exit_atr_stop_loss(atr_period=14, atr_multiplier=1.5, instance_id="atr_sl_only"),)
-        ),
-    )
+    spec = _spec_with_exits((exit_atr_stop_loss(atr_period=14, atr_multiplier=1.5, instance_id="atr_sl_only"),))
     plan = build_feature_plan_from_strategy_spec(spec)
     idx = pd.date_range("2024-01-01", periods=4, freq="h", tz="UTC")
     close = pd.Series([100.0, 101.0, 102.0, 103.0], index=idx)
@@ -239,18 +249,14 @@ def test_build_exit_outputs_supports_only_stop_loss_distance() -> None:
 
 
 def test_build_exit_outputs_supports_only_take_profit_distance() -> None:
-    base = make_ema_pullback_strategy_spec()
-    spec = replace(
-        base,
-        components=component_stack(
-            exits=(
-                exit_atr_take_profit(
-                    atr_period=14,
-                    atr_multiplier=4.0,
-                    instance_id="atr_tp_only",
-                ),
-            )
-        ),
+    spec = _spec_with_exits(
+        (
+            exit_atr_take_profit(
+                atr_period=14,
+                atr_multiplier=4.0,
+                instance_id="atr_tp_only",
+            ),
+        )
     )
     plan = build_feature_plan_from_strategy_spec(spec)
     idx = pd.date_range("2024-01-01", periods=4, freq="h", tz="UTC")
@@ -271,20 +277,16 @@ def test_build_exit_outputs_supports_only_take_profit_distance() -> None:
 
 
 def test_build_exit_outputs_supports_signal_only_exits() -> None:
-    base = make_ema_pullback_strategy_spec()
-    spec = replace(
-        base,
-        components=component_stack(
-            exits=(
-                exit_rsi(
-                    instance_id="rsi_signal_only",
-                    timeframe="base",
-                    period=14,
-                    long_exit_above=70.0,
-                    short_exit_below=30.0,
-                ),
-            )
-        ),
+    spec = _spec_with_exits(
+        (
+            exit_rsi(
+                instance_id="rsi_signal_only",
+                timeframe="base",
+                period=14,
+                long_exit_above=70.0,
+                short_exit_below=30.0,
+            ),
+        )
     )
     plan = build_feature_plan_from_strategy_spec(spec)
     idx = pd.date_range("2024-01-01", periods=4, freq="h", tz="UTC")
@@ -305,21 +307,17 @@ def test_build_exit_outputs_supports_signal_only_exits() -> None:
 
 
 def test_build_exit_outputs_supports_signal_exit_with_stop_loss_distance() -> None:
-    base = make_ema_pullback_strategy_spec()
-    spec = replace(
-        base,
-        components=component_stack(
-            exits=(
-                exit_rsi(
-                    instance_id="rsi_exit_with_sl",
-                    timeframe="base",
-                    period=14,
-                    long_exit_above=70.0,
-                    short_exit_below=30.0,
-                ),
-                exit_atr_stop_loss(atr_period=14, atr_multiplier=1.5, instance_id="atr_sl_only"),
-            )
-        ),
+    spec = _spec_with_exits(
+        (
+            exit_rsi(
+                instance_id="rsi_exit_with_sl",
+                timeframe="base",
+                period=14,
+                long_exit_above=70.0,
+                short_exit_below=30.0,
+            ),
+            exit_atr_stop_loss(atr_period=14, atr_multiplier=1.5, instance_id="atr_sl_only"),
+        )
     )
     plan = build_feature_plan_from_strategy_spec(spec)
     idx = pd.date_range("2024-01-01", periods=4, freq="h", tz="UTC")
@@ -342,21 +340,17 @@ def test_build_exit_outputs_supports_signal_exit_with_stop_loss_distance() -> No
 
 
 def test_build_exit_outputs_supports_signal_exit_with_take_profit_distance() -> None:
-    base = make_ema_pullback_strategy_spec()
-    spec = replace(
-        base,
-        components=component_stack(
-            exits=(
-                exit_rsi(
-                    instance_id="rsi_exit_with_tp",
-                    timeframe="base",
-                    period=14,
-                    long_exit_above=70.0,
-                    short_exit_below=30.0,
-                ),
-                exit_atr_take_profit(atr_period=14, atr_multiplier=4.0, instance_id="atr_tp_only"),
-            )
-        ),
+    spec = _spec_with_exits(
+        (
+            exit_rsi(
+                instance_id="rsi_exit_with_tp",
+                timeframe="base",
+                period=14,
+                long_exit_above=70.0,
+                short_exit_below=30.0,
+            ),
+            exit_atr_take_profit(atr_period=14, atr_multiplier=4.0, instance_id="atr_tp_only"),
+        )
     )
     plan = build_feature_plan_from_strategy_spec(spec)
     idx = pd.date_range("2024-01-01", periods=4, freq="h", tz="UTC")
@@ -378,21 +372,45 @@ def test_build_exit_outputs_supports_signal_exit_with_take_profit_distance() -> 
     assert exits.exits.tolist() == [False, True, False, False]
 
 
-def test_feature_plan_does_not_require_atr_for_signal_only_exits() -> None:
-    base = make_ema_pullback_strategy_spec()
-    spec = replace(
-        base,
-        components=component_stack(
-            exits=(
-                exit_rsi(
-                    instance_id="rsi_signal_only",
-                    timeframe="base",
-                    period=14,
-                    long_exit_above=70.0,
-                    short_exit_below=30.0,
-                ),
+def test_stop_ready_is_per_profile_not_global_sl_tp_requirement() -> None:
+    """TP-only aligned profile must not require SL readiness on aligned bars (draft config shape)."""
+    spec = make_ema_pullback_strategy_spec(
+        trade_management_spec=trade_management(
+            exit_policy_spec=exit_policy(
+                context=htf_context_config(timeframe="4h", fast_period=20, anchor_period=50, slow_period=200),
+                always_on=(),
+                aligned=(exit_atr_take_profit(atr_period=14, atr_multiplier=4.0, instance_id="aligned_tp"),),
+                countertrend=(exit_atr_stop_loss(atr_period=14, atr_multiplier=2.0, instance_id="counter_sl"),),
+                neutral=(),
             )
         ),
+    )
+    plan = build_feature_plan_from_strategy_spec(spec)
+    df = add_feature_columns_from_plan(_ohlcv(120), plan)
+    exits = build_exit_outputs_from_spec(df, spec, plan)
+
+    aligned_mask = exits.profile_long == "aligned"
+    assert aligned_mask.any()
+    assert exits.stop_ready_long[aligned_mask].any()
+    expected = exits.tp_stop_by_profile["aligned"][aligned_mask].notna()
+    pd.testing.assert_series_equal(
+        exits.stop_ready_long[aligned_mask],
+        expected,
+        check_names=False,
+    )
+
+
+def test_feature_plan_does_not_require_atr_for_signal_only_exits() -> None:
+    spec = _spec_with_exits(
+        (
+            exit_rsi(
+                instance_id="rsi_signal_only",
+                timeframe="base",
+                period=14,
+                long_exit_above=70.0,
+                short_exit_below=30.0,
+            ),
+        )
     )
     plan = build_feature_plan_from_strategy_spec(spec)
 

@@ -12,10 +12,16 @@ from research.strategies.ema_pullback.execution.signal_trace import (
     build_signal_trace_from_spec,
     slice_signal_trace,
 )
+from research.strategies.ema_pullback.execution.exits import PortfolioExitOutputs
 from research.strategies.ema_pullback.execution.signals import build_signals_from_spec
 from research.strategies.ema_pullback.features.calculations import add_feature_columns_from_plan
 from research.strategies.ema_pullback.features.plan import build_feature_plan_from_strategy_spec
-from research.strategies.ema_pullback.spec import strategy_spec_to_dict
+from research.strategies.ema_pullback.component_builders import trigger_strong_reclaim_anchor
+from research.strategies.ema_pullback.spec import (
+    ReclaimTriggerSpec,
+    StrongReclaimTriggerSpec,
+    strategy_spec_to_dict,
+)
 from research.strategies.ema_pullback.spec_instances import make_ema_pullback_strategy_spec
 from research.strategies.ema_pullback.spec_report import strategy_spec_from_report_dict
 
@@ -48,13 +54,67 @@ def test_signal_entry_trace_matches_build_signals_from_spec() -> None:
     assert len(trace.times) == len(df)
 
 
+def test_build_signals_from_spec_works_with_strong_reclaim_anchor() -> None:
+    spec = make_ema_pullback_strategy_spec()
+    spec = replace(
+        spec,
+        components=replace(
+            spec.components, trigger=trigger_strong_reclaim_anchor(lookback=2)
+        ),
+    )
+    assert isinstance(spec.components.trigger, StrongReclaimTriggerSpec)
+    plan = build_feature_plan_from_strategy_spec(spec)
+    df = add_feature_columns_from_plan(_ohlcv(periods=30), plan)
+    signals = build_signals_from_spec(df, spec, plan)
+    assert len(signals.entries) == len(df)
+    assert len(signals.short_entries) == len(df)
+
+
+def test_signal_trace_meta_and_internals_for_strong_reclaim_anchor() -> None:
+    spec = make_ema_pullback_strategy_spec()
+    spec = replace(
+        spec,
+        components=replace(
+            spec.components, trigger=trigger_strong_reclaim_anchor(lookback=2)
+        ),
+    )
+    plan = build_feature_plan_from_strategy_spec(spec)
+    df = add_feature_columns_from_plan(_ohlcv(periods=30), plan)
+    trace = build_signal_trace_from_spec(df, spec, plan)
+    assert trace.meta["trigger_params"] == {"lookback": 2}
+    trigger_internals = trace.long.internals["trigger"]
+    for key in ("probed", "had_prior_probe", "reclaimed", "trigger"):
+        assert key in trigger_internals
+
+
+def test_signal_trace_meta_includes_trigger_params_for_reclaim() -> None:
+    spec = make_ema_pullback_strategy_spec(trigger_lookback=2)
+    assert isinstance(spec.components.trigger, ReclaimTriggerSpec)
+    plan = build_feature_plan_from_strategy_spec(spec)
+    df = add_feature_columns_from_plan(_ohlcv(periods=30), plan)
+    trace = build_signal_trace_from_spec(df, spec, plan)
+    assert trace.meta["trigger_params"] == {"lookback": 2}
+
+
 def test_strategy_spec_roundtrip_from_report_dict() -> None:
-    spec = make_ema_pullback_strategy_spec(variant="roundtrip_test")
+    spec = make_ema_pullback_strategy_spec(variant="roundtrip_test", trigger_lookback=3)
     restored = strategy_spec_from_report_dict(strategy_spec_to_dict(spec))
     assert restored.variant == spec.variant
     assert restored.components.setup == spec.components.setup
     assert restored.components.trigger.component_id == spec.components.trigger.component_id
+    assert isinstance(restored.components.trigger, ReclaimTriggerSpec)
+    assert restored.components.trigger.lookback == 3
     assert len(restored.components.blockers) == len(spec.components.blockers)
+
+
+def test_signal_trace_after_strategy_spec_report_roundtrip() -> None:
+    spec = make_ema_pullback_strategy_spec(trigger_lookback=2)
+    restored = strategy_spec_from_report_dict(strategy_spec_to_dict(spec))
+    plan = build_feature_plan_from_strategy_spec(restored)
+    df = add_feature_columns_from_plan(_ohlcv(periods=30), plan)
+    trace = build_signal_trace_from_spec(df, restored, plan)
+    assert trace.meta["trigger_params"] == {"lookback": 2}
+    assert len(trace.times) == len(df)
 
 
 def test_portfolio_entry_false_when_stop_not_ready() -> None:
@@ -82,3 +142,38 @@ def test_slice_signal_trace_respects_window() -> None:
     )
     assert len(sliced.times) == 11
     assert sliced.long.direction_ok == full.long.direction_ok[10:21]
+
+
+def test_signal_trace_uses_side_specific_stop_ready(monkeypatch: pytest.MonkeyPatch) -> None:
+    spec = make_ema_pullback_strategy_spec(enabled_sides=("long", "short"))
+    plan = build_feature_plan_from_strategy_spec(spec)
+    df = add_feature_columns_from_plan(_ohlcv(periods=12), plan)
+
+    def fake_exits(df_local: pd.DataFrame, _spec: object, _plan: object) -> PortfolioExitOutputs:
+        idx = df_local.index
+        false_s = pd.Series(False, index=idx, dtype=bool)
+        nan_s = pd.Series(float("nan"), index=idx, dtype=float)
+        return PortfolioExitOutputs(
+            exits=false_s,
+            short_exits=false_s,
+            sl_stop=nan_s,
+            tp_stop=nan_s,
+            stop_ready_long=pd.Series([True] * len(idx), index=idx, dtype=bool),
+            stop_ready_short=pd.Series([False] * len(idx), index=idx, dtype=bool),
+            context_state=pd.Series("neutral", index=idx, dtype="object"),
+            profile_long=pd.Series("neutral", index=idx, dtype="object"),
+            profile_short=pd.Series("neutral", index=idx, dtype="object"),
+            long_exits_by_profile={"aligned": false_s, "countertrend": false_s, "neutral": false_s},
+            short_exits_by_profile={"aligned": false_s, "countertrend": false_s, "neutral": false_s},
+            sl_stop_by_profile={"aligned": nan_s, "countertrend": nan_s, "neutral": nan_s},
+            tp_stop_by_profile={"aligned": nan_s, "countertrend": nan_s, "neutral": nan_s},
+        )
+
+    monkeypatch.setattr(
+        "research.strategies.ema_pullback.execution.signal_trace.build_exit_outputs_from_spec",
+        fake_exits,
+    )
+
+    trace = build_signal_trace_from_spec(df, spec, plan)
+    assert all(trace.long.stop_ready)
+    assert not any(trace.short.stop_ready)

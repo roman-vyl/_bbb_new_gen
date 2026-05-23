@@ -9,9 +9,12 @@ from research.strategies.ema_pullback.component_builders import (
     blocker_none,
     component_stack,
     direction_ema_anchor_stack,
+    exit_policy,
     exits_atr_default,
+    htf_context_config,
     risk_no_filter,
     setup_untouched_anchor,
+    trade_management,
     trade_sides,
     trigger_reclaim_anchor,
     untouched_anchor_setup_spec,
@@ -19,6 +22,7 @@ from research.strategies.ema_pullback.component_builders import (
 from research.strategies.ema_pullback.spec import (
     ComponentStackSpec,
     EmaPullbackStrategySpec,
+    TradeManagementSpec,
     TradeSide,
 )
 
@@ -52,27 +56,52 @@ def make_ema_pullback_strategy_spec(
     anchor_timeframe: str = "base",
     setup_lookback: int = 50,
     setup_active_bars: int = 3,
+    trigger_lookback: int = 1,
     atr_period: int = 14,
     stop_atr_multiplier: float = 1.5,
     take_atr_multiplier: float = 4.0,
+    htf_context_timeframe: str = "4h",
+    htf_fast_period: int = 100,
+    htf_anchor_period: int = 200,
+    htf_slow_period: int = 1000,
     enabled_sides: Sequence[TradeSide] = ("long",),
     components: ComponentStackSpec | None = None,
+    trade_management_spec: TradeManagementSpec | None = None,
 ) -> EmaPullbackStrategySpec:
     resolved_components = (
         component_stack(
             direction=direction_ema_anchor_stack(),
             blockers=(blocker_none(),),
             setup=setup_untouched_anchor(),
-            trigger=trigger_reclaim_anchor(),
-            exits=exits_atr_default(
-                atr_period=atr_period,
-                stop_atr_multiplier=stop_atr_multiplier,
-                take_atr_multiplier=take_atr_multiplier,
-            ),
+            trigger=trigger_reclaim_anchor(lookback=trigger_lookback),
             risk=risk_no_filter(),
         )
         if components is None
         else components
+    )
+    default_sl, default_tp = exits_atr_default(
+        atr_period=atr_period,
+        stop_atr_multiplier=stop_atr_multiplier,
+        take_atr_multiplier=take_atr_multiplier,
+    )
+    trade_mgmt = (
+        trade_management_spec
+        if trade_management_spec is not None
+        else trade_management(
+            exit_policy_spec=exit_policy(
+                context=htf_context_config(
+                    timeframe=htf_context_timeframe,
+                    source="close",
+                    fast_period=htf_fast_period,
+                    anchor_period=htf_anchor_period,
+                    slow_period=htf_slow_period,
+                ),
+                always_on=(default_sl, default_tp),
+                aligned=(),
+                countertrend=(),
+                neutral=(),
+            )
+        )
     )
 
     return EmaPullbackStrategySpec(
@@ -96,4 +125,5 @@ def make_ema_pullback_strategy_spec(
             lookback=setup_lookback,
             active_bars=setup_active_bars,
         ),
+        trade_management=trade_mgmt,
     )

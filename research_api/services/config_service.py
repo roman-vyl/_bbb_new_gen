@@ -28,12 +28,18 @@ from research_api.contracts.config import (
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _CONFIGS_ROOT = _REPO_ROOT / "research" / "experiments" / "configs"
-_SELECTION_FILE = _CONFIGS_ROOT / ".workbench_selection.json"
+_SELECTION_FILE: Path | None = None
 _CONFIG_EXTENSIONS = frozenset({".json", ".yaml", ".yml"})
 _PATH_RE = re.compile(
-    r"^(?P<prefix>(?:instances\[\d+\]|blockers\[\d+\]|exits\[\d+\]|strategy|market|execution|experiment_id|family|schema_version)[^\s]*)?"
+    r"^(?P<prefix>(?:instances\[\d+\]|blockers\[\d+\]|exits\[\d+\]|strategy|trade_management|exit_policy|profiles|always_on|context|market|execution|experiment_id|family|schema_version)[^\s]*)?"
 )
 SUPPORTED_CONFIG_FAMILIES = {"ema_pullback"}
+
+
+def _selection_file_path() -> Path:
+    if _SELECTION_FILE is not None:
+        return _SELECTION_FILE
+    return _CONFIGS_ROOT / ".workbench_selection.json"
 
 
 def validate_config_family(family: str) -> str:
@@ -165,10 +171,11 @@ def _list_config_files(family_dir: Path) -> list[Path]:
 
 
 def _load_selection_store() -> dict[str, str]:
-    if not _SELECTION_FILE.is_file():
+    selection_file = _selection_file_path()
+    if not selection_file.is_file():
         return {}
     try:
-        loaded = json.loads(_SELECTION_FILE.read_text(encoding="utf-8"))
+        loaded = json.loads(selection_file.read_text(encoding="utf-8"))
     except json.JSONDecodeError:
         return {}
     if not isinstance(loaded, dict):
@@ -177,8 +184,9 @@ def _load_selection_store() -> dict[str, str]:
 
 
 def _save_selection_store(store: dict[str, str]) -> None:
+    selection_file = _selection_file_path()
     _CONFIGS_ROOT.mkdir(parents=True, exist_ok=True)
-    _SELECTION_FILE.write_text(
+    selection_file.write_text(
         json.dumps(store, indent=2, ensure_ascii=False) + "\n",
         encoding="utf-8",
     )

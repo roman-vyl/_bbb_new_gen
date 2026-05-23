@@ -20,6 +20,8 @@ from research.strategies.ema_pullback.components.registry import (
     UNTOUCHED_ANCHOR_SETUP_COMPONENT,
     RECLAIM_ANCHOR_COMPONENT,
     RSI_LOOKBACK_EXTREME_BLOCKER_COMPONENT,
+    EMA_CLOSE_LOSS_EXIT_COMPONENT,
+    EMA_CROSS_LOSS_EXIT_COMPONENT,
     RSI_SIGNAL_EXIT_COMPONENT,
     TOUCH_ANCHOR_COMPONENT,
 )
@@ -29,11 +31,18 @@ from research.strategies.ema_pullback.spec import (
     BlockerRuleSpec,
     ComponentStackSpec,
     EmaSpec,
+    ExitPolicyGroupSpec,
+    ExitPolicyProfilesSpec,
+    ExitPolicySpec,
     ExitKind,
     ExitRuleSpec,
+    HtfContextConfigSpec,
+    TradeManagementSpec,
     UntouchedAnchorSetupSpec,
     RsiFeatureSpec,
     TradeSide,
+    ReclaimTriggerSpec,
+    StrongReclaimTriggerSpec,
     TradeSideSpec,
     TriggerSpec,
 )
@@ -74,8 +83,12 @@ def trigger_touch_anchor() -> TriggerSpec:
     return trigger(TOUCH_ANCHOR_COMPONENT)
 
 
-def trigger_reclaim_anchor() -> TriggerSpec:
-    return trigger(RECLAIM_ANCHOR_COMPONENT)
+def trigger_reclaim_anchor(*, lookback: int = 1) -> ReclaimTriggerSpec:
+    return ReclaimTriggerSpec(lookback=lookback)
+
+
+def trigger_strong_reclaim_anchor(*, lookback: int = 1) -> StrongReclaimTriggerSpec:
+    return StrongReclaimTriggerSpec(lookback=lookback)
 
 
 def direction_ema_anchor_stack() -> str:
@@ -146,6 +159,10 @@ def exit_rule(
     instance_id: str,
     exit_kind: ExitKind = "signal",
     rsi: RsiFeatureSpec | None = None,
+    ema: EmaSpec | None = None,
+    fast_ema: EmaSpec | None = None,
+    slow_ema: EmaSpec | None = None,
+    confirm_bars: int = 1,
     long_exit_above: float | None = None,
     short_exit_below: float | None = None,
     distance: AtrDistanceSpec | None = None,
@@ -156,6 +173,10 @@ def exit_rule(
         component_id=component_id,
         exit_kind=exit_kind,
         rsi=rsi,
+        ema=ema,
+        fast_ema=fast_ema,
+        slow_ema=slow_ema,
+        confirm_bars=confirm_bars,
         long_exit_above=long_exit_above,
         short_exit_below=short_exit_below,
         distance=distance,
@@ -182,6 +203,38 @@ def exit_rsi(
         rsi=rsi_feature(timeframe=timeframe, period=period),
         long_exit_above=long_exit_above,
         short_exit_below=short_exit_below,
+    )
+
+
+def exit_ema_close_loss(
+    *,
+    instance_id: str,
+    ema: EmaSpec,
+    confirm_bars: int = 1,
+) -> ExitRuleSpec:
+    return exit_rule(
+        EMA_CLOSE_LOSS_EXIT_COMPONENT,
+        instance_id=instance_id,
+        exit_kind="signal",
+        ema=ema,
+        confirm_bars=confirm_bars,
+    )
+
+
+def exit_ema_cross_loss(
+    *,
+    instance_id: str,
+    fast_ema: EmaSpec,
+    slow_ema: EmaSpec,
+    confirm_bars: int = 1,
+) -> ExitRuleSpec:
+    return exit_rule(
+        EMA_CROSS_LOSS_EXIT_COMPONENT,
+        instance_id=instance_id,
+        exit_kind="signal",
+        fast_ema=fast_ema,
+        slow_ema=slow_ema,
+        confirm_bars=confirm_bars,
     )
 
 
@@ -253,6 +306,65 @@ def exits_atr_default(
     )
 
 
+def htf_context_config(
+    *,
+    timeframe: str,
+    fast_period: int,
+    anchor_period: int,
+    slow_period: int,
+    source: str = "close",
+    component_id: str = "htf_context",
+) -> HtfContextConfigSpec:
+    return HtfContextConfigSpec(
+        component_id=component_id,
+        timeframe=timeframe,
+        source=source,
+        fast_period=fast_period,
+        anchor_period=anchor_period,
+        slow_period=slow_period,
+    )
+
+
+def exit_policy_group(exits: Sequence[ExitRuleSpec]) -> ExitPolicyGroupSpec:
+    return ExitPolicyGroupSpec(exits=_normalize_sequence("trade_management.exit_policy.exits", exits))
+
+
+def exit_policy_profiles(
+    *,
+    aligned: Sequence[ExitRuleSpec],
+    countertrend: Sequence[ExitRuleSpec],
+    neutral: Sequence[ExitRuleSpec],
+) -> ExitPolicyProfilesSpec:
+    return ExitPolicyProfilesSpec(
+        aligned=exit_policy_group(aligned),
+        countertrend=exit_policy_group(countertrend),
+        neutral=exit_policy_group(neutral),
+    )
+
+
+def exit_policy(
+    *,
+    context: HtfContextConfigSpec,
+    always_on: Sequence[ExitRuleSpec],
+    aligned: Sequence[ExitRuleSpec],
+    countertrend: Sequence[ExitRuleSpec],
+    neutral: Sequence[ExitRuleSpec],
+) -> ExitPolicySpec:
+    return ExitPolicySpec(
+        context=context,
+        always_on=exit_policy_group(always_on),
+        profiles=exit_policy_profiles(
+            aligned=aligned,
+            countertrend=countertrend,
+            neutral=neutral,
+        ),
+    )
+
+
+def trade_management(*, exit_policy_spec: ExitPolicySpec) -> TradeManagementSpec:
+    return TradeManagementSpec(exit_policy=exit_policy_spec)
+
+
 def _normalize_sequence(name: str, values: Sequence[T]) -> tuple[T, ...]:
     if isinstance(values, (str, bytes)):
         raise TypeError(f"{name} must be a sequence of typed values, not str/bytes")
@@ -275,7 +387,6 @@ def component_stack(
     blockers: Sequence[BlockerRuleSpec] | None = None,
     setup: str | None = None,
     trigger: TriggerSpec | None = None,
-    exits: Sequence[ExitRuleSpec] | None = None,
     risk: str | None = None,
 ) -> ComponentStackSpec:
     if blockers is None:
@@ -283,21 +394,11 @@ def component_stack(
     else:
         normalized_blockers = _normalize_sequence("components.blockers", blockers)
 
-    if exits is None:
-        normalized_exits = exits_atr_default(
-            atr_period=14,
-            stop_atr_multiplier=1.5,
-            take_atr_multiplier=4.0,
-        )
-    else:
-        normalized_exits = _normalize_sequence("components.exits", exits)
-
     return ComponentStackSpec(
         direction=direction_ema_anchor_stack() if direction is None else direction,
         blockers=normalized_blockers,
         setup=setup_untouched_anchor() if setup is None else setup,
         trigger=trigger_reclaim_anchor() if trigger is None else trigger,
-        exits=normalized_exits,
         risk=risk_no_filter() if risk is None else risk,
     )
 

@@ -89,9 +89,10 @@ function firstPipelineSectionFromErrors(errors: ValidationErrorItem[]): string |
       key === "trigger" ||
       key === "blockers" ||
       key === "risk" ||
-      key === "exits"
+      key === "exits" ||
+      key === "trade_management"
     ) {
-      return key;
+      return key === "trade_management" ? "exits" : key;
     }
   }
   return null;
@@ -132,6 +133,90 @@ function listSummary(slots: JsonObject[]): string {
     return "none";
   }
   return slots.map((s) => String(s.instance_id || s.component_id || "?")).join(", ");
+}
+
+function readAlwaysOnExits(strategy: JsonObject): JsonObject[] {
+  const tradeManagement = (strategy.trade_management as JsonObject | undefined) ?? {};
+  const exitPolicy = (tradeManagement.exit_policy as JsonObject | undefined) ?? {};
+  const alwaysOn = (exitPolicy.always_on as JsonObject | undefined) ?? {};
+  return ((alwaysOn.exits as JsonObject[] | undefined) ?? []) as JsonObject[];
+}
+
+function writeAlwaysOnExits(strategy: JsonObject, exits: JsonObject[]): JsonObject {
+  const tradeManagement = (strategy.trade_management as JsonObject | undefined) ?? {};
+  const exitPolicy = (tradeManagement.exit_policy as JsonObject | undefined) ?? {};
+  const alwaysOn = (exitPolicy.always_on as JsonObject | undefined) ?? {};
+  return {
+    ...strategy,
+    trade_management: {
+      ...tradeManagement,
+      exit_policy: {
+        ...exitPolicy,
+        always_on: {
+          ...alwaysOn,
+          exits,
+        },
+      },
+    },
+  };
+}
+
+function readExitPolicy(strategy: JsonObject): JsonObject {
+  const tradeManagement = (strategy.trade_management as JsonObject | undefined) ?? {};
+  return ((tradeManagement.exit_policy as JsonObject | undefined) ?? {}) as JsonObject;
+}
+
+function readContextConfig(strategy: JsonObject): JsonObject {
+  return ((readExitPolicy(strategy).context as JsonObject | undefined) ?? {}) as JsonObject;
+}
+
+function writeContextConfig(strategy: JsonObject, context: JsonObject): JsonObject {
+  const tradeManagement = (strategy.trade_management as JsonObject | undefined) ?? {};
+  const exitPolicy = readExitPolicy(strategy);
+  return {
+    ...strategy,
+    trade_management: {
+      ...tradeManagement,
+      exit_policy: {
+        ...exitPolicy,
+        context,
+      },
+    },
+  };
+}
+
+function readProfileExits(strategy: JsonObject, profile: "aligned" | "countertrend" | "neutral"): JsonObject[] {
+  const exitPolicy = readExitPolicy(strategy);
+  const profiles = (exitPolicy.profiles as JsonObject | undefined) ?? {};
+  const profileObj = (profiles[profile] as JsonObject | undefined) ?? {};
+  return ((profileObj.exits as JsonObject[] | undefined) ?? []) as JsonObject[];
+}
+
+function writeProfileExits(
+  strategy: JsonObject,
+  profile: "aligned" | "countertrend" | "neutral",
+  exits: JsonObject[],
+): JsonObject {
+  const tradeManagement = (strategy.trade_management as JsonObject | undefined) ?? {};
+  const exitPolicy = readExitPolicy(strategy);
+  const profiles = (exitPolicy.profiles as JsonObject | undefined) ?? {};
+  const profileObj = (profiles[profile] as JsonObject | undefined) ?? {};
+  return {
+    ...strategy,
+    trade_management: {
+      ...tradeManagement,
+      exit_policy: {
+        ...exitPolicy,
+        profiles: {
+          ...profiles,
+          [profile]: {
+            ...profileObj,
+            exits,
+          },
+        },
+      },
+    },
+  };
 }
 
 function ComposerInstanceGrid({
@@ -447,19 +532,59 @@ export function ComposerPanel() {
 
   const updateListSlot = (
     index: number,
-    role: "blockers" | "exits",
+    role:
+      | "blockers"
+      | "exits"
+      | "aligned_exits"
+      | "countertrend_exits"
+      | "neutral_exits",
     slotIndex: number,
     nextSlot: JsonObject,
   ) => {
     if (!configDraft) return;
     const inst = configDraft.instances[index];
     if (!inst) return;
-    const list = [...((inst.strategy[role] as JsonObject[] | undefined) ?? [])];
+    if (role === "blockers") {
+      const list = [...((inst.strategy[role] as JsonObject[] | undefined) ?? [])];
+      list[slotIndex] = nextSlot;
+      patchStrategy(index, { [role]: list });
+      return;
+    }
+    if (role === "exits") {
+      const list = [...readAlwaysOnExits(inst.strategy as JsonObject)];
+      list[slotIndex] = nextSlot;
+      patchInstance(index, { strategy: writeAlwaysOnExits(inst.strategy as JsonObject, list) });
+      return;
+    }
+    if (role === "aligned_exits") {
+      const list = [...readProfileExits(inst.strategy as JsonObject, "aligned")];
+      list[slotIndex] = nextSlot;
+      patchInstance(index, { strategy: writeProfileExits(inst.strategy as JsonObject, "aligned", list) });
+      return;
+    }
+    if (role === "countertrend_exits") {
+      const list = [...readProfileExits(inst.strategy as JsonObject, "countertrend")];
+      list[slotIndex] = nextSlot;
+      patchInstance(index, {
+        strategy: writeProfileExits(inst.strategy as JsonObject, "countertrend", list),
+      });
+      return;
+    }
+    const list = [...readProfileExits(inst.strategy as JsonObject, "neutral")];
     list[slotIndex] = nextSlot;
-    patchStrategy(index, { [role]: list });
+    patchInstance(index, { strategy: writeProfileExits(inst.strategy as JsonObject, "neutral", list) });
   };
 
-  const addListSlot = (index: number, role: "blockers" | "exits", componentId: string) => {
+  const addListSlot = (
+    index: number,
+    role:
+      | "blockers"
+      | "exits"
+      | "aligned_exits"
+      | "countertrend_exits"
+      | "neutral_exits",
+    componentId: string,
+  ) => {
     if (!catalog || !configDraft) return;
     const schema = findComponentSchema(catalog, componentId);
     const slotId = `${componentId}_${Date.now().toString(36).slice(-4)}`;
@@ -467,18 +592,71 @@ export function ComposerPanel() {
     const nextSlot = applyComponentDefaults(base, schema);
     const inst = configDraft.instances[index];
     if (!inst) return;
-    const list = [...((inst.strategy[role] as JsonObject[] | undefined) ?? []), nextSlot];
-    patchStrategy(index, { [role]: list });
+    if (role === "blockers") {
+      const list = [...((inst.strategy[role] as JsonObject[] | undefined) ?? []), nextSlot];
+      patchStrategy(index, { [role]: list });
+      return;
+    }
+    if (role === "exits") {
+      const list = [...readAlwaysOnExits(inst.strategy as JsonObject), nextSlot];
+      patchInstance(index, { strategy: writeAlwaysOnExits(inst.strategy as JsonObject, list) });
+      return;
+    }
+    if (role === "aligned_exits") {
+      const list = [...readProfileExits(inst.strategy as JsonObject, "aligned"), nextSlot];
+      patchInstance(index, { strategy: writeProfileExits(inst.strategy as JsonObject, "aligned", list) });
+      return;
+    }
+    if (role === "countertrend_exits") {
+      const list = [...readProfileExits(inst.strategy as JsonObject, "countertrend"), nextSlot];
+      patchInstance(index, {
+        strategy: writeProfileExits(inst.strategy as JsonObject, "countertrend", list),
+      });
+      return;
+    }
+    const list = [...readProfileExits(inst.strategy as JsonObject, "neutral"), nextSlot];
+    patchInstance(index, { strategy: writeProfileExits(inst.strategy as JsonObject, "neutral", list) });
   };
 
-  const removeListSlot = (index: number, role: "blockers" | "exits", slotIndex: number) => {
+  const removeListSlot = (
+    index: number,
+    role:
+      | "blockers"
+      | "exits"
+      | "aligned_exits"
+      | "countertrend_exits"
+      | "neutral_exits",
+    slotIndex: number,
+  ) => {
     if (!configDraft) return;
     const inst = configDraft.instances[index];
     if (!inst) return;
-    const list = ((inst.strategy[role] as JsonObject[] | undefined) ?? []).filter(
-      (_, i) => i !== slotIndex,
-    );
-    patchStrategy(index, { [role]: list });
+    if (role === "blockers") {
+      const list = ((inst.strategy[role] as JsonObject[] | undefined) ?? []).filter(
+        (_, i) => i !== slotIndex,
+      );
+      patchStrategy(index, { [role]: list });
+      return;
+    }
+    if (role === "exits") {
+      const list = readAlwaysOnExits(inst.strategy as JsonObject).filter((_, i) => i !== slotIndex);
+      patchInstance(index, { strategy: writeAlwaysOnExits(inst.strategy as JsonObject, list) });
+      return;
+    }
+    if (role === "aligned_exits") {
+      const list = readProfileExits(inst.strategy as JsonObject, "aligned").filter((_, i) => i !== slotIndex);
+      patchInstance(index, { strategy: writeProfileExits(inst.strategy as JsonObject, "aligned", list) });
+      return;
+    }
+    if (role === "countertrend_exits") {
+      const list = readProfileExits(inst.strategy as JsonObject, "countertrend").filter((_, i) => i !== slotIndex);
+      patchInstance(index, {
+        strategy: writeProfileExits(inst.strategy as JsonObject, "countertrend", list),
+      });
+      return;
+    }
+    const list = readProfileExits(inst.strategy as JsonObject, "neutral").filter((_, i) => i !== slotIndex);
+    patchInstance(index, { strategy: writeProfileExits(inst.strategy as JsonObject, "neutral", list) });
   };
 
   if (configLoadStatus === "loading") {
@@ -604,6 +782,9 @@ export function ComposerPanel() {
         <p className={`composer-status ${validation.ok ? "composer-status--ok" : "composer-status--err"}`}>
           {validation.ok ? "Config is valid." : "Validation failed — fix errors below."}
         </p>
+      )}
+      {validation && !validation.ok && validation.errors.length > 0 && (
+        <ValidationMessages errors={validation.errors} />
       )}
       </div>
 
@@ -1048,10 +1229,10 @@ export function ComposerPanel() {
 
               <ComposerCollapsible
                 id="exits"
-                title="Exits"
+                title="Trade management / Exit policy"
                 summary={joinInstanceSummaries(
                   configDraft.instances.map((inst) =>
-                    listSummary(((inst.strategy.exits as JsonObject[]) ?? []) as JsonObject[]),
+                    listSummary(readAlwaysOnExits((inst.strategy ?? {}) as JsonObject)),
                   ),
                 )}
                 open={openPipelineSections.has("exits")}
@@ -1069,18 +1250,75 @@ export function ComposerPanel() {
                   {(index, inst) => {
                     const instStrategy = (inst.strategy ?? {}) as JsonObject;
                     return (
-                      <ListComponentSection
-                        compact
-                        title="Exits"
-                        role="exits"
-                        catalog={catalog}
-                        slots={((instStrategy.exits as JsonObject[]) ?? []) as JsonObject[]}
-                        instanceIndex={index}
-                        errors={validationErrors}
-                        onAdd={(id) => addListSlot(index, "exits", id)}
-                        onRemove={(slot) => removeListSlot(index, "exits", slot)}
-                        onChange={(slot, next) => updateListSlot(index, "exits", slot, next)}
-                      />
+                      <div className="composer-collapsible-inner">
+                        <h4 className="composer-subhead">HTF context</h4>
+                        <HtfContextFields
+                          value={readContextConfig(instStrategy)}
+                          pathPrefix={`${strategyPath(index)}.trade_management.exit_policy.context`}
+                          errors={validationErrors}
+                          onChange={(context) =>
+                            patchInstance(index, {
+                              strategy: writeContextConfig(instStrategy, context),
+                            })
+                          }
+                        />
+                        <h4 className="composer-subhead">Always-on exits</h4>
+                        <ListComponentSection
+                          compact
+                          title="Always-on exits"
+                          role="exits"
+                          pathRole="always_on_exits"
+                          catalog={catalog}
+                          slots={readAlwaysOnExits(instStrategy)}
+                          instanceIndex={index}
+                          errors={validationErrors}
+                          onAdd={(id) => addListSlot(index, "exits", id)}
+                          onRemove={(slot) => removeListSlot(index, "exits", slot)}
+                          onChange={(slot, next) => updateListSlot(index, "exits", slot, next)}
+                        />
+                        <h4 className="composer-subhead">Profile: aligned</h4>
+                        <ListComponentSection
+                          compact
+                          title="Aligned exits"
+                          role="exits"
+                          pathRole="aligned_exits"
+                          catalog={catalog}
+                          slots={readProfileExits(instStrategy, "aligned")}
+                          instanceIndex={index}
+                          errors={validationErrors}
+                          onAdd={(id) => addListSlot(index, "aligned_exits", id)}
+                          onRemove={(slot) => removeListSlot(index, "aligned_exits", slot)}
+                          onChange={(slot, next) => updateListSlot(index, "aligned_exits", slot, next)}
+                        />
+                        <h4 className="composer-subhead">Profile: countertrend</h4>
+                        <ListComponentSection
+                          compact
+                          title="Countertrend exits"
+                          role="exits"
+                          pathRole="countertrend_exits"
+                          catalog={catalog}
+                          slots={readProfileExits(instStrategy, "countertrend")}
+                          instanceIndex={index}
+                          errors={validationErrors}
+                          onAdd={(id) => addListSlot(index, "countertrend_exits", id)}
+                          onRemove={(slot) => removeListSlot(index, "countertrend_exits", slot)}
+                          onChange={(slot, next) => updateListSlot(index, "countertrend_exits", slot, next)}
+                        />
+                        <h4 className="composer-subhead">Profile: neutral</h4>
+                        <ListComponentSection
+                          compact
+                          title="Neutral exits"
+                          role="exits"
+                          pathRole="neutral_exits"
+                          catalog={catalog}
+                          slots={readProfileExits(instStrategy, "neutral")}
+                          instanceIndex={index}
+                          errors={validationErrors}
+                          onAdd={(id) => addListSlot(index, "neutral_exits", id)}
+                          onRemove={(slot) => removeListSlot(index, "neutral_exits", slot)}
+                          onChange={(slot, next) => updateListSlot(index, "neutral_exits", slot, next)}
+                        />
+                      </div>
                     );
                   }}
                 </ComposerInstanceGrid>
@@ -1200,6 +1438,61 @@ function TradeSidesFields({
   );
 }
 
+function HtfContextFields({
+  value,
+  pathPrefix,
+  errors,
+  onChange,
+}: {
+  value: JsonObject;
+  pathPrefix: string;
+  errors: ValidationErrorItem[];
+  onChange: (next: JsonObject) => void;
+}) {
+  const patch = (key: string, next: unknown) => onChange({ ...value, [key]: next });
+  return (
+    <div className="composer-block">
+      <SectionErrors errors={errors} pathPrefix={pathPrefix} />
+      <label className="field">
+        <span>component_id</span>
+        <input value={String(value.component_id ?? "htf_context")} onChange={(e) => patch("component_id", e.target.value)} />
+      </label>
+      <label className="field">
+        <span>timeframe</span>
+        <input value={String(value.timeframe ?? "4h")} onChange={(e) => patch("timeframe", e.target.value)} />
+      </label>
+      <label className="field">
+        <span>source</span>
+        <input value={String(value.source ?? "close")} onChange={(e) => patch("source", e.target.value)} />
+      </label>
+      <label className="field">
+        <span>fast_period</span>
+        <input
+          type="number"
+          value={Number(value.fast_period ?? 100)}
+          onChange={(e) => patch("fast_period", Number(e.target.value))}
+        />
+      </label>
+      <label className="field">
+        <span>anchor_period</span>
+        <input
+          type="number"
+          value={Number(value.anchor_period ?? 200)}
+          onChange={(e) => patch("anchor_period", Number(e.target.value))}
+        />
+      </label>
+      <label className="field">
+        <span>slow_period</span>
+        <input
+          type="number"
+          value={Number(value.slow_period ?? 1000)}
+          onChange={(e) => patch("slow_period", Number(e.target.value))}
+        />
+      </label>
+    </div>
+  );
+}
+
 function SingletonComponentSection({
   compact = false,
   title,
@@ -1268,6 +1561,7 @@ function ListComponentSection({
   compact = false,
   title,
   role,
+  pathRole = role,
   catalog,
   slots,
   instanceIndex,
@@ -1279,6 +1573,13 @@ function ListComponentSection({
   compact?: boolean;
   title: string;
   role: "blockers" | "exits";
+  pathRole?:
+    | "blockers"
+    | "exits"
+    | "always_on_exits"
+    | "aligned_exits"
+    | "countertrend_exits"
+    | "neutral_exits";
   catalog: ComponentCatalog;
   slots: JsonObject[];
   instanceIndex: number;
@@ -1310,7 +1611,7 @@ function ListComponentSection({
       {slots.map((slot, slotIndex) => {
         const componentId = String(slot.component_id ?? "");
         const schema = findComponentSchema(catalog, componentId);
-        const path = listSlotPath(instanceIndex, role, slotIndex);
+        const path = listSlotPath(instanceIndex, pathRole, slotIndex);
         const slotLabel = String(slot.instance_id ?? (componentId || "slot"));
         return (
           <div key={`${componentId}-${slotIndex}`} className="composer-slot">

@@ -44,18 +44,37 @@ def _valid_draft() -> dict[str, object]:
                     "trigger": {"component_id": "reclaim_anchor"},
                     "blockers": [{"instance_id": "no_blockers", "component_id": "no_blockers"}],
                     "risk": {"component_id": "no_risk_filter"},
-                    "exits": [
-                        {
-                            "instance_id": "atr_sl",
-                            "component_id": "atr_stop_loss",
-                            "distance": {"timeframe": "base", "period": 14, "multiplier": 1.5},
-                        },
-                        {
-                            "instance_id": "atr_tp",
-                            "component_id": "atr_take_profit",
-                            "distance": {"timeframe": "base", "period": 14, "multiplier": 4.0},
-                        },
-                    ],
+                    "trade_management": {
+                        "exit_policy": {
+                            "context": {
+                                "component_id": "htf_context",
+                                "timeframe": "4h",
+                                "source": "close",
+                                "fast_period": 100,
+                                "anchor_period": 200,
+                                "slow_period": 1000,
+                            },
+                            "always_on": {
+                                "exits": [
+                                    {
+                                        "instance_id": "atr_sl",
+                                        "component_id": "atr_stop_loss",
+                                        "distance": {"timeframe": "base", "period": 14, "multiplier": 1.5},
+                                    },
+                                    {
+                                        "instance_id": "atr_tp",
+                                        "component_id": "atr_take_profit",
+                                        "distance": {"timeframe": "base", "period": 14, "multiplier": 4.0},
+                                    },
+                                ]
+                            },
+                            "profiles": {
+                                "aligned": {"exits": []},
+                                "countertrend": {"exits": []},
+                                "neutral": {"exits": []},
+                            },
+                        }
+                    },
                 },
             }
         ],
@@ -81,6 +100,25 @@ def test_component_catalog_returns_ema_pullback_components(client: TestClient) -
     assert set(params) == {"lookback", "active_bars"}
     assert params["lookback"]["default"] == 50
     assert params["active_bars"]["default"] == 3
+    reclaim_components = [c for c in body["components"] if c.get("component_id") == "reclaim_anchor"]
+    assert len(reclaim_components) == 1
+    reclaim_params = reclaim_components[0]["params_schema"]
+    assert reclaim_params["lookback"]["default"] == 1
+    assert reclaim_params["lookback"]["min"] == 1
+    strong_components = [
+        c for c in body["components"] if c.get("component_id") == "strong_reclaim_anchor"
+    ]
+    assert len(strong_components) == 1
+    strong_params = strong_components[0]["params_schema"]
+    assert strong_params["lookback"]["default"] == 1
+    assert strong_params["lookback"]["min"] == 1
+    assert all(c["component_id"] != "htf_context" for c in body["components"])
+    close_loss = next(c for c in body["components"] if c["component_id"] == "ema_close_loss_exit")
+    assert close_loss["params_schema"]["confirm_bars"]["default"] == 1
+    assert "ema.timeframe" in close_loss["params_schema"]
+    cross_loss = next(c for c in body["components"] if c["component_id"] == "ema_cross_loss_exit")
+    assert cross_loss["params_schema"]["confirm_bars"]["default"] == 1
+    assert cross_loss["params_schema"]["fast_ema.timeframe"]["default"] == "base"
 
 
 def test_validate_config_ok(client: TestClient) -> None:

@@ -16,7 +16,6 @@ from research.strategies.ema_pullback.components.direction import ema_anchor_sta
 from research.strategies.ema_pullback.components.registry import (
     COUNTER_CANDLE_BLOCKER_COMPONENT,
     NO_BLOCKERS_COMPONENT,
-    RECLAIM_ANCHOR_COMPONENT,
     RSI_LOOKBACK_EXTREME_BLOCKER_COMPONENT,
     TOUCH_ANCHOR_COMPONENT,
     UNTOUCHED_ANCHOR_SETUP_COMPONENT,
@@ -24,13 +23,20 @@ from research.strategies.ema_pullback.components.registry import (
 from research.strategies.ema_pullback.components.setup import untouched_anchor_setup_trace
 from research.strategies.ema_pullback.components.triggers import (
     reclaim_anchor_trace,
+    strong_reclaim_anchor_trace,
     touch_anchor_trace,
 )
 from research.strategies.ema_pullback.components.risk import no_risk_filter
 from research.strategies.ema_pullback.execution.exits import build_exit_outputs_from_spec
 from research.strategies.ema_pullback.execution.signals import compose_blocker_signals, compose_final_signals
 from research.strategies.ema_pullback.features.plan import FeaturePlan
-from research.strategies.ema_pullback.spec import EmaPullbackStrategySpec, RsiFeatureSpec, TradeSide
+from research.strategies.ema_pullback.spec import (
+    EmaPullbackStrategySpec,
+    ReclaimTriggerSpec,
+    StrongReclaimTriggerSpec,
+    RsiFeatureSpec,
+    TradeSide,
+)
 
 
 class UnsupportedTraceComponentError(ValueError):
@@ -48,7 +54,6 @@ _SETUP_TRACE: dict[str, Callable[..., dict[str, pd.Series]]] = {
 }
 
 _TRIGGER_TRACE: dict[str, Callable[..., dict[str, pd.Series]]] = {
-    RECLAIM_ANCHOR_COMPONENT: reclaim_anchor_trace,
     TOUCH_ANCHOR_COMPONENT: touch_anchor_trace,
 }
 
@@ -121,6 +126,7 @@ class SideSignalTrace:
 class SignalTraceBundleData:
     times: list[int]
     meta: dict[str, Any]
+    htf_context: dict[str, Any]
     long: SideSignalTrace
     short: SideSignalTrace
 
@@ -153,10 +159,14 @@ def _build_side_trace(
         )
 
     setup_id = spec.components.setup
-    trigger_id = spec.components.trigger.component_id
+    trigger_rule = spec.components.trigger
+    trigger_id = trigger_rule.component_id
     if setup_id not in _SETUP_TRACE:
         raise UnsupportedTraceComponentError(f"setup trace not implemented: {setup_id!r}")
-    if trigger_id not in _TRIGGER_TRACE:
+    if (
+        not isinstance(trigger_rule, ReclaimTriggerSpec | StrongReclaimTriggerSpec)
+        and trigger_id not in _TRIGGER_TRACE
+    ):
         raise UnsupportedTraceComponentError(f"trigger trace not implemented: {trigger_id!r}")
 
     direction_trace = ema_anchor_stack_trend_trace(
@@ -195,7 +205,16 @@ def _build_side_trace(
     )
     setup = setup_trace["setup"]
 
-    trigger_trace = _TRIGGER_TRACE[trigger_id](df, anchor_col, side=side)
+    if isinstance(trigger_rule, ReclaimTriggerSpec):
+        trigger_trace = reclaim_anchor_trace(
+            df, anchor_col, trigger_rule.lookback, side=side
+        )
+    elif isinstance(trigger_rule, StrongReclaimTriggerSpec):
+        trigger_trace = strong_reclaim_anchor_trace(
+            df, anchor_col, trigger_rule.lookback, side=side
+        )
+    else:
+        trigger_trace = _TRIGGER_TRACE[trigger_id](df, anchor_col, side=side)
     trigger = trigger_trace["trigger"]
 
     risk = no_risk_filter(df, side=side)
@@ -241,14 +260,6 @@ def build_signal_trace_from_spec(
     slow_col = plan.anchor_columns["slow"]
 
     exit_outputs = build_exit_outputs_from_spec(df, spec, plan)
-    close = df["close"].astype(float)
-    sl_stop = exit_outputs.sl_stop
-    tp_stop = exit_outputs.tp_stop
-    stop_ready = pd.Series(True, index=close.index, dtype=bool)
-    if sl_stop.notna().any():
-        stop_ready = stop_ready & sl_stop.notna()
-    if tp_stop.notna().any():
-        stop_ready = stop_ready & tp_stop.notna()
 
     long_trace = _build_side_trace(
         df=df,
@@ -258,7 +269,7 @@ def build_signal_trace_from_spec(
         fast_col=fast_col,
         anchor_col=anchor_col,
         slow_col=slow_col,
-        stop_ready=stop_ready,
+        stop_ready=exit_outputs.stop_ready_long,
     )
     short_trace = _build_side_trace(
         df=df,
@@ -268,9 +279,29 @@ def build_signal_trace_from_spec(
         fast_col=fast_col,
         anchor_col=anchor_col,
         slow_col=slow_col,
-        stop_ready=stop_ready,
+        stop_ready=exit_outputs.stop_ready_short,
     )
 
+    trigger_rule = spec.components.trigger
+    context_cols = plan.htf_context_columns
+    context_cfg = spec.trade_management.exit_policy.context
+    htf_payload = {
+        "state": [
+            str(v) if isinstance(v, str) else "neutral"
+            for v in exit_outputs.context_state.to_list()
+        ],
+        "fast": _float_list(df[context_cols["fast"]].astype(float)),
+        "anchor": _float_list(df[context_cols["anchor"]].astype(float)),
+        "slow": _float_list(df[context_cols["slow"]].astype(float)),
+        "meta": {
+            "component_id": context_cfg.component_id,
+            "timeframe": context_cfg.timeframe,
+            "source": context_cfg.source,
+            "fast_period": context_cfg.fast_period,
+            "anchor_period": context_cfg.anchor_period,
+            "slow_period": context_cfg.slow_period,
+        },
+    }
     meta = {
         "variant": spec.variant,
         "component_ids": {
@@ -283,6 +314,11 @@ def build_signal_trace_from_spec(
             "lookback": spec.setup.lookback,
             "active_bars": spec.setup.active_bars,
         },
+        "trigger_params": (
+            {"lookback": trigger_rule.lookback}
+            if isinstance(trigger_rule, ReclaimTriggerSpec | StrongReclaimTriggerSpec)
+            else {}
+        ),
         "blocker_instances": [
             {"instance_id": rule.instance_id, "component_id": rule.component_id}
             for rule in spec.components.blockers
@@ -292,6 +328,7 @@ def build_signal_trace_from_spec(
     return SignalTraceBundleData(
         times=_index_to_times_sec(df.index),
         meta=meta,
+        htf_context=htf_payload,
         long=long_trace,
         short=short_trace,
     )
@@ -344,6 +381,13 @@ def slice_signal_trace(
     return SignalTraceBundleData(
         times=times,
         meta=trace.meta,
+        htf_context={
+            "state": [trace.htf_context["state"][i] for i in indices],
+            "fast": [trace.htf_context["fast"][i] for i in indices],
+            "anchor": [trace.htf_context["anchor"][i] for i in indices],
+            "slow": [trace.htf_context["slow"][i] for i in indices],
+            "meta": trace.htf_context["meta"],
+        },
         long=_slice_side(trace.long),
         short=_slice_side(trace.short),
     )

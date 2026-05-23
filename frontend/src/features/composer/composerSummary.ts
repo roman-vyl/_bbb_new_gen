@@ -31,7 +31,15 @@ export function buildPipelineSteps(
   catalog: ComponentCatalog,
 ): PipelineStep[] {
   const blockers = (strategy.blockers as JsonObject[] | undefined) ?? [];
-  const exits = (strategy.exits as JsonObject[] | undefined) ?? [];
+  const tradeManagement = (strategy.trade_management as JsonObject | undefined) ?? {};
+  const exitPolicy = (tradeManagement.exit_policy as JsonObject | undefined) ?? {};
+  const alwaysOn = ((exitPolicy.always_on as JsonObject | undefined)?.exits as JsonObject[] | undefined) ?? [];
+  const profiles = (exitPolicy.profiles as JsonObject | undefined) ?? {};
+  const aligned = ((profiles.aligned as JsonObject | undefined)?.exits as JsonObject[] | undefined) ?? [];
+  const countertrend =
+    ((profiles.countertrend as JsonObject | undefined)?.exits as JsonObject[] | undefined) ?? [];
+  const neutral = ((profiles.neutral as JsonObject | undefined)?.exits as JsonObject[] | undefined) ?? [];
+  const exits = [...alwaysOn, ...aligned, ...countertrend, ...neutral];
 
   const directionId = readComponentId(strategy.direction as JsonObject);
   const setupId = readComponentId(strategy.setup as JsonObject);
@@ -88,7 +96,15 @@ export function instanceCardMeta(
 ): { sides: string; blockerCount: number; exitCount: number; direction: string } {
   const strategy = inst.strategy as JsonObject;
   const blockers = (strategy.blockers as JsonObject[] | undefined) ?? [];
-  const exits = (strategy.exits as JsonObject[] | undefined) ?? [];
+  const tradeManagement = (strategy.trade_management as JsonObject | undefined) ?? {};
+  const exitPolicy = (tradeManagement.exit_policy as JsonObject | undefined) ?? {};
+  const alwaysOn = ((exitPolicy.always_on as JsonObject | undefined)?.exits as JsonObject[] | undefined) ?? [];
+  const profiles = (exitPolicy.profiles as JsonObject | undefined) ?? {};
+  const aligned = ((profiles.aligned as JsonObject | undefined)?.exits as JsonObject[] | undefined) ?? [];
+  const countertrend =
+    ((profiles.countertrend as JsonObject | undefined)?.exits as JsonObject[] | undefined) ?? [];
+  const neutral = ((profiles.neutral as JsonObject | undefined)?.exits as JsonObject[] | undefined) ?? [];
+  const exits = [...alwaysOn, ...aligned, ...countertrend, ...neutral];
   const directionId = readComponentId(strategy.direction as JsonObject);
 
   return {

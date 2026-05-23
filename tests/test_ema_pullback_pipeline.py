@@ -9,10 +9,12 @@ pytest.importorskip("pandas")
 import pandas as pd
 
 from research.strategies.ema_pullback.component_builders import (
-    component_stack,
     exit_atr_stop_loss,
     exit_atr_take_profit,
+    exit_policy,
     exit_rsi,
+    htf_context_config,
+    trade_management,
 )
 from research.strategies.ema_pullback.execution.exits import (
     build_exit_outputs_from_spec,
@@ -101,13 +103,23 @@ def test_build_exit_outputs_from_spec_uses_unified_exit_rules() -> None:
 
 def test_exit_outputs_include_boolean_and_distance_instance_counters() -> None:
     base = make_ema_pullback_strategy_spec()
-    spec = replace(
-        base,
-        components=component_stack(
-            exits=(
-                exit_rsi(instance_id="rsi_exit_base", period=3, long_exit_above=60.0),
-                exit_atr_stop_loss(atr_period=14, atr_multiplier=1.5),
-                exit_atr_take_profit(atr_period=14, atr_multiplier=4.0),
+    spec = make_ema_pullback_strategy_spec(
+        trade_management_spec=trade_management(
+            exit_policy_spec=exit_policy(
+                context=htf_context_config(
+                    timeframe="4h",
+                    fast_period=100,
+                    anchor_period=200,
+                    slow_period=1000,
+                ),
+                always_on=(
+                    exit_rsi(instance_id="rsi_exit_base", period=3, long_exit_above=60.0),
+                    exit_atr_stop_loss(atr_period=14, atr_multiplier=1.5),
+                    exit_atr_take_profit(atr_period=14, atr_multiplier=4.0),
+                ),
+                aligned=(),
+                countertrend=(),
+                neutral=(),
             )
         ),
     )

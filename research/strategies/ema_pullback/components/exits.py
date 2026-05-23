@@ -8,12 +8,28 @@ from research.strategies.ema_pullback.spec import ExitRuleSpec
 from research.strategies.ema_pullback.spec import TradeSide
 
 
+def _consecutive_true(condition: pd.Series, confirm_bars: int) -> pd.Series:
+    if confirm_bars < 1:
+        raise ValueError("confirm_bars must be >= 1")
+    cond = condition.fillna(False).astype(bool)
+    if confirm_bars == 1:
+        return cond
+    return (
+        cond.astype(int)
+        .rolling(confirm_bars, min_periods=confirm_bars)
+        .min()
+        .fillna(0)
+        .astype(bool)
+    )
+
+
 def no_signal_exit(
     df: pd.DataFrame,
     anchor_col: str | None = None,
     side: TradeSide = "long",
-    **_: object,
+    **kwargs: object,
 ) -> pd.Series:
+    _ = kwargs
     """No signal exit: always False (exits handled by stop/take)."""
 
     _ = anchor_col
@@ -28,7 +44,9 @@ def rsi_signal_exit(
     *,
     rule: ExitRuleSpec,
     rsi_col: str | None = None,
+    **kwargs: object,
 ) -> pd.Series:
+    _ = kwargs
     """Exit when prepared RSI reaches the configured side-aware threshold."""
 
     _ = anchor_col
@@ -46,6 +64,81 @@ def rsi_signal_exit(
     else:
         raise ValueError("side must be 'long' or 'short'")
     return out.fillna(False).astype(bool)
+
+
+def ema_close_loss_exit(
+    df: pd.DataFrame,
+    anchor_col: str | None = None,
+    side: TradeSide = "long",
+    *,
+    rule: ExitRuleSpec,
+    ema_col: str | None = None,
+    **_: object,
+) -> pd.Series:
+    """Exit when base close violates aligned EMA for confirm_bars consecutive base bars."""
+
+    _ = anchor_col
+    if rule.ema is None or ema_col is None:
+        raise ValueError("ema_close_loss_exit requires rule.ema and ema_col")
+    close = df["close"].astype(float)
+    ema = df[ema_col].astype(float)
+    if side == "long":
+        condition = close < ema
+    elif side == "short":
+        condition = close > ema
+    else:
+        raise ValueError("side must be 'long' or 'short'")
+    return _consecutive_true(condition, rule.confirm_bars)
+
+
+def ema_cross_loss_exit(
+    df: pd.DataFrame,
+    anchor_col: str | None = None,
+    side: TradeSide = "long",
+    *,
+    rule: ExitRuleSpec,
+    fast_col: str | None = None,
+    slow_col: str | None = None,
+    **_: object,
+) -> pd.Series:
+    """Exit on fast/slow EMA cross on base index.
+
+    confirm_bars=1: classic cross (prior bar had opposite ordering).
+    confirm_bars>1: adverse hold for N base bars AND cross within rolling N-bar window.
+    """
+
+    _ = anchor_col
+    if rule.fast_ema is None or fast_col is None or slow_col is None:
+        raise ValueError("ema_cross_loss_exit requires rule.fast_ema, fast_col, and slow_col")
+    fast = df[fast_col].astype(float)
+    slow = df[slow_col].astype(float)
+    if rule.confirm_bars == 1:
+        prev_fast = fast.shift(1)
+        prev_slow = slow.shift(1)
+        if side == "long":
+            out = (fast < slow) & (prev_fast >= prev_slow)
+        elif side == "short":
+            out = (fast > slow) & (prev_fast <= prev_slow)
+        else:
+            raise ValueError("side must be 'long' or 'short'")
+        return out.fillna(False).astype(bool)
+
+    prev_fast = fast.shift(1)
+    prev_slow = slow.shift(1)
+    if side == "long":
+        cross = (fast < slow) & (prev_fast >= prev_slow)
+        adverse = fast < slow
+    elif side == "short":
+        cross = (fast > slow) & (prev_fast <= prev_slow)
+        adverse = fast > slow
+    else:
+        raise ValueError("side must be 'long' or 'short'")
+    cross = cross.fillna(False).astype(bool)
+    adverse_hold = _consecutive_true(adverse, rule.confirm_bars)
+    cross_in_window = (
+        cross.astype(int).rolling(rule.confirm_bars, min_periods=1).max().fillna(0).astype(bool)
+    )
+    return (adverse_hold & cross_in_window).astype(bool)
 
 
 def atr_distance_exit(

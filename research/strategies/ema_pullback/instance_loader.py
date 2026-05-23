@@ -18,14 +18,23 @@ from research.strategies.ema_pullback.components.registry import (
     NO_SIGNAL_EXIT_COMPONENT,
     UNTOUCHED_ANCHOR_SETUP_COMPONENT,
     RECLAIM_ANCHOR_COMPONENT,
+    STRONG_RECLAIM_ANCHOR_COMPONENT,
     RSI_LOOKBACK_EXTREME_BLOCKER_COMPONENT,
+    EMA_CLOSE_LOSS_EXIT_COMPONENT,
+    EMA_CROSS_LOSS_EXIT_COMPONENT,
     RSI_SIGNAL_EXIT_COMPONENT,
     TOUCH_ANCHOR_COMPONENT,
     resolve_component,
 )
 from research.strategies.ema_pullback.spec import (
     BlockerRuleSpec,
+    EmaSpec,
     EmaPullbackStrategySpec,
+    ExitPolicySpec,
+    ExitPolicyProfilesSpec,
+    ExitPolicyGroupSpec,
+    HtfContextConfigSpec,
+    TradeManagementSpec,
     ExitRuleSpec,
     TradeSide,
     UntouchedAnchorSetupSpec,
@@ -64,7 +73,7 @@ _STRATEGY_FIELDS = frozenset(
         "trigger",
         "blockers",
         "risk",
-        "exits",
+        "trade_management",
     }
 )
 
@@ -95,14 +104,13 @@ def load_ema_pullback_instance(instance: Mapping[str, Any]) -> EmaPullbackStrate
     trigger = _parse_trigger(strategy["trigger"])
     blockers = _parse_blockers(strategy["blockers"])
     risk = _parse_risk(strategy["risk"])
-    exits = _parse_exits(strategy["exits"])
+    trade_management_spec = _parse_trade_management(strategy["trade_management"])
 
     components = builders.component_stack(
         direction=direction,
         blockers=blockers,
         setup=setup_component,
         trigger=trigger,
-        exits=exits,
         risk=risk,
     )
     variant = _optional_non_empty_str(payload, "variant", default="")
@@ -119,6 +127,7 @@ def load_ema_pullback_instance(instance: Mapping[str, Any]) -> EmaPullbackStrate
         setup_active_bars=setup_params.active_bars,
         enabled_sides=_parse_trade_sides(strategy["trade_sides"]),
         components=components,
+        trade_management_spec=trade_management_spec,
     )
     return spec
 
@@ -134,10 +143,92 @@ def _parse_market(value: Any) -> dict[str, str]:
 
 def _parse_strategy(value: Any) -> Mapping[str, Any]:
     payload = _require_mapping("strategy", value)
+    if "exits" in payload:
+        raise EmaPullbackInstanceValidationError(
+            "strategy.exits is no longer supported; use strategy.trade_management.exit_policy"
+        )
     _reject_unknown_fields("strategy", payload, _STRATEGY_FIELDS)
     for key in _STRATEGY_FIELDS:
         _require_present(payload, key)
     return payload
+
+
+def _parse_trade_management(value: Any) -> TradeManagementSpec:
+    payload = _require_mapping("trade_management", value)
+    _reject_unknown_fields("trade_management", payload, {"exit_policy"})
+    exit_policy_payload = _require_mapping(
+        "trade_management.exit_policy",
+        _require_present(payload, "exit_policy"),
+    )
+    _reject_unknown_fields(
+        "trade_management.exit_policy",
+        exit_policy_payload,
+        {"context", "always_on", "profiles"},
+    )
+    context_payload = _require_mapping(
+        "trade_management.exit_policy.context",
+        _require_present(exit_policy_payload, "context"),
+    )
+    _reject_unknown_fields(
+        "trade_management.exit_policy.context",
+        context_payload,
+        {"component_id", "timeframe", "source", "fast_period", "anchor_period", "slow_period"},
+    )
+    context = HtfContextConfigSpec(
+        component_id=_require_non_empty_str(context_payload, "component_id"),
+        timeframe=_require_non_empty_str(context_payload, "timeframe"),
+        source=_optional_non_empty_str(context_payload, "source", default="close"),
+        fast_period=_require_positive_int(context_payload, "fast_period"),
+        anchor_period=_require_positive_int(context_payload, "anchor_period"),
+        slow_period=_require_positive_int(context_payload, "slow_period"),
+    )
+    always_on = _parse_exit_policy_group(
+        _require_present(exit_policy_payload, "always_on"),
+        path="trade_management.exit_policy.always_on",
+    )
+    profiles_payload = _require_mapping(
+        "trade_management.exit_policy.profiles",
+        _require_present(exit_policy_payload, "profiles"),
+    )
+    _reject_unknown_fields(
+        "trade_management.exit_policy.profiles",
+        profiles_payload,
+        {"aligned", "countertrend", "neutral"},
+    )
+    profiles = ExitPolicyProfilesSpec(
+        aligned=_parse_exit_policy_group(
+            _require_present(profiles_payload, "aligned"),
+            path="trade_management.exit_policy.profiles.aligned",
+        ),
+        countertrend=_parse_exit_policy_group(
+            _require_present(profiles_payload, "countertrend"),
+            path="trade_management.exit_policy.profiles.countertrend",
+        ),
+        neutral=_parse_exit_policy_group(
+            _require_present(profiles_payload, "neutral"),
+            path="trade_management.exit_policy.profiles.neutral",
+        ),
+    )
+    return TradeManagementSpec(
+        exit_policy=ExitPolicySpec(
+            context=context,
+            always_on=always_on,
+            profiles=profiles,
+        )
+    )
+
+
+def _parse_exit_policy_group(value: Any, *, path: str) -> ExitPolicyGroupSpec:
+    payload = _require_mapping(path, value)
+    _reject_unknown_fields(path, payload, {"exits"})
+    exits_payload = _require_present(payload, "exits")
+    if not isinstance(exits_payload, list):
+        raise EmaPullbackInstanceValidationError(f"{path}.exits must be a list")
+    exits = tuple(
+        _parse_exit(index, item, path=f"{path}.exits")
+        for index, item in enumerate(exits_payload)
+    )
+    return ExitPolicyGroupSpec(exits=exits)
 
 
 def _parse_trade_sides(value: Any) -> tuple[TradeSide, ...]:
@@ -200,11 +291,34 @@ def _parse_setup(value: Any) -> tuple[str, UntouchedAnchorSetupSpec]:
 
 
 def _parse_trigger(value: Any) -> Any:
-    component_id = _parse_component_id("trigger", value)
+    if isinstance(value, str):
+        if not value.strip():
+            raise EmaPullbackInstanceValidationError("trigger component_id must be non-empty")
+        component_id = value.strip()
+        payload: Mapping[str, Any] | None = None
+    else:
+        payload = _require_mapping("trigger", value)
+        component_id = _require_non_empty_str(payload, "component_id")
     _assert_known_component("trigger", component_id)
-    if component_id not in {RECLAIM_ANCHOR_COMPONENT, TOUCH_ANCHOR_COMPONENT}:
-        raise EmaPullbackInstanceValidationError(f"unsupported trigger component_id {component_id!r}")
-    return builders.trigger(component_id)
+    if component_id == RECLAIM_ANCHOR_COMPONENT:
+        if payload is not None:
+            _reject_unknown_fields("trigger", payload, {"component_id", "lookback"})
+            lookback = _optional_positive_int(payload, "lookback", default=1)
+        else:
+            lookback = 1
+        return builders.trigger_reclaim_anchor(lookback=lookback)
+    if component_id == STRONG_RECLAIM_ANCHOR_COMPONENT:
+        if payload is not None:
+            _reject_unknown_fields("trigger", payload, {"component_id", "lookback"})
+            lookback = _optional_positive_int(payload, "lookback", default=1)
+        else:
+            lookback = 1
+        return builders.trigger_strong_reclaim_anchor(lookback=lookback)
+    if component_id == TOUCH_ANCHOR_COMPONENT:
+        if payload is not None:
+            _reject_unknown_fields("trigger", payload, {"component_id"})
+        return builders.trigger_touch_anchor()
+    raise EmaPullbackInstanceValidationError(f"unsupported trigger component_id {component_id!r}")
 
 
 def _parse_blockers(value: Any) -> tuple[BlockerRuleSpec, ...]:
@@ -255,24 +369,18 @@ def _parse_risk(value: Any) -> str:
     return builders.risk_no_filter()
 
 
-def _parse_exits(value: Any) -> tuple[ExitRuleSpec, ...]:
-    if not isinstance(value, list) or not value:
-        raise EmaPullbackInstanceValidationError("exits must be a non-empty list")
-    return tuple(_parse_exit(index, item) for index, item in enumerate(value))
-
-
-def _parse_exit(index: int, value: Any) -> ExitRuleSpec:
-    payload = _require_mapping(f"exits[{index}]", value)
+def _parse_exit(index: int, value: Any, *, path: str = "exits") -> ExitRuleSpec:
+    payload = _require_mapping(f"{path}[{index}]", value)
     component_id = _require_non_empty_str(payload, "component_id")
     _assert_known_component("exits", component_id)
     instance_id = _require_non_empty_str(payload, "instance_id")
     common = {"instance_id", "component_id"}
     if component_id == NO_SIGNAL_EXIT_COMPONENT:
-        _reject_unknown_fields(f"exits[{index}]", payload, common)
+        _reject_unknown_fields(f"{path}[{index}]", payload, common)
         return builders.exit_rule(NO_SIGNAL_EXIT_COMPONENT, instance_id=instance_id, exit_kind="signal")
     if component_id == RSI_SIGNAL_EXIT_COMPONENT:
         allowed = common | {"rsi", "timeframe", "period", "long_exit_above", "short_exit_below"}
-        _reject_unknown_fields(f"exits[{index}]", payload, allowed)
+        _reject_unknown_fields(f"{path}[{index}]", payload, allowed)
         rsi = _parse_rsi_payload(payload)
         return builders.exit_rsi(
             instance_id=instance_id,
@@ -283,7 +391,7 @@ def _parse_exit(index: int, value: Any) -> ExitRuleSpec:
         )
     if component_id in {ATR_STOP_LOSS_COMPONENT, ATR_TAKE_PROFIT_COMPONENT}:
         allowed = common | {"distance", "timeframe", "period", "multiplier"}
-        _reject_unknown_fields(f"exits[{index}]", payload, allowed)
+        _reject_unknown_fields(f"{path}[{index}]", payload, allowed)
         distance = _parse_distance_payload(payload)
         if component_id == ATR_STOP_LOSS_COMPONENT:
             return builders.exit_atr_stop_loss(
@@ -300,12 +408,50 @@ def _parse_exit(index: int, value: Any) -> ExitRuleSpec:
         )
     if component_id in {CONSTANT_USD_STOP_LOSS_COMPONENT, CONSTANT_USD_TAKE_PROFIT_COMPONENT}:
         allowed = common | {"usd_distance"}
-        _reject_unknown_fields(f"exits[{index}]", payload, allowed)
+        _reject_unknown_fields(f"{path}[{index}]", payload, allowed)
         usd_distance = _require_positive_number(payload, "usd_distance")
         if component_id == CONSTANT_USD_STOP_LOSS_COMPONENT:
             return builders.exit_constant_usd_stop_loss(instance_id=instance_id, usd_distance=usd_distance)
         return builders.exit_constant_usd_take_profit(instance_id=instance_id, usd_distance=usd_distance)
+    if component_id == EMA_CLOSE_LOSS_EXIT_COMPONENT:
+        allowed = common | {"ema", "confirm_bars"}
+        _reject_unknown_fields(f"{path}[{index}]", payload, allowed)
+        ema = _parse_ema_block(payload, key="ema", path=f"{path}[{index}]")
+        confirm_bars = _optional_positive_int(payload, "confirm_bars", default=1)
+        return builders.exit_ema_close_loss(
+            instance_id=instance_id,
+            ema=ema,
+            confirm_bars=confirm_bars,
+        )
+    if component_id == EMA_CROSS_LOSS_EXIT_COMPONENT:
+        allowed = common | {"fast_ema", "slow_ema", "confirm_bars"}
+        _reject_unknown_fields(f"{path}[{index}]", payload, allowed)
+        fast_ema = _parse_ema_block(payload, key="fast_ema", path=f"{path}[{index}]")
+        slow_ema = _parse_ema_block(payload, key="slow_ema", path=f"{path}[{index}]")
+        confirm_bars = _optional_positive_int(payload, "confirm_bars", default=1)
+        return builders.exit_ema_cross_loss(
+            instance_id=instance_id,
+            fast_ema=fast_ema,
+            slow_ema=slow_ema,
+            confirm_bars=confirm_bars,
+        )
     raise EmaPullbackInstanceValidationError(f"unsupported exit component_id {component_id!r}")
+
+
+def _parse_ema_block(payload: Mapping[str, Any], *, key: str, path: str) -> EmaSpec:
+    nested = payload.get(key)
+    if nested is None:
+        raise EmaPullbackInstanceValidationError(f"{path} requires nested {key!r} object")
+    ema_payload = _require_mapping(f"{path}.{key}", nested)
+    _reject_unknown_fields(f"{path}.{key}", ema_payload, {"timeframe", "period", "source"})
+    source = _optional_non_empty_str(ema_payload, "source", default="close")
+    if source != "close":
+        raise EmaPullbackInstanceValidationError(f"{path}.{key}.source must be 'close'")
+    return builders.ema(
+        _require_positive_int(ema_payload, "period"),
+        timeframe=_optional_non_empty_str(ema_payload, "timeframe", default="base"),
+        source=source,
+    )
 
 
 def _parse_rsi_payload(payload: Mapping[str, Any]) -> dict[str, Any]:

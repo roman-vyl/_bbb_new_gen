@@ -23,7 +23,7 @@ feature profiles
 strategy components
 strategy configs / instances
 manual variants
-entries & exits (в спеке: components + components.exits; композиция в execution/)
+entries & exits (в спеке: components + trade_management.exit_policy; композиция в execution/)
 vectorbt backtests
 JSON reports (report_schema_version 3)
 ```
@@ -80,7 +80,7 @@ frontend logic
 ```text
 clean candles (SQLite → OHLCV DataFrame)
 ↓
-EmaPullbackStrategySpec (semantic model; в т.ч. components.exits в спеке)
+EmaPullbackStrategySpec (semantic model; в т.ч. trade_management.exit_policy в спеке)
 ↓
 FeaturePlan (что посчитать: EMA/ATR/distance/RSI, при необходимости MTF)
 ↓
@@ -93,7 +93,8 @@ execution/signals.py
   blockers: AND по tuple правил
 ↓
 execution/exits.py
-  читает components.exits из спека → signal exits OR + ATR stop/take mapping
+  читает trade_management.exit_policy из спека
+  active exits = always_on + selected profile(side + htf_context.state)
   exits / short_exits / sl_stop / tp_stop
 ↓
 vectorbt Portfolio
@@ -147,7 +148,7 @@ StrategySpec — единственный semantic источник для famil
 FeaturePlan — декларация нужных колонок (включая RSI и MTF EMA/RSI).
 Components — решают по подготовленным колонкам; RSI не считают внутри себя.
 signals.py — side-aware composer только для entries/short_entries.
-components.exits в StrategySpec — декларативные exit-компоненты; exits.py сводит их к слоям vectorbt (signal OR + ATR → sl_stop/tp_stop).
+trade_management.exit_policy.*.exits в StrategySpec — декларативные exit-компоненты; exits.py сводит активную группу к слоям vectorbt.
 JSON report — полный strategy_spec внутри variant payload; top-level report_schema_version: 3.
 ```
 
@@ -164,7 +165,7 @@ Stage 10: EmaPullbackStrategySpec как единственная semantic мо�
 Stage 11: TradeSideSpec + long/short wiring в vectorbt
 Stage 12: typed blockers/signal exit tuples, live components, RSI features,
           MTF resample+alignment для EMA/RSI на base OHLCV
-Stage 13: unified components.exits для signal exits и ATR stop/take,
+Stage 13: unified trade_management.exit_policy для signal exits и distance stop/take,
           отдельный execution exit-layer перед vectorbt
 ```
 
@@ -360,7 +361,7 @@ multi-instance component semantics (Step 13) и внешний config loader MVP
 clean candles
 → StrategySpec + trade_sides
 → FeaturePlan + feature calculations
-→ components + registry (включая components.exits в спеке)
+→ components + registry (exit rules живут в trade_management.exit_policy)
 → execution signals + exits (композиция для vectorbt)
 → vectorbt
 → stdout + JSON report

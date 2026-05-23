@@ -160,6 +160,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
   const [signalTraceError, setSignalTraceError] = useState<string | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
   const prevVariantKeyRef = useRef("");
+  const prevRunIdForTradeBootstrapRef = useRef<string | null>(null);
   const selectedVariantKeyRef = useRef("");
 
   useEffect(() => {
@@ -329,17 +330,20 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     const next = resolveVariantKeyForReport(report, selectedVariantKeyRef.current);
     setSelectedVariantKey(next);
     selectedVariantKeyRef.current = next;
-    prevVariantKeyRef.current = "";
   }, [report]);
 
   useEffect(() => {
     if (report === null || selectedVariant === null) {
       return;
     }
-    if (prevVariantKeyRef.current === selectedVariantKey) {
+    const runId = report.run_id;
+    const variantChanged = prevVariantKeyRef.current !== selectedVariantKey;
+    const runChanged = prevRunIdForTradeBootstrapRef.current !== runId;
+    if (!variantChanged && !runChanged) {
       return;
     }
     prevVariantKeyRef.current = selectedVariantKey;
+    prevRunIdForTradeBootstrapRef.current = runId;
     applyTradeFocusSelection(selectedVariant.trade_records);
   }, [report?.run_id, selectedVariantKey, selectedVariant, applyTradeFocusSelection]);
 

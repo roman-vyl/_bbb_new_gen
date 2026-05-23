@@ -11,7 +11,7 @@ import pandas as pd
 
 @dataclass(frozen=True)
 class ExitAttributionContext:
-    """Per-rule series aligned with ``spec.components.exits`` order."""
+    """Per-rule series aligned with compiled exit policy rule order."""
 
     index: pd.Index
     instance_ids: tuple[str, ...]
@@ -19,8 +19,12 @@ class ExitAttributionContext:
     long_signal_by_rule: tuple[pd.Series | None, ...]
     short_signal_by_rule: tuple[pd.Series | None, ...]
     distance_ratio_by_rule: tuple[pd.Series | None, ...]
-    sl_stop_agg: pd.Series
-    tp_stop_agg: pd.Series
+    rule_groups: tuple[str, ...] = ()
+    context_state: pd.Series | None = None
+    sl_stop_agg_by_profile: dict[str, pd.Series] | None = None
+    tp_stop_agg_by_profile: dict[str, pd.Series] | None = None
+    sl_stop_agg: pd.Series | None = None
+    tp_stop_agg: pd.Series | None = None
 
 
 def _finite(x: Any) -> bool:
@@ -33,12 +37,38 @@ def _finite(x: Any) -> bool:
     return math.isfinite(v)
 
 
+def _resolve_profile(direction: str, context_state: str) -> str:
+    if direction == "long":
+        if context_state == "up":
+            return "aligned"
+        if context_state == "down":
+            return "countertrend"
+        return "neutral"
+    if context_state == "down":
+        return "aligned"
+    if context_state == "up":
+        return "countertrend"
+    return "neutral"
+
+
 def _agg_sl_tp_at_entry(
     ctx: ExitAttributionContext,
     entry_idx: int,
+    *,
+    profile: str,
 ) -> tuple[float | None, float | None]:
-    sl_a = ctx.sl_stop_agg.iloc[entry_idx]
-    tp_a = ctx.tp_stop_agg.iloc[entry_idx]
+    if ctx.sl_stop_agg_by_profile is not None and ctx.tp_stop_agg_by_profile is not None:
+        sl_a = ctx.sl_stop_agg_by_profile.get(profile)
+        tp_a = ctx.tp_stop_agg_by_profile.get(profile)
+        if sl_a is None or tp_a is None:
+            return None, None
+        sl_a = sl_a.iloc[entry_idx]
+        tp_a = tp_a.iloc[entry_idx]
+    else:
+        if ctx.sl_stop_agg is None or ctx.tp_stop_agg is None:
+            return None, None
+        sl_a = ctx.sl_stop_agg.iloc[entry_idx]
+        tp_a = ctx.tp_stop_agg.iloc[entry_idx]
     sl_v = float(sl_a) if _finite(sl_a) else None
     tp_v = float(tp_a) if _finite(tp_a) else None
     return sl_v, tp_v
@@ -50,6 +80,7 @@ def _pick_distance_instance(
     *,
     exit_kind: Literal["stop_loss", "take_profit"],
     agg_value: float,
+    profile: str,
 ) -> str | None:
     """Which distance rule produced the aggregate min at ``entry_idx`` (first in spec on tie)."""
 
@@ -57,6 +88,9 @@ def _pick_distance_instance(
     best: tuple[int, str] | None = None
     for i, kind in enumerate(ctx.exit_kinds):
         if kind != exit_kind:
+            continue
+        group = ctx.rule_groups[i] if i < len(ctx.rule_groups) else "always_on"
+        if group not in {"always_on", profile}:
             continue
         series = ctx.distance_ratio_by_rule[i]
         if series is None:
@@ -172,35 +206,49 @@ def classify_exit_reason(
     if not all(map(math.isfinite, (o_x, h_x, l_x))):
         return "unknown"
 
-    sl_agg, tp_agg = _agg_sl_tp_at_entry(ctx, entry_idx)
+    raw_state = ctx.context_state.iloc[entry_idx] if ctx.context_state is not None else "neutral"
+    state = str(raw_state) if isinstance(raw_state, str) else "neutral"
+    profile = _resolve_profile(direction, state)
+    sl_agg, tp_agg = _agg_sl_tp_at_entry(ctx, entry_idx, profile=profile)
     sl_level, tp_level = _levels_from_ratios(direction, stop_anchor, sl_agg, tp_agg)
 
     if direction == "long":
         if sl_level is not None and sl_agg is not None and _stop_hit_long(
             o_x, h_x, l_x, sl_level, is_loss=True
         ):
-            inst = _pick_distance_instance(ctx, entry_idx, exit_kind="stop_loss", agg_value=sl_agg)
+            inst = _pick_distance_instance(
+                ctx, entry_idx, exit_kind="stop_loss", agg_value=sl_agg, profile=profile
+            )
             return f"stop_loss:{inst}" if inst else "unknown"
         if tp_level is not None and tp_agg is not None and _stop_hit_long(
             o_x, h_x, l_x, tp_level, is_loss=False
         ):
-            inst = _pick_distance_instance(ctx, entry_idx, exit_kind="take_profit", agg_value=tp_agg)
+            inst = _pick_distance_instance(
+                ctx, entry_idx, exit_kind="take_profit", agg_value=tp_agg, profile=profile
+            )
             return f"take_profit:{inst}" if inst else "unknown"
     else:
         if sl_level is not None and sl_agg is not None and _stop_hit_short(
             o_x, h_x, l_x, sl_level, is_loss=True
         ):
-            inst = _pick_distance_instance(ctx, entry_idx, exit_kind="stop_loss", agg_value=sl_agg)
+            inst = _pick_distance_instance(
+                ctx, entry_idx, exit_kind="stop_loss", agg_value=sl_agg, profile=profile
+            )
             return f"stop_loss:{inst}" if inst else "unknown"
         if tp_level is not None and tp_agg is not None and _stop_hit_short(
             o_x, h_x, l_x, tp_level, is_loss=False
         ):
-            inst = _pick_distance_instance(ctx, entry_idx, exit_kind="take_profit", agg_value=tp_agg)
+            inst = _pick_distance_instance(
+                ctx, entry_idx, exit_kind="take_profit", agg_value=tp_agg, profile=profile
+            )
             return f"take_profit:{inst}" if inst else "unknown"
 
     masks = ctx.long_signal_by_rule if direction == "long" else ctx.short_signal_by_rule
     for i, series in enumerate(masks):
         if series is None:
+            continue
+        group = ctx.rule_groups[i] if i < len(ctx.rule_groups) else "always_on"
+        if group not in {"always_on", profile}:
             continue
         if bool(series.iloc[exit_idx]):
             return f"signal:{ctx.instance_ids[i]}"

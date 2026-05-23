@@ -25,6 +25,7 @@ from research.strategies.ema_pullback.spec_report import (
 
 from research_api.contracts.runs import RunReport, RunVariant
 from research_api.contracts.signal_trace import (
+    HtfContextTrace,
     SignalTraceBundle,
     SignalTraceMeta,
     SideSignalTrace as SideSignalTraceContract,
@@ -52,10 +53,18 @@ def _variant_from_report(report: RunReport, variant_key: str) -> RunVariant:
 
 
 def _warmup_bars_ms(spec: Any, timeframe: str) -> int:
+    base_tf = validate_timeframe(timeframe)
+    base_ms = timeframe_ms(base_tf)
     lookback = int(spec.setup.lookback)
     slow_period = int(spec.anchor_stack.slow.period)
-    bars = max(lookback, slow_period) + 5
-    return bars * timeframe_ms(validate_timeframe(timeframe))
+    anchor_warmup_ms = (max(lookback, slow_period) + 5) * base_ms
+
+    context = spec.trade_management.exit_policy.context
+    context_tf = base_tf if str(context.timeframe).strip() == "base" else validate_timeframe(context.timeframe)
+    context_ms = timeframe_ms(context_tf)
+    context_warmup_ms = (int(context.slow_period) + 5) * context_ms
+
+    return max(anchor_warmup_ms, context_warmup_ms)
 
 
 def _load_ohlcv_frame(
@@ -93,6 +102,7 @@ def _to_contract(data: SignalTraceBundleData) -> SignalTraceBundle:
     return SignalTraceBundle(
         times=data.times,
         meta=SignalTraceMeta(**data.meta),
+        htf_context=HtfContextTrace(**data.htf_context),
         long=side(data.long),
         short=side(data.short),
     )

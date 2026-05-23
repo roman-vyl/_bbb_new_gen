@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 import hashlib
 import json
 from typing import Any, Literal
@@ -40,7 +40,6 @@ class ComponentStackSpec:
     blockers: tuple["BlockerRuleSpec", ...]
     setup: str
     trigger: "TriggerSpec"
-    exits: tuple["ExitRuleSpec", ...]
     risk: str
 
     def __post_init__(self) -> None:
@@ -50,10 +49,7 @@ class ComponentStackSpec:
                 raise ValueError(f"components.{field_name} must be non-empty")
         if not self.blockers:
             raise ValueError("components.blockers must contain at least one rule")
-        if not self.exits:
-            raise ValueError("components.exits must contain at least one rule")
         _validate_unique_instance_ids("components.blockers", self.blockers)
-        _validate_unique_instance_ids("components.exits", self.exits)
 
 
 @dataclass(frozen=True)
@@ -119,11 +115,16 @@ ExitKind = Literal["signal", "stop_loss", "take_profit"]
 _EXIT_COMPONENT_KINDS: dict[str, ExitKind] = {
     "no_signal_exit": "signal",
     "rsi_signal_exit": "signal",
+    "ema_close_loss_exit": "signal",
+    "ema_cross_loss_exit": "signal",
     "atr_stop_loss": "stop_loss",
     "atr_take_profit": "take_profit",
     "constant_usd_stop_loss": "stop_loss",
     "constant_usd_take_profit": "take_profit",
 }
+
+EMA_CLOSE_LOSS_EXIT_COMPONENT = "ema_close_loss_exit"
+EMA_CROSS_LOSS_EXIT_COMPONENT = "ema_cross_loss_exit"
 
 
 @dataclass(frozen=True)
@@ -161,6 +162,23 @@ class UntouchedAnchorSetupSpec:
 @dataclass(frozen=True)
 class ReclaimTriggerSpec(TriggerSpec):
     component_id: str = "reclaim_anchor"
+    lookback: int = 1
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        if self.lookback <= 0:
+            raise ValueError("trigger.lookback must be > 0")
+
+
+@dataclass(frozen=True)
+class StrongReclaimTriggerSpec(TriggerSpec):
+    component_id: str = "strong_reclaim_anchor"
+    lookback: int = 1
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        if self.lookback <= 0:
+            raise ValueError("trigger.lookback must be > 0")
 
 
 @dataclass(frozen=True)
@@ -178,12 +196,56 @@ class AtrDistanceSpec:
             raise ValueError("atr distance multiplier must be > 0")
 
 
+def _validate_ema_exit_rule_fields(rule: "ExitRuleSpec") -> None:
+    if rule.component_id == EMA_CLOSE_LOSS_EXIT_COMPONENT:
+        if rule.ema is None:
+            raise ValueError("ema_close_loss_exit requires ema")
+        if rule.fast_ema is not None or rule.slow_ema is not None:
+            raise ValueError("ema_close_loss_exit must not define fast_ema or slow_ema")
+        forbidden = (
+            ("rsi", rule.rsi),
+            ("long_exit_above", rule.long_exit_above),
+            ("short_exit_below", rule.short_exit_below),
+        )
+        for name, value in forbidden:
+            if value is not None:
+                raise ValueError(f"ema_close_loss_exit must not define {name}")
+        if rule.confirm_bars < 1:
+            raise ValueError("ema_close_loss_exit requires confirm_bars >= 1")
+        return
+    if rule.component_id == EMA_CROSS_LOSS_EXIT_COMPONENT:
+        if rule.ema is not None:
+            raise ValueError("ema_cross_loss_exit must not define ema")
+        if rule.fast_ema is None or rule.slow_ema is None:
+            raise ValueError("ema_cross_loss_exit requires fast_ema and slow_ema")
+        if rule.fast_ema.timeframe != rule.slow_ema.timeframe:
+            raise ValueError("ema_cross_loss_exit requires fast_ema and slow_ema on the same timeframe")
+        if rule.fast_ema.source != "close" or rule.slow_ema.source != "close":
+            raise ValueError("ema_cross_loss_exit requires fast_ema and slow_ema source 'close'")
+        if rule.fast_ema.period >= rule.slow_ema.period:
+            raise ValueError("ema_cross_loss_exit requires fast_ema.period < slow_ema.period")
+        forbidden = (
+            ("rsi", rule.rsi),
+            ("long_exit_above", rule.long_exit_above),
+            ("short_exit_below", rule.short_exit_below),
+        )
+        for name, value in forbidden:
+            if value is not None:
+                raise ValueError(f"ema_cross_loss_exit must not define {name}")
+        if rule.confirm_bars < 1:
+            raise ValueError("ema_cross_loss_exit requires confirm_bars >= 1")
+
+
 @dataclass(frozen=True)
 class ExitRuleSpec:
     instance_id: str
     component_id: str
     exit_kind: ExitKind = "signal"
     rsi: RsiFeatureSpec | None = None
+    ema: EmaSpec | None = None
+    fast_ema: EmaSpec | None = None
+    slow_ema: EmaSpec | None = None
+    confirm_bars: int = 1
     long_exit_above: float | None = None
     short_exit_below: float | None = None
     distance: AtrDistanceSpec | None = None
@@ -224,15 +286,78 @@ class ExitRuleSpec:
             value = getattr(self, field_name)
             if value is not None and not (0 <= value <= 100):
                 raise ValueError(f"exit {field_name} must be between 0 and 100")
+        if self.component_id in {EMA_CLOSE_LOSS_EXIT_COMPONENT, EMA_CROSS_LOSS_EXIT_COMPONENT}:
+            _validate_ema_exit_rule_fields(self)
+
+
+@dataclass(frozen=True)
+class HtfContextConfigSpec:
+    component_id: str
+    timeframe: str
+    source: str
+    fast_period: int
+    anchor_period: int
+    slow_period: int
+
+    def __post_init__(self) -> None:
+        if self.component_id != "htf_context":
+            raise ValueError("trade_management.exit_policy.context.component_id must be 'htf_context'")
+        if not self.timeframe.strip():
+            raise ValueError("trade_management.exit_policy.context.timeframe must be non-empty")
+        if self.source != "close":
+            raise ValueError("trade_management.exit_policy.context.source must be 'close'")
+        if self.fast_period <= 0 or self.anchor_period <= 0 or self.slow_period <= 0:
+            raise ValueError("trade_management.exit_policy.context periods must be > 0")
+        if not (self.fast_period < self.anchor_period < self.slow_period):
+            raise ValueError("trade_management.exit_policy.context must satisfy fast < anchor < slow periods")
+
+
+@dataclass(frozen=True)
+class ExitPolicyGroupSpec:
+    exits: tuple[ExitRuleSpec, ...]
+
+
+@dataclass(frozen=True)
+class ExitPolicyProfilesSpec:
+    aligned: ExitPolicyGroupSpec
+    countertrend: ExitPolicyGroupSpec
+    neutral: ExitPolicyGroupSpec
+
+
+@dataclass(frozen=True)
+class ExitPolicySpec:
+    context: HtfContextConfigSpec
+    always_on: ExitPolicyGroupSpec
+    profiles: ExitPolicyProfilesSpec
+
+    def __post_init__(self) -> None:
+        rules_with_scope: list[tuple[str, tuple[ExitRuleSpec, ...]]] = [
+            ("trade_management.exit_policy.always_on.exits", self.always_on.exits),
+            ("trade_management.exit_policy.profiles.aligned.exits", self.profiles.aligned.exits),
+            ("trade_management.exit_policy.profiles.countertrend.exits", self.profiles.countertrend.exits),
+            ("trade_management.exit_policy.profiles.neutral.exits", self.profiles.neutral.exits),
+        ]
+        seen: set[str] = set()
+        total = 0
+        for scope, rules in rules_with_scope:
+            total += len(rules)
+            for rule in rules:
+                instance_id = rule.instance_id
+                if not instance_id.strip():
+                    raise ValueError(f"{scope} instance_id must be non-empty")
+                if instance_id in seen:
+                    raise ValueError(
+                        "trade_management.exit_policy instance_id must be globally unique: "
+                        f"{instance_id!r}"
+                    )
+                seen.add(instance_id)
+        if total == 0:
+            raise ValueError("trade_management.exit_policy must contain at least one exit rule")
 
 
 @dataclass(frozen=True)
 class TradeManagementSpec:
-    profile: str = "reserved"
-
-    def __post_init__(self) -> None:
-        if not self.profile.strip():
-            raise ValueError("trade management profile must be non-empty")
+    exit_policy: ExitPolicySpec
 
 
 @dataclass(frozen=True)
@@ -244,7 +369,7 @@ class EmaPullbackStrategySpec:
     components: ComponentStackSpec
     trade_sides: TradeSideSpec
     setup: UntouchedAnchorSetupSpec
-    trade_management: TradeManagementSpec = field(default_factory=TradeManagementSpec)
+    trade_management: TradeManagementSpec
 
     def __post_init__(self) -> None:
         if not self.variant.strip():

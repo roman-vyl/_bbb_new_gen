@@ -236,6 +236,7 @@ export type SignalTraceMeta = {
     risk: string;
   };
   setup_params: { lookback: number; active_bars: number };
+  trigger_params?: { lookback: number };
   blocker_instances: { instance_id: string; component_id: string }[];
 };
 
@@ -251,9 +252,18 @@ export type SideSignalTrace = {
   internals: Record<string, unknown>;
 };
 
+export type HtfContextTrace = {
+  state: ("up" | "down" | "neutral")[];
+  fast: Array<number | null>;
+  anchor: Array<number | null>;
+  slow: Array<number | null>;
+  meta: Record<string, unknown>;
+};
+
 export type SignalTraceBundle = {
   times: number[];
   meta: SignalTraceMeta;
+  htf_context?: HtfContextTrace;
   long: SideSignalTrace;
   short: SideSignalTrace;
 };
