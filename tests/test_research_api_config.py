@@ -112,6 +112,7 @@ def test_component_catalog_returns_ema_pullback_components(client: TestClient) -
     strong_params = strong_components[0]["params_schema"]
     assert strong_params["lookback"]["default"] == 1
     assert strong_params["lookback"]["min"] == 1
+    assert all(c["component_id"] != "htf_context" for c in body["components"])
 
 
 def test_validate_config_ok(client: TestClient) -> None:

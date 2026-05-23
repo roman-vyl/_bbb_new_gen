@@ -12,6 +12,7 @@ from research.strategies.ema_pullback.execution.signal_trace import (
     build_signal_trace_from_spec,
     slice_signal_trace,
 )
+from research.strategies.ema_pullback.execution.exits import PortfolioExitOutputs
 from research.strategies.ema_pullback.execution.signals import build_signals_from_spec
 from research.strategies.ema_pullback.features.calculations import add_feature_columns_from_plan
 from research.strategies.ema_pullback.features.plan import build_feature_plan_from_strategy_spec
@@ -141,3 +142,38 @@ def test_slice_signal_trace_respects_window() -> None:
     )
     assert len(sliced.times) == 11
     assert sliced.long.direction_ok == full.long.direction_ok[10:21]
+
+
+def test_signal_trace_uses_side_specific_stop_ready(monkeypatch: pytest.MonkeyPatch) -> None:
+    spec = make_ema_pullback_strategy_spec(enabled_sides=("long", "short"))
+    plan = build_feature_plan_from_strategy_spec(spec)
+    df = add_feature_columns_from_plan(_ohlcv(periods=12), plan)
+
+    def fake_exits(df_local: pd.DataFrame, _spec: object, _plan: object) -> PortfolioExitOutputs:
+        idx = df_local.index
+        false_s = pd.Series(False, index=idx, dtype=bool)
+        nan_s = pd.Series(float("nan"), index=idx, dtype=float)
+        return PortfolioExitOutputs(
+            exits=false_s,
+            short_exits=false_s,
+            sl_stop=nan_s,
+            tp_stop=nan_s,
+            stop_ready_long=pd.Series([True] * len(idx), index=idx, dtype=bool),
+            stop_ready_short=pd.Series([False] * len(idx), index=idx, dtype=bool),
+            context_state=pd.Series("neutral", index=idx, dtype="object"),
+            profile_long=pd.Series("neutral", index=idx, dtype="object"),
+            profile_short=pd.Series("neutral", index=idx, dtype="object"),
+            long_exits_by_profile={"aligned": false_s, "countertrend": false_s, "neutral": false_s},
+            short_exits_by_profile={"aligned": false_s, "countertrend": false_s, "neutral": false_s},
+            sl_stop_by_profile={"aligned": nan_s, "countertrend": nan_s, "neutral": nan_s},
+            tp_stop_by_profile={"aligned": nan_s, "countertrend": nan_s, "neutral": nan_s},
+        )
+
+    monkeypatch.setattr(
+        "research.strategies.ema_pullback.execution.signal_trace.build_exit_outputs_from_spec",
+        fake_exits,
+    )
+
+    trace = build_signal_trace_from_spec(df, spec, plan)
+    assert all(trace.long.stop_ready)
+    assert not any(trace.short.stop_ready)

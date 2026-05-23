@@ -160,24 +160,6 @@ def get_component_catalog(*, family: str = "ema_pullback") -> ComponentCatalog:
             label="No risk filter",
         ),
         ComponentSchema(
-            component_id="htf_context",
-            role="exits",
-            label="HTF context",
-            description="Diagnostic-only context for selecting aligned/countertrend/neutral exit profile.",
-            params_schema={
-                "context.timeframe": _tf_param("HTF timeframe", default="4h"),
-                "context.source": ParamFieldSchema(
-                    type="string",
-                    label="Source",
-                    enum=["close"],
-                    default="close",
-                ),
-                "context.fast_period": _int_param("Fast EMA period", default=20),
-                "context.anchor_period": _int_param("Anchor EMA period", default=50),
-                "context.slow_period": _int_param("Slow EMA period", default=200),
-            },
-        ),
-        ComponentSchema(
             component_id="no_signal_exit",
             role="exits",
             label="No signal exit",

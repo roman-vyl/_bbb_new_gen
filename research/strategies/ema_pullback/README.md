@@ -43,10 +43,10 @@ EmaPullbackStrategySpec
 
 Стратегии для прогона задаются **только** внешним YAML/JSON (см. `research/experiments/config_loader.py` и `instance_loader.py`). Typed-сборка из dict выполняется через `make_ema_pullback_strategy_spec(...)` / builders; отдельного «списка активных спеков в Python» нет.
 
-Текущая модель держит все выходы в одном `components.exits`: сигнальные правила
-и ATR stop/take описываются одинаково как `ExitRuleSpec`. `signals.py` собирает
-только входы, а `execution/exits.py` маппит exit rules в `exits/short_exits` и
-`sl_stop/tp_stop`.
+Текущая модель держит все выходы в `trade_management.exit_policy`:
+`always_on` + профильные группы (`aligned/countertrend/neutral`) с правилами
+`ExitRuleSpec`. `signals.py` собирает только входы, а `execution/exits.py`
+собирает активные выходы/дистанции для vectorbt.
 
 `variant` — это человекочитаемый label собранного `StrategySpec`. Если caller не
 задаёт его явно, имя генерируется из фактических периодов `anchor_stack`:
@@ -61,7 +61,7 @@ ema_pullback_fast{fast.period}_anchor{anchor.period}_slow{slow.period}
 |------|------------|
 | `config.py` | `ExecutionConfig`, `DEFAULT_INIT_CASH` / `DEFAULT_FEES` / `DEFAULT_SLIPPAGE`, `execution_config_from_external` |
 | `spec.py` | Dataclass-контракты `EmaPullbackStrategySpec` и вложенных spec-частей |
-| `component_builders.py` | Typed builders для `anchor/trigger/blockers/exits/trade_sides/components` |
+| `component_builders.py` | Typed builders для `anchor/trigger/blockers/trade_sides/components/trade_management` |
 | `spec_instances.py` | `make_ema_pullback_strategy_spec`, `variant_from_spec` |
 | `run.py` | CLI: только `--config` (experiment file) и опционально `--db-path` |
 | `features/plan.py` | `FeaturePlan` из `EmaPullbackStrategySpec` без расчёта данных |
@@ -73,7 +73,7 @@ ema_pullback_fast{fast.period}_anchor{anchor.period}_slow{slow.period}
 | `execution/runner.py` | `run_strategy_specs_from_config`: loader → финальный `ExecutionConfig` → backtest → таблица → JSON |
 | `execution/result_models.py` | Dataclass-контракты `LoadedCandles`, `VariantMetrics`, `VariantResult` |
 | `execution/signals.py` | Композитор `entries/short_entries` из spec + plan + Component Registry |
-| `execution/exits.py` | Exit-layer: `components.exits` → `exits/short_exits/sl_stop/tp_stop` |
+| `execution/exits.py` | Exit Policy compiler: `trade_management.exit_policy` → profile-aware `exits/short_exits/sl_stop/tp_stop` |
 | `execution/results.py` | JSON payload schema v3, `latest.json` / `runs/<run_id>.json` |
 
 ## StrategySpec factory (Python)
@@ -84,7 +84,7 @@ ema_pullback_fast{fast.period}_anchor{anchor.period}_slow{slow.period}
 Числовые research-параметры задаются в `make_ema_pullback_strategy_spec(...)` и
 внутри фабрики собираются через builders (`anchor_stack_from_periods(...)`,
 `component_stack(...)`, `exits_atr_default(...)`, `trade_sides(...)`,
-`untouched_anchor_setup_spec(...)`). Если caller не задаёт `variant`, он выводится из фактических
+`untouched_anchor_setup_spec(...)`, `exit_policy(...)`). Если caller не задаёт `variant`, он выводится из фактических
 `fast / anchor / slow` периодов; внешний config может передать человекочитаемый
 variant label, а semantic uniqueness остаётся за `config_id`:
 
@@ -101,10 +101,6 @@ components:
   blockers  = (BlockerRuleSpec(no_blockers),)
   setup     = untouched_anchor_setup
   trigger   = ReclaimTriggerSpec()  # component_id reclaim_anchor
-  exits     = (
-    ExitRuleSpec(atr_stop_loss, exit_kind=stop_loss, ATR distance from factory params),
-    ExitRuleSpec(atr_take_profit, exit_kind=take_profit, ATR distance from factory params),
-  )
   risk      = no_risk_filter
 
 trade_sides:
@@ -116,7 +112,14 @@ external config также принимает:
   trade_sides = {long = true, short = false}
 
 trade_management:
-  profile = reserved  # зарезервировано, не содержит exit_rules
+  exit_policy:
+    context: htf_context
+    always_on:
+      exits: [atr_stop_loss, atr_take_profit]
+    profiles:
+      aligned.exits: []
+      countertrend.exits: []
+      neutral.exits: []
 ```
 
 `config_id` считается только из canonical serialization `EmaPullbackStrategySpec`
@@ -153,23 +156,37 @@ short:
 объединяются через OR внутри exit-layer. ATR stop/take остаются такими же
 семантическими exit rules и только в execution-слое становятся `sl_stop/tp_stop`.
 
-SL/TP и signal exits конфигурируются только через `components.exits` (`ExitRuleSpec`).
+SL/TP и signal exits конфигурируются только через `trade_management.exit_policy.*.exits` (`ExitRuleSpec`).
 ATR-выходы используют вложенный объект `distance` (как раньше). **Константная дистанция в USD**
 (численно те же единицы, что у `close` на рынках вида `*USDT`: сдвиг цены в «долларах движения», не риск от `init_cash`)):
 `component_id: constant_usd_stop_loss` / `constant_usd_take_profit` и поле `usd_distance` (строго `> 0`).
 Execution-слой по-прежнему переводит это в `sl_stop` / `tp_stop` как отношение к `close`. Для этих компонентов **не** создаются ATR-колонки в `FeaturePlan`.
-`trade_management` остаётся reserved-stub и не владеет exit graph.
+`trade_management.exit_policy` — единственный владелец exit graph.
 
-Пример YAML (`strategy.exits`):
+Пример YAML (`strategy.trade_management.exit_policy`):
 
 ```yaml
-exits:
-  - instance_id: sl_usd
-    component_id: constant_usd_stop_loss
-    usd_distance: 500.0
-  - instance_id: tp_usd
-    component_id: constant_usd_take_profit
-    usd_distance: 1200.0
+trade_management:
+  exit_policy:
+    context:
+      component_id: htf_context
+      timeframe: 4h
+      source: close
+      fast_period: 100
+      anchor_period: 200
+      slow_period: 1000
+    always_on:
+      exits:
+        - instance_id: sl_usd
+          component_id: constant_usd_stop_loss
+          usd_distance: 500.0
+        - instance_id: tp_usd
+          component_id: constant_usd_take_profit
+          usd_distance: 1200.0
+    profiles:
+      aligned: { exits: [] }
+      countertrend: { exits: [] }
+      neutral: { exits: [] }
 ```
 
 ## External Params -> Builders -> Spec
@@ -192,7 +209,7 @@ params = {
 }
 
 spec = make_ema_pullback_strategy_spec(**params)
-assert spec.components.exits == exits_atr_default(
+assert spec.trade_management.exit_policy.always_on.exits == exits_atr_default(
     atr_period=14,
     stop_atr_multiplier=1.5,
     take_atr_multiplier=4.0,

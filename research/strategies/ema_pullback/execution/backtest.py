@@ -253,13 +253,13 @@ def run_strategy_spec(
             if prof < 0:
                 prof = long_profile_arr[c.init_i]
                 locked[c.col] = prof
-            return sl_long_mat[c.i, prof], False
+            return sl_long_mat[c.init_i, prof], False
         if c.position_now < 0:
             prof = locked[c.col]
             if prof < 0:
                 prof = short_profile_arr[c.init_i]
                 locked[c.col] = prof
-            return sl_short_mat[c.i, prof], False
+            return sl_short_mat[c.init_i, prof], False
         return np.nan, False
 
     @njit
@@ -269,13 +269,13 @@ def run_strategy_spec(
             if prof < 0:
                 prof = long_profile_arr[c.init_i]
                 locked[c.col] = prof
-            return tp_long_mat[c.i, prof]
+            return tp_long_mat[c.init_i, prof]
         if c.position_now < 0:
             prof = locked[c.col]
             if prof < 0:
                 prof = short_profile_arr[c.init_i]
                 locked[c.col] = prof
-            return tp_short_mat[c.i, prof]
+            return tp_short_mat[c.init_i, prof]
         return np.nan
 
     pf = vbt.Portfolio.from_signals(

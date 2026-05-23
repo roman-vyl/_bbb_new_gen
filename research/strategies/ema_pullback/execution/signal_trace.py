@@ -260,14 +260,6 @@ def build_signal_trace_from_spec(
     slow_col = plan.anchor_columns["slow"]
 
     exit_outputs = build_exit_outputs_from_spec(df, spec, plan)
-    close = df["close"].astype(float)
-    sl_stop = exit_outputs.sl_stop
-    tp_stop = exit_outputs.tp_stop
-    stop_ready = pd.Series(True, index=close.index, dtype=bool)
-    if sl_stop.notna().any():
-        stop_ready = stop_ready & sl_stop.notna()
-    if tp_stop.notna().any():
-        stop_ready = stop_ready & tp_stop.notna()
 
     long_trace = _build_side_trace(
         df=df,
@@ -277,7 +269,7 @@ def build_signal_trace_from_spec(
         fast_col=fast_col,
         anchor_col=anchor_col,
         slow_col=slow_col,
-        stop_ready=stop_ready,
+        stop_ready=exit_outputs.stop_ready_long,
     )
     short_trace = _build_side_trace(
         df=df,
@@ -287,7 +279,7 @@ def build_signal_trace_from_spec(
         fast_col=fast_col,
         anchor_col=anchor_col,
         slow_col=slow_col,
-        stop_ready=stop_ready,
+        stop_ready=exit_outputs.stop_ready_short,
     )
 
     trigger_rule = spec.components.trigger

@@ -11,12 +11,18 @@ pytest.importorskip("pandas")
 
 import pandas as pd
 
-from research.strategies.ema_pullback.component_builders import component_stack, exit_rsi
+from research.strategies.ema_pullback.component_builders import (
+    exit_policy,
+    exit_rsi,
+    htf_context_config,
+    trade_management,
+)
 from research.strategies.ema_pullback.execution import backtest
 from research.strategies.ema_pullback.execution.backtest import build_trade_side_metrics, ensure_finite_metric
 from research.strategies.ema_pullback.execution.exits import PortfolioExitOutputs
 from research.strategies.ema_pullback.execution.report_table import print_comparison_table
 from research.strategies.ema_pullback.execution.signals import PortfolioSignals
+from research.strategies.ema_pullback.features.plan import FeaturePlan
 from research.strategies.ema_pullback.spec_instances import (
     make_ema_pullback_strategy_spec,
 )
@@ -211,10 +217,8 @@ def test_run_strategy_spec_wires_short_signals_and_masks_warmup(
 
     class FakePortfolioFactory:
         @staticmethod
-        def from_signals(close: pd.Series, entries: pd.Series, exits: pd.Series, **kwargs: object) -> FakePortfolio:
+        def from_signals(close: pd.Series, **kwargs: object) -> FakePortfolio:
             captured["close"] = close
-            captured["entries"] = entries
-            captured["exits"] = exits
             captured.update(kwargs)
             return FakePortfolio()
 
@@ -233,11 +237,29 @@ def test_run_strategy_spec_wires_short_signals_and_masks_warmup(
         exits = pd.Series(False, index=df.index, dtype=bool)
         sl_stop = pd.Series(sl_values, index=df.index)
         tp_stop = pd.Series(tp_values, index=df.index)
+        nan_s = pd.Series(float("nan"), index=df.index, dtype=float)
+        neutral = pd.Series("neutral", index=df.index, dtype="object")
+        profiles = {
+            "aligned": exits.copy(),
+            "countertrend": exits.copy(),
+            "neutral": exits.copy(),
+        }
+        sl_profiles = {"aligned": sl_stop.astype(float), "countertrend": sl_stop.astype(float), "neutral": nan_s}
+        tp_profiles = {"aligned": tp_stop.astype(float), "countertrend": tp_stop.astype(float), "neutral": nan_s}
         return PortfolioExitOutputs(
             exits=exits,
             short_exits=exits,
             sl_stop=sl_stop,
             tp_stop=tp_stop,
+            stop_ready_long=pd.Series(expected_entries, index=df.index, dtype=bool),
+            stop_ready_short=pd.Series(expected_entries, index=df.index, dtype=bool),
+            context_state=neutral,
+            profile_long=neutral,
+            profile_short=neutral,
+            long_exits_by_profile=profiles,
+            short_exits_by_profile=profiles,
+            sl_stop_by_profile=sl_profiles,
+            tp_stop_by_profile=tp_profiles,
         )
 
     monkeypatch.setattr(backtest, "build_signals_from_spec", fake_build_signals_from_spec)
@@ -258,11 +280,15 @@ def test_run_strategy_spec_wires_short_signals_and_masks_warmup(
 
     backtest.run_strategy_spec(make_ema_pullback_strategy_spec(), ohlcv)
 
-    # Signal exits are boolean close conditions; only configured distance exits gate ATR warmup.
-    assert captured["entries"].tolist() == expected_entries
-    assert captured["short_entries"].tolist() == expected_entries
-    assert captured["exits"].tolist() == [False, False, False, False]
-    assert captured["short_exits"].tolist() == [False, False, False, False]
+    # signal_args packs entries/short_entries/exits matrices/profile ids for callback mode.
+    signal_args = captured["signal_args"]
+    assert isinstance(signal_args, tuple)
+    assert signal_args[0].tolist() == expected_entries
+    assert signal_args[1].tolist() == expected_entries
+    assert signal_args[2].shape == (4, 3)
+    assert signal_args[3].shape == (4, 3)
+    assert not signal_args[2].any()
+    assert not signal_args[3].any()
     # Step 15: OHLC passed into vectorbt for stop semantics (regression guard vs close-only).
     pd.testing.assert_series_equal(captured["open"], ohlcv["open"].astype(float), check_names=False)
     pd.testing.assert_series_equal(captured["high"], ohlcv["high"].astype(float), check_names=False)
@@ -295,7 +321,7 @@ def test_run_strategy_spec_raises_when_ohlc_column_missing(
 
     class FakePortfolioFactory:
         @staticmethod
-        def from_signals(close: pd.Series, entries: pd.Series, exits: pd.Series, **kwargs: object) -> FakePortfolio:
+        def from_signals(close: pd.Series, **kwargs: object) -> FakePortfolio:
             captured.update(kwargs)
             return FakePortfolio()
 
@@ -310,15 +336,28 @@ def test_run_strategy_spec_raises_when_ohlc_column_missing(
     ) -> PortfolioExitOutputs:
         idx = df.index
         nan4 = [float("nan")] * 4
+        neutral = pd.Series("neutral", index=idx, dtype="object")
+        false_s = pd.Series(False, index=idx, dtype=bool)
+        nan_s = pd.Series(float("nan"), index=idx, dtype=float)
         return PortfolioExitOutputs(
-            exits=pd.Series(False, index=idx, dtype=bool),
-            short_exits=pd.Series(False, index=idx, dtype=bool),
+            exits=false_s,
+            short_exits=false_s,
             sl_stop=pd.Series(nan4, index=idx),
             tp_stop=pd.Series(nan4, index=idx),
+            stop_ready_long=pd.Series(True, index=idx, dtype=bool),
+            stop_ready_short=pd.Series(True, index=idx, dtype=bool),
+            context_state=neutral,
+            profile_long=neutral,
+            profile_short=neutral,
+            long_exits_by_profile={"aligned": false_s, "countertrend": false_s, "neutral": false_s},
+            short_exits_by_profile={"aligned": false_s, "countertrend": false_s, "neutral": false_s},
+            sl_stop_by_profile={"aligned": nan_s, "countertrend": nan_s, "neutral": nan_s},
+            tp_stop_by_profile={"aligned": nan_s, "countertrend": nan_s, "neutral": nan_s},
         )
 
     monkeypatch.setattr(backtest, "build_signals_from_spec", fake_build_signals_from_spec)
     monkeypatch.setattr(backtest, "build_exit_outputs_from_spec", fake_build_exit_outputs_from_spec)
+    monkeypatch.setattr(backtest, "add_feature_columns_from_plan", lambda ohlcv, plan: ohlcv)
 
     idx = pd.date_range("2024-01-01", periods=4, freq="h", tz="UTC")
     close = pd.Series([100.0, 101.0, 102.0, 103.0], index=idx)
@@ -342,15 +381,21 @@ def test_run_strategy_spec_raises_when_ohlc_column_missing(
 def test_run_strategy_spec_accepts_signal_only_exits_with_nan_stops() -> None:
     pytest.importorskip("vectorbt")
     spec = make_ema_pullback_strategy_spec(
-        components=component_stack(
-            exits=(
-                exit_rsi(
-                    instance_id="rsi_signal_only",
-                    timeframe="base",
-                    period=14,
-                    long_exit_above=70.0,
-                    short_exit_below=30.0,
+        trade_management_spec=trade_management(
+            exit_policy_spec=exit_policy(
+                context=htf_context_config(timeframe="4h", fast_period=100, anchor_period=200, slow_period=1000),
+                always_on=(
+                    exit_rsi(
+                        instance_id="rsi_signal_only",
+                        timeframe="base",
+                        period=14,
+                        long_exit_above=70.0,
+                        short_exit_below=30.0,
+                    ),
                 ),
+                aligned=(),
+                countertrend=(),
+                neutral=(),
             )
         )
     )
@@ -370,3 +415,158 @@ def test_run_strategy_spec_accepts_signal_only_exits_with_nan_stops() -> None:
     result = backtest.run_strategy_spec(spec, ohlcv)
 
     assert result.variant == spec.variant
+
+
+@pytest.mark.optional_vectorbt
+def test_entry_lock_distance_uses_entry_profile_distance(monkeypatch: pytest.MonkeyPatch) -> None:
+    pytest.importorskip("vectorbt")
+    idx = pd.date_range("2024-01-01", periods=8, freq="h", tz="UTC")
+    close = pd.Series([100.0] * len(idx), index=idx)
+    ohlcv = pd.DataFrame(
+        {
+            "open": close,
+            "high": close,
+            "low": close,
+            "close": close,
+            "volume": 1.0,
+        },
+        index=idx,
+    )
+    ohlcv.loc[idx[4], "low"] = 98.5  # hits tight 1% stop, not wide 10%
+
+    plan = FeaturePlan(
+        features=(),
+        anchor_columns={"fast": "ema_fast", "anchor": "ema_anchor", "slow": "ema_slow"},
+        exit_distance_columns={},
+        rsi_columns={},
+        htf_context_columns={},
+    )
+
+    def fake_plan(_spec: object) -> FeaturePlan:
+        return plan
+
+    def fake_features(df: pd.DataFrame, _plan: FeaturePlan) -> pd.DataFrame:
+        out = df.copy()
+        out["ema_fast"] = out["close"]
+        out["ema_anchor"] = out["close"]
+        out["ema_slow"] = out["close"]
+        return out
+
+    def fake_signals(df: pd.DataFrame, _spec: object, _plan: object) -> PortfolioSignals:
+        entries = pd.Series(False, index=df.index, dtype=bool)
+        entries.iloc[1] = True
+        return PortfolioSignals(entries=entries, short_entries=pd.Series(False, index=df.index, dtype=bool))
+
+    def fake_exits(df: pd.DataFrame, _spec: object, _plan: object) -> PortfolioExitOutputs:
+        false_s = pd.Series(False, index=df.index, dtype=bool)
+        nan_s = pd.Series(float("nan"), index=df.index, dtype=float)
+        sl_aligned = pd.Series(0.10, index=df.index, dtype=float)
+        sl_counter = pd.Series(0.01, index=df.index, dtype=float)
+        tp_all = pd.Series(float("nan"), index=df.index, dtype=float)
+        profile = pd.Series("aligned", index=df.index, dtype="object")
+        profile.iloc[3:] = "countertrend"  # flips after entry, must not affect distance
+        return PortfolioExitOutputs(
+            exits=false_s,
+            short_exits=false_s,
+            sl_stop=sl_aligned,
+            tp_stop=tp_all,
+            stop_ready_long=pd.Series(True, index=df.index, dtype=bool),
+            stop_ready_short=pd.Series(True, index=df.index, dtype=bool),
+            context_state=pd.Series("neutral", index=df.index, dtype="object"),
+            profile_long=profile,
+            profile_short=pd.Series("neutral", index=df.index, dtype="object"),
+            long_exits_by_profile={"aligned": false_s, "countertrend": false_s, "neutral": false_s},
+            short_exits_by_profile={"aligned": false_s, "countertrend": false_s, "neutral": false_s},
+            sl_stop_by_profile={"aligned": sl_aligned, "countertrend": sl_counter, "neutral": nan_s},
+            tp_stop_by_profile={"aligned": tp_all, "countertrend": tp_all, "neutral": tp_all},
+        )
+
+    monkeypatch.setattr(backtest, "build_feature_plan_from_strategy_spec", fake_plan)
+    monkeypatch.setattr(backtest, "add_feature_columns_from_plan", fake_features)
+    monkeypatch.setattr(backtest, "build_signals_from_spec", fake_signals)
+    monkeypatch.setattr(backtest, "build_exit_outputs_from_spec", fake_exits)
+
+    result = backtest.run_strategy_spec(make_ema_pullback_strategy_spec(), ohlcv)
+    assert result.trade_records[0]["status"] == "open"
+
+
+@pytest.mark.optional_vectorbt
+def test_entry_lock_signal_ignores_inactive_profile_and_honors_always_on(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pytest.importorskip("vectorbt")
+    idx = pd.date_range("2024-01-01", periods=8, freq="h", tz="UTC")
+    close = pd.Series([100.0] * len(idx), index=idx)
+    ohlcv = pd.DataFrame(
+        {
+            "open": close,
+            "high": close,
+            "low": close,
+            "close": close,
+            "volume": 1.0,
+        },
+        index=idx,
+    )
+    plan = FeaturePlan(
+        features=(),
+        anchor_columns={"fast": "ema_fast", "anchor": "ema_anchor", "slow": "ema_slow"},
+        exit_distance_columns={},
+        rsi_columns={},
+        htf_context_columns={},
+    )
+
+    def fake_plan(_spec: object) -> FeaturePlan:
+        return plan
+
+    def fake_features(df: pd.DataFrame, _plan: FeaturePlan) -> pd.DataFrame:
+        out = df.copy()
+        out["ema_fast"] = out["close"]
+        out["ema_anchor"] = out["close"]
+        out["ema_slow"] = out["close"]
+        return out
+
+    def fake_signals(df: pd.DataFrame, _spec: object, _plan: object) -> PortfolioSignals:
+        entries = pd.Series(False, index=df.index, dtype=bool)
+        entries.iloc[1] = True
+        return PortfolioSignals(entries=entries, short_entries=pd.Series(False, index=df.index, dtype=bool))
+
+    def fake_exits(df: pd.DataFrame, _spec: object, _plan: object) -> PortfolioExitOutputs:
+        false_s = pd.Series(False, index=df.index, dtype=bool)
+        nan_s = pd.Series(float("nan"), index=df.index, dtype=float)
+        aligned = false_s.copy()
+        counter = false_s.copy()
+        neutral = false_s.copy()
+        counter.iloc[3] = True  # inactive after entry-lock
+        aligned.iloc[5] = True  # active profile signal
+        always_on_hit = false_s.copy()
+        always_on_hit.iloc[6] = True
+        profile = pd.Series("aligned", index=df.index, dtype="object")
+        profile.iloc[2:] = "countertrend"
+        long_by_profile = {
+            "aligned": aligned | always_on_hit,
+            "countertrend": counter | always_on_hit,
+            "neutral": neutral | always_on_hit,
+        }
+        return PortfolioExitOutputs(
+            exits=long_by_profile["aligned"],
+            short_exits=false_s,
+            sl_stop=nan_s,
+            tp_stop=nan_s,
+            stop_ready_long=pd.Series(True, index=df.index, dtype=bool),
+            stop_ready_short=pd.Series(True, index=df.index, dtype=bool),
+            context_state=pd.Series("neutral", index=df.index, dtype="object"),
+            profile_long=profile,
+            profile_short=pd.Series("neutral", index=df.index, dtype="object"),
+            long_exits_by_profile=long_by_profile,
+            short_exits_by_profile={"aligned": false_s, "countertrend": false_s, "neutral": false_s},
+            sl_stop_by_profile={"aligned": nan_s, "countertrend": nan_s, "neutral": nan_s},
+            tp_stop_by_profile={"aligned": nan_s, "countertrend": nan_s, "neutral": nan_s},
+        )
+
+    monkeypatch.setattr(backtest, "build_feature_plan_from_strategy_spec", fake_plan)
+    monkeypatch.setattr(backtest, "add_feature_columns_from_plan", fake_features)
+    monkeypatch.setattr(backtest, "build_signals_from_spec", fake_signals)
+    monkeypatch.setattr(backtest, "build_exit_outputs_from_spec", fake_exits)
+
+    result = backtest.run_strategy_spec(make_ema_pullback_strategy_spec(), ohlcv)
+    assert result.trade_records[0]["exit_time_ms"] == int(idx[5].timestamp() * 1000)

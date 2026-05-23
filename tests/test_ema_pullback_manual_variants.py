@@ -4,9 +4,12 @@ from research.strategies.ema_pullback.component_builders import (
     anchor_stack_from_periods,
     blocker_counter_candle,
     component_stack,
+    exit_policy,
     exit_no_signal,
     exit_rsi,
     exits_atr_default,
+    htf_context_config,
+    trade_management,
     trigger_touch_anchor,
 )
 from research.strategies.ema_pullback.spec import strategy_spec_config_id
@@ -27,7 +30,10 @@ def test_spec_instance_factory_values() -> None:
     assert spec.setup.active_bars == reference.setup.active_bars
     assert spec.anchor_stack == reference.anchor_stack
     assert spec.trade_management == reference.trade_management
-    assert {r.exit_kind for r in spec.components.exits} == {"stop_loss", "take_profit"}
+    assert {r.exit_kind for r in spec.trade_management.exit_policy.always_on.exits} == {
+        "stop_loss",
+        "take_profit",
+    }
 
 
 def test_baseline_factory_matches_expected_stack_shape() -> None:
@@ -43,7 +49,10 @@ def test_baseline_factory_matches_expected_stack_shape() -> None:
     assert [b.component_id for b in spec.components.blockers] == ["no_blockers"]
     assert spec.components.setup == "untouched_anchor_setup"
     assert spec.components.trigger.component_id == "reclaim_anchor"
-    assert [e.component_id for e in spec.components.exits] == ["atr_stop_loss", "atr_take_profit"]
+    assert [e.component_id for e in spec.trade_management.exit_policy.always_on.exits] == [
+        "atr_stop_loss",
+        "atr_take_profit",
+    ]
     assert spec.components.risk == "no_risk_filter"
 
 
@@ -97,39 +106,62 @@ def test_factory_uses_default_atr_exit_shortcuts_in_expected_order() -> None:
         stop_atr_multiplier=2.0,
         take_atr_multiplier=5.0,
     )
-    assert spec.components.exits == expected_exits
+    assert spec.trade_management.exit_policy.always_on.exits == expected_exits
 
 
 def test_factory_accepts_custom_components_as_source_of_truth() -> None:
     custom_components = component_stack(
         trigger=trigger_touch_anchor(),
         blockers=(blocker_counter_candle(),),
-        exits=(
-            exit_no_signal(),
-            exit_rsi(instance_id="rsi_exit_base", long_exit_above=75.0, short_exit_below=25.0),
-        ),
+    )
+    custom_tm = trade_management(
+        exit_policy_spec=exit_policy(
+            context=htf_context_config(timeframe="4h", fast_period=100, anchor_period=200, slow_period=1000),
+            always_on=(
+                exit_no_signal(),
+                exit_rsi(instance_id="rsi_exit_base", long_exit_above=75.0, short_exit_below=25.0),
+            ),
+            aligned=(),
+            countertrend=(),
+            neutral=(),
+        )
     )
     spec = make_ema_pullback_strategy_spec(
         atr_period=99,
         stop_atr_multiplier=9.9,
         take_atr_multiplier=9.8,
         components=custom_components,
+        trade_management_spec=custom_tm,
     )
     assert spec.components == custom_components
+    assert spec.trade_management == custom_tm
     assert spec.components.trigger.component_id == "touch_anchor"
     assert [b.component_id for b in spec.components.blockers] == ["counter_candle_blocker"]
-    assert [e.component_id for e in spec.components.exits] == ["no_signal_exit", "rsi_signal_exit"]
+    assert [e.component_id for e in spec.trade_management.exit_policy.always_on.exits] == [
+        "no_signal_exit",
+        "rsi_signal_exit",
+    ]
 
 
 def test_factory_does_not_override_custom_exits_with_atr_defaults() -> None:
-    custom_components = component_stack(exits=(exit_no_signal(),))
+    custom_tm = trade_management(
+        exit_policy_spec=exit_policy(
+            context=htf_context_config(timeframe="4h", fast_period=100, anchor_period=200, slow_period=1000),
+            always_on=(exit_no_signal(),),
+            aligned=(),
+            countertrend=(),
+            neutral=(),
+        )
+    )
     spec = make_ema_pullback_strategy_spec(
         atr_period=14,
         stop_atr_multiplier=1.5,
         take_atr_multiplier=4.0,
-        components=custom_components,
+        trade_management_spec=custom_tm,
     )
-    assert [e.component_id for e in spec.components.exits] == ["no_signal_exit"]
+    assert [e.component_id for e in spec.trade_management.exit_policy.always_on.exits] == [
+        "no_signal_exit"
+    ]
 
 
 def test_factory_baseline_components_remain_default_without_custom_override() -> None:
@@ -143,7 +175,6 @@ def test_factory_custom_and_baseline_components_produce_different_config_ids() -
         components=component_stack(
             trigger=trigger_touch_anchor(),
             blockers=(blocker_counter_candle(),),
-            exits=(exit_no_signal(),),
         )
     )
     assert baseline.variant == custom.variant
