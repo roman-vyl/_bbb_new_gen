@@ -252,9 +252,18 @@ export type SideSignalTrace = {
   internals: Record<string, unknown>;
 };
 
+export type HtfContextTrace = {
+  state: ("up" | "down" | "neutral")[];
+  fast: Array<number | null>;
+  anchor: Array<number | null>;
+  slow: Array<number | null>;
+  meta: Record<string, unknown>;
+};
+
 export type SignalTraceBundle = {
   times: number[];
   meta: SignalTraceMeta;
+  htf_context?: HtfContextTrace;
   long: SideSignalTrace;
   short: SideSignalTrace;
 };

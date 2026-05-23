@@ -1,4 +1,4 @@
-"""Exit-layer: map unified exit rules to vectorbt-facing outputs."""
+"""Exit policy compiler for vectorbt-facing outputs."""
 
 from __future__ import annotations
 
@@ -7,13 +7,14 @@ from typing import Any, Callable
 
 import pandas as pd
 
+from research.strategies.ema_pullback.components.context import htf_context
 from research.strategies.ema_pullback.components.registry import resolve_component
 from research.strategies.ema_pullback.execution.exit_attribution import ExitAttributionContext
 from research.strategies.ema_pullback.features.plan import FeaturePlan
-from research.strategies.ema_pullback.spec import EmaPullbackStrategySpec
-from research.strategies.ema_pullback.spec import ExitRuleSpec
-from research.strategies.ema_pullback.spec import RsiFeatureSpec
-from research.strategies.ema_pullback.spec import TradeSide
+from research.strategies.ema_pullback.spec import EmaPullbackStrategySpec, ExitRuleSpec, RsiFeatureSpec, TradeSide
+
+PROFILE_ORDER = ("aligned", "countertrend", "neutral")
+STATE_ORDER = ("up", "down", "neutral")
 
 
 @dataclass(frozen=True)
@@ -22,6 +23,15 @@ class PortfolioExitOutputs:
     short_exits: pd.Series
     sl_stop: pd.Series
     tp_stop: pd.Series
+    stop_ready_long: pd.Series
+    stop_ready_short: pd.Series
+    context_state: pd.Series
+    profile_long: pd.Series
+    profile_short: pd.Series
+    long_exits_by_profile: dict[str, pd.Series] = field(default_factory=dict)
+    short_exits_by_profile: dict[str, pd.Series] = field(default_factory=dict)
+    sl_stop_by_profile: dict[str, pd.Series] = field(default_factory=dict)
+    tp_stop_by_profile: dict[str, pd.Series] = field(default_factory=dict)
     output_counters: tuple[dict[str, Any], ...] = field(default_factory=tuple)
     attribution: ExitAttributionContext | None = None
 
@@ -45,6 +55,10 @@ def compose_exit_signals(signals: tuple[pd.Series, ...], *, index: pd.Index) -> 
 
 def _false_series(index: pd.Index) -> pd.Series:
     return pd.Series(False, index=index, dtype=bool)
+
+
+def _nan_series(index: pd.Index) -> pd.Series:
+    return pd.Series(float("nan"), index=index, dtype=float)
 
 
 def _rsi_column(plan: FeaturePlan, rsi: RsiFeatureSpec | None) -> str | None:
@@ -81,15 +95,122 @@ def _signal_series_for_side(
     return s.fillna(False).astype(bool)
 
 
+def _active_rule_group_for_side(*, side: TradeSide, context_state: str) -> str:
+    if context_state not in STATE_ORDER:
+        return "neutral"
+    if side == "long":
+        if context_state == "up":
+            return "aligned"
+        if context_state == "down":
+            return "countertrend"
+        return "neutral"
+    if context_state == "down":
+        return "aligned"
+    if context_state == "up":
+        return "countertrend"
+    return "neutral"
+
+
+def _compile_signal_series(
+    *,
+    spec: EmaPullbackStrategySpec,
+    by_instance_long: dict[str, pd.Series],
+    by_instance_short: dict[str, pd.Series],
+    index: pd.Index,
+) -> tuple[dict[str, pd.Series], dict[str, pd.Series]]:
+    always_on = spec.trade_management.exit_policy.always_on.exits
+    profiles = spec.trade_management.exit_policy.profiles
+    profile_rules = {
+        "aligned": profiles.aligned.exits,
+        "countertrend": profiles.countertrend.exits,
+        "neutral": profiles.neutral.exits,
+    }
+    out_long: dict[str, pd.Series] = {}
+    out_short: dict[str, pd.Series] = {}
+    always_on_long = [by_instance_long[r.instance_id] for r in always_on if r.exit_kind == "signal"]
+    always_on_short = [by_instance_short[r.instance_id] for r in always_on if r.exit_kind == "signal"]
+    for profile in PROFILE_ORDER:
+        local_long = always_on_long + [
+            by_instance_long[r.instance_id] for r in profile_rules[profile] if r.exit_kind == "signal"
+        ]
+        local_short = always_on_short + [
+            by_instance_short[r.instance_id] for r in profile_rules[profile] if r.exit_kind == "signal"
+        ]
+        out_long[profile] = compose_exit_signals(tuple(local_long), index=index)
+        out_short[profile] = compose_exit_signals(tuple(local_short), index=index)
+    return out_long, out_short
+
+
+def _compile_distance_series(
+    *,
+    spec: EmaPullbackStrategySpec,
+    close: pd.Series,
+    by_instance_distance_ratio: dict[str, pd.Series],
+    kind: str,
+) -> dict[str, pd.Series]:
+    always_on = spec.trade_management.exit_policy.always_on.exits
+    profiles = spec.trade_management.exit_policy.profiles
+    profile_rules = {
+        "aligned": profiles.aligned.exits,
+        "countertrend": profiles.countertrend.exits,
+        "neutral": profiles.neutral.exits,
+    }
+    out: dict[str, pd.Series] = {}
+    always_on_parts = [
+        by_instance_distance_ratio[r.instance_id]
+        for r in always_on
+        if r.exit_kind == kind and r.instance_id in by_instance_distance_ratio
+    ]
+    for profile in PROFILE_ORDER:
+        local = always_on_parts + [
+            by_instance_distance_ratio[r.instance_id]
+            for r in profile_rules[profile]
+            if r.exit_kind == kind and r.instance_id in by_instance_distance_ratio
+        ]
+        if local:
+            out[profile] = pd.concat(local, axis=1).min(axis=1).astype(float)
+        else:
+            out[profile] = _nan_series(close.index)
+    return out
+
+
+def _selected_series_by_profile(
+    *,
+    profile_series: pd.Series,
+    values_by_profile: dict[str, pd.Series],
+    default: pd.Series,
+) -> pd.Series:
+    out = default.copy()
+    for profile in PROFILE_ORDER:
+        mask = profile_series.eq(profile)
+        if mask.any():
+            out.loc[mask] = values_by_profile[profile].loc[mask]
+    return out
+
+
+def _stop_ready(sl: pd.Series, tp: pd.Series) -> pd.Series:
+    ready = pd.Series(True, index=sl.index, dtype=bool)
+    if sl.notna().any():
+        ready = ready & sl.notna()
+    if tp.notna().any():
+        ready = ready & tp.notna()
+    return ready
+
+
 def build_exit_outputs_from_spec(
     df: pd.DataFrame,
     spec: EmaPullbackStrategySpec,
     plan: FeaturePlan,
 ) -> PortfolioExitOutputs:
-    """Build signal exits, stop/take series, and attribution from one pass over exit rules."""
-
+    """Build profile-aware signal exits and stop/take series."""
+    all_exit_rules = (
+        spec.trade_management.exit_policy.always_on.exits
+        + spec.trade_management.exit_policy.profiles.aligned.exits
+        + spec.trade_management.exit_policy.profiles.countertrend.exits
+        + spec.trade_management.exit_policy.profiles.neutral.exits
+    )
     resolved_rules = tuple(
-        (resolve_component("exits", rule.component_id).func, rule) for rule in spec.components.exits
+        (resolve_component("exits", rule.component_id).func, rule) for rule in all_exit_rules
     )
     anchor_col = plan.anchor_columns["anchor"]
     index = df.index
@@ -100,18 +221,34 @@ def build_exit_outputs_from_spec(
     long_by_idx: list[pd.Series | None] = [None] * n_rules
     short_by_idx: list[pd.Series | None] = [None] * n_rules
     dist_ratio_by_idx: list[pd.Series | None] = [None] * n_rules
+    rule_groups: list[str] = []
     instance_ids: list[str] = []
     exit_kinds: list[str] = []
-
-    long_signal_parts: list[pd.Series] = []
-    short_signal_parts: list[pd.Series] = []
-    sl_distances: list[pd.Series] = []
-    tp_distances: list[pd.Series] = []
+    long_by_instance: dict[str, pd.Series] = {}
+    short_by_instance: dict[str, pd.Series] = {}
+    distance_ratio_by_instance: dict[str, pd.Series] = {}
     counters: list[dict[str, Any]] = []
+
+    always_on_ids = {rule.instance_id for rule in spec.trade_management.exit_policy.always_on.exits}
+    aligned_ids = {rule.instance_id for rule in spec.trade_management.exit_policy.profiles.aligned.exits}
+    countertrend_ids = {rule.instance_id for rule in spec.trade_management.exit_policy.profiles.countertrend.exits}
+    neutral_ids = {rule.instance_id for rule in spec.trade_management.exit_policy.profiles.neutral.exits}
+
+    def _rule_group(rule: ExitRuleSpec) -> str:
+        if rule.instance_id in always_on_ids:
+            return "always_on"
+        if rule.instance_id in aligned_ids:
+            return "aligned"
+        if rule.instance_id in countertrend_ids:
+            return "countertrend"
+        if rule.instance_id in neutral_ids:
+            return "neutral"
+        return "neutral"
 
     for exit_fn, rule in resolved_rules:
         instance_ids.append(rule.instance_id)
         exit_kinds.append(rule.exit_kind)
+        rule_groups.append(_rule_group(rule))
 
         if rule.exit_kind == "signal":
             long_s = _signal_series_for_side(
@@ -123,8 +260,9 @@ def build_exit_outputs_from_spec(
             rule_i = len(instance_ids) - 1
             long_by_idx[rule_i] = long_s
             short_by_idx[rule_i] = short_s
+            long_by_instance[rule.instance_id] = long_s
+            short_by_instance[rule.instance_id] = short_s
             if spec.trade_sides.includes("long"):
-                long_signal_parts.append(long_s)
                 counters.append(
                     {
                         "role": "exits",
@@ -137,7 +275,6 @@ def build_exit_outputs_from_spec(
                     }
                 )
             if spec.trade_sides.includes("short"):
-                short_signal_parts.append(short_s)
                 counters.append(
                     {
                         "role": "exits",
@@ -153,11 +290,9 @@ def build_exit_outputs_from_spec(
             distance_col = _distance_column(plan, rule)
             distance = exit_fn(df, rule=rule, distance_col=distance_col).astype(float)
             rule_i = len(instance_ids) - 1
-            dist_ratio_by_idx[rule_i] = distance / close
-            if rule.exit_kind == "stop_loss":
-                sl_distances.append(distance)
-            else:
-                tp_distances.append(distance)
+            ratio = distance / close
+            dist_ratio_by_idx[rule_i] = ratio
+            distance_ratio_by_instance[rule.instance_id] = ratio
             non_null_count = int(distance.notna().sum())
             counters.append(
                 {
@@ -173,35 +308,110 @@ def build_exit_outputs_from_spec(
                     },
                 }
             )
-
-    stop_loss = (
-        pd.concat(sl_distances, axis=1).min(axis=1) if sl_distances else nan_series
+    context_cols = plan.htf_context_columns
+    context_col_names = (
+        context_cols["fast"],
+        context_cols["anchor"],
+        context_cols["slow"],
     )
-    take_profit = (
-        pd.concat(tp_distances, axis=1).min(axis=1) if tp_distances else nan_series
-    )
-    sl_stop = stop_loss.astype(float) / close
-    tp_stop = take_profit.astype(float) / close
+    if all(col in df.columns for col in context_col_names):
+        context_masks = htf_context(
+            df,
+            fast_col=context_cols["fast"],
+            anchor_col=context_cols["anchor"],
+            slow_col=context_cols["slow"],
+        )
+        context_state = context_masks.state_series()
+    else:
+        context_state = pd.Series("neutral", index=index, dtype="object")
 
-    long_exits = compose_exit_signals(tuple(long_signal_parts), index=index)
-    short_exits = compose_exit_signals(tuple(short_signal_parts), index=index)
+    profile_long = context_state.map(
+        lambda state: _active_rule_group_for_side(side="long", context_state=state)
+    ).astype("object")
+    profile_short = context_state.map(
+        lambda state: _active_rule_group_for_side(side="short", context_state=state)
+    ).astype("object")
+
+    long_exits_by_profile, short_exits_by_profile = _compile_signal_series(
+        spec=spec,
+        by_instance_long=long_by_instance,
+        by_instance_short=short_by_instance,
+        index=index,
+    )
+    sl_by_profile = _compile_distance_series(
+        spec=spec,
+        close=close,
+        by_instance_distance_ratio=distance_ratio_by_instance,
+        kind="stop_loss",
+    )
+    tp_by_profile = _compile_distance_series(
+        spec=spec,
+        close=close,
+        by_instance_distance_ratio=distance_ratio_by_instance,
+        kind="take_profit",
+    )
+    long_exits = _selected_series_by_profile(
+        profile_series=profile_long,
+        values_by_profile=long_exits_by_profile,
+        default=_false_series(index),
+    ).fillna(False).astype(bool)
+    short_exits = _selected_series_by_profile(
+        profile_series=profile_short,
+        values_by_profile=short_exits_by_profile,
+        default=_false_series(index),
+    ).fillna(False).astype(bool)
+    sl_stop_long = _selected_series_by_profile(
+        profile_series=profile_long,
+        values_by_profile=sl_by_profile,
+        default=nan_series,
+    ).astype(float)
+    tp_stop_long = _selected_series_by_profile(
+        profile_series=profile_long,
+        values_by_profile=tp_by_profile,
+        default=nan_series,
+    ).astype(float)
+    sl_stop_short = _selected_series_by_profile(
+        profile_series=profile_short,
+        values_by_profile=sl_by_profile,
+        default=nan_series,
+    ).astype(float)
+    tp_stop_short = _selected_series_by_profile(
+        profile_series=profile_short,
+        values_by_profile=tp_by_profile,
+        default=nan_series,
+    ).astype(float)
+    stop_ready_long = _stop_ready(sl_stop_long, tp_stop_long)
+    stop_ready_short = _stop_ready(sl_stop_short, tp_stop_short)
 
     attribution = ExitAttributionContext(
         index=index,
         instance_ids=tuple(instance_ids),
+        rule_groups=tuple(rule_groups),
         exit_kinds=tuple(exit_kinds),
         long_signal_by_rule=tuple(long_by_idx),
         short_signal_by_rule=tuple(short_by_idx),
         distance_ratio_by_rule=tuple(dist_ratio_by_idx),
-        sl_stop_agg=sl_stop,
-        tp_stop_agg=tp_stop,
+        context_state=context_state,
+        sl_stop_agg_by_profile={key: value for key, value in sl_by_profile.items()},
+        tp_stop_agg_by_profile={key: value for key, value in tp_by_profile.items()},
+        sl_stop_agg=sl_stop_long,
+        tp_stop_agg=tp_stop_long,
     )
 
     return PortfolioExitOutputs(
         exits=long_exits,
         short_exits=short_exits,
-        sl_stop=sl_stop,
-        tp_stop=tp_stop,
+        sl_stop=sl_stop_long,
+        tp_stop=tp_stop_long,
+        stop_ready_long=stop_ready_long,
+        stop_ready_short=stop_ready_short,
+        context_state=context_state,
+        profile_long=profile_long,
+        profile_short=profile_short,
+        long_exits_by_profile=long_exits_by_profile,
+        short_exits_by_profile=short_exits_by_profile,
+        sl_stop_by_profile=sl_by_profile,
+        tp_stop_by_profile=tp_by_profile,
         output_counters=tuple(counters),
         attribution=attribution,
     )

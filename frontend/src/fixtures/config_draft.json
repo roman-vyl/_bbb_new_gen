@@ -42,18 +42,37 @@
           }
         ],
         "risk": { "component_id": "no_risk_filter" },
-        "exits": [
-          {
-            "instance_id": "atr_sl_far",
-            "component_id": "atr_stop_loss",
-            "distance": { "timeframe": "5m", "period": 14, "multiplier": 2 }
-          },
-          {
-            "instance_id": "atr_tp_far",
-            "component_id": "atr_take_profit",
-            "distance": { "timeframe": "base", "period": 14, "multiplier": 500 }
+        "trade_management": {
+          "exit_policy": {
+            "context": {
+              "component_id": "htf_context",
+              "timeframe": "4h",
+              "source": "close",
+              "fast_period": 100,
+              "anchor_period": 200,
+              "slow_period": 1000
+            },
+            "always_on": {
+              "exits": [
+                {
+                  "instance_id": "atr_sl_far",
+                  "component_id": "atr_stop_loss",
+                  "distance": { "timeframe": "5m", "period": 14, "multiplier": 2 }
+                },
+                {
+                  "instance_id": "atr_tp_far",
+                  "component_id": "atr_take_profit",
+                  "distance": { "timeframe": "base", "period": 14, "multiplier": 500 }
+                }
+              ]
+            },
+            "profiles": {
+              "aligned": { "exits": [] },
+              "countertrend": { "exits": [] },
+              "neutral": { "exits": [] }
+            }
           }
-        ]
+        }
       }
     }
   ]

@@ -47,6 +47,7 @@ UNTOUCHED_ANCHOR_SETUP_COMPONENT = "untouched_anchor_setup"
 RECLAIM_ANCHOR_COMPONENT = "reclaim_anchor"
 STRONG_RECLAIM_ANCHOR_COMPONENT = "strong_reclaim_anchor"
 TOUCH_ANCHOR_COMPONENT = "touch_anchor"
+HTF_CONTEXT_COMPONENT = "htf_context"
 NO_SIGNAL_EXIT_COMPONENT = "no_signal_exit"
 RSI_SIGNAL_EXIT_COMPONENT = "rsi_signal_exit"
 ATR_STOP_LOSS_COMPONENT = "atr_stop_loss"
@@ -217,6 +218,7 @@ __all__ = [
     "RSI_LOOKBACK_EXTREME_BLOCKER_COMPONENT",
     "RSI_SIGNAL_EXIT_COMPONENT",
     "TOUCH_ANCHOR_COMPONENT",
+    "HTF_CONTEXT_COMPONENT",
     "no_risk_filter",
     "resolve_component",
 ]

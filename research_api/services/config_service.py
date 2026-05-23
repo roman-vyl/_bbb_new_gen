@@ -31,7 +31,7 @@ _CONFIGS_ROOT = _REPO_ROOT / "research" / "experiments" / "configs"
 _SELECTION_FILE = _CONFIGS_ROOT / ".workbench_selection.json"
 _CONFIG_EXTENSIONS = frozenset({".json", ".yaml", ".yml"})
 _PATH_RE = re.compile(
-    r"^(?P<prefix>(?:instances\[\d+\]|blockers\[\d+\]|exits\[\d+\]|strategy|market|execution|experiment_id|family|schema_version)[^\s]*)?"
+    r"^(?P<prefix>(?:instances\[\d+\]|blockers\[\d+\]|exits\[\d+\]|strategy|trade_management|exit_policy|profiles|always_on|context|market|execution|experiment_id|family|schema_version)[^\s]*)?"
 )
 SUPPORTED_CONFIG_FAMILIES = {"ema_pullback"}
 

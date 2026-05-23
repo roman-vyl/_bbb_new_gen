@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 import hashlib
 import json
 from typing import Any, Literal
@@ -40,7 +40,6 @@ class ComponentStackSpec:
     blockers: tuple["BlockerRuleSpec", ...]
     setup: str
     trigger: "TriggerSpec"
-    exits: tuple["ExitRuleSpec", ...]
     risk: str
 
     def __post_init__(self) -> None:
@@ -50,10 +49,7 @@ class ComponentStackSpec:
                 raise ValueError(f"components.{field_name} must be non-empty")
         if not self.blockers:
             raise ValueError("components.blockers must contain at least one rule")
-        if not self.exits:
-            raise ValueError("components.exits must contain at least one rule")
         _validate_unique_instance_ids("components.blockers", self.blockers)
-        _validate_unique_instance_ids("components.exits", self.exits)
 
 
 @dataclass(frozen=True)
@@ -244,12 +240,73 @@ class ExitRuleSpec:
 
 
 @dataclass(frozen=True)
-class TradeManagementSpec:
-    profile: str = "reserved"
+class HtfContextConfigSpec:
+    component_id: str
+    timeframe: str
+    source: str
+    fast_period: int
+    anchor_period: int
+    slow_period: int
 
     def __post_init__(self) -> None:
-        if not self.profile.strip():
-            raise ValueError("trade management profile must be non-empty")
+        if self.component_id != "htf_context":
+            raise ValueError("trade_management.exit_policy.context.component_id must be 'htf_context'")
+        if not self.timeframe.strip():
+            raise ValueError("trade_management.exit_policy.context.timeframe must be non-empty")
+        if self.source != "close":
+            raise ValueError("trade_management.exit_policy.context.source must be 'close'")
+        if self.fast_period <= 0 or self.anchor_period <= 0 or self.slow_period <= 0:
+            raise ValueError("trade_management.exit_policy.context periods must be > 0")
+        if not (self.fast_period < self.anchor_period < self.slow_period):
+            raise ValueError("trade_management.exit_policy.context must satisfy fast < anchor < slow periods")
+
+
+@dataclass(frozen=True)
+class ExitPolicyGroupSpec:
+    exits: tuple[ExitRuleSpec, ...]
+
+
+@dataclass(frozen=True)
+class ExitPolicyProfilesSpec:
+    aligned: ExitPolicyGroupSpec
+    countertrend: ExitPolicyGroupSpec
+    neutral: ExitPolicyGroupSpec
+
+
+@dataclass(frozen=True)
+class ExitPolicySpec:
+    context: HtfContextConfigSpec
+    always_on: ExitPolicyGroupSpec
+    profiles: ExitPolicyProfilesSpec
+
+    def __post_init__(self) -> None:
+        rules_with_scope: list[tuple[str, tuple[ExitRuleSpec, ...]]] = [
+            ("trade_management.exit_policy.always_on.exits", self.always_on.exits),
+            ("trade_management.exit_policy.profiles.aligned.exits", self.profiles.aligned.exits),
+            ("trade_management.exit_policy.profiles.countertrend.exits", self.profiles.countertrend.exits),
+            ("trade_management.exit_policy.profiles.neutral.exits", self.profiles.neutral.exits),
+        ]
+        seen: set[str] = set()
+        total = 0
+        for scope, rules in rules_with_scope:
+            total += len(rules)
+            for rule in rules:
+                instance_id = rule.instance_id
+                if not instance_id.strip():
+                    raise ValueError(f"{scope} instance_id must be non-empty")
+                if instance_id in seen:
+                    raise ValueError(
+                        "trade_management.exit_policy instance_id must be globally unique: "
+                        f"{instance_id!r}"
+                    )
+                seen.add(instance_id)
+        if total == 0:
+            raise ValueError("trade_management.exit_policy must contain at least one exit rule")
+
+
+@dataclass(frozen=True)
+class TradeManagementSpec:
+    exit_policy: ExitPolicySpec
 
 
 @dataclass(frozen=True)
@@ -261,7 +318,7 @@ class EmaPullbackStrategySpec:
     components: ComponentStackSpec
     trade_sides: TradeSideSpec
     setup: UntouchedAnchorSetupSpec
-    trade_management: TradeManagementSpec = field(default_factory=TradeManagementSpec)
+    trade_management: TradeManagementSpec
 
     def __post_init__(self) -> None:
         if not self.variant.strip():

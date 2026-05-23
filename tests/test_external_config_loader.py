@@ -29,6 +29,22 @@ def _instance(
     trade_sides: object | None = None,
     exits: object | None = None,
 ) -> dict[str, object]:
+    default_exits = (
+        exits
+        if exits is not None
+        else [
+            {
+                "instance_id": "atr_stop_loss",
+                "component_id": "atr_stop_loss",
+                "distance": {"timeframe": "base", "period": 14, "multiplier": 1.5},
+            },
+            {
+                "instance_id": "atr_take_profit",
+                "component_id": "atr_take_profit",
+                "distance": {"timeframe": "base", "period": 14, "multiplier": 4.0},
+            },
+        ]
+    )
     return {
         "instance_id": instance_id,
         **(
@@ -55,20 +71,24 @@ def _instance(
             "trigger": {"component_id": "reclaim_anchor"},
             "blockers": [{"instance_id": "no_blockers", "component_id": "no_blockers"}],
             "risk": {"component_id": "no_risk_filter"},
-            "exits": exits
-            if exits is not None
-            else [
-                {
-                    "instance_id": "atr_stop_loss",
-                    "component_id": "atr_stop_loss",
-                    "distance": {"timeframe": "base", "period": 14, "multiplier": 1.5},
-                },
-                {
-                    "instance_id": "atr_take_profit",
-                    "component_id": "atr_take_profit",
-                    "distance": {"timeframe": "base", "period": 14, "multiplier": 4.0},
-                },
-            ],
+            "trade_management": {
+                "exit_policy": {
+                    "context": {
+                        "component_id": "htf_context",
+                        "timeframe": "4h",
+                        "source": "close",
+                        "fast_period": 20,
+                        "anchor_period": 50,
+                        "slow_period": 200,
+                    },
+                    "always_on": {"exits": default_exits},
+                    "profiles": {
+                        "aligned": {"exits": []},
+                        "countertrend": {"exits": []},
+                        "neutral": {"exits": []},
+                    },
+                }
+            },
         },
     }
 
@@ -163,15 +183,18 @@ def test_load_external_config_supports_exit_atr_distance_timeframe() -> None:
     instance = _instance("mtf_exit_distance")
     strategy = instance["strategy"]
     assert isinstance(strategy, dict)
-    exits = strategy["exits"]
+    trade_management = strategy["trade_management"]
+    assert isinstance(trade_management, dict)
+    exits = trade_management["exit_policy"]["always_on"]["exits"]
     assert isinstance(exits, list)
     exits[0]["distance"]["timeframe"] = "15m"
 
     loaded = load_strategy_config(_bundle([instance]))
 
     spec = loaded.specs[0]
-    assert spec.components.exits[0].distance is not None
-    assert spec.components.exits[0].distance.timeframe == "15m"
+    rule = spec.trade_management.exit_policy.always_on.exits[0]
+    assert rule.distance is not None
+    assert rule.distance.timeframe == "15m"
 
 
 def test_load_external_config_supports_constant_usd_stop_and_take() -> None:
@@ -197,7 +220,7 @@ def test_load_external_config_supports_constant_usd_stop_and_take() -> None:
         )
     )
 
-    sl, tp = loaded.specs[0].components.exits
+    sl, tp = loaded.specs[0].trade_management.exit_policy.always_on.exits
     assert sl.component_id == "constant_usd_stop_loss" and sl.usd_distance == 500.0 and sl.distance is None
     assert tp.component_id == "constant_usd_take_profit" and tp.usd_distance == 1200.0 and tp.distance is None
 
@@ -220,8 +243,8 @@ def test_load_external_config_supports_only_atr_stop_loss_exit() -> None:
         )
     )
 
-    exit_rule = loaded.specs[0].components.exits[0]
-    assert len(loaded.specs[0].components.exits) == 1
+    exit_rule = loaded.specs[0].trade_management.exit_policy.always_on.exits[0]
+    assert len(loaded.specs[0].trade_management.exit_policy.always_on.exits) == 1
     assert exit_rule.exit_kind == "stop_loss"
     assert exit_rule.distance is not None
     assert exit_rule.distance.period == 14
@@ -246,8 +269,8 @@ def test_load_external_config_supports_only_atr_take_profit_exit() -> None:
         )
     )
 
-    exit_rule = loaded.specs[0].components.exits[0]
-    assert len(loaded.specs[0].components.exits) == 1
+    exit_rule = loaded.specs[0].trade_management.exit_policy.always_on.exits[0]
+    assert len(loaded.specs[0].trade_management.exit_policy.always_on.exits) == 1
     assert exit_rule.exit_kind == "take_profit"
     assert exit_rule.distance is not None
     assert exit_rule.distance.period == 14
@@ -274,8 +297,8 @@ def test_load_external_config_supports_only_rsi_signal_exit() -> None:
         )
     )
 
-    exit_rule = loaded.specs[0].components.exits[0]
-    assert len(loaded.specs[0].components.exits) == 1
+    exit_rule = loaded.specs[0].trade_management.exit_policy.always_on.exits[0]
+    assert len(loaded.specs[0].trade_management.exit_policy.always_on.exits) == 1
     assert exit_rule.exit_kind == "signal"
     assert exit_rule.distance is None
     assert exit_rule.rsi is not None

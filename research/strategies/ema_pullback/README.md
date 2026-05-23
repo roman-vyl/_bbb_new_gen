@@ -2,6 +2,19 @@
 
 Исследовательская strategy family для EMA pullback после Step 11 и Step 12.
 
+## Exit Policy v1 (current)
+
+Слой exits мигрирован на `strategy.trade_management.exit_policy`:
+
+- legacy путь `strategy.exits` fail-fast отклоняется в loader;
+- контекст `trade_management.exit_policy.context` использует `component_id: htf_context`;
+- активные правила на сделке: `always_on + profile(side + htf_context.state)`;
+- сигнальные exits внутри активной группы агрегируются через OR;
+- distance exits внутри активной группы агрегируются через min;
+- signal trace / Bar Inspector получают диагностику `htf_context` (`state`, `fast/anchor/slow`, `meta`).
+
+Spike по entry-lock semantics задокументирован в `docs/research/17_exit_policy_entry_lock_spike.md`.
+
 После загрузки внешнего experiment-файла runner строит финальный `ExecutionConfig`
 через `execution_config_from_external(...)`: `family`, `symbol`, `timeframe` и
 опциональные поля `execution.*` берутся из конфига; при отсутствии

@@ -202,6 +202,26 @@ export function ChartBarInspector({
       )}
       {signalTrace && index >= 0 && (
         <>
+          {signalTrace.htf_context && (
+            <>
+              <h4 className="bar-inspector__section">HTF context</h4>
+              <dl className="bar-inspector__dl">
+                <dt>state</dt>
+                <dd>{String(signalTrace.htf_context.state[index] ?? "neutral")}</dd>
+                <dt>EMA fast / anchor / slow</dt>
+                <dd>
+                  {formatChartPrice(signalTrace.htf_context.fast[index] ?? null, priceDecimals)} /{" "}
+                  {formatChartPrice(signalTrace.htf_context.anchor[index] ?? null, priceDecimals)} /{" "}
+                  {formatChartPrice(signalTrace.htf_context.slow[index] ?? null, priceDecimals)}
+                </dd>
+                <dt>meta</dt>
+                <dd>
+                  tf {String((signalTrace.htf_context.meta?.timeframe as string | undefined) ?? "—")} · source{" "}
+                  {String((signalTrace.htf_context.meta?.source as string | undefined) ?? "—")}
+                </dd>
+              </dl>
+            </>
+          )}
           <h4 className="bar-inspector__section">Final entry</h4>
           <SideBlock label="Long" side={signalTrace.long} index={index} trace={signalTrace} />
           <SideBlock label="Short" side={signalTrace.short} index={index} trace={signalTrace} />

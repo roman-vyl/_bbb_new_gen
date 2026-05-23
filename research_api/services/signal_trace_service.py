@@ -25,6 +25,7 @@ from research.strategies.ema_pullback.spec_report import (
 
 from research_api.contracts.runs import RunReport, RunVariant
 from research_api.contracts.signal_trace import (
+    HtfContextTrace,
     SignalTraceBundle,
     SignalTraceMeta,
     SideSignalTrace as SideSignalTraceContract,
@@ -93,6 +94,7 @@ def _to_contract(data: SignalTraceBundleData) -> SignalTraceBundle:
     return SignalTraceBundle(
         times=data.times,
         meta=SignalTraceMeta(**data.meta),
+        htf_context=HtfContextTrace(**data.htf_context),
         long=side(data.long),
         short=side(data.short),
     )

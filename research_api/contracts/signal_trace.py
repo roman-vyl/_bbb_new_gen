@@ -31,10 +31,23 @@ class SideSignalTrace(BaseModel):
     internals: dict[str, Any] = Field(default_factory=dict)
 
 
+class HtfContextTrace(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    state: list[str]
+    fast: list[float | None]
+    anchor: list[float | None]
+    slow: list[float | None]
+    meta: dict[str, Any] = Field(default_factory=dict)
+
+
 class SignalTraceBundle(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     times: list[int] = Field(description="Unix seconds per bar, aligned with chart candles")
     meta: SignalTraceMeta
+    htf_context: HtfContextTrace = Field(
+        default_factory=lambda: HtfContextTrace(state=[], fast=[], anchor=[], slow=[], meta={})
+    )
     long: SideSignalTrace
     short: SideSignalTrace

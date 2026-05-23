@@ -45,8 +45,38 @@ def get_component_catalog(*, family: str = "ema_pullback") -> ComponentCatalog:
         ),
         ComposerSectionSchema(section_id="risk", label="Risk", role="risk"),
         ComposerSectionSchema(
-            section_id="exits",
-            label="Exits",
+            section_id="trade_management",
+            label="Trade management",
+        ),
+        ComposerSectionSchema(
+            section_id="exit_policy_context",
+            label="Exit policy context",
+        ),
+        ComposerSectionSchema(
+            section_id="exit_policy_always_on",
+            label="Exit policy always-on exits",
+            role="exits",
+            list_slot=True,
+        ),
+        ComposerSectionSchema(
+            section_id="exit_policy_profiles",
+            label="Exit policy profiles",
+        ),
+        ComposerSectionSchema(
+            section_id="exit_policy_profile_aligned",
+            label="Profile aligned exits",
+            role="exits",
+            list_slot=True,
+        ),
+        ComposerSectionSchema(
+            section_id="exit_policy_profile_countertrend",
+            label="Profile countertrend exits",
+            role="exits",
+            list_slot=True,
+        ),
+        ComposerSectionSchema(
+            section_id="exit_policy_profile_neutral",
+            label="Profile neutral exits",
             role="exits",
             list_slot=True,
         ),
@@ -128,6 +158,24 @@ def get_component_catalog(*, family: str = "ema_pullback") -> ComponentCatalog:
             component_id="no_risk_filter",
             role="risk",
             label="No risk filter",
+        ),
+        ComponentSchema(
+            component_id="htf_context",
+            role="exits",
+            label="HTF context",
+            description="Diagnostic-only context for selecting aligned/countertrend/neutral exit profile.",
+            params_schema={
+                "context.timeframe": _tf_param("HTF timeframe", default="4h"),
+                "context.source": ParamFieldSchema(
+                    type="string",
+                    label="Source",
+                    enum=["close"],
+                    default="close",
+                ),
+                "context.fast_period": _int_param("Fast EMA period", default=20),
+                "context.anchor_period": _int_param("Anchor EMA period", default=50),
+                "context.slow_period": _int_param("Slow EMA period", default=200),
+            },
         ),
         ComponentSchema(
             component_id="no_signal_exit",

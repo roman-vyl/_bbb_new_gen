@@ -7,6 +7,7 @@ from typing import Any
 
 from data_engine.contracts import pandas_freq_alias
 import pandas as pd
+import numpy as np
 
 from research.strategies.ema_pullback.execution.result_models import (
     OpenTradesBreakdown,
@@ -21,6 +22,10 @@ from research.strategies.ema_pullback.features.calculations import add_feature_c
 from research.strategies.ema_pullback.features.plan import build_feature_plan_from_strategy_spec
 from research.strategies.ema_pullback.spec import strategy_spec_config_id, strategy_spec_to_dict
 from research.strategies.ema_pullback.spec import EmaPullbackStrategySpec
+
+
+def _profile_code(name: str) -> int:
+    return {"aligned": 0, "countertrend": 1, "neutral": 2}.get(name, 2)
 
 
 def ensure_finite_metric(name: str, value: float) -> float:
@@ -152,27 +157,139 @@ def run_strategy_spec(
 
     freq = pandas_freq_alias(spec.base_timeframe)
     stop_kwargs = exit_outputs.stop_kwargs()
-    sl_stop = stop_kwargs["sl_stop"]
-    tp_stop = stop_kwargs["tp_stop"]
-    # ATR-based stops are NaN until warmup.
-    # Gate entries only by configured distance exits:
-    # - both SL+TP -> require both ready
-    # - only one distance side -> require that side ready
-    # - signal-only exits -> no distance readiness gating
-    stop_ready = pd.Series(True, index=close.index, dtype=bool)
-    if sl_stop.notna().any():
-        stop_ready = stop_ready & sl_stop.notna()
-    if tp_stop.notna().any():
-        stop_ready = stop_ready & tp_stop.notna()
-    entries_for_portfolio = signals.entries.fillna(False).astype(bool) & stop_ready
-    short_entries_for_portfolio = signals.short_entries.fillna(False).astype(bool) & stop_ready
+    entries_for_portfolio = signals.entries.fillna(False).astype(bool) & exit_outputs.stop_ready_long
+    short_entries_for_portfolio = (
+        signals.short_entries.fillna(False).astype(bool) & exit_outputs.stop_ready_short
+    )
+
+    long_exit_matrix = np.column_stack(
+        [
+            exit_outputs.long_exits_by_profile["aligned"].fillna(False).to_numpy(dtype=bool),
+            exit_outputs.long_exits_by_profile["countertrend"].fillna(False).to_numpy(dtype=bool),
+            exit_outputs.long_exits_by_profile["neutral"].fillna(False).to_numpy(dtype=bool),
+        ]
+    )
+    short_exit_matrix = np.column_stack(
+        [
+            exit_outputs.short_exits_by_profile["aligned"].fillna(False).to_numpy(dtype=bool),
+            exit_outputs.short_exits_by_profile["countertrend"].fillna(False).to_numpy(dtype=bool),
+            exit_outputs.short_exits_by_profile["neutral"].fillna(False).to_numpy(dtype=bool),
+        ]
+    )
+    sl_long_matrix = np.column_stack(
+        [
+            exit_outputs.sl_stop_by_profile["aligned"].to_numpy(dtype=float),
+            exit_outputs.sl_stop_by_profile["countertrend"].to_numpy(dtype=float),
+            exit_outputs.sl_stop_by_profile["neutral"].to_numpy(dtype=float),
+        ]
+    )
+    sl_short_matrix = sl_long_matrix
+    tp_long_matrix = np.column_stack(
+        [
+            exit_outputs.tp_stop_by_profile["aligned"].to_numpy(dtype=float),
+            exit_outputs.tp_stop_by_profile["countertrend"].to_numpy(dtype=float),
+            exit_outputs.tp_stop_by_profile["neutral"].to_numpy(dtype=float),
+        ]
+    )
+    tp_short_matrix = tp_long_matrix
+    long_profile_codes = np.asarray(
+        [_profile_code(str(v)) for v in exit_outputs.profile_long.to_list()],
+        dtype=np.int64,
+    )
+    short_profile_codes = np.asarray(
+        [_profile_code(str(v)) for v in exit_outputs.profile_short.to_list()],
+        dtype=np.int64,
+    )
+    locked_profile = np.asarray([-1], dtype=np.int64)
+
+    from numba import njit
+
+    @njit
+    def signal_func_nb(
+        c,
+        entries_arr,
+        short_entries_arr,
+        long_exit_mat,
+        short_exit_mat,
+        long_profile_arr,
+        short_profile_arr,
+        locked,
+    ):
+        le = False
+        lx = False
+        se = False
+        sx = False
+        i = c.i
+        col = c.col
+        if c.position_now == 0:
+            if entries_arr[i]:
+                le = True
+                locked[col] = long_profile_arr[i]
+            elif short_entries_arr[i]:
+                se = True
+                locked[col] = short_profile_arr[i]
+        elif c.position_now > 0:
+            prof = locked[col]
+            if prof < 0:
+                prof = long_profile_arr[i]
+                locked[col] = prof
+            lx = long_exit_mat[i, prof]
+            if lx:
+                locked[col] = -1
+        else:
+            prof = locked[col]
+            if prof < 0:
+                prof = short_profile_arr[i]
+                locked[col] = prof
+            sx = short_exit_mat[i, prof]
+            if sx:
+                locked[col] = -1
+        return le, lx, se, sx
+
+    @njit
+    def adjust_sl_func_nb(c, sl_long_mat, sl_short_mat, long_profile_arr, short_profile_arr, locked):
+        if c.position_now > 0:
+            prof = locked[c.col]
+            if prof < 0:
+                prof = long_profile_arr[c.init_i]
+                locked[c.col] = prof
+            return sl_long_mat[c.i, prof], False
+        if c.position_now < 0:
+            prof = locked[c.col]
+            if prof < 0:
+                prof = short_profile_arr[c.init_i]
+                locked[c.col] = prof
+            return sl_short_mat[c.i, prof], False
+        return np.nan, False
+
+    @njit
+    def adjust_tp_func_nb(c, tp_long_mat, tp_short_mat, long_profile_arr, short_profile_arr, locked):
+        if c.position_now > 0:
+            prof = locked[c.col]
+            if prof < 0:
+                prof = long_profile_arr[c.init_i]
+                locked[c.col] = prof
+            return tp_long_mat[c.i, prof]
+        if c.position_now < 0:
+            prof = locked[c.col]
+            if prof < 0:
+                prof = short_profile_arr[c.init_i]
+                locked[c.col] = prof
+            return tp_short_mat[c.i, prof]
+        return np.nan
 
     pf = vbt.Portfolio.from_signals(
         close,
-        entries_for_portfolio,
-        exit_outputs.exits,
-        short_entries=short_entries_for_portfolio,
-        short_exits=exit_outputs.short_exits,
+        signal_func_nb=signal_func_nb,
+        signal_args=(
+            entries_for_portfolio.to_numpy(dtype=bool),
+            short_entries_for_portfolio.to_numpy(dtype=bool),
+            long_exit_matrix,
+            short_exit_matrix,
+            long_profile_codes,
+            short_profile_codes,
+            locked_profile,
+        ),
         open=open_s,
         high=high_s,
         low=low_s,
@@ -180,7 +297,22 @@ def run_strategy_spec(
         init_cash=float(init_cash),
         fees=float(fees),
         slippage=float(slippage),
-        **stop_kwargs,
+        adjust_sl_func_nb=adjust_sl_func_nb,
+        adjust_sl_args=(
+            sl_long_matrix,
+            sl_short_matrix,
+            long_profile_codes,
+            short_profile_codes,
+            locked_profile,
+        ),
+        adjust_tp_func_nb=adjust_tp_func_nb,
+        adjust_tp_args=(
+            tp_long_matrix,
+            tp_short_matrix,
+            long_profile_codes,
+            short_profile_codes,
+            locked_profile,
+        ),
     )
 
     trade_records = extract_trade_records(

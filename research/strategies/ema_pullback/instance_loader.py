@@ -27,6 +27,11 @@ from research.strategies.ema_pullback.components.registry import (
 from research.strategies.ema_pullback.spec import (
     BlockerRuleSpec,
     EmaPullbackStrategySpec,
+    ExitPolicySpec,
+    ExitPolicyProfilesSpec,
+    ExitPolicyGroupSpec,
+    HtfContextConfigSpec,
+    TradeManagementSpec,
     ExitRuleSpec,
     TradeSide,
     UntouchedAnchorSetupSpec,
@@ -65,7 +70,7 @@ _STRATEGY_FIELDS = frozenset(
         "trigger",
         "blockers",
         "risk",
-        "exits",
+        "trade_management",
     }
 )
 
@@ -96,14 +101,13 @@ def load_ema_pullback_instance(instance: Mapping[str, Any]) -> EmaPullbackStrate
     trigger = _parse_trigger(strategy["trigger"])
     blockers = _parse_blockers(strategy["blockers"])
     risk = _parse_risk(strategy["risk"])
-    exits = _parse_exits(strategy["exits"])
+    trade_management_spec = _parse_trade_management(strategy["trade_management"])
 
     components = builders.component_stack(
         direction=direction,
         blockers=blockers,
         setup=setup_component,
         trigger=trigger,
-        exits=exits,
         risk=risk,
     )
     variant = _optional_non_empty_str(payload, "variant", default="")
@@ -120,6 +124,7 @@ def load_ema_pullback_instance(instance: Mapping[str, Any]) -> EmaPullbackStrate
         setup_active_bars=setup_params.active_bars,
         enabled_sides=_parse_trade_sides(strategy["trade_sides"]),
         components=components,
+        trade_management_spec=trade_management_spec,
     )
     return spec
 
@@ -135,10 +140,92 @@ def _parse_market(value: Any) -> dict[str, str]:
 
 def _parse_strategy(value: Any) -> Mapping[str, Any]:
     payload = _require_mapping("strategy", value)
+    if "exits" in payload:
+        raise EmaPullbackInstanceValidationError(
+            "strategy.exits is no longer supported; use strategy.trade_management.exit_policy"
+        )
     _reject_unknown_fields("strategy", payload, _STRATEGY_FIELDS)
     for key in _STRATEGY_FIELDS:
         _require_present(payload, key)
     return payload
+
+
+def _parse_trade_management(value: Any) -> TradeManagementSpec:
+    payload = _require_mapping("trade_management", value)
+    _reject_unknown_fields("trade_management", payload, {"exit_policy"})
+    exit_policy_payload = _require_mapping(
+        "trade_management.exit_policy",
+        _require_present(payload, "exit_policy"),
+    )
+    _reject_unknown_fields(
+        "trade_management.exit_policy",
+        exit_policy_payload,
+        {"context", "always_on", "profiles"},
+    )
+    context_payload = _require_mapping(
+        "trade_management.exit_policy.context",
+        _require_present(exit_policy_payload, "context"),
+    )
+    _reject_unknown_fields(
+        "trade_management.exit_policy.context",
+        context_payload,
+        {"component_id", "timeframe", "source", "fast_period", "anchor_period", "slow_period"},
+    )
+    context = HtfContextConfigSpec(
+        component_id=_require_non_empty_str(context_payload, "component_id"),
+        timeframe=_require_non_empty_str(context_payload, "timeframe"),
+        source=_optional_non_empty_str(context_payload, "source", default="close"),
+        fast_period=_require_positive_int(context_payload, "fast_period"),
+        anchor_period=_require_positive_int(context_payload, "anchor_period"),
+        slow_period=_require_positive_int(context_payload, "slow_period"),
+    )
+    always_on = _parse_exit_policy_group(
+        _require_present(exit_policy_payload, "always_on"),
+        path="trade_management.exit_policy.always_on",
+    )
+    profiles_payload = _require_mapping(
+        "trade_management.exit_policy.profiles",
+        _require_present(exit_policy_payload, "profiles"),
+    )
+    _reject_unknown_fields(
+        "trade_management.exit_policy.profiles",
+        profiles_payload,
+        {"aligned", "countertrend", "neutral"},
+    )
+    profiles = ExitPolicyProfilesSpec(
+        aligned=_parse_exit_policy_group(
+            _require_present(profiles_payload, "aligned"),
+            path="trade_management.exit_policy.profiles.aligned",
+        ),
+        countertrend=_parse_exit_policy_group(
+            _require_present(profiles_payload, "countertrend"),
+            path="trade_management.exit_policy.profiles.countertrend",
+        ),
+        neutral=_parse_exit_policy_group(
+            _require_present(profiles_payload, "neutral"),
+            path="trade_management.exit_policy.profiles.neutral",
+        ),
+    )
+    return TradeManagementSpec(
+        exit_policy=ExitPolicySpec(
+            context=context,
+            always_on=always_on,
+            profiles=profiles,
+        )
+    )
+
+
+def _parse_exit_policy_group(value: Any, *, path: str) -> ExitPolicyGroupSpec:
+    payload = _require_mapping(path, value)
+    _reject_unknown_fields(path, payload, {"exits"})
+    exits_payload = _require_present(payload, "exits")
+    if not isinstance(exits_payload, list):
+        raise EmaPullbackInstanceValidationError(f"{path}.exits must be a list")
+    exits = tuple(
+        _parse_exit(index, item, path=f"{path}.exits")
+        for index, item in enumerate(exits_payload)
+    )
+    return ExitPolicyGroupSpec(exits=exits)
 
 
 def _parse_trade_sides(value: Any) -> tuple[TradeSide, ...]:
@@ -279,24 +366,18 @@ def _parse_risk(value: Any) -> str:
     return builders.risk_no_filter()
 
 
-def _parse_exits(value: Any) -> tuple[ExitRuleSpec, ...]:
-    if not isinstance(value, list) or not value:
-        raise EmaPullbackInstanceValidationError("exits must be a non-empty list")
-    return tuple(_parse_exit(index, item) for index, item in enumerate(value))
-
-
-def _parse_exit(index: int, value: Any) -> ExitRuleSpec:
-    payload = _require_mapping(f"exits[{index}]", value)
+def _parse_exit(index: int, value: Any, *, path: str = "exits") -> ExitRuleSpec:
+    payload = _require_mapping(f"{path}[{index}]", value)
     component_id = _require_non_empty_str(payload, "component_id")
     _assert_known_component("exits", component_id)
     instance_id = _require_non_empty_str(payload, "instance_id")
     common = {"instance_id", "component_id"}
     if component_id == NO_SIGNAL_EXIT_COMPONENT:
-        _reject_unknown_fields(f"exits[{index}]", payload, common)
+        _reject_unknown_fields(f"{path}[{index}]", payload, common)
         return builders.exit_rule(NO_SIGNAL_EXIT_COMPONENT, instance_id=instance_id, exit_kind="signal")
     if component_id == RSI_SIGNAL_EXIT_COMPONENT:
         allowed = common | {"rsi", "timeframe", "period", "long_exit_above", "short_exit_below"}
-        _reject_unknown_fields(f"exits[{index}]", payload, allowed)
+        _reject_unknown_fields(f"{path}[{index}]", payload, allowed)
         rsi = _parse_rsi_payload(payload)
         return builders.exit_rsi(
             instance_id=instance_id,
@@ -307,7 +388,7 @@ def _parse_exit(index: int, value: Any) -> ExitRuleSpec:
         )
     if component_id in {ATR_STOP_LOSS_COMPONENT, ATR_TAKE_PROFIT_COMPONENT}:
         allowed = common | {"distance", "timeframe", "period", "multiplier"}
-        _reject_unknown_fields(f"exits[{index}]", payload, allowed)
+        _reject_unknown_fields(f"{path}[{index}]", payload, allowed)
         distance = _parse_distance_payload(payload)
         if component_id == ATR_STOP_LOSS_COMPONENT:
             return builders.exit_atr_stop_loss(
@@ -324,7 +405,7 @@ def _parse_exit(index: int, value: Any) -> ExitRuleSpec:
         )
     if component_id in {CONSTANT_USD_STOP_LOSS_COMPONENT, CONSTANT_USD_TAKE_PROFIT_COMPONENT}:
         allowed = common | {"usd_distance"}
-        _reject_unknown_fields(f"exits[{index}]", payload, allowed)
+        _reject_unknown_fields(f"{path}[{index}]", payload, allowed)
         usd_distance = _require_positive_number(payload, "usd_distance")
         if component_id == CONSTANT_USD_STOP_LOSS_COMPONENT:
             return builders.exit_constant_usd_stop_loss(instance_id=instance_id, usd_distance=usd_distance)

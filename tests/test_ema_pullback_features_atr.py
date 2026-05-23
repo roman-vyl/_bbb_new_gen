@@ -9,9 +9,11 @@ pytest.importorskip("pandas")
 import pandas as pd
 
 from research.strategies.ema_pullback.component_builders import (
-    component_stack,
+    exit_policy,
     exit_constant_usd_stop_loss,
     exit_constant_usd_take_profit,
+    htf_context_config,
+    trade_management,
 )
 from research.strategies.ema_pullback.features.calculations import add_feature_columns_from_plan
 from research.strategies.ema_pullback.features.plan import (
@@ -46,22 +48,26 @@ def test_feature_plan_ids_follow_strategy_spec() -> None:
     spec = make_ema_pullback_strategy_spec()
     plan = build_feature_plan_from_strategy_spec(spec)
     ema_feats = [f for f in plan.features if f.kind == "ema"]
-    assert {f.period for f in ema_feats} == {
+    assert {f.period for f in ema_feats} >= {
         spec.anchor_stack.fast.period,
         spec.anchor_stack.anchor.period,
         spec.anchor_stack.slow.period,
     }
     for f in ema_feats:
-        assert f.feature_id == f"ema_close_base_{f.period}"
+        assert f.feature_id == f"ema_close_{f.timeframe}_{f.period}"
 
     atr_feats = [f for f in plan.features if f.kind == "atr"]
     assert len(atr_feats) == 1
-    atr_periods = {r.distance.period for r in spec.components.exits if r.distance is not None}
+    atr_periods = {
+        r.distance.period
+        for r in spec.trade_management.exit_policy.always_on.exits
+        if r.distance is not None
+    }
     assert atr_feats[0].period in atr_periods
     assert atr_feats[0].feature_id == f"atr_close_{atr_feats[0].timeframe}_{atr_feats[0].period}"
 
     dist_feats = [f for f in plan.features if f.kind == "atr_distance"]
-    distance_rules = [r for r in spec.components.exits if r.distance is not None]
+    distance_rules = [r for r in spec.trade_management.exit_policy.always_on.exits if r.distance is not None]
     assert len(dist_feats) == len(distance_rules)
     by_mult = {f.multiplier: f.feature_id for f in dist_feats}
     for rule in distance_rules:
@@ -95,8 +101,7 @@ def test_atr_distance_columns_follow_plan_multipliers() -> None:
 
 def test_base_rsi_feature_plan_and_calculation() -> None:
     base = make_ema_pullback_strategy_spec()
-    spec = replace(
-        base,
+    spec = make_ema_pullback_strategy_spec(
         components=replace(
             base.components,
             blockers=(
@@ -108,17 +113,25 @@ def test_base_rsi_feature_plan_and_calculation() -> None:
                     short_block_below=20.0,
                 ),
             ),
-            exits=(
-                ExitRuleSpec(
-                    instance_id="rsi_exit_base",
-                    component_id="rsi_signal_exit",
-                    exit_kind="signal",
-                    rsi=RsiFeatureSpec(timeframe="base", period=3),
-                    long_exit_above=70.0,
-                    short_exit_below=30.0,
+        ),
+        trade_management_spec=trade_management(
+            exit_policy_spec=exit_policy(
+                context=htf_context_config(timeframe="4h", fast_period=100, anchor_period=200, slow_period=1000),
+                always_on=(
+                    ExitRuleSpec(
+                        instance_id="rsi_exit_base",
+                        component_id="rsi_signal_exit",
+                        exit_kind="signal",
+                        rsi=RsiFeatureSpec(timeframe="base", period=3),
+                        long_exit_above=70.0,
+                        short_exit_below=30.0,
+                    ),
+                    *base.trade_management.exit_policy.always_on.exits,
                 ),
-                *base.components.exits,
-            ),
+                aligned=(),
+                countertrend=(),
+                neutral=(),
+            )
         ),
     )
     plan = build_feature_plan_from_strategy_spec(spec)
@@ -170,6 +183,7 @@ def test_mtf_ema_and_rsi_align_only_after_completed_candle() -> None:
         anchor_columns={},
         exit_distance_columns={},
         rsi_columns={("4h", 1): "rsi_close_4h_1"},
+        htf_context_columns={},
     )
 
     out = add_feature_columns_from_plan(df, plan)
@@ -207,6 +221,7 @@ def test_mtf_atr_distance_feature_uses_distance_timeframe() -> None:
         anchor_columns={},
         exit_distance_columns={"atr_sl_4h": "atr_close_4h_3_x1_5"},
         rsi_columns={},
+        htf_context_columns={},
     )
     out = add_feature_columns_from_plan(_ohlcv(24), plan)
     assert "atr_close_4h_3" in out.columns
@@ -221,10 +236,16 @@ def test_mtf_atr_distance_feature_uses_distance_timeframe() -> None:
 
 def test_feature_plan_skips_atr_when_only_constant_usd_exits() -> None:
     spec = make_ema_pullback_strategy_spec(
-        components=component_stack(
-            exits=(
-                exit_constant_usd_stop_loss(usd_distance=500.0),
-                exit_constant_usd_take_profit(usd_distance=1200.0),
+        trade_management_spec=trade_management(
+            exit_policy_spec=exit_policy(
+                context=htf_context_config(timeframe="4h", fast_period=100, anchor_period=200, slow_period=1000),
+                always_on=(
+                    exit_constant_usd_stop_loss(usd_distance=500.0),
+                    exit_constant_usd_take_profit(usd_distance=1200.0),
+                ),
+                aligned=(),
+                countertrend=(),
+                neutral=(),
             )
         )
     )

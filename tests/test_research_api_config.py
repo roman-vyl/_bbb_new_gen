@@ -44,18 +44,37 @@ def _valid_draft() -> dict[str, object]:
                     "trigger": {"component_id": "reclaim_anchor"},
                     "blockers": [{"instance_id": "no_blockers", "component_id": "no_blockers"}],
                     "risk": {"component_id": "no_risk_filter"},
-                    "exits": [
-                        {
-                            "instance_id": "atr_sl",
-                            "component_id": "atr_stop_loss",
-                            "distance": {"timeframe": "base", "period": 14, "multiplier": 1.5},
-                        },
-                        {
-                            "instance_id": "atr_tp",
-                            "component_id": "atr_take_profit",
-                            "distance": {"timeframe": "base", "period": 14, "multiplier": 4.0},
-                        },
-                    ],
+                    "trade_management": {
+                        "exit_policy": {
+                            "context": {
+                                "component_id": "htf_context",
+                                "timeframe": "4h",
+                                "source": "close",
+                                "fast_period": 100,
+                                "anchor_period": 200,
+                                "slow_period": 1000,
+                            },
+                            "always_on": {
+                                "exits": [
+                                    {
+                                        "instance_id": "atr_sl",
+                                        "component_id": "atr_stop_loss",
+                                        "distance": {"timeframe": "base", "period": 14, "multiplier": 1.5},
+                                    },
+                                    {
+                                        "instance_id": "atr_tp",
+                                        "component_id": "atr_take_profit",
+                                        "distance": {"timeframe": "base", "period": 14, "multiplier": 4.0},
+                                    },
+                                ]
+                            },
+                            "profiles": {
+                                "aligned": {"exits": []},
+                                "countertrend": {"exits": []},
+                                "neutral": {"exits": []},
+                            },
+                        }
+                    },
                 },
             }
         ],

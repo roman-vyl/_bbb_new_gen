@@ -126,6 +126,7 @@ class SideSignalTrace:
 class SignalTraceBundleData:
     times: list[int]
     meta: dict[str, Any]
+    htf_context: dict[str, Any]
     long: SideSignalTrace
     short: SideSignalTrace
 
@@ -290,6 +291,25 @@ def build_signal_trace_from_spec(
     )
 
     trigger_rule = spec.components.trigger
+    context_cols = plan.htf_context_columns
+    context_cfg = spec.trade_management.exit_policy.context
+    htf_payload = {
+        "state": [
+            str(v) if isinstance(v, str) else "neutral"
+            for v in exit_outputs.context_state.to_list()
+        ],
+        "fast": _float_list(df[context_cols["fast"]].astype(float)),
+        "anchor": _float_list(df[context_cols["anchor"]].astype(float)),
+        "slow": _float_list(df[context_cols["slow"]].astype(float)),
+        "meta": {
+            "component_id": context_cfg.component_id,
+            "timeframe": context_cfg.timeframe,
+            "source": context_cfg.source,
+            "fast_period": context_cfg.fast_period,
+            "anchor_period": context_cfg.anchor_period,
+            "slow_period": context_cfg.slow_period,
+        },
+    }
     meta = {
         "variant": spec.variant,
         "component_ids": {
@@ -316,6 +336,7 @@ def build_signal_trace_from_spec(
     return SignalTraceBundleData(
         times=_index_to_times_sec(df.index),
         meta=meta,
+        htf_context=htf_payload,
         long=long_trace,
         short=short_trace,
     )
@@ -368,6 +389,13 @@ def slice_signal_trace(
     return SignalTraceBundleData(
         times=times,
         meta=trace.meta,
+        htf_context={
+            "state": [trace.htf_context["state"][i] for i in indices],
+            "fast": [trace.htf_context["fast"][i] for i in indices],
+            "anchor": [trace.htf_context["anchor"][i] for i in indices],
+            "slow": [trace.htf_context["slow"][i] for i in indices],
+            "meta": trace.htf_context["meta"],
+        },
         long=_slice_side(trace.long),
         short=_slice_side(trace.short),
     )

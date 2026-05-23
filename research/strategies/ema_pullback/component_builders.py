@@ -29,8 +29,13 @@ from research.strategies.ema_pullback.spec import (
     BlockerRuleSpec,
     ComponentStackSpec,
     EmaSpec,
+    ExitPolicyGroupSpec,
+    ExitPolicyProfilesSpec,
+    ExitPolicySpec,
     ExitKind,
     ExitRuleSpec,
+    HtfContextConfigSpec,
+    TradeManagementSpec,
     UntouchedAnchorSetupSpec,
     RsiFeatureSpec,
     TradeSide,
@@ -259,6 +264,65 @@ def exits_atr_default(
     )
 
 
+def htf_context_config(
+    *,
+    timeframe: str,
+    fast_period: int,
+    anchor_period: int,
+    slow_period: int,
+    source: str = "close",
+    component_id: str = "htf_context",
+) -> HtfContextConfigSpec:
+    return HtfContextConfigSpec(
+        component_id=component_id,
+        timeframe=timeframe,
+        source=source,
+        fast_period=fast_period,
+        anchor_period=anchor_period,
+        slow_period=slow_period,
+    )
+
+
+def exit_policy_group(exits: Sequence[ExitRuleSpec]) -> ExitPolicyGroupSpec:
+    return ExitPolicyGroupSpec(exits=_normalize_sequence("trade_management.exit_policy.exits", exits))
+
+
+def exit_policy_profiles(
+    *,
+    aligned: Sequence[ExitRuleSpec],
+    countertrend: Sequence[ExitRuleSpec],
+    neutral: Sequence[ExitRuleSpec],
+) -> ExitPolicyProfilesSpec:
+    return ExitPolicyProfilesSpec(
+        aligned=exit_policy_group(aligned),
+        countertrend=exit_policy_group(countertrend),
+        neutral=exit_policy_group(neutral),
+    )
+
+
+def exit_policy(
+    *,
+    context: HtfContextConfigSpec,
+    always_on: Sequence[ExitRuleSpec],
+    aligned: Sequence[ExitRuleSpec],
+    countertrend: Sequence[ExitRuleSpec],
+    neutral: Sequence[ExitRuleSpec],
+) -> ExitPolicySpec:
+    return ExitPolicySpec(
+        context=context,
+        always_on=exit_policy_group(always_on),
+        profiles=exit_policy_profiles(
+            aligned=aligned,
+            countertrend=countertrend,
+            neutral=neutral,
+        ),
+    )
+
+
+def trade_management(*, exit_policy_spec: ExitPolicySpec) -> TradeManagementSpec:
+    return TradeManagementSpec(exit_policy=exit_policy_spec)
+
+
 def _normalize_sequence(name: str, values: Sequence[T]) -> tuple[T, ...]:
     if isinstance(values, (str, bytes)):
         raise TypeError(f"{name} must be a sequence of typed values, not str/bytes")
@@ -281,7 +345,6 @@ def component_stack(
     blockers: Sequence[BlockerRuleSpec] | None = None,
     setup: str | None = None,
     trigger: TriggerSpec | None = None,
-    exits: Sequence[ExitRuleSpec] | None = None,
     risk: str | None = None,
 ) -> ComponentStackSpec:
     if blockers is None:
@@ -289,21 +352,11 @@ def component_stack(
     else:
         normalized_blockers = _normalize_sequence("components.blockers", blockers)
 
-    if exits is None:
-        normalized_exits = exits_atr_default(
-            atr_period=14,
-            stop_atr_multiplier=1.5,
-            take_atr_multiplier=4.0,
-        )
-    else:
-        normalized_exits = _normalize_sequence("components.exits", exits)
-
     return ComponentStackSpec(
         direction=direction_ema_anchor_stack() if direction is None else direction,
         blockers=normalized_blockers,
         setup=setup_untouched_anchor() if setup is None else setup,
         trigger=trigger_reclaim_anchor() if trigger is None else trigger,
-        exits=normalized_exits,
         risk=risk_no_filter() if risk is None else risk,
     )
 
