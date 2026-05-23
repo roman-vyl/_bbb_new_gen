@@ -1,0 +1,50 @@
+schema: spec-driven
+
+context: |
+  Repository: BBB new gen — Data Engine, Research (Strategy Constructor), Workbench frontend, research_api BFF.
+
+  Layer boundaries (do not blur):
+  - data_engine/: candles only — Bybit → SQLite → DIM → clean candles. No strategies, vectorbt, signals, backtest reports, strategy configs.
+  - research/: strategy families, components, vectorbt backtests, JSON reports (schema v3). Uses clean candles from Data Engine; does not modify data_engine/.
+  - research_api/: FastAPI BFF — Workbench talks only here, never Python/SQLite/research/ directly.
+  - frontend/: React/Vite Workbench — read-only via API; draft configs until validate; no EMA/metrics computation in browser.
+
+  Strategic docs (read before large changes; rarely edit inside a change unless user asks):
+  - docs/data engine/00_master_plan.md — Data Engine phases, MVP, post-MVP gates
+  - docs/research/strategy_constructor_master_plan.md — post-MVP research track
+  - docs/research/README.md — research layer index and pipeline
+  - docs/frontend/frontend_master_plan_alternative_chart_composer_reports.md — active Workbench line
+  - docs/frontend/implementation_plan.md — vertical slices phase 0→5
+
+  Phase / feature docs (link from proposal/design when relevant):
+  - docs/data engine/01_*.md … 08_*.md
+  - docs/research/01_*.md … (numbered plans and specs)
+  - docs/frontend/
+
+  Architecture decisions:
+  - docs/adr/ADR-*.md — write or reference ADR before cross-cutting technical choices (indicators, storage, API contracts).
+
+  Conventions:
+  - Minimize scope; match existing naming and patterns in the touched layer.
+  - Useful tests only when behavior is non-trivial; do not commit unless user asks.
+  - Chart screenshots: follow .cursor/rules/workbench-chart-screenshots.mdc (60s wait for market data).
+
+rules:
+  proposal:
+    - Name the affected layer(s): data_engine | research | research_api | frontend
+    - Link the relevant master-plan section or phase doc; do not duplicate full master plans
+    - Include explicit non-goals and out-of-scope items
+    - If the change spans layers, list integration boundary and who owns each part
+  specs:
+    - Use ADDED / MODIFIED / REMOVED sections for delta specs
+    - Each requirement needs at least one scenario in Given / When / Then form
+    - Scenarios must be testable; avoid vague "should work" language
+  design:
+    - Reference docs/adr/ when touching indicators, candle storage, parquet, or API contracts
+    - Respect layer boundaries; no "temporary" shortcuts that leak trading logic into data_engine
+    - Note files/modules likely touched; align with existing package layout
+  tasks:
+    - Vertical slices; checkbox items small enough for one agent session
+    - Order: contracts/types → backend/research → API → frontend when applicable
+    - Include manual verification steps (CLI, Workbench, or pytest) where relevant
+    - Do not add drive-by refactors or unrelated cleanup

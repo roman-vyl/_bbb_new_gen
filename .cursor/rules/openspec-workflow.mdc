@@ -1,0 +1,50 @@
+---
+description: When to use OpenSpec (/opsx) vs ad-hoc work; layer boundaries and archive discipline
+alwaysApply: true
+---
+
+# OpenSpec workflow (this repo)
+
+OpenSpec lives in `openspec/` (`config.yaml`, `changes/`, `specs/`). Cursor commands: `/opsx:propose`, `/opsx:apply`, `/opsx:explore`, `/opsx:archive` (see `.cursor/commands/opsx-*.md`).
+
+## When to use OpenSpec
+
+Use **`/opsx:propose`** before implementation when the work:
+
+- touches more than one file or module, or
+- changes behavior/contracts across layers, or
+- needs agreed requirements before code (new feature, new API surface, non-trivial refactor).
+
+Skip OpenSpec for: typos, one-line fixes, obvious bugfixes with clear scope, or user explicitly says "just fix it".
+
+## Workflow
+
+1. **Propose** — `/opsx:propose "<description>"` → `openspec/changes/<name>/` with proposal, delta specs, design, tasks. User may edit artifacts in the IDE before coding.
+2. **Apply** — `/opsx:apply` (or implement from `tasks.md` in Agent mode). Update `design.md` / `tasks.md` if reality diverges.
+3. **Archive** — `/opsx:archive` after tasks are done and reviewed; merges delta specs into `openspec/specs/`.
+
+Use **`/opsx:explore`** for investigation without committing to a change.
+
+## Docs vs OpenSpec (two sources of truth)
+
+| Kind | Location |
+|------|----------|
+| Strategy, phases, long-form plans | `docs/` (master plans, `implementation_plan.md`, numbered research docs) |
+| Agreed **behavior** for a delivered change | `openspec/specs/` after archive |
+| Active work in progress | `openspec/changes/<name>/` |
+
+Do **not** copy entire master plans into change artifacts — link paths from `openspec/config.yaml` context. Edit master plans only when the user asks to revise strategy.
+
+## Layer guardrails (always)
+
+- `data_engine/` — candles pipeline only; no strategies/vectorbt.
+- `research/` — strategies and backtests; no exchange ingestion in core.
+- `frontend/` + `research_api/` — Workbench via BFF only.
+
+Project-specific rules for artifact generation are in `openspec/config.yaml` (`context` + `rules`).
+
+## Agent behavior
+
+- Read `openspec/config.yaml` context when working inside `openspec/changes/**` or when user invokes `/opsx:*`.
+- Prefer completing `tasks.md` in order; mark items done in the file when finishing a slice.
+- After archive, treat `openspec/specs/` as the behavioral reference for that domain going forward.
