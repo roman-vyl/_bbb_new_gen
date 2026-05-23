@@ -61,7 +61,7 @@ Trading docs/README may **recommend** `confirm_bars: 2` or `3` for `ema_close_lo
 | `confirm_bars` | Behavior |
 |----------------|----------|
 | `1` | Classic cross event on current base bar (`shift(1)` vs prior bar) |
-| `>1` | Fast on **adverse** side of slow for N **consecutive base bars** (confirmed loss of EMA order; not a fresh cross each bar) |
+| `>1` | Bearish/bullish **cross** within last N base bars **and** adverse side held N consecutive base bars |
 
 Long adverse: `fast < slow`. Short adverse: `fast > slow`.
 

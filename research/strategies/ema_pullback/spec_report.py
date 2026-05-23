@@ -40,7 +40,7 @@ def _require_mapping(name: str, value: Any) -> Mapping[str, Any]:
     return value
 
 
-def _ema_spec(payload: Mapping[str, Any]) -> EmaSpec:
+def _required_ema_spec(payload: Mapping[str, Any]) -> EmaSpec:
     return EmaSpec(
         source=str(payload["source"]),
         timeframe=str(payload["timeframe"]),
@@ -78,7 +78,7 @@ def _atr_distance(payload: Mapping[str, Any] | None) -> AtrDistanceSpec | None:
     )
 
 
-def _ema_spec(name: str, payload: Any) -> EmaSpec | None:
+def _optional_ema_spec(name: str, payload: Any) -> EmaSpec | None:
     if payload is None:
         return None
     ema = _require_mapping(name, payload)
@@ -95,9 +95,9 @@ def _exit_rule(payload: Mapping[str, Any]) -> ExitRuleSpec:
         component_id=str(payload["component_id"]),
         exit_kind=str(payload.get("exit_kind", "signal")),
         rsi=_rsi_spec(payload.get("rsi")),
-        ema=_ema_spec("ema", payload.get("ema")),
-        fast_ema=_ema_spec("fast_ema", payload.get("fast_ema")),
-        slow_ema=_ema_spec("slow_ema", payload.get("slow_ema")),
+        ema=_optional_ema_spec("ema", payload.get("ema")),
+        fast_ema=_optional_ema_spec("fast_ema", payload.get("fast_ema")),
+        slow_ema=_optional_ema_spec("slow_ema", payload.get("slow_ema")),
         confirm_bars=int(payload.get("confirm_bars", 1)),
         long_exit_above=payload.get("long_exit_above"),
         short_exit_below=payload.get("short_exit_below"),
@@ -191,9 +191,9 @@ def strategy_spec_from_report_dict(payload: Mapping[str, Any]) -> EmaPullbackStr
         symbol=str(root["symbol"]),
         base_timeframe=str(root["base_timeframe"]),
         anchor_stack=AnchorStackSpec(
-            fast=_ema_spec(_require_mapping("fast", stack_raw["fast"])),
-            anchor=_ema_spec(_require_mapping("anchor", stack_raw["anchor"])),
-            slow=_ema_spec(_require_mapping("slow", stack_raw["slow"])),
+            fast=_required_ema_spec(_require_mapping("fast", stack_raw["fast"])),
+            anchor=_required_ema_spec(_require_mapping("anchor", stack_raw["anchor"])),
+            slow=_required_ema_spec(_require_mapping("slow", stack_raw["slow"])),
         ),
         components=ComponentStackSpec(
             direction=str(components_raw["direction"]),

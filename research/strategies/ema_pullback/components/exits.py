@@ -101,7 +101,11 @@ def ema_cross_loss_exit(
     slow_col: str | None = None,
     **_: object,
 ) -> pd.Series:
-    """Exit on fast/slow EMA cross (confirm_bars=1) or adverse hold (confirm_bars>1) on base index."""
+    """Exit on fast/slow EMA cross on base index.
+
+    confirm_bars=1: classic cross (prior bar had opposite ordering).
+    confirm_bars>1: adverse hold for N base bars AND cross within rolling N-bar window.
+    """
 
     _ = anchor_col
     if rule.fast_ema is None or fast_col is None or slow_col is None:
@@ -118,13 +122,23 @@ def ema_cross_loss_exit(
         else:
             raise ValueError("side must be 'long' or 'short'")
         return out.fillna(False).astype(bool)
+
+    prev_fast = fast.shift(1)
+    prev_slow = slow.shift(1)
     if side == "long":
+        cross = (fast < slow) & (prev_fast >= prev_slow)
         adverse = fast < slow
     elif side == "short":
+        cross = (fast > slow) & (prev_fast <= prev_slow)
         adverse = fast > slow
     else:
         raise ValueError("side must be 'long' or 'short'")
-    return _consecutive_true(adverse, rule.confirm_bars)
+    cross = cross.fillna(False).astype(bool)
+    adverse_hold = _consecutive_true(adverse, rule.confirm_bars)
+    cross_in_window = (
+        cross.astype(int).rolling(rule.confirm_bars, min_periods=1).max().fillna(0).astype(bool)
+    )
+    return (adverse_hold & cross_in_window).astype(bool)
 
 
 def atr_distance_exit(

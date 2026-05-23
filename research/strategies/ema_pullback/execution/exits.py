@@ -97,15 +97,18 @@ def _signal_series_for_side(
 ) -> pd.Series:
     if not spec.trade_sides.includes(side):
         return _false_series(df.index)
+    ema_col = _ema_column(plan, rule.ema)
+    fast_col = _ema_column(plan, rule.fast_ema)
+    slow_col = _ema_column(plan, rule.slow_ema)
     s = exit_fn(
         df,
         anchor_col=anchor_col,
         side=side,
         rule=rule,
         rsi_col=_rsi_column(plan, rule.rsi),
-        ema_col=_ema_column(plan, rule.ema),
-        fast_col=_ema_column(plan, rule.fast_ema),
-        slow_col=_ema_column(plan, rule.slow_ema),
+        ema_col=ema_col,
+        fast_col=fast_col,
+        slow_col=slow_col,
     )
     return s.fillna(False).astype(bool)
 

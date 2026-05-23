@@ -241,8 +241,8 @@ RSI и EMA для exits считаются в feature layer по `FeaturePlan`; 
 (после align на base index). HTF-candle confirmation (три 1h-close на 5m base) **не** v1.
 
 **`ema_cross_loss_exit`** — fast/slow EMA на **одном** timeframe, `source=close`, `fast.period < slow.period`.
-`confirm_bars=1`: классический cross на base bar; `confirm_bars>1`: adverse side (`fast < slow` для long)
-удерживается N **base bars** подряд.
+`confirm_bars=1`: классический cross на base bar. `confirm_bars>1`: cross в окне последних N base bars
+**и** adverse side (`fast < slow` для long) удерживается N base bars подряд (без cross — не выходим).
 
 Контрактный default `confirm_bars=1`. Для close loss в экспериментах часто ставят `2`–`3`.
 

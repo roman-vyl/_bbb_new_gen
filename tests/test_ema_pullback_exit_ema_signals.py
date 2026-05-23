@@ -94,10 +94,10 @@ def test_ema_cross_loss_cross_event_confirm_one() -> None:
     assert out.tolist() == [False, False, True, False]
 
 
-def test_ema_cross_loss_adverse_hold_confirm_three() -> None:
-    idx = pd.date_range("2024-01-01", periods=5, freq="h", tz="UTC")
-    fast = pd.Series([102.0, 101.0, 99.0, 98.0, 97.0], index=idx)
-    slow = pd.Series([100.0, 100.0, 100.0, 100.0, 100.0], index=idx)
+def test_ema_cross_loss_confirm_three_requires_cross_in_window() -> None:
+    idx = pd.date_range("2024-01-01", periods=6, freq="h", tz="UTC")
+    fast = pd.Series([102.0, 101.0, 99.0, 98.0, 97.0, 96.0], index=idx)
+    slow = pd.Series([100.0] * 6, index=idx)
     df = pd.DataFrame({"ema_fast": fast, "ema_slow": slow}, index=idx)
     rule = exit_ema_cross_loss(
         instance_id="x",
@@ -107,7 +107,23 @@ def test_ema_cross_loss_adverse_hold_confirm_three() -> None:
     )
 
     out = ema_cross_loss_exit(df, side="long", rule=rule, fast_col="ema_fast", slow_col="ema_slow")
-    assert out.tolist() == [False, False, False, False, True]
+    assert out.tolist() == [False, False, False, False, True, False]
+
+
+def test_ema_cross_loss_confirm_three_no_exit_without_cross() -> None:
+    idx = pd.date_range("2024-01-01", periods=5, freq="h", tz="UTC")
+    fast = pd.Series([98.0, 97.0, 96.0, 95.0, 94.0], index=idx)
+    slow = pd.Series([100.0] * 5, index=idx)
+    df = pd.DataFrame({"ema_fast": fast, "ema_slow": slow}, index=idx)
+    rule = exit_ema_cross_loss(
+        instance_id="x",
+        fast_ema=ema(100),
+        slow_ema=ema(200),
+        confirm_bars=3,
+    )
+
+    out = ema_cross_loss_exit(df, side="long", rule=rule, fast_col="ema_fast", slow_col="ema_slow")
+    assert not bool(out.any())
 
 
 def test_feature_plan_includes_exit_ema_outside_stack() -> None:
