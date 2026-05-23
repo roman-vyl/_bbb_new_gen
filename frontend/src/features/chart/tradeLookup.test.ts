@@ -80,7 +80,7 @@ describe("deriveSelectedVariant", () => {
       { variant: "exp_a", trade_records: [] },
       { variant: "exp_b", trade_records: [] },
     ],
-  } as RunReport;
+  } as unknown as RunReport;
 
   it("returns null when report is null", () => {
     expect(deriveSelectedVariant(null, "exp_a")).toBeNull();
@@ -98,7 +98,7 @@ describe("deriveSelectedVariant", () => {
 describe("resolveVariantKeyForReport", () => {
   const loaded = {
     variants: [{ variant: "exp_a" }, { variant: "exp_b" }],
-  } as RunReport;
+  } as unknown as RunReport;
 
   it("keeps previous key when present in report", () => {
     expect(resolveVariantKeyForReport(loaded, "exp_b")).toBe("exp_b");

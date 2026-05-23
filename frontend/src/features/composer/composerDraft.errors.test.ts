@@ -25,7 +25,8 @@ describe("createBlankConfigDraft", () => {
       component_id: "reclaim_anchor",
       lookback: 1,
     });
-    expect(strategy?.blockers?.[0]).toMatchObject({ component_id: "no_blockers" });
+    const blockers = (strategy as { blockers?: { component_id: string }[] } | undefined)?.blockers;
+    expect(blockers?.[0]).toMatchObject({ component_id: "no_blockers" });
   });
 });
 

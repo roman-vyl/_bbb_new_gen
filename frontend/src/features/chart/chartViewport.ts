@@ -84,6 +84,20 @@ export function applyChartViewport({
   };
 }
 
+function visibleTimeRangeToSeconds(
+  range: { from: Time; to: Time } | null,
+): { from: number; to: number } | null {
+  if (!range) {
+    return null;
+  }
+  const from = typeof range.from === "number" ? range.from : null;
+  const to = typeof range.to === "number" ? range.to : null;
+  if (from === null || to === null) {
+    return null;
+  }
+  return { from, to };
+}
+
 export function readChartViewportDebug(chart: IChartApi): {
   visibleLogical: { from: number; to: number } | null;
   visibleTime: { from: number; to: number } | null;
@@ -91,7 +105,7 @@ export function readChartViewportDebug(chart: IChartApi): {
   const timeScale = chart.timeScale();
   return {
     visibleLogical: timeScale.getVisibleLogicalRange(),
-    visibleTime: timeScale.getVisibleRange(),
+    visibleTime: visibleTimeRangeToSeconds(timeScale.getVisibleRange()),
   };
 }
 
