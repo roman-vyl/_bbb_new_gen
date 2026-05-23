@@ -19,6 +19,7 @@ from research_api.services.results_reader import (
     UnsupportedSchemaVersionError,
     list_run_summaries,
     load_run_report,
+    parse_run_report,
 )
 from research_api.services.run_id import InvalidRunIdError, validate_run_id
 
@@ -85,9 +86,97 @@ _SAMPLE_REPORT = {
     ],
 }
 
+_DIAGNOSTIC_BUCKET = {
+    "trades": 1,
+    "pnl": 9.0,
+    "gross_pnl": 10.0,
+    "fees_paid": 1.0,
+    "profit_factor": None,
+    "win_rate": 1.0,
+    "avg_return_pct": 0.09,
+    "avg_hold_bars": 3.0,
+}
 
-def _write_artifacts(results_dir: Path, *, schema_version: int = 3) -> str:
-    payload = {**_SAMPLE_REPORT, "report_schema_version": schema_version}
+_SAMPLE_REPORT_V4 = {
+    **_SAMPLE_REPORT,
+    "report_schema_version": 4,
+    "variants": [
+        {
+            **_SAMPLE_REPORT["variants"][0],
+            "metrics": {
+                **_SAMPLE_REPORT["variants"][0]["metrics"],
+                "profile_breakdown": {
+                    "aligned": {
+                        **_DIAGNOSTIC_BUCKET,
+                        "exit_reason_mix": {"signal:rsi_exit": 1},
+                    },
+                    "countertrend": {
+                        "trades": 0,
+                        "pnl": 0.0,
+                        "gross_pnl": 0.0,
+                        "fees_paid": 0.0,
+                        "profit_factor": None,
+                        "win_rate": None,
+                        "avg_return_pct": None,
+                        "avg_hold_bars": None,
+                        "exit_reason_mix": {},
+                    },
+                    "neutral": {
+                        "trades": 0,
+                        "pnl": 0.0,
+                        "gross_pnl": 0.0,
+                        "fees_paid": 0.0,
+                        "profit_factor": None,
+                        "win_rate": None,
+                        "avg_return_pct": None,
+                        "avg_hold_bars": None,
+                        "exit_reason_mix": {},
+                    },
+                },
+                "exit_reason_breakdown": {
+                    "signal:rsi_exit": _DIAGNOSTIC_BUCKET,
+                },
+                "fee_diagnostics": {
+                    "total_fees_paid": 1.0,
+                    "gross_pnl": 10.0,
+                    "net_pnl": 9.0,
+                    "fees_rate": 0.0006,
+                    "fees_as_pct_of_gross_profit": 0.1,
+                },
+            },
+            "trade_records": [
+                {
+                    **_SAMPLE_REPORT["variants"][0]["trade_records"][0],
+                    "entry_profile": "aligned",
+                    "entry_context_state": "up",
+                    "active_exit_profile": "aligned",
+                    "exit_group": "profile",
+                    "exit_profile": "aligned",
+                    "exit_component_id": "rsi_signal_exit",
+                    "exit_instance_id": "rsi_exit",
+                    "exit_kind": "signal",
+                    "gross_pnl": 10.0,
+                    "fees_paid": 1.0,
+                    "gross_return_pct": 0.1,
+                    "hold_bars": 3,
+                    "hold_minutes": 15,
+                }
+            ],
+        }
+    ],
+}
+
+
+def _write_artifacts(
+    results_dir: Path,
+    *,
+    schema_version: int = 3,
+    payload: dict | None = None,
+) -> str:
+    if payload is None:
+        payload = {**_SAMPLE_REPORT, "report_schema_version": schema_version}
+    else:
+        payload = {**payload, "report_schema_version": schema_version}
     run_id = str(payload["run_id"])
     runs = results_dir / "runs"
     runs.mkdir(parents=True, exist_ok=True)
@@ -109,9 +198,45 @@ def test_list_and_load_run(tmp_path: Path) -> None:
 
 
 def test_load_schema_v4_report(tmp_path: Path) -> None:
-    run_id = _write_artifacts(tmp_path, schema_version=4)
-    report = load_run_report(run_id=run_id, results_dir=tmp_path)
+    run_id = _write_artifacts(tmp_path, payload=_SAMPLE_REPORT_V4, schema_version=4)
+    report = parse_run_report(json.loads((tmp_path / "runs" / f"{run_id}.json").read_text(encoding="utf-8")))
     assert report.report_schema_version == 4
+
+    variant = report.variants[0]
+    assert variant.metrics.profile_breakdown is not None
+    aligned = variant.metrics.profile_breakdown["aligned"]
+    assert aligned.gross_pnl == 10.0
+    assert aligned.fees_paid == 1.0
+    assert aligned.avg_return_pct == 0.09
+    assert aligned.exit_reason_mix == {"signal:rsi_exit": 1}
+
+    assert variant.metrics.exit_reason_breakdown is not None
+    reason_bucket = variant.metrics.exit_reason_breakdown["signal:rsi_exit"]
+    assert reason_bucket.avg_hold_bars == 3.0
+    assert not hasattr(reason_bucket, "exit_reason_mix")
+
+    fee = variant.metrics.fee_diagnostics
+    assert fee is not None
+    assert fee.fees_rate == 0.0006
+    assert fee.net_pnl == 9.0
+
+    trade = variant.trade_records[0]
+    assert trade.entry_profile == "aligned"
+    assert trade.active_exit_profile == "aligned"
+    assert trade.exit_profile == "aligned"
+    assert trade.gross_pnl == 10.0
+    assert trade.hold_bars == 3
+
+    report_from_disk = load_run_report(run_id=run_id, results_dir=tmp_path)
+    assert report_from_disk.model_dump() == report.model_dump()
+
+
+def test_load_schema_v3_report_still_valid(tmp_path: Path) -> None:
+    run_id = _write_artifacts(tmp_path, schema_version=3)
+    report = load_run_report(run_id=run_id, results_dir=tmp_path)
+    assert report.report_schema_version == 3
+    assert report.variants[0].metrics.profile_breakdown is None
+    assert report.variants[0].trade_records[0].entry_profile is None
 
 
 def test_unsupported_schema_version(tmp_path: Path) -> None:

@@ -81,13 +81,22 @@ export type TradeRecord = TradeOverlay & {
   hold_minutes?: number | null;
 };
 
-export type DiagnosticBucketMetrics = SideMetrics & {
-  avg_hold_bars?: number | null;
+export type DiagnosticBucketMetrics = {
+  trades: number;
+  pnl: number;
+  gross_pnl: number;
+  fees_paid: number;
+  profit_factor: number | null;
+  win_rate: number | null;
+  avg_return_pct: number | null;
+  avg_hold_bars: number | null;
 };
 
 export type ProfileBucketMetrics = DiagnosticBucketMetrics & {
-  exit_reason_mix?: Record<string, number>;
+  exit_reason_mix: Record<string, number>;
 };
+
+export type ExitReasonBucketMetrics = DiagnosticBucketMetrics;
 
 export type FeeDiagnostics = {
   total_fees_paid: number;
@@ -117,7 +126,7 @@ export type VariantMetrics = {
   open_trades: { long: number; short: number; total: number };
   /** Schema v4 */
   profile_breakdown?: Record<ExitProfileLabel, ProfileBucketMetrics>;
-  exit_reason_breakdown?: Record<string, DiagnosticBucketMetrics & { avg_hold_bars?: number | null }>;
+  exit_reason_breakdown?: Record<string, ExitReasonBucketMetrics>;
   fee_diagnostics?: FeeDiagnostics;
 };
 

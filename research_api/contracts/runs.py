@@ -70,17 +70,29 @@ class OpenTradesMetrics(BaseModel):
     total: int
 
 
-class ProfileBucketMetrics(SideMetrics):
+class DiagnosticBucketMetrics(BaseModel):
+    """v4 profile / exit_reason breakdown bucket (not ``SideMetrics``)."""
+
     model_config = ConfigDict(extra="forbid")
 
-    avg_hold_bars: float | None = None
+    trades: int
+    pnl: float
+    gross_pnl: float
+    fees_paid: float
+    profit_factor: float | None
+    win_rate: float | None
+    avg_return_pct: float | None
+    avg_hold_bars: float | None
+
+
+class ProfileBucketMetrics(DiagnosticBucketMetrics):
+    model_config = ConfigDict(extra="forbid")
+
     exit_reason_mix: dict[str, int] = Field(default_factory=dict)
 
 
-class ExitReasonBucketMetrics(SideMetrics):
+class ExitReasonBucketMetrics(DiagnosticBucketMetrics):
     model_config = ConfigDict(extra="forbid")
-
-    avg_hold_bars: float | None = None
 
 
 class FeeDiagnostics(BaseModel):
