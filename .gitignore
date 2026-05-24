@@ -76,3 +76,6 @@ frontend/test-results/
 # Playwright / agent screenshots (repo root, e.g. npx playwright screenshot)
 /screenshot.png
 /screenshot-*.png
+
+# Local repo snapshots
+repo_snapshot.zip
