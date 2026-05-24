@@ -64,15 +64,7 @@ export const OUTCOME_FILTER_OPTIONS = [
   { id: "losers" as const, label: "Losers" },
 ];
 
-export const QUALITY_FLAG_FILTER_OPTIONS = [
-  { id: "all" as const, label: "All" },
-  { id: "high_mfe_high_capture" as const, label: "high MFE + high capture" },
-  { id: "high_mfe_low_capture" as const, label: "high MFE + low capture" },
-  { id: "signal_exit_winner" as const, label: "signal exit winners" },
-  { id: "signal_exit_giveback_failure" as const, label: "signal exit giveback failures" },
-  { id: "stop_loss_after_low_mfe" as const, label: "stop loss after low MFE" },
-  { id: "stop_loss_after_bad_context" as const, label: "bad-context stop losses" },
-];
+export { QUALITY_FLAG_FILTER_OPTIONS } from "@/features/reports/tradeExitQualityLabels";
 
 export function distinctExitKinds(trades: readonly TradeRecord[]): string[] {
   const kinds = new Set<string>();

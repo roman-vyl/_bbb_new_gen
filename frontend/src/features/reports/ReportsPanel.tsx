@@ -266,7 +266,11 @@ export function ReportsPanel() {
               <th>Exit</th>
               <th>PnL</th>
               {showDiagnosticsColumns &&
-                DIAGNOSTICS_COLUMNS.map((col) => <th key={col.id}>{col.header}</th>)}
+                DIAGNOSTICS_COLUMNS.map((col) => (
+                  <th key={col.id} title={col.hint}>
+                    {col.header}
+                  </th>
+                ))}
               <th>exit_reason</th>
             </tr>
           </thead>
@@ -348,7 +352,16 @@ function TradeDetail({ trade }: { trade: TradeRecord | undefined }) {
           <dl>
             {diagnostics.map((f) => (
               <div key={f.key}>
-                <dt>{f.label}</dt>
+                <dt>
+                  {f.hint ? (
+                    <span className="diagnostic-dt__label-group">
+                      <span className="diagnostic-dt__label">{f.label}</span>
+                      <span className="diagnostic-dt__hint">{f.hint}</span>
+                    </span>
+                  ) : (
+                    f.label
+                  )}
+                </dt>
                 <dd>{f.value}</dd>
               </div>
             ))}

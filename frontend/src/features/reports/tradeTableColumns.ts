@@ -5,6 +5,12 @@ import {
   formatMoney,
   formatReturnPct,
 } from "@/features/reports/formatDiagnostics";
+import {
+  formatQualityFlags,
+  tableColumnHeader,
+  tableColumnHint,
+  type TradeExitQualityMetricKey,
+} from "@/features/reports/tradeExitQualityLabels";
 
 export type DiagnosticsColumnId =
   | "entry_profile"
@@ -23,9 +29,29 @@ export type DiagnosticsColumnId =
   | "giveback_pct"
   | "quality_flags";
 
+type TableQualityColumnId = Extract<DiagnosticsColumnId, TradeExitQualityMetricKey>;
+
+function qualityColumn(
+  id: TableQualityColumnId,
+  cell: (trade: TradeRecord) => string,
+): {
+  id: DiagnosticsColumnId;
+  header: string;
+  hint?: string;
+  cell: (trade: TradeRecord) => string;
+} {
+  return {
+    id,
+    header: tableColumnHeader(id),
+    hint: tableColumnHint(id),
+    cell,
+  };
+}
+
 export const DIAGNOSTICS_COLUMNS: {
   id: DiagnosticsColumnId;
   header: string;
+  hint?: string;
   cell: (trade: TradeRecord) => string;
 }[] = [
   { id: "entry_profile", header: "entry_prof", cell: (t) => t.entry_profile ?? EM_DASH },
@@ -57,34 +83,12 @@ export const DIAGNOSTICS_COLUMNS: {
     header: "hold",
     cell: (t) => formatHoldBars(t.hold_bars),
   },
-  {
-    id: "mfe_pct",
-    header: "MFE %",
-    cell: (t) => formatReturnPct(t.mfe_pct),
-  },
-  {
-    id: "mae_pct",
-    header: "MAE %",
-    cell: (t) => formatReturnPct(t.mae_pct),
-  },
-  {
-    id: "captured_pct",
-    header: "Capture %",
-    cell: (t) => formatReturnPct(t.captured_pct),
-  },
-  {
-    id: "capture_ratio",
-    header: "Capture Ratio",
-    cell: (t) => formatReturnPct(t.capture_ratio),
-  },
-  {
-    id: "giveback_pct",
-    header: "Giveback %",
-    cell: (t) => formatReturnPct(t.giveback_pct),
-  },
-  {
-    id: "quality_flags",
-    header: "Quality Flags",
-    cell: (t) => (t.quality_flags && t.quality_flags.length > 0 ? t.quality_flags.join(", ") : EM_DASH),
-  },
+  qualityColumn("mfe_pct", (t) => formatReturnPct(t.mfe_pct)),
+  qualityColumn("mae_pct", (t) => formatReturnPct(t.mae_pct)),
+  qualityColumn("captured_pct", (t) => formatReturnPct(t.captured_pct)),
+  qualityColumn("capture_ratio", (t) => formatReturnPct(t.capture_ratio)),
+  qualityColumn("giveback_pct", (t) => formatReturnPct(t.giveback_pct)),
+  qualityColumn("quality_flags", (t) =>
+    t.quality_flags && t.quality_flags.length > 0 ? formatQualityFlags(t.quality_flags) : EM_DASH,
+  ),
 ];

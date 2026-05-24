@@ -191,10 +191,16 @@ def compute_trade_quality_metrics(
     mae_offset = int(adverse.to_numpy().argmin())
     raw_mfe_price = float(favorable.iloc[mfe_offset])
     raw_mae_price = float(adverse.iloc[mae_offset])
-    mfe_price = max(0.0, raw_mfe_price)
-    mae_price = min(0.0, raw_mae_price)
-    if abs(mfe_price) < 1e-12:
+    if raw_mfe_price <= 0.0:
         mfe_price = 0.0
+        mfe_offset = 0
+    else:
+        mfe_price = raw_mfe_price
+    if raw_mae_price >= 0.0:
+        mae_price = 0.0
+        mae_offset = 0
+    else:
+        mae_price = raw_mae_price
     giveback_price = mfe_price - captured_price
     if giveback_price < 0.0:
         giveback_price = 0.0

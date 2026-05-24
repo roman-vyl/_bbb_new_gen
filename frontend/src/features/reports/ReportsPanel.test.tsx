@@ -110,15 +110,22 @@ describe("ReportsPanel", () => {
     render(<ReportsPanel />);
     fireEvent.click(
       within(screen.getByTestId("filter-quality-flag")).getByRole("button", {
-        name: "high MFE + low capture",
+        name: "сильный ход, плохо забрали",
       }),
     );
     expect(screen.getByText("signal:ema_cross")).toBeTruthy();
 
     fireEvent.click(screen.getByLabelText("Show diagnostics columns"));
-    expect(screen.getByText("MFE %")).toBeTruthy();
-    expect(screen.getByText("Capture Ratio")).toBeTruthy();
-    expect(screen.getByText("Quality Flags")).toBeTruthy();
-    expect(screen.getByText("high_mfe_low_capture, signal_exit_giveback_failure")).toBeTruthy();
+    const mfeHeader = screen.getByText("MFE %");
+    expect(mfeHeader.closest("th")?.getAttribute("title")).toBe("макс. плюс");
+    expect(screen.getByText("Capture ratio")).toBeTruthy();
+    expect(screen.getByTitle("доля хода")).toBeTruthy();
+    expect(screen.getByText("Quality flags")).toBeTruthy();
+    expect(screen.getByTitle("ярлыки")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "сильный ход, но плохо забрали, сигнал выхода отдал импульс",
+      ),
+    ).toBeTruthy();
   });
 });

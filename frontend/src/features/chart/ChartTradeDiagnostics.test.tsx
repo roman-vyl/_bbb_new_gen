@@ -114,15 +114,24 @@ describe("ChartTradeDiagnostics", () => {
     );
 
     expect(screen.getByText("MFE")).toBeTruthy();
+    expect(screen.getByText("макс. ход в плюс от ТВХ")).toBeTruthy();
     expect(screen.getByText("4.20%")).toBeTruthy();
     expect(screen.getByText("MAE")).toBeTruthy();
+    expect(screen.getByText("макс. ход против ТВХ")).toBeTruthy();
     expect(screen.getByText("-0.80%")).toBeTruthy();
     expect(screen.getByText("Capture ratio")).toBeTruthy();
+    expect(screen.getByText("доля забранного хода")).toBeTruthy();
     expect(screen.getByText("74.00%")).toBeTruthy();
     expect(screen.getByText("Bars to MFE")).toBeTruthy();
+    expect(screen.getByText("свечей до пика")).toBeTruthy();
     expect(screen.getByText("18")).toBeTruthy();
     expect(screen.getByText("Quality flags")).toBeTruthy();
-    expect(screen.getByText("signal_exit_winner, high_mfe_high_capture")).toBeTruthy();
+    expect(screen.getByText("ярлыки качества")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "сигнал выхода сработал хорошо, сильный ход + хороший выход",
+      ),
+    ).toBeTruthy();
   });
 
   it("colors loss result red", () => {

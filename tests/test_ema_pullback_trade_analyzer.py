@@ -114,6 +114,34 @@ def test_entry_price_outside_ohlc_due_slippage_clamps_mfe_and_mae() -> None:
     assert short_metrics["mae_price"] == -2.0
 
 
+def test_zero_mfe_and_mae_reset_bar_offset_to_entry() -> None:
+    long_metrics = compute_trade_quality_metrics(
+        direction="long",
+        entry_price=101.0,
+        exit_price=100.0,
+        entry_idx=0,
+        exit_idx=1,
+        high=_series([100.0, 100.5]),
+        low=_series([99.0, 98.0]),
+    )
+    short_metrics = compute_trade_quality_metrics(
+        direction="short",
+        entry_price=99.0,
+        exit_price=100.0,
+        entry_idx=0,
+        exit_idx=1,
+        high=_series([101.0, 102.0]),
+        low=_series([100.0, 99.5]),
+    )
+
+    assert long_metrics["mfe_price"] == 0.0
+    assert long_metrics["bars_to_mfe"] == 0
+    assert long_metrics["capture_ratio"] is None
+    assert short_metrics["mfe_price"] == 0.0
+    assert short_metrics["bars_to_mfe"] == 0
+    assert short_metrics["capture_ratio"] is None
+
+
 def test_first_occurrence_wins_for_tied_mfe_and_mae() -> None:
     metrics = compute_trade_quality_metrics(
         direction="long",
