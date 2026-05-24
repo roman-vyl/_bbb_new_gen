@@ -110,7 +110,7 @@ describe("ReportsPanel", () => {
     render(<ReportsPanel />);
     fireEvent.click(
       within(screen.getByTestId("filter-quality-flag")).getByRole("button", {
-        name: "сильный ход, плохо забрали",
+        name: "сильный ход, но плохо забрали",
       }),
     );
     expect(screen.getByText("signal:ema_cross")).toBeTruthy();

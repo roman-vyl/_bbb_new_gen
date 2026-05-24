@@ -59,15 +59,6 @@ const TABLE_COLUMN_LABELS: Record<
   quality_flags: { header: "Quality flags", hint: "ярлыки" },
 };
 
-const QUALITY_FLAG_FILTER_LABELS: Record<TradeExitQualityFlagId, string> = {
-  high_mfe_high_capture: "сильный ход + хороший выход",
-  high_mfe_low_capture: "сильный ход, плохо забрали",
-  signal_exit_winner: "сигнал выхода — хорошо",
-  signal_exit_giveback_failure: "сигнал выхода — отдал импульс",
-  stop_loss_after_low_mfe: "стоп без движения",
-  stop_loss_after_bad_context: "стоп в плохом контексте",
-};
-
 export function isTradeExitQualityMetricKey(key: string): key is TradeExitQualityMetricKey {
   return key in CHART_METRIC_LABELS;
 }
@@ -98,8 +89,8 @@ export function formatQualityFlags(flags: readonly string[] | null | undefined):
 }
 
 export const QUALITY_FLAG_FILTER_OPTIONS = [
-  { id: "all" as const, label: "All" },
-  ...(
-    Object.entries(QUALITY_FLAG_FILTER_LABELS) as [TradeExitQualityFlagId, string][]
-  ).map(([id, label]) => ({ id, label })),
+  { id: "all" as const, label: "Все" },
+  ...(Object.entries(QUALITY_FLAG_LABELS) as [TradeExitQualityFlagId, string][]).map(
+    ([id, label]) => ({ id, label }),
+  ),
 ];
