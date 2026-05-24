@@ -25,10 +25,13 @@ import { useCallback, useEffect, useMemo, useRef } from "react";
 
 
 import type { AnchorStackEmaRole, ChartBar, ChartEmaOverlay } from "@/api/types";
+import { colorForAuxEmaOverlay } from "@/features/chart/chartAuxEmaOverlays";
 
 import { ChartBarInspector } from "@/features/chart/ChartBarInspector";
+import { ChartPanelSplitHandle } from "@/features/chart/ChartPanelSplitHandle";
 import { ChartTradeDiagnostics } from "@/features/chart/ChartTradeDiagnostics";
 import { ChartTradeFocusNav } from "@/features/chart/ChartTradeFocusNav";
+import { useChartAsideResize } from "@/features/chart/useChartAsideResize";
 import { buildTradePriceLineSpecs } from "@/features/chart/chartTradePriceLines";
 
 import { ChartMarkerLegend } from "@/features/chart/ChartMarkerLegend";
@@ -90,6 +93,8 @@ type ViewportPlan = {
 export function ChartPanel() {
 
   const containerRef = useRef<HTMLDivElement>(null);
+  const panelBodyRef = useRef<HTMLDivElement>(null);
+  const { asideWidth, maxAsideWidth, splitHandleProps } = useChartAsideResize(panelBodyRef);
 
   const chartRef = useRef<IChartApi | null>(null);
 
@@ -104,6 +109,8 @@ export function ChartPanel() {
   const markersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
 
   const tradePriceLinesRef = useRef<IPriceLine[]>([]);
+
+  const auxEmaSeriesRef = useRef<Map<string, ISeriesApi<"Line">>>(new Map());
 
   const viewportKeyRef = useRef<string | null>(null);
 
@@ -143,6 +150,8 @@ export function ChartPanel() {
     chartCandles,
 
     chartEmaOverlays,
+
+    chartAuxEmaOverlays,
 
     candlesSource,
 
@@ -282,11 +291,16 @@ export function ChartPanel() {
 
         : `Showing ${shown} bar${shown === 1 ? "" : "s"}`;
 
+    const auxNote =
+      chartAuxEmaOverlays.length > 0
+        ? ` · +${chartAuxEmaOverlays.length} aux EMA (exit/HTF)`
+        : "";
+
     const emaNote = stackPeriodsLabel
 
-      ? `OHLC + EMA stack ${stackPeriodsLabel} (overlay, periods from run strategy_spec)`
+      ? `OHLC + EMA stack ${stackPeriodsLabel} (overlay, periods from run strategy_spec)${auxNote}`
 
-      : "OHLC · overlay EMA requires anchor_stack in strategy_spec";
+      : `OHLC · overlay EMA requires anchor_stack in strategy_spec${auxNote}`;
 
     const traceNote =
 
@@ -323,6 +337,8 @@ export function ChartPanel() {
     chartViewLastTimeSec,
 
     stackPeriodsLabel,
+
+    chartAuxEmaOverlays.length,
 
     signalTraceStatus,
 
@@ -456,6 +472,10 @@ export function ChartPanel() {
 
       emaSeriesByRoleRef.current = {};
 
+      auxEmaSeriesRef.current.forEach((lineSeries) => chart.removeSeries(lineSeries));
+
+      auxEmaSeriesRef.current.clear();
+
       markersRef.current = null;
 
     };
@@ -533,6 +553,82 @@ export function ChartPanel() {
     chartViewCenterTimeSec,
     scheduleViewportApply,
   ]);
+
+
+
+  useEffect(() => {
+
+    const chart = chartRef.current;
+
+    if (!chart || !selectedVariant || chartDataKey === "") return;
+
+    const seriesMap = auxEmaSeriesRef.current;
+
+    const activeIds = new Set(chartAuxEmaOverlays.map((overlay) => overlay.id));
+
+    for (const [id, lineSeries] of [...seriesMap.entries()]) {
+
+      if (!activeIds.has(id)) {
+
+        chart.removeSeries(lineSeries);
+
+        seriesMap.delete(id);
+
+      }
+
+    }
+
+
+
+    chartAuxEmaOverlays.forEach((overlay, index) => {
+
+      let lineSeries = seriesMap.get(overlay.id);
+
+      if (!lineSeries) {
+
+        lineSeries = chart.addSeries(LineSeries, {
+
+          color: colorForAuxEmaOverlay(index),
+
+          lineWidth: 2,
+
+          lineStyle: overlay.dashed ? 2 : 0,
+
+          title: overlay.label,
+
+          priceLineVisible: false,
+
+        });
+
+        seriesMap.set(overlay.id, lineSeries);
+
+      }
+
+      lineSeries.applyOptions({
+
+        color: colorForAuxEmaOverlay(index),
+
+        lineStyle: overlay.dashed ? 2 : 0,
+
+        title: overlay.label,
+
+      });
+
+      lineSeries.setData(
+
+        overlay.points.map((p) => ({
+
+          time: p.time as Time,
+
+          value: p.value,
+
+        })),
+
+      );
+
+    });
+
+  }, [chartAuxEmaOverlays, chartDataKey, selectedVariant]);
 
 
 
@@ -676,7 +772,7 @@ export function ChartPanel() {
 
       )}
 
-      <div className="chart-panel__body">
+      <div ref={panelBodyRef} className="chart-panel__body">
 
         <div className="chart-panel__main">
 
@@ -702,7 +798,13 @@ export function ChartPanel() {
 
         </div>
 
-        <div className="chart-panel__aside">
+        <ChartPanelSplitHandle
+          asideWidth={asideWidth}
+          maxAsideWidth={maxAsideWidth}
+          {...splitHandleProps}
+        />
+
+        <div className="chart-panel__aside" style={{ width: asideWidth, flexBasis: asideWidth }}>
 
           {selectedTradeId !== null && (
 
@@ -715,6 +817,8 @@ export function ChartPanel() {
               strategySpec={selectedVariant.strategy_spec}
 
               chartEmaOverlays={chartEmaOverlays}
+
+              chartAuxEmaOverlays={chartAuxEmaOverlays}
 
               focusWarning={chartTradeFocusWarning}
 

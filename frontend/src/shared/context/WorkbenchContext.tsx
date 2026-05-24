@@ -12,6 +12,7 @@ import {
 import {
   ApiError,
   fetchChartMarketBundle,
+  fetchChartOverlayEma,
   fetchConfigState,
   fetchRunReport,
   fetchRunSummaries,
@@ -21,6 +22,7 @@ import {
 import {
   CHART_MARKET_TIMEFRAME,
   type AnchorStackPeriods,
+  type ChartAuxEmaOverlay,
   type ChartBar,
   type ChartEmaOverlay,
   type ConfigListEntry,
@@ -38,7 +40,12 @@ import {
   AnchorStackParseError,
   anchorStackPeriodsFromStrategySpec,
 } from "@/features/chart/anchorStackFromSpec";
+import { mergeAuxOverlayPoints } from "@/features/chart/chartAuxEmaOverlays";
 import { buildChartViewWindow, emptyChartViewWindow, type ChartViewMode } from "@/features/chart/chartViewWindow";
+import {
+  auxOverlayFromHtfTrace,
+  collectAuxEmaSpecs,
+} from "@/features/chart/strategySpecAuxEma";
 import { candleRangeMs } from "@/features/chart/chartMarkers";
 import {
   defaultClosedTradeSelection,
@@ -79,6 +86,7 @@ type WorkbenchState = {
   report: RunReport | null;
   chartCandles: ChartBar[];
   chartEmaOverlays: ChartEmaOverlay[];
+  chartAuxEmaOverlays: ChartAuxEmaOverlay[];
   chartViewMode: ChartViewMode;
   chartViewCenterTimeSec: number | null;
   chartViewFirstTimeSec: number | null;
@@ -149,6 +157,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
   const [marketLoadStatus, setMarketLoadStatus] = useState<MarketLoadStatus>("idle");
   const [marketError, setMarketError] = useState<string | null>(null);
   const [marketCacheKey, setMarketCacheKey] = useState<MarketCacheKey | null>(null);
+  const [auxEmaOverlays, setAuxEmaOverlays] = useState<ChartAuxEmaOverlay[]>([]);
   const [runs, setRuns] = useState<RunSummary[]>([]);
   const [selectedRunId, setSelectedRunIdState] = useState<string | null>(null);
   const [report, setReport] = useState<RunReport | null>(null);
@@ -472,6 +481,89 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
 
   const cachedBundle = marketCacheKey !== null ? getMarketCache(marketCacheKey) : undefined;
 
+  const auxEmaSpecs = useMemo(() => {
+    if (!selectedVariant) return [];
+    try {
+      const periods = anchorStackPeriodsFromStrategySpec(selectedVariant.strategy_spec);
+      return collectAuxEmaSpecs(selectedVariant.strategy_spec, chartTimeframe, periods);
+    } catch {
+      return [];
+    }
+  }, [selectedVariant, chartTimeframe]);
+
+  useEffect(() => {
+    if (marketLoadStatus !== "ready" || report === null || auxEmaSpecs.length === 0) {
+      setAuxEmaOverlays([]);
+      return;
+    }
+
+    const bffSpecs = auxEmaSpecs.filter((spec) => spec.source === "bff");
+    if (bffSpecs.length === 0) {
+      setAuxEmaOverlays((prev) => prev.filter((overlay) => overlay.id.startsWith("htf_")));
+      return;
+    }
+
+    let cancelled = false;
+    const snapshot = report;
+    const fromMs = snapshot.data_range.from_open_time_ms;
+    const toOpenTimeMs = snapshot.data_range.to_open_time_ms;
+
+    async function loadBffAuxEma() {
+      try {
+        const loaded = await Promise.all(
+          bffSpecs.map(async (spec) => {
+            const points = await fetchChartOverlayEma({
+              symbol: snapshot.symbol,
+              timeframe: chartTimeframe,
+              period: spec.period,
+              fromMs,
+              toOpenTimeMs,
+            });
+            return {
+              id: spec.id,
+              label: spec.label,
+              period: spec.period,
+              timeframe: spec.timeframe,
+              points,
+              dashed: false,
+            } satisfies ChartAuxEmaOverlay;
+          }),
+        );
+        if (cancelled) return;
+        setAuxEmaOverlays((prev) => {
+          const htfOnly = prev.filter((overlay) => overlay.id.startsWith("htf_"));
+          return mergeAuxOverlayPoints(htfOnly, loaded);
+        });
+      } catch {
+        if (!cancelled) {
+          setAuxEmaOverlays((prev) => prev.filter((overlay) => overlay.id.startsWith("htf_")));
+        }
+      }
+    }
+
+    void loadBffAuxEma();
+    return () => {
+      cancelled = true;
+    };
+  }, [marketLoadStatus, report, chartTimeframe, auxEmaSpecs]);
+
+  useEffect(() => {
+    if (signalTraceStatus !== "ready" || signalTrace === null) {
+      setAuxEmaOverlays((prev) => prev.filter((overlay) => !overlay.id.startsWith("htf_")));
+      return;
+    }
+
+    const htfOverlays = auxEmaSpecs
+      .filter((spec) => spec.source === "htf_trace")
+      .map((spec) => auxOverlayFromHtfTrace(spec, signalTrace))
+      .filter((overlay): overlay is ChartAuxEmaOverlay => overlay !== null);
+
+    setAuxEmaOverlays((prev) => {
+      const nonHtf = prev.filter((overlay) => !overlay.id.startsWith("htf_"));
+      return mergeAuxOverlayPoints(nonHtf, htfOverlays);
+    });
+  }, [signalTrace, signalTraceStatus, auxEmaSpecs]);
+
   const chartView = useMemo(() => {
     if (!cachedBundle || marketLoadStatus !== "ready") {
       return emptyChartViewWindow();
@@ -479,9 +571,10 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     return buildChartViewWindow({
       candles: cachedBundle.candles,
       emaOverlays: cachedBundle.ema_overlays,
+      auxEmaOverlays,
       selectedTradeEntryTimeMs,
     });
-  }, [cachedBundle, marketLoadStatus, selectedTradeEntryTimeMs]);
+  }, [cachedBundle, marketLoadStatus, selectedTradeEntryTimeMs, auxEmaOverlays]);
 
   const fullCandleRange = useMemo(
     () => (cachedBundle ? candleRangeMs(cachedBundle.candles) : null),
@@ -603,6 +696,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       report,
       chartCandles: chartView.candles,
       chartEmaOverlays: chartView.emaOverlays,
+      chartAuxEmaOverlays: chartView.auxEmaOverlays,
       chartViewMode: chartView.mode,
       chartViewCenterTimeSec: chartView.centerTimeSec,
       chartViewFirstTimeSec: chartView.firstTimeSec,
@@ -651,6 +745,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       report,
       chartView.candles,
       chartView.emaOverlays,
+      chartView.auxEmaOverlays,
       chartView.mode,
       chartView.centerTimeSec,
       chartView.firstTimeSec,

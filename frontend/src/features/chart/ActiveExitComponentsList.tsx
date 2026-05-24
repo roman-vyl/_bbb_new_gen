@@ -1,7 +1,7 @@
 import type { ExitComponentRow } from "@/features/chart/exitPolicyForTrade";
 import { EM_DASH } from "@/features/reports/tradeDiagnosticsFields";
 
-function formatParameters(parameters: Record<string, string | number>): string {
+function formatParameters(parameters: Record<string, string>): string {
   const entries = Object.entries(parameters);
   if (entries.length === 0) return EM_DASH;
   return entries.map(([k, v]) => `${k}=${v}`).join(", ");
@@ -13,16 +13,15 @@ type Props = {
 };
 
 export function ActiveExitComponentsList({ rows, warning }: Props) {
-  if (warning) {
-    return <p className="chart-trade-diagnostics__hint">{warning}</p>;
-  }
-
-  if (rows.length === 0) {
+  if (rows.length === 0 && !warning) {
     return <p className="chart-trade-diagnostics__hint">No exit policy rules to list.</p>;
   }
 
   return (
     <div className="chart-exit-components" data-testid="active-exit-components">
+      {warning && <p className="chart-trade-diagnostics__hint">{warning}</p>}
+      {rows.length === 0 ? null : (
+        <>
       <table className="trade-table chart-exit-components__table">
         <thead>
           <tr>
@@ -67,6 +66,8 @@ export function ActiveExitComponentsList({ rows, warning }: Props) {
               </li>
             ))}
         </ul>
+      )}
+        </>
       )}
     </div>
   );

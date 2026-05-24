@@ -1,4 +1,5 @@
 import type { ExitProfileLabel, JsonObject, TradeRecord } from "@/api/types";
+import { readEmaRuleParams } from "@/features/chart/exitPolicyEmaParams";
 import { EM_DASH } from "@/features/reports/tradeDiagnosticsFields";
 
 export type ExitComponentGroup = "always_on" | "profile";
@@ -9,7 +10,8 @@ export type ExitComponentRow = {
   component_id: string;
   instance_id: string;
   exit_kind: string;
-  parameters: Record<string, string | number>;
+  parameters: Record<string, string>;
+  emaPeriods: number[];
   isClosing: boolean;
   emaAvailabilityHint: string | null;
 };
@@ -50,30 +52,24 @@ export function resolveExitKind(
   return EM_DASH;
 }
 
-function readDistanceParams(rule: JsonObject): Record<string, string | number> {
+function readDistanceParams(rule: JsonObject): Record<string, string> {
   const distance = asObject(rule.distance);
   if (!distance) return {};
-  const out: Record<string, string | number> = {};
+  const out: Record<string, string> = {};
   for (const key of ["timeframe", "period", "multiplier"] as const) {
     const v = distance[key];
-    if (typeof v === "string" || typeof v === "number") out[key] = v;
+    if (typeof v === "string") out[key] = v;
+    else if (typeof v === "number" && Number.isFinite(v)) out[key] = String(v);
   }
   return out;
 }
 
-function readEmaParams(rule: JsonObject): Record<string, string | number> {
-  const out: Record<string, string | number> = {};
-  for (const key of ["ema", "fast_ema", "slow_ema", "confirm_bars"] as const) {
-    const v = rule[key];
-    if (typeof v === "number" && Number.isFinite(v)) out[key] = v;
-  }
-  return out;
-}
-
-function ruleParameters(rule: JsonObject): Record<string, string | number> {
+function ruleParameters(rule: JsonObject): { parameters: Record<string, string>; emaPeriods: number[] } {
   const distance = readDistanceParams(rule);
-  if (Object.keys(distance).length > 0) return distance;
-  return readEmaParams(rule);
+  if (Object.keys(distance).length > 0) {
+    return { parameters: distance, emaPeriods: [] };
+  }
+  return readEmaRuleParams(rule);
 }
 
 function parseExitRules(
@@ -91,14 +87,19 @@ function parseExitRules(
     const instance_id = readString(rule, "instance_id");
     const component_id = readString(rule, "component_id");
     if (!instance_id || !component_id) continue;
-    const isClosing = closingInstanceId !== null && closingInstanceId !== undefined && instance_id === closingInstanceId;
+    const isClosing =
+      closingInstanceId !== null &&
+      closingInstanceId !== undefined &&
+      instance_id === closingInstanceId;
+    const { parameters, emaPeriods } = ruleParameters(rule);
     rows.push({
       group,
       profile,
       component_id,
       instance_id,
       exit_kind: resolveExitKind(rule, trade, isClosing),
-      parameters: ruleParameters(rule),
+      parameters,
+      emaPeriods,
       isClosing,
       emaAvailabilityHint: null,
     });

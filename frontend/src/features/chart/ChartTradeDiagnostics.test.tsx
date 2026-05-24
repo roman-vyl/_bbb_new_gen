@@ -55,7 +55,7 @@ const strategySpec = {
               instance_id: "rsi_exit_base",
               component_id: "rsi_signal_exit",
               exit_kind: "signal",
-              ema: 21,
+              ema: { source: "close", timeframe: "base", period: 21 },
             },
           ],
         },

@@ -211,7 +211,7 @@ select {
 
 .chart-panel__body {
   display: flex;
-  gap: 0.75rem;
+  gap: 0;
   align-items: stretch;
   flex: 1;
   min-height: 0;
@@ -226,19 +226,70 @@ select {
   gap: 0.5rem;
 }
 
+.chart-panel__split {
+  flex: 0 0 auto;
+  align-self: stretch;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: col-resize;
+  touch-action: none;
+  position: relative;
+  z-index: 2;
+}
+
+.chart-panel__split::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 2px;
+  transform: translateX(-50%);
+  border-radius: 2px;
+  background: #243041;
+  transition: background 0.15s ease;
+}
+
+.chart-panel__split:hover::before,
+.chart-panel__split:focus-visible::before {
+  background: #38bdf8;
+}
+
+.chart-panel__split:focus-visible {
+  outline: none;
+}
+
 .chart-panel__aside {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
-  width: min(360px, 40vw);
   flex-shrink: 0;
   min-height: 0;
-  overflow: auto;
+  min-width: 0;
+  overflow: hidden;
 }
 
+/* Trade diagnostics + bar inspector share aside height; each scrolls inside its slot. */
 .chart-trade-diagnostics {
-  max-height: 45vh;
-  overflow: auto;
+  flex: 0 1 auto;
+  min-height: 0;
+  max-height: min(38%, 36vh);
+  overflow-y: auto;
+}
+
+.chart-panel__aside .bar-inspector {
+  flex: 1 1 0;
+  min-height: 0;
+  width: 100%;
+  max-width: none;
+  align-self: auto;
+}
+
+.chart-panel__aside .bar-inspector:only-child {
+  flex: 1 1 auto;
+  max-height: none;
 }
 
 .chart-trade-diagnostics__title {

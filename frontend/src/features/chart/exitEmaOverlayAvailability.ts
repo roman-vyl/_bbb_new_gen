@@ -15,15 +15,6 @@ export type EmaAvailabilityInfo = {
   anchorRole: AnchorStackEmaRole | null;
 };
 
-function readEmaPeriodsFromRule(parameters: Record<string, string | number>): number[] {
-  const periods: number[] = [];
-  for (const key of ["ema", "fast_ema", "slow_ema"] as const) {
-    const v = parameters[key];
-    if (typeof v === "number" && Number.isFinite(v)) periods.push(v);
-  }
-  return periods;
-}
-
 function anchorRoleForPeriod(
   periods: AnchorStackPeriods,
   period: number,
@@ -57,7 +48,7 @@ export function classifyEmaPeriodAvailability(
       status: "in_bundle",
       period,
       anchorRole: null,
-      hint: `EMA ${period} available in chart bundle (not drawn separately in v1)`,
+      hint: `EMA ${period} loaded as auxiliary overlay`,
     };
   }
 
@@ -75,7 +66,7 @@ export function attachEmaAvailabilityHints(
   chartEmaOverlays: ChartEmaOverlay[],
 ): ExitComponentRow[] {
   return rows.map((row) => {
-    const periods = readEmaPeriodsFromRule(row.parameters);
+    const periods = row.emaPeriods;
     if (periods.length === 0) {
       return { ...row, emaAvailabilityHint: null };
     }

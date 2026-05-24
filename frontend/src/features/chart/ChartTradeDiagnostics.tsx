@@ -1,4 +1,4 @@
-import type { ChartEmaOverlay, JsonObject, TradeRecord } from "@/api/types";
+import type { ChartAuxEmaOverlay, ChartEmaOverlay, JsonObject, TradeRecord } from "@/api/types";
 import { ActiveExitComponentsList } from "@/features/chart/ActiveExitComponentsList";
 import { anchorStackPeriodsFromStrategySpec } from "@/features/chart/anchorStackFromSpec";
 import { attachEmaAvailabilityHints } from "@/features/chart/exitEmaOverlayAvailability";
@@ -13,6 +13,7 @@ type Props = {
   selectedTradeId: number;
   strategySpec: JsonObject | undefined;
   chartEmaOverlays: ChartEmaOverlay[];
+  chartAuxEmaOverlays?: ChartAuxEmaOverlay[];
   focusWarning: string | null;
 };
 
@@ -43,6 +44,7 @@ export function ChartTradeDiagnostics({
   selectedTradeId,
   strategySpec,
   chartEmaOverlays,
+  chartAuxEmaOverlays = [],
   focusWarning,
 }: Props) {
   if (!trade) {
@@ -69,7 +71,17 @@ export function ChartTradeDiagnostics({
 
   const exitPolicy = strategySpec ? readExitPolicy(strategySpec) : null;
   const { rows, warning } = listActiveExitComponents(exitPolicy, trade);
-  const rowsWithEma = attachEmaAvailabilityHints(rows, anchorStack, chartEmaOverlays);
+  const loadedAuxPeriods = new Set(chartAuxEmaOverlays.map((o) => o.period));
+  const rowsWithEma = attachEmaAvailabilityHints(rows, anchorStack, chartEmaOverlays).map(
+    (row) => {
+      if (row.emaPeriods.length === 0) return row;
+      const onChart = row.emaPeriods.every((p) => loadedAuxPeriods.has(p) || anchorStack?.fast === p || anchorStack?.anchor === p || anchorStack?.slow === p);
+      if (onChart && row.emaAvailabilityHint?.includes("unavailable")) {
+        return { ...row, emaAvailabilityHint: "Shown on chart (auxiliary EMA line)" };
+      }
+      return row;
+    },
+  );
 
   return (
     <aside className="chart-trade-diagnostics trade-detail" data-testid="chart-trade-diagnostics">

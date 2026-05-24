@@ -45,6 +45,16 @@ export type ChartMarketBundle = {
   ema_overlays: ChartEmaOverlay[];
 };
 
+/** Non-anchor-stack EMA line (exit policy on chart TF or HTF context from signal trace). */
+export type ChartAuxEmaOverlay = {
+  id: string;
+  label: string;
+  period: number;
+  timeframe: string;
+  points: IndicatorPoint[];
+  dashed: boolean;
+};
+
 /** MVP chart market timeframe (execution/research TF for Workbench). */
 export const CHART_MARKET_TIMEFRAME = "5m" as const;
 
