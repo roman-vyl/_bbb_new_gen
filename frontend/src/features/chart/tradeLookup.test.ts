@@ -7,6 +7,7 @@ import {
   findLastClosedTradeId,
   findTradeById,
   getAdjacentTradeId,
+  isTradeInVariant,
   resolveSelectedTradeEntryTimeMs,
   resolveTradeEntryTimeMs,
   resolveVariantKeyForReport,
@@ -34,6 +35,18 @@ describe("tradeIdsEqual", () => {
     expect(tradeIdsEqual(42, "42")).toBe(true);
     expect(tradeIdsEqual(42, 42)).toBe(true);
     expect(tradeIdsEqual(42, 43)).toBe(false);
+  });
+});
+
+describe("isTradeInVariant", () => {
+  const trades = [makeTrade(1, 1_000), makeTrade(2, 2_000)];
+
+  it("returns true when trade exists", () => {
+    expect(isTradeInVariant(trades, 2)).toBe(true);
+  });
+
+  it("returns false when trade is missing", () => {
+    expect(isTradeInVariant(trades, 99)).toBe(false);
   });
 });
 

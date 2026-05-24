@@ -18,6 +18,13 @@ export function findTradeById(
   return trades.find((t) => tradeIdsEqual(t.trade_id, tradeId));
 }
 
+export function isTradeInVariant(
+  trades: readonly TradeRecord[],
+  tradeId: number | string | null | undefined,
+): boolean {
+  return findTradeById(trades, tradeId) !== undefined;
+}
+
 /** Canonical report field: `entry_time_ms` (Unix ms, UTC). */
 export function resolveTradeEntryTimeMs(trade: TradeRecord | undefined): number | null {
   if (!trade) {

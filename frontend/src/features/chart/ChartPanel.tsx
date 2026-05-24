@@ -168,6 +168,8 @@ export function ChartPanel() {
 
     selectedVariant,
 
+    selectedVariantKey,
+
     selectedTradeId,
 
     selectTrade,
@@ -226,6 +228,11 @@ export function ChartPanel() {
       selectedTradeId,
       chartViewCenterTimeSec,
     ],
+  );
+
+  const viewportApplyKey = useMemo(
+    () => `${chartDataKey}|${chartViewMode}|${chartViewCenterTimeSec ?? "none"}`,
+    [chartDataKey, chartViewMode, chartViewCenterTimeSec],
   );
 
 
@@ -546,18 +553,31 @@ export function ChartPanel() {
       candles: chartCandles,
     };
 
-    if (viewportKeyRef.current !== chartDataKey) {
-      viewportKeyRef.current = chartDataKey;
-      scheduleViewportApply(chart);
-    }
+  }, [chartCandles, chartEmaOverlays, selectedVariant, chartDataKey, chartViewMode, chartViewCenterTimeSec]);
 
+  useEffect(() => {
+    viewportKeyRef.current = null;
+  }, [selectedVariantKey]);
+
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart || chartDataKey === "" || chartCandles.length === 0) return;
+
+    viewportPlanRef.current = {
+      key: chartDataKey,
+      mode: chartViewMode,
+      centerTimeSec: chartViewCenterTimeSec,
+      candles: chartCandles,
+    };
+    scheduleViewportApply(chart);
   }, [
-    chartCandles,
-    chartEmaOverlays,
-    selectedVariant,
-    chartDataKey,
-    chartViewMode,
+    selectedTradeId,
+    selectedVariantKey,
     chartViewCenterTimeSec,
+    chartViewMode,
+    chartDataKey,
+    viewportApplyKey,
+    chartCandles,
     scheduleViewportApply,
   ]);
 

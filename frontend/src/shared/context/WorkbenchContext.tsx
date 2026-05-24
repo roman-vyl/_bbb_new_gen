@@ -3,6 +3,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -51,6 +52,7 @@ import {
   defaultClosedTradeSelection,
   deriveSelectedVariant,
   findTradeById,
+  isTradeInVariant,
   resolveSelectedTradeEntryTimeMs,
   resolveTradeEntryTimeMs,
   resolveVariantKeyForReport,
@@ -169,7 +171,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
   const [runs, setRuns] = useState<RunSummary[]>([]);
   const [selectedRunId, setSelectedRunIdState] = useState<string | null>(null);
   const [report, setReport] = useState<RunReport | null>(null);
-  const [selectedVariantKey, setSelectedVariantKey] = useState("");
+  const [selectedVariantKey, setSelectedVariantKeyState] = useState("");
   const [selectedTradeId, setSelectedTradeId] = useState<number | null>(null);
   const [selectedBarTimeSec, setSelectedBarTimeSec] = useState<number | null>(null);
   const [signalTrace, setSignalTrace] = useState<SignalTraceBundle | null>(null);
@@ -192,6 +194,20 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     setSelectedTradeId(tradeId);
     setSelectedBarTimeSec(barTimeSec);
   }, []);
+
+  const setSelectedVariantKey = useCallback(
+    (key: string) => {
+      setSelectedVariantKeyState(key);
+      if (report === null) {
+        return;
+      }
+      const variant = deriveSelectedVariant(report, key);
+      if (variant !== null) {
+        applyTradeFocusSelection(variant.trade_records);
+      }
+    },
+    [report, applyTradeFocusSelection],
+  );
 
   const applyConfigState = useCallback((state: ConfigStateResponse) => {
     setConfigList(state.configs);
@@ -348,7 +364,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       return;
     }
     const next = resolveVariantKeyForReport(report, selectedVariantKeyRef.current);
-    setSelectedVariantKey(next);
+    setSelectedVariantKeyState(next);
     selectedVariantKeyRef.current = next;
   }, [report]);
 
@@ -370,6 +386,16 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     prevRunIdForTradeBootstrapRef.current = runId;
     applyTradeFocusSelection(variant.trade_records);
   }, [report, report?.run_id, selectedVariantKey, applyTradeFocusSelection]);
+
+  useLayoutEffect(() => {
+    if (!selectedVariant || selectedTradeId === null) {
+      return;
+    }
+    if (isTradeInVariant(selectedVariant.trade_records, selectedTradeId)) {
+      return;
+    }
+    applyTradeFocusSelection(selectedVariant.trade_records);
+  }, [selectedVariant, selectedTradeId, selectedVariantKey, applyTradeFocusSelection]);
 
   useEffect(() => {
     if (report === null || reportLoadStatus !== "ready" || selectedVariant === null) {
@@ -585,7 +611,9 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
   }, [signalTrace, signalTraceStatus, auxEmaSpecs]);
 
   const chartView = useMemo(() => {
-    if (!cachedBundle || marketLoadStatus !== "ready") {
+    // Keep chart focus usable while a new variant's market bundle loads: marketCacheKey
+    // still points at the previous cached bundle (same run candles) until fetch completes.
+    if (!cachedBundle || marketLoadStatus === "error") {
       return emptyChartViewWindow();
     }
     return buildChartViewWindow({
@@ -649,7 +677,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
 
   const marketCandlesCount = cachedBundle?.candles.length ?? 0;
   const candlesSource: CandlesSource =
-    marketLoadStatus === "ready" && cachedBundle !== undefined ? "market" : "unavailable";
+    cachedBundle !== undefined && marketLoadStatus !== "error" ? "market" : "unavailable";
 
   const selectTrade = useCallback(
     (tradeId: number | null) => {
@@ -663,7 +691,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
         setActiveTab("chart");
       }
     },
-    [selectedVariant],
+    [selectedVariant, selectedTradeId],
   );
 
   const selectBar = useCallback((timeSec: number | null) => {
