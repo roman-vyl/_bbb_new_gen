@@ -1,6 +1,6 @@
 /** Mirrors future `research_api/contracts` — single source for UI types (phase 0). */
 
-export const SUPPORTED_REPORT_SCHEMA_VERSIONS = [3, 4] as const;
+export const SUPPORTED_REPORT_SCHEMA_VERSIONS = [3, 4, 5] as const;
 export type ReportSchemaVersion = (typeof SUPPORTED_REPORT_SCHEMA_VERSIONS)[number];
 
 /** JSON object maps in reports/config drafts (avoids bare `Record` under TS 5.8). */
@@ -89,6 +89,24 @@ export type TradeRecord = TradeOverlay & {
   gross_return_pct?: number | null;
   hold_bars?: number | null;
   hold_minutes?: number | null;
+  /** Schema v5 — closed trades only */
+  mfe_price?: number | null;
+  mfe_pct?: number | null;
+  mfe_atr?: number | null;
+  mae_price?: number | null;
+  mae_pct?: number | null;
+  mae_atr?: number | null;
+  bars_to_mfe?: number | null;
+  bars_to_mae?: number | null;
+  captured_price?: number | null;
+  captured_pct?: number | null;
+  captured_atr?: number | null;
+  capture_ratio?: number | null;
+  giveback_price?: number | null;
+  giveback_pct?: number | null;
+  giveback_atr?: number | null;
+  bars_from_mfe_to_exit?: number | null;
+  quality_flags?: string[] | null;
 };
 
 export type DiagnosticBucketMetrics = {
@@ -116,6 +134,40 @@ export type FeeDiagnostics = {
   fees_as_pct_of_gross_profit?: number | null;
 };
 
+export type QualityFlagBucketMetrics = {
+  trades: number;
+  avg_mfe_atr: number | null;
+  avg_mfe_pct: number | null;
+  avg_capture_ratio: number | null;
+  avg_giveback_atr: number | null;
+  avg_giveback_pct: number | null;
+  exit_reason_mix: Record<string, number>;
+};
+
+export type ExitComponentQualityBucketMetrics = {
+  trades: number;
+  avg_mfe_atr: number | null;
+  avg_mfe_pct: number | null;
+  avg_capture_ratio: number | null;
+  avg_giveback_atr: number | null;
+  avg_giveback_pct: number | null;
+  quality_flag_mix: Record<string, number>;
+  signal_exit_winners: number;
+  signal_exit_giveback_failures: number;
+};
+
+export type TradeQualityConfig = {
+  schema: "trade-exit-quality-diagnostics-v1" | string;
+  high_mfe_atr: number;
+  high_mfe_pct_fallback: number;
+  high_capture_ratio: number;
+  low_capture_ratio: number;
+  low_mfe_atr: number;
+  low_mfe_pct_fallback: number;
+  giveback_failure_atr: number;
+  atr_source: string | null;
+};
+
 export type SideMetrics = {
   trades: number;
   pnl: number;
@@ -138,6 +190,8 @@ export type VariantMetrics = {
   profile_breakdown?: Record<ExitProfileLabel, ProfileBucketMetrics>;
   exit_reason_breakdown?: Record<string, ExitReasonBucketMetrics>;
   fee_diagnostics?: FeeDiagnostics;
+  quality_flag_breakdown?: Record<string, QualityFlagBucketMetrics>;
+  exit_component_quality_breakdown?: Record<string, ExitComponentQualityBucketMetrics>;
 };
 
 export type RunVariant = {
@@ -161,6 +215,7 @@ export type RunReport = {
   candles: number;
   data_range: { from_open_time_ms: number; to_open_time_ms: number };
   variants_count: number;
+  trade_quality_config?: TradeQualityConfig | null;
   variants: RunVariant[];
 };
 

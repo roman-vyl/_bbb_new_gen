@@ -9,6 +9,7 @@ import { TradeStatusChip } from "@/features/reports/TradeStatusChip";
 import {
   buildTradeDiagnosticFields,
   EM_DASH,
+  type TradeDiagnosticField,
 } from "@/features/reports/tradeDiagnosticsFields";
 
 type Props = {
@@ -64,12 +65,22 @@ function TradeResultSummary({
   );
 }
 
+function DiagnosticLabel({ field }: { field: TradeDiagnosticField }) {
+  if (!field.hint) return <>{field.label}</>;
+  return (
+    <span className="diagnostic-dt__label-group">
+      <span className="diagnostic-dt__label">{field.label}</span>
+      <span className="diagnostic-dt__hint">{field.hint}</span>
+    </span>
+  );
+}
+
 function DiagnosticDl({
   title,
   fields,
 }: {
   title?: string;
-  fields: { key: string; label: string; value: string }[];
+  fields: TradeDiagnosticField[];
 }) {
   return (
     <>
@@ -77,7 +88,9 @@ function DiagnosticDl({
       <dl>
         {fields.map((f) => (
           <div key={f.key}>
-            <dt>{f.label}</dt>
+            <dt>
+              <DiagnosticLabel field={f} />
+            </dt>
             <dd>{f.value}</dd>
           </div>
         ))}

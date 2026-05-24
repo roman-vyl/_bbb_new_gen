@@ -8,6 +8,14 @@ export type EntryProfileFilterId = ExitProfileLabel | "all";
 export type EntryContextFilterId = "up" | "down" | "neutral" | "unknown" | "all";
 export type ExitGroupFilterId = "all" | "always_on" | "profile";
 export type OutcomeFilterId = "all" | "winners" | "losers";
+export type QualityFlagFilterId =
+  | "all"
+  | "high_mfe_high_capture"
+  | "high_mfe_low_capture"
+  | "signal_exit_winner"
+  | "signal_exit_giveback_failure"
+  | "stop_loss_after_low_mfe"
+  | "stop_loss_after_bad_context";
 
 export type TradeDiagnosticsFilterState = {
   entryProfile: EntryProfileFilterId;
@@ -16,6 +24,7 @@ export type TradeDiagnosticsFilterState = {
   exitGroup: ExitGroupFilterId;
   exitReason: ExitReasonFilterId;
   outcome: OutcomeFilterId;
+  qualityFlag: QualityFlagFilterId;
 };
 
 export const DEFAULT_TRADE_DIAGNOSTICS_FILTERS: TradeDiagnosticsFilterState = {
@@ -25,6 +34,7 @@ export const DEFAULT_TRADE_DIAGNOSTICS_FILTERS: TradeDiagnosticsFilterState = {
   exitGroup: "all",
   exitReason: "all",
   outcome: "all",
+  qualityFlag: "all",
 };
 
 export const ENTRY_PROFILE_FILTER_OPTIONS = [
@@ -53,6 +63,8 @@ export const OUTCOME_FILTER_OPTIONS = [
   { id: "winners" as const, label: "Winners" },
   { id: "losers" as const, label: "Losers" },
 ];
+
+export { QUALITY_FLAG_FILTER_OPTIONS } from "@/features/reports/tradeExitQualityLabels";
 
 export function distinctExitKinds(trades: readonly TradeRecord[]): string[] {
   const kinds = new Set<string>();
@@ -88,6 +100,10 @@ export function matchesTradeDiagnosticsFilters(
     if (trade.pnl === null || trade.pnl <= 0) return false;
   } else if (filters.outcome === "losers") {
     if (trade.pnl === null || trade.pnl >= 0) return false;
+  }
+
+  if (filters.qualityFlag !== "all") {
+    if (!(trade.quality_flags ?? []).includes(filters.qualityFlag)) return false;
   }
 
   return true;

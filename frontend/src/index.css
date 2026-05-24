@@ -675,10 +675,39 @@ select {
 }
 
 .chart-trade-nav__label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.15rem;
   font-weight: 600;
   color: #e2e8f0;
   min-width: 5.5rem;
+}
+
+.chart-trade-nav__prefix {
+  flex-shrink: 0;
+}
+
+.chart-trade-nav__input {
+  width: 3.5rem;
+  padding: 0.2rem 0.35rem;
+  border: 1px solid #2a3544;
+  border-radius: 4px;
+  background: #0f1419;
+  color: #e2e8f0;
+  font: inherit;
+  font-weight: 600;
   text-align: center;
+}
+
+.chart-trade-nav__input:hover {
+  border-color: #3b4a5c;
+}
+
+.chart-trade-nav__input:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 1px #3b82f6;
 }
 
 .chart-trade-nav__clear {
@@ -930,6 +959,23 @@ select {
 
 .trade-detail dt {
   color: #64748b;
+}
+
+.diagnostic-dt__label-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.diagnostic-dt__label {
+  color: #94a3b8;
+}
+
+.diagnostic-dt__hint {
+  color: #64748b;
+  font-size: 0.72rem;
+  font-weight: normal;
+  line-height: 1.2;
 }
 
 .trade-detail dd {

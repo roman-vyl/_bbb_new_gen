@@ -7,6 +7,7 @@ import {
   findLastClosedTradeId,
   findTradeById,
   getAdjacentTradeId,
+  parseManualTradeIdInput,
   isTradeInVariant,
   resolveSelectedTradeEntryTimeMs,
   resolveTradeEntryTimeMs,
@@ -182,5 +183,19 @@ describe("getAdjacentTradeId", () => {
   it("matches string selected id to numeric record id", () => {
     expect(getAdjacentTradeId(trades, "2", -1)).toBe(1);
     expect(getAdjacentTradeId(trades, "2", 1)).toBe(3);
+  });
+});
+
+describe("parseManualTradeIdInput", () => {
+  it("accepts positive integer strings", () => {
+    expect(parseManualTradeIdInput("259")).toBe(259);
+    expect(parseManualTradeIdInput(" 12 ")).toBe(12);
+  });
+
+  it("rejects empty and non-digit input", () => {
+    expect(parseManualTradeIdInput("")).toBeNull();
+    expect(parseManualTradeIdInput("abc")).toBeNull();
+    expect(parseManualTradeIdInput("12.5")).toBeNull();
+    expect(parseManualTradeIdInput("0")).toBeNull();
   });
 });

@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RunReport, RunVariant } from "@/api/types";
 import reportV3 from "@/fixtures/report.json";
 import reportV4 from "@/features/reports/__fixtures__/report-v4-minimal.json";
+import reportV5 from "@/features/reports/__fixtures__/report-v5-quality.json";
 import { ReportsPanel } from "@/features/reports/ReportsPanel";
 
 const { mockUseWorkbench } = vi.hoisted(() => ({
@@ -23,6 +24,7 @@ afterEach(() => {
 
 const v3Report = reportV3 as RunReport;
 const v4Report = reportV4 as RunReport;
+const v5Report = reportV5 as RunReport;
 
 function mockWorkbench(overrides: {
   report: RunReport;
@@ -48,7 +50,7 @@ describe("ReportsPanel", () => {
   it("v3 report shows diagnostics empty state and does not crash", () => {
     mockWorkbench({ report: v3Report, variant: v3Report.variants[0] });
     render(<ReportsPanel />);
-    expect(screen.getByText("Diagnostics available for schema v4 reports.")).toBeTruthy();
+    expect(screen.getByText("Diagnostics available for schema v4/v5 reports.")).toBeTruthy();
     expect(screen.queryByText("Fee diagnostics")).toBeNull();
     expect(screen.queryByText("entry_profile")).toBeNull();
     expect(screen.queryByLabelText("Show diagnostics columns")).toBeNull();
@@ -58,7 +60,7 @@ describe("ReportsPanel", () => {
   it("v4 report renders fee and breakdown sections", () => {
     mockWorkbench({ report: v4Report, variant: v4Report.variants[0] });
     render(<ReportsPanel />);
-    expect(screen.queryByText("Diagnostics available for schema v4 reports.")).toBeNull();
+    expect(screen.queryByText("Diagnostics available for schema v4/v5 reports.")).toBeNull();
     expect(screen.getByText("Fee diagnostics")).toBeTruthy();
     expect(screen.getByText("Profile breakdown")).toBeTruthy();
     expect(screen.getByText("Exit reason breakdown")).toBeTruthy();
@@ -101,5 +103,29 @@ describe("ReportsPanel", () => {
     expect(screen.getByText("entry_prof")).toBeTruthy();
     expect(screen.getAllByText("aligned").length).toBeGreaterThan(0);
     expect(screen.getAllByText("stop_loss").length).toBeGreaterThan(0);
+  });
+
+  it("v5 report filters by quality flag and shows quality columns", () => {
+    mockWorkbench({ report: v5Report, variant: v5Report.variants[0] });
+    render(<ReportsPanel />);
+    fireEvent.click(
+      within(screen.getByTestId("filter-quality-flag")).getByRole("button", {
+        name: "сильный ход, но плохо забрали",
+      }),
+    );
+    expect(screen.getByText("signal:ema_cross")).toBeTruthy();
+
+    fireEvent.click(screen.getByLabelText("Show diagnostics columns"));
+    const mfeHeader = screen.getByText("MFE %");
+    expect(mfeHeader.closest("th")?.getAttribute("title")).toBe("макс. плюс");
+    expect(screen.getByText("Capture ratio")).toBeTruthy();
+    expect(screen.getByTitle("доля хода")).toBeTruthy();
+    expect(screen.getByText("Quality flags")).toBeTruthy();
+    expect(screen.getByTitle("ярлыки")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "сильный ход, но плохо забрали, сигнал выхода отдал импульс",
+      ),
+    ).toBeTruthy();
   });
 });

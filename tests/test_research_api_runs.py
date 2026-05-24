@@ -166,6 +166,86 @@ _SAMPLE_REPORT_V4 = {
     ],
 }
 
+_QUALITY_BUCKET = {
+    "trades": 1,
+    "avg_mfe_atr": None,
+    "avg_mfe_pct": 0.04,
+    "avg_capture_ratio": 0.25,
+    "avg_giveback_atr": None,
+    "avg_giveback_pct": 0.03,
+    "exit_reason_mix": {"signal:ema_cross": 1},
+}
+
+_EXIT_COMPONENT_QUALITY_BUCKET = {
+    "trades": 1,
+    "avg_mfe_atr": None,
+    "avg_mfe_pct": 0.04,
+    "avg_capture_ratio": 0.25,
+    "avg_giveback_atr": None,
+    "avg_giveback_pct": 0.03,
+    "quality_flag_mix": {"high_mfe_low_capture": 1, "signal_exit_giveback_failure": 1},
+    "signal_exit_winners": 0,
+    "signal_exit_giveback_failures": 1,
+}
+
+_TRADE_QUALITY_CONFIG = {
+    "schema": "trade-exit-quality-diagnostics-v1",
+    "high_mfe_atr": 2.0,
+    "high_mfe_pct_fallback": 0.02,
+    "high_capture_ratio": 0.60,
+    "low_capture_ratio": 0.30,
+    "low_mfe_atr": 1.0,
+    "low_mfe_pct_fallback": 0.005,
+    "giveback_failure_atr": 1.5,
+    "atr_source": None,
+}
+
+_SAMPLE_REPORT_V5 = {
+    **_SAMPLE_REPORT_V4,
+    "report_schema_version": 5,
+    "trade_quality_config": _TRADE_QUALITY_CONFIG,
+    "variants": [
+        {
+            **_SAMPLE_REPORT_V4["variants"][0],
+            "metrics": {
+                **_SAMPLE_REPORT_V4["variants"][0]["metrics"],
+                "quality_flag_breakdown": {
+                    "high_mfe_low_capture": _QUALITY_BUCKET,
+                },
+                "exit_component_quality_breakdown": {
+                    "ema_cross_loss_exit": _EXIT_COMPONENT_QUALITY_BUCKET,
+                },
+            },
+            "trade_records": [
+                {
+                    **_SAMPLE_REPORT_V4["variants"][0]["trade_records"][0],
+                    "exit_reason": "signal:ema_cross",
+                    "exit_component_id": "ema_cross_loss_exit",
+                    "entry_price": 10000.0,
+                    "exit_price": 10100.0,
+                    "mfe_price": 400.0,
+                    "mfe_pct": 0.04,
+                    "mfe_atr": None,
+                    "mae_price": -50.0,
+                    "mae_pct": -0.005,
+                    "mae_atr": None,
+                    "bars_to_mfe": 4,
+                    "bars_to_mae": 1,
+                    "captured_price": 100.0,
+                    "captured_pct": 0.01,
+                    "captured_atr": None,
+                    "capture_ratio": 0.25,
+                    "giveback_price": 300.0,
+                    "giveback_pct": 0.03,
+                    "giveback_atr": None,
+                    "bars_from_mfe_to_exit": 2,
+                    "quality_flags": ["high_mfe_low_capture", "signal_exit_giveback_failure"],
+                }
+            ],
+        }
+    ],
+}
+
 
 def _write_artifacts(
     results_dir: Path,
@@ -226,6 +306,32 @@ def test_load_schema_v4_report(tmp_path: Path) -> None:
     assert trade.exit_profile == "aligned"
     assert trade.gross_pnl == 10.0
     assert trade.hold_bars == 3
+
+    report_from_disk = load_run_report(run_id=run_id, results_dir=tmp_path)
+    assert report_from_disk.model_dump() == report.model_dump()
+
+
+def test_load_schema_v5_report_with_trade_quality_diagnostics(tmp_path: Path) -> None:
+    run_id = _write_artifacts(tmp_path, payload=_SAMPLE_REPORT_V5, schema_version=5)
+    report = parse_run_report(json.loads((tmp_path / "runs" / f"{run_id}.json").read_text(encoding="utf-8")))
+    assert report.report_schema_version == 5
+    assert report.trade_quality_config is not None
+    assert report.trade_quality_config.schema_ == "trade-exit-quality-diagnostics-v1"
+    assert report.trade_quality_config.atr_source is None
+
+    variant = report.variants[0]
+    assert variant.metrics.quality_flag_breakdown is not None
+    flag_bucket = variant.metrics.quality_flag_breakdown["high_mfe_low_capture"]
+    assert flag_bucket.avg_mfe_atr is None
+    assert flag_bucket.avg_capture_ratio == 0.25
+    assert variant.metrics.exit_component_quality_breakdown is not None
+    component = variant.metrics.exit_component_quality_breakdown["ema_cross_loss_exit"]
+    assert component.signal_exit_giveback_failures == 1
+
+    trade = variant.trade_records[0]
+    assert trade.mfe_pct == 0.04
+    assert trade.mfe_atr is None
+    assert trade.quality_flags == ["high_mfe_low_capture", "signal_exit_giveback_failure"]
 
     report_from_disk = load_run_report(run_id=run_id, results_dir=tmp_path)
     assert report_from_disk.model_dump() == report.model_dump()

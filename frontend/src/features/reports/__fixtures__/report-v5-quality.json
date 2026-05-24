@@ -1,0 +1,128 @@
+{
+  "run_id": "2026-05-24T120000Z_ema_pullback_BTCUSDT_5m_v5_fixture",
+  "created_at": "2026-05-24T12:00:00Z",
+  "report_schema_version": 5,
+  "family": "ema_pullback",
+  "symbol": "BTCUSDT",
+  "timeframe": "5m",
+  "candles": 100,
+  "data_range": {
+    "from_open_time_ms": 1714550400000,
+    "to_open_time_ms": 1714579800000
+  },
+  "variants_count": 1,
+  "trade_quality_config": {
+    "schema": "trade-exit-quality-diagnostics-v1",
+    "high_mfe_atr": 2.0,
+    "high_mfe_pct_fallback": 0.02,
+    "high_capture_ratio": 0.6,
+    "low_capture_ratio": 0.3,
+    "low_mfe_atr": 1.0,
+    "low_mfe_pct_fallback": 0.005,
+    "giveback_failure_atr": 1.5,
+    "atr_source": null
+  },
+  "variants": [
+    {
+      "variant": "exp_v5_quality",
+      "config_id": "fixture_v5",
+      "symbol": "BTCUSDT",
+      "timeframe": "5m",
+      "strategy_spec": { "variant": "exp_v5_quality" },
+      "metrics": {
+        "long": {
+          "trades": 1,
+          "pnl": 100,
+          "return_pct": 0.01,
+          "profit_factor": null,
+          "win_rate": 1
+        },
+        "short": {
+          "trades": 0,
+          "pnl": 0,
+          "return_pct": 0,
+          "profit_factor": null,
+          "win_rate": null
+        },
+        "total": {
+          "trades": 1,
+          "pnl": 100,
+          "return_pct": 0.01,
+          "profit_factor": null,
+          "win_rate": 1,
+          "sharpe": 0.5,
+          "max_drawdown": -0.02
+        },
+        "open_trades": { "long": 0, "short": 0, "total": 0 },
+        "quality_flag_breakdown": {
+          "high_mfe_low_capture": {
+            "trades": 1,
+            "avg_mfe_atr": null,
+            "avg_mfe_pct": 0.04,
+            "avg_capture_ratio": 0.25,
+            "avg_giveback_atr": null,
+            "avg_giveback_pct": 0.03,
+            "exit_reason_mix": { "signal:ema_cross": 1 }
+          }
+        },
+        "exit_component_quality_breakdown": {
+          "ema_cross_loss_exit": {
+            "trades": 1,
+            "avg_mfe_atr": null,
+            "avg_mfe_pct": 0.04,
+            "avg_capture_ratio": 0.25,
+            "avg_giveback_atr": null,
+            "avg_giveback_pct": 0.03,
+            "quality_flag_mix": {
+              "high_mfe_low_capture": 1,
+              "signal_exit_giveback_failure": 1
+            },
+            "signal_exit_winners": 0,
+            "signal_exit_giveback_failures": 1
+          }
+        }
+      },
+      "component_counters": [],
+      "trade_records": [
+        {
+          "trade_id": 1,
+          "direction": "long",
+          "status": "closed",
+          "entry_time_ms": 1714561400000,
+          "exit_time_ms": 1714565400000,
+          "entry_price": 10000,
+          "exit_price": 10100,
+          "size": 0.15,
+          "pnl": 100,
+          "return_pct": 0.01,
+          "exit_reason": "signal:ema_cross",
+          "entry_profile": "aligned",
+          "entry_context_state": "up",
+          "active_exit_profile": "aligned",
+          "exit_group": "profile",
+          "exit_profile": "aligned",
+          "exit_kind": "signal",
+          "exit_component_id": "ema_cross_loss_exit",
+          "exit_instance_id": "ema_cross",
+          "mfe_price": 400,
+          "mfe_pct": 0.04,
+          "mfe_atr": null,
+          "mae_price": -50,
+          "mae_pct": -0.005,
+          "mae_atr": null,
+          "bars_to_mfe": 4,
+          "bars_to_mae": 1,
+          "captured_price": 100,
+          "captured_pct": 0.01,
+          "captured_atr": null,
+          "capture_ratio": 0.25,
+          "giveback_price": 300,
+          "giveback_pct": 0.03,
+          "giveback_atr": null,
+          "bars_from_mfe_to_exit": 2,
+          "quality_flags": ["high_mfe_low_capture", "signal_exit_giveback_failure"]
+        }
+      ]
+    }
+  ]
+}

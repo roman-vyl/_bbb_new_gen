@@ -20,6 +20,7 @@ from research.strategies.ema_pullback.execution.results import (
     build_exit_reason_breakdown,
     build_fee_diagnostics,
     build_profile_breakdown,
+    build_trade_quality_breakdowns,
     extract_trade_records,
 )
 from research.strategies.ema_pullback.execution.exits import build_exit_outputs_from_spec
@@ -128,6 +129,7 @@ def build_trade_side_metrics(
         profile_breakdown=build_profile_breakdown(trade_records),
         exit_reason_breakdown=build_exit_reason_breakdown(trade_records),
         fee_diagnostics=build_fee_diagnostics(trade_records, fees_rate=fees_rate),
+        **build_trade_quality_breakdowns(trade_records),
     )
 
 
@@ -336,6 +338,7 @@ def run_strategy_spec(
         profile_long=exit_outputs.profile_long,
         profile_short=exit_outputs.profile_short,
         context_state=exit_outputs.context_state,
+        diagnostic_atr_series=None,
         base_timeframe=spec.base_timeframe,
         exit_component_map=exit_component_map,
     )

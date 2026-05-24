@@ -1,5 +1,10 @@
 import type { TradeRecord } from "@/api/types";
 import { EM_DASH, formatMoney, formatReturnPct } from "@/features/reports/formatDiagnostics";
+import {
+  chartMetricHint,
+  chartMetricLabel,
+  formatQualityFlags,
+} from "@/features/reports/tradeExitQualityLabels";
 
 export { EM_DASH, formatMoney, formatReturnPct };
 
@@ -27,7 +32,9 @@ export function hasTradeDiagnostics(trade: TradeRecord): boolean {
   return (
     trade.entry_profile !== undefined ||
     trade.exit_kind !== undefined ||
-    trade.gross_pnl !== undefined
+    trade.gross_pnl !== undefined ||
+    trade.mfe_pct !== undefined ||
+    trade.quality_flags !== undefined
   );
 }
 
@@ -35,10 +42,23 @@ export type TradeDiagnosticField = {
   key: string;
   label: string;
   value: string;
+  hint?: string;
 };
 
-function field(key: string, label: string, value: string): TradeDiagnosticField {
-  return { key, label, value };
+function field(
+  key: string,
+  label: string,
+  value: string,
+  hint?: string,
+): TradeDiagnosticField {
+  return hint ? { key, label, value, hint } : { key, label, value };
+}
+
+function exitQualityField(
+  key: Parameters<typeof chartMetricLabel>[0],
+  value: string,
+): TradeDiagnosticField {
+  return field(key, chartMetricLabel(key), value, chartMetricHint(key));
 }
 
 /** Core + v4 diagnostic rows for Reports/Chart trade detail panels. */
@@ -94,6 +114,27 @@ export function buildTradeDiagnosticFields(trade: TradeRecord): {
       trade.hold_minutes === null || trade.hold_minutes === undefined
         ? EM_DASH
         : String(trade.hold_minutes),
+    ),
+    exitQualityField("mfe_pct", formatReturnPct(trade.mfe_pct)),
+    exitQualityField("mae_pct", formatReturnPct(trade.mae_pct)),
+    exitQualityField("captured_pct", formatReturnPct(trade.captured_pct)),
+    exitQualityField("capture_ratio", formatReturnPct(trade.capture_ratio)),
+    exitQualityField("giveback_pct", formatReturnPct(trade.giveback_pct)),
+    exitQualityField(
+      "bars_to_mfe",
+      trade.bars_to_mfe === null || trade.bars_to_mfe === undefined ? EM_DASH : String(trade.bars_to_mfe),
+    ),
+    exitQualityField(
+      "bars_from_mfe_to_exit",
+      trade.bars_from_mfe_to_exit === null || trade.bars_from_mfe_to_exit === undefined
+        ? EM_DASH
+        : String(trade.bars_from_mfe_to_exit),
+    ),
+    exitQualityField(
+      "quality_flags",
+      trade.quality_flags && trade.quality_flags.length > 0
+        ? formatQualityFlags(trade.quality_flags)
+        : EM_DASH,
     ),
   ];
 

@@ -84,4 +84,18 @@ describe("tradeDiagnosticsFilters", () => {
       }),
     ).toBe(false);
   });
+
+  it("filters by quality flags", () => {
+    const trades = [
+      makeTrade({ trade_id: 1, quality_flags: ["high_mfe_low_capture"] }),
+      makeTrade({ trade_id: 2, quality_flags: ["signal_exit_winner"] }),
+      makeTrade({ trade_id: 3, quality_flags: null }),
+    ];
+    const filtered = filterTrades(trades, {
+      ...DEFAULT_TRADE_DIAGNOSTICS_FILTERS,
+      qualityFlag: "high_mfe_low_capture",
+    });
+    expect(filtered).toHaveLength(1);
+    expect(filtered[0].trade_id).toBe(1);
+  });
 });

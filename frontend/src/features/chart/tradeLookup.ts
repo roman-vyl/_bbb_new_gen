@@ -50,6 +50,19 @@ function normalizeTradeId(raw: number | string): number | null {
   return Number.isFinite(id) ? id : null;
 }
 
+/** Parse manual trade id from chart nav input (positive integer digits only). */
+export function parseManualTradeIdInput(raw: string): number | null {
+  const trimmed = raw.trim();
+  if (!trimmed || !/^\d+$/.test(trimmed)) {
+    return null;
+  }
+  const id = Number(trimmed);
+  if (!Number.isFinite(id) || id < 1) {
+    return null;
+  }
+  return id;
+}
+
 /** Local selection: report + UI variant key → active variant (no fetch). */
 export function deriveSelectedVariant(
   report: RunReport | null,

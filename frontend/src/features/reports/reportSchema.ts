@@ -1,13 +1,15 @@
 import type { VariantMetrics } from "@/api/types";
 
 export function isDiagnosticsV4(reportSchemaVersion: number): boolean {
-  return reportSchemaVersion === 4;
+  return reportSchemaVersion === 4 || reportSchemaVersion === 5;
 }
 
 export function hasVariantDiagnostics(metrics: VariantMetrics): boolean {
   return (
     metrics.fee_diagnostics !== undefined ||
     metrics.profile_breakdown !== undefined ||
-    metrics.exit_reason_breakdown !== undefined
+    metrics.exit_reason_breakdown !== undefined ||
+    metrics.quality_flag_breakdown !== undefined ||
+    metrics.exit_component_quality_breakdown !== undefined
   );
 }
