@@ -66,6 +66,7 @@ market.sqlite
 /research/results/runs/*.json
 /research/experiments/configs/ema_pullback/
 /research/experiments/configs/.workbench_selection.json
+/research/experiments/results/batches/*.json
 
 # Research Workbench (frontend)
 frontend/node_modules/

@@ -16,6 +16,7 @@ from research.strategies.ema_pullback.execution.report_table import (
 from research.strategies.ema_pullback.execution.results import (
     build_research_run_payload,
     build_run_id,
+    default_results_dir,
     write_research_results,
 )
 from research.strategies.ema_pullback.spec import EmaPullbackStrategySpec
@@ -79,6 +80,20 @@ def run_strategy_specs_from_config(config_source_file: str | Path, *, db_path: P
     print(f"run_artifact={run_path.relative_to(_ROOT).as_posix()}")
     print("status=ok")
     return run_id
+
+
+def run_strategy_specs_from_config_returning_paths(
+    config_source_file: str | Path,
+    *,
+    db_path: Path | None = None,
+) -> tuple[str, Path, Path]:
+    """Run one external config and return ``(run_id, latest_path, run_path)``."""
+
+    run_id = run_strategy_specs_from_config(config_source_file, db_path=db_path)
+    base = default_results_dir()
+    run_path = base / "runs" / f"{run_id}.json"
+    latest_path = base / "latest.json"
+    return run_id, latest_path, run_path
 
 
 def _validated_specs_for_single_market(
