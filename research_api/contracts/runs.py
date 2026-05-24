@@ -6,7 +6,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-SUPPORTED_REPORT_SCHEMA_VERSIONS: frozenset[int] = frozenset({3, 4})
+SUPPORTED_REPORT_SCHEMA_VERSIONS: frozenset[int] = frozenset({3, 4, 5})
 
 
 class TradeOverlay(BaseModel):
@@ -43,6 +43,23 @@ class TradeRecord(TradeOverlay):
     gross_return_pct: float | None = None
     hold_bars: int | None = None
     hold_minutes: int | None = None
+    mfe_price: float | None = None
+    mfe_pct: float | None = None
+    mfe_atr: float | None = None
+    mae_price: float | None = None
+    mae_pct: float | None = None
+    mae_atr: float | None = None
+    bars_to_mfe: int | None = None
+    bars_to_mae: int | None = None
+    captured_price: float | None = None
+    captured_pct: float | None = None
+    captured_atr: float | None = None
+    capture_ratio: float | None = None
+    giveback_price: float | None = None
+    giveback_pct: float | None = None
+    giveback_atr: float | None = None
+    bars_from_mfe_to_exit: int | None = None
+    quality_flags: list[str] | None = None
 
 
 class SideMetrics(BaseModel):
@@ -105,6 +122,32 @@ class FeeDiagnostics(BaseModel):
     fees_as_pct_of_gross_profit: float | None = None
 
 
+class QualityFlagBucketMetrics(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    trades: int
+    avg_mfe_atr: float | None
+    avg_mfe_pct: float | None
+    avg_capture_ratio: float | None
+    avg_giveback_atr: float | None
+    avg_giveback_pct: float | None
+    exit_reason_mix: dict[str, int] = Field(default_factory=dict)
+
+
+class ExitComponentQualityBucketMetrics(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    trades: int
+    avg_mfe_atr: float | None
+    avg_mfe_pct: float | None
+    avg_capture_ratio: float | None
+    avg_giveback_atr: float | None
+    avg_giveback_pct: float | None
+    quality_flag_mix: dict[str, int] = Field(default_factory=dict)
+    signal_exit_winners: int
+    signal_exit_giveback_failures: int
+
+
 class VariantMetrics(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -115,6 +158,22 @@ class VariantMetrics(BaseModel):
     profile_breakdown: dict[str, ProfileBucketMetrics] | None = None
     exit_reason_breakdown: dict[str, ExitReasonBucketMetrics] | None = None
     fee_diagnostics: FeeDiagnostics | None = None
+    quality_flag_breakdown: dict[str, QualityFlagBucketMetrics] | None = None
+    exit_component_quality_breakdown: dict[str, ExitComponentQualityBucketMetrics] | None = None
+
+
+class TradeQualityConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_: str = Field(alias="schema")
+    high_mfe_atr: float
+    high_mfe_pct_fallback: float
+    high_capture_ratio: float
+    low_capture_ratio: float
+    low_mfe_atr: float
+    low_mfe_pct_fallback: float
+    giveback_failure_atr: float
+    atr_source: str | None = None
 
 
 class DataRange(BaseModel):
@@ -175,4 +234,5 @@ class RunReport(BaseModel):
     candles: int
     data_range: DataRange
     variants_count: int
+    trade_quality_config: TradeQualityConfig | None = None
     variants: list[RunVariant]

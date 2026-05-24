@@ -14,6 +14,7 @@ from research.strategies.ema_pullback.execution.results import (
     build_profile_breakdown,
     build_research_run_payload,
     build_run_id,
+    build_trade_quality_breakdowns,
     extract_trade_records,
     json_safe,
     write_research_results,
@@ -33,6 +34,7 @@ REQUIRED_TOP = (
     "candles",
     "data_range",
     "variants_count",
+    "trade_quality_config",
     "variants",
 )
 
@@ -131,7 +133,9 @@ def test_build_research_run_payload_top_level_keys() -> None:
         variants=[variant],
     )
     assert tuple(payload.keys()) == REQUIRED_TOP
-    assert payload["report_schema_version"] == 4
+    assert payload["report_schema_version"] == 5
+    assert payload["trade_quality_config"]["schema"] == "trade-exit-quality-diagnostics-v1"
+    assert payload["trade_quality_config"]["atr_source"] is None
     assert payload["data_range"] == {"from_open_time_ms": 1, "to_open_time_ms": 2}
     assert payload["variants_count"] == 1
     v0 = payload["variants"][0]
@@ -180,10 +184,12 @@ def test_extract_trade_records_closed_and_open() -> None:
 
     idx = pd.date_range("2024-01-01", periods=5, freq="h", tz="UTC")
     close = pd.Series([1.0, 2.0, 3.0, 4.0, 5.0], index=idx)
+    high = pd.Series([1.2, 2.2, 3.5, 4.5, 5.2], index=idx)
+    low = pd.Series([0.8, 1.8, 2.5, 3.5, 4.8], index=idx)
     entries = pd.Series([False, True, False, False, False], index=idx)
     exits_closed = pd.Series([False, False, False, True, False], index=idx)
     pf_c = vbt.Portfolio.from_signals(close, entries, exits_closed, freq="1h")
-    rec_c = extract_trade_records(pf_c, close, base_timeframe="1h")
+    rec_c = extract_trade_records(pf_c, close, high=high, low=low, base_timeframe="1h")
     assert len(rec_c) == 1
     t0 = rec_c[0]
     for k in REQUIRED_TRADE_FIELDS:
@@ -193,6 +199,10 @@ def test_extract_trade_records_closed_and_open() -> None:
     assert t0["entry_time_ms"] is not None
     assert t0["exit_time_ms"] is not None
     assert t0["exit_reason"] == "unknown"
+    assert t0["mfe_price"] > 0
+    assert t0["mae_price"] <= 0
+    assert t0["mfe_atr"] is None
+    assert isinstance(t0["quality_flags"], list)
 
     exits_open = pd.Series([False, False, False, False, False], index=idx)
     pf_o = vbt.Portfolio.from_signals(close, entries, exits_open, freq="1h")
@@ -250,6 +260,30 @@ def test_profile_and_exit_reason_breakdown_sums() -> None:
     assert profile["aligned"]["trades"] + profile["neutral"]["trades"] + profile["countertrend"]["trades"] == 2
     reasons = build_exit_reason_breakdown(records)
     assert sum(bucket["trades"] for bucket in reasons.values()) == 2
+
+
+def test_trade_quality_breakdowns_summarize_flags_and_components() -> None:
+    records = [
+        {
+            "status": "closed",
+            "exit_reason": "signal:ema_cross",
+            "exit_component_id": "ema_cross_loss_exit",
+            "quality_flags": ["high_mfe_low_capture", "signal_exit_giveback_failure"],
+            "mfe_pct": 0.04,
+            "mfe_atr": None,
+            "capture_ratio": 0.2,
+            "giveback_pct": 0.03,
+            "giveback_atr": None,
+        }
+    ]
+
+    breakdowns = build_trade_quality_breakdowns(records)
+    flag_bucket = breakdowns["quality_flag_breakdown"]["high_mfe_low_capture"]
+    assert flag_bucket["trades"] == 1
+    assert flag_bucket["avg_mfe_atr"] is None
+    assert flag_bucket["avg_capture_ratio"] == 0.2
+    component = breakdowns["exit_component_quality_breakdown"]["ema_cross_loss_exit"]
+    assert component["signal_exit_giveback_failures"] == 1
 
 
 def test_fee_diagnostics_identity() -> None:

@@ -24,6 +24,7 @@ import {
   EXIT_GROUP_FILTER_OPTIONS,
   filterTrades,
   OUTCOME_FILTER_OPTIONS,
+  QUALITY_FLAG_FILTER_OPTIONS,
   type TradeDiagnosticsFilterState,
 } from "@/features/reports/tradeDiagnosticsFilters";
 import { DIAGNOSTICS_COLUMNS } from "@/features/reports/tradeTableColumns";
@@ -93,7 +94,7 @@ export function ReportsPanel() {
       <section className="diagnostics-section" aria-label="Variant diagnostics">
         <h3 className="diagnostics-section__title">Diagnostics</h3>
         {!diagnosticsV4 && (
-          <p className="empty-hint">Diagnostics available for schema v4 reports.</p>
+          <p className="empty-hint">Diagnostics available for schema v4/v5 reports.</p>
         )}
         {diagnosticsV4 && (
           <>
@@ -221,6 +222,20 @@ export function ReportsPanel() {
                 type="button"
                 className={filters.outcome === opt.id ? "chip chip--active" : "chip"}
                 onClick={() => setFilters((prev) => ({ ...prev, outcome: opt.id }))}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="filter-row" data-testid="filter-quality-flag">
+            <span>quality</span>
+            {QUALITY_FLAG_FILTER_OPTIONS.map((opt) => (
+              <button
+                key={opt.id}
+                type="button"
+                className={filters.qualityFlag === opt.id ? "chip chip--active" : "chip"}
+                onClick={() => setFilters((prev) => ({ ...prev, qualityFlag: opt.id }))}
               >
                 {opt.label}
               </button>

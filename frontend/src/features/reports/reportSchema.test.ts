@@ -4,8 +4,9 @@ import type { VariantMetrics } from "@/api/types";
 import { hasVariantDiagnostics, isDiagnosticsV4 } from "@/features/reports/reportSchema";
 
 describe("reportSchema", () => {
-  it("isDiagnosticsV4 is true only for version 4", () => {
+  it("isDiagnosticsV4 is true for diagnostic report versions", () => {
     expect(isDiagnosticsV4(4)).toBe(true);
+    expect(isDiagnosticsV4(5)).toBe(true);
     expect(isDiagnosticsV4(3)).toBe(false);
     expect(isDiagnosticsV4(1)).toBe(false);
   });
@@ -34,6 +35,22 @@ describe("reportSchema", () => {
           gross_pnl: 2,
           net_pnl: 1,
           fees_rate: 0.001,
+        },
+      }),
+    ).toBe(true);
+    expect(
+      hasVariantDiagnostics({
+        ...empty,
+        quality_flag_breakdown: {
+          high_mfe_low_capture: {
+            trades: 1,
+            avg_mfe_atr: null,
+            avg_mfe_pct: 0.04,
+            avg_capture_ratio: 0.2,
+            avg_giveback_atr: null,
+            avg_giveback_pct: 0.03,
+            exit_reason_mix: { "signal:ema_cross": 1 },
+          },
         },
       }),
     ).toBe(true);

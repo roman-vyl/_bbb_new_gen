@@ -92,6 +92,39 @@ describe("ChartTradeDiagnostics", () => {
     expect(screen.getAllByText("aligned").length).toBeGreaterThan(0);
   });
 
+  it("renders v5 trade quality diagnostics", () => {
+    render(
+      <ChartTradeDiagnostics
+        trade={{
+          ...trade,
+          mfe_pct: 0.042,
+          mae_pct: -0.008,
+          captured_pct: 0.031,
+          capture_ratio: 0.74,
+          giveback_pct: 0.011,
+          bars_to_mfe: 18,
+          bars_from_mfe_to_exit: 7,
+          quality_flags: ["signal_exit_winner", "high_mfe_high_capture"],
+        }}
+        selectedTradeId={2}
+        strategySpec={strategySpec}
+        chartEmaOverlays={[]}
+        focusWarning={null}
+      />,
+    );
+
+    expect(screen.getByText("MFE")).toBeTruthy();
+    expect(screen.getByText("4.20%")).toBeTruthy();
+    expect(screen.getByText("MAE")).toBeTruthy();
+    expect(screen.getByText("-0.80%")).toBeTruthy();
+    expect(screen.getByText("Capture ratio")).toBeTruthy();
+    expect(screen.getByText("74.00%")).toBeTruthy();
+    expect(screen.getByText("Bars to MFE")).toBeTruthy();
+    expect(screen.getByText("18")).toBeTruthy();
+    expect(screen.getByText("Quality flags")).toBeTruthy();
+    expect(screen.getByText("signal_exit_winner, high_mfe_high_capture")).toBeTruthy();
+  });
+
   it("colors loss result red", () => {
     render(
       <ChartTradeDiagnostics

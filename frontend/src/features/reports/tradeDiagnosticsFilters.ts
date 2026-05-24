@@ -8,6 +8,14 @@ export type EntryProfileFilterId = ExitProfileLabel | "all";
 export type EntryContextFilterId = "up" | "down" | "neutral" | "unknown" | "all";
 export type ExitGroupFilterId = "all" | "always_on" | "profile";
 export type OutcomeFilterId = "all" | "winners" | "losers";
+export type QualityFlagFilterId =
+  | "all"
+  | "high_mfe_high_capture"
+  | "high_mfe_low_capture"
+  | "signal_exit_winner"
+  | "signal_exit_giveback_failure"
+  | "stop_loss_after_low_mfe"
+  | "stop_loss_after_bad_context";
 
 export type TradeDiagnosticsFilterState = {
   entryProfile: EntryProfileFilterId;
@@ -16,6 +24,7 @@ export type TradeDiagnosticsFilterState = {
   exitGroup: ExitGroupFilterId;
   exitReason: ExitReasonFilterId;
   outcome: OutcomeFilterId;
+  qualityFlag: QualityFlagFilterId;
 };
 
 export const DEFAULT_TRADE_DIAGNOSTICS_FILTERS: TradeDiagnosticsFilterState = {
@@ -25,6 +34,7 @@ export const DEFAULT_TRADE_DIAGNOSTICS_FILTERS: TradeDiagnosticsFilterState = {
   exitGroup: "all",
   exitReason: "all",
   outcome: "all",
+  qualityFlag: "all",
 };
 
 export const ENTRY_PROFILE_FILTER_OPTIONS = [
@@ -52,6 +62,16 @@ export const OUTCOME_FILTER_OPTIONS = [
   { id: "all" as const, label: "All" },
   { id: "winners" as const, label: "Winners" },
   { id: "losers" as const, label: "Losers" },
+];
+
+export const QUALITY_FLAG_FILTER_OPTIONS = [
+  { id: "all" as const, label: "All" },
+  { id: "high_mfe_high_capture" as const, label: "high MFE + high capture" },
+  { id: "high_mfe_low_capture" as const, label: "high MFE + low capture" },
+  { id: "signal_exit_winner" as const, label: "signal exit winners" },
+  { id: "signal_exit_giveback_failure" as const, label: "signal exit giveback failures" },
+  { id: "stop_loss_after_low_mfe" as const, label: "stop loss after low MFE" },
+  { id: "stop_loss_after_bad_context" as const, label: "bad-context stop losses" },
 ];
 
 export function distinctExitKinds(trades: readonly TradeRecord[]): string[] {
@@ -88,6 +108,10 @@ export function matchesTradeDiagnosticsFilters(
     if (trade.pnl === null || trade.pnl <= 0) return false;
   } else if (filters.outcome === "losers") {
     if (trade.pnl === null || trade.pnl >= 0) return false;
+  }
+
+  if (filters.qualityFlag !== "all") {
+    if (!(trade.quality_flags ?? []).includes(filters.qualityFlag)) return false;
   }
 
   return true;

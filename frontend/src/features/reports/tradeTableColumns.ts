@@ -1,5 +1,10 @@
 import type { TradeRecord } from "@/api/types";
-import { EM_DASH, formatHoldBars, formatMoney } from "@/features/reports/formatDiagnostics";
+import {
+  EM_DASH,
+  formatHoldBars,
+  formatMoney,
+  formatReturnPct,
+} from "@/features/reports/formatDiagnostics";
 
 export type DiagnosticsColumnId =
   | "entry_profile"
@@ -10,7 +15,13 @@ export type DiagnosticsColumnId =
   | "exit_kind"
   | "gross_pnl"
   | "fees_paid"
-  | "hold_bars";
+  | "hold_bars"
+  | "mfe_pct"
+  | "mae_pct"
+  | "captured_pct"
+  | "capture_ratio"
+  | "giveback_pct"
+  | "quality_flags";
 
 export const DIAGNOSTICS_COLUMNS: {
   id: DiagnosticsColumnId;
@@ -45,5 +56,35 @@ export const DIAGNOSTICS_COLUMNS: {
     id: "hold_bars",
     header: "hold",
     cell: (t) => formatHoldBars(t.hold_bars),
+  },
+  {
+    id: "mfe_pct",
+    header: "MFE %",
+    cell: (t) => formatReturnPct(t.mfe_pct),
+  },
+  {
+    id: "mae_pct",
+    header: "MAE %",
+    cell: (t) => formatReturnPct(t.mae_pct),
+  },
+  {
+    id: "captured_pct",
+    header: "Capture %",
+    cell: (t) => formatReturnPct(t.captured_pct),
+  },
+  {
+    id: "capture_ratio",
+    header: "Capture Ratio",
+    cell: (t) => formatReturnPct(t.capture_ratio),
+  },
+  {
+    id: "giveback_pct",
+    header: "Giveback %",
+    cell: (t) => formatReturnPct(t.giveback_pct),
+  },
+  {
+    id: "quality_flags",
+    header: "Quality Flags",
+    cell: (t) => (t.quality_flags && t.quality_flags.length > 0 ? t.quality_flags.join(", ") : EM_DASH),
   },
 ];

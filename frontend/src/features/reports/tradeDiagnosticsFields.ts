@@ -27,7 +27,9 @@ export function hasTradeDiagnostics(trade: TradeRecord): boolean {
   return (
     trade.entry_profile !== undefined ||
     trade.exit_kind !== undefined ||
-    trade.gross_pnl !== undefined
+    trade.gross_pnl !== undefined ||
+    trade.mfe_pct !== undefined ||
+    trade.quality_flags !== undefined
   );
 }
 
@@ -94,6 +96,28 @@ export function buildTradeDiagnosticFields(trade: TradeRecord): {
       trade.hold_minutes === null || trade.hold_minutes === undefined
         ? EM_DASH
         : String(trade.hold_minutes),
+    ),
+    field("mfe_pct", "MFE", formatReturnPct(trade.mfe_pct)),
+    field("mae_pct", "MAE", formatReturnPct(trade.mae_pct)),
+    field("captured_pct", "Captured", formatReturnPct(trade.captured_pct)),
+    field("capture_ratio", "Capture ratio", formatReturnPct(trade.capture_ratio)),
+    field("giveback_pct", "Giveback", formatReturnPct(trade.giveback_pct)),
+    field(
+      "bars_to_mfe",
+      "Bars to MFE",
+      trade.bars_to_mfe === null || trade.bars_to_mfe === undefined ? EM_DASH : String(trade.bars_to_mfe),
+    ),
+    field(
+      "bars_from_mfe_to_exit",
+      "Bars from MFE to exit",
+      trade.bars_from_mfe_to_exit === null || trade.bars_from_mfe_to_exit === undefined
+        ? EM_DASH
+        : String(trade.bars_from_mfe_to_exit),
+    ),
+    field(
+      "quality_flags",
+      "Quality flags",
+      trade.quality_flags && trade.quality_flags.length > 0 ? trade.quality_flags.join(", ") : EM_DASH,
     ),
   ];
 

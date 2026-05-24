@@ -57,6 +57,8 @@ class VariantMetrics:
     profile_breakdown: dict[str, Any] | None = None
     exit_reason_breakdown: dict[str, Any] | None = None
     fee_diagnostics: dict[str, Any] | None = None
+    quality_flag_breakdown: dict[str, Any] | None = None
+    exit_component_quality_breakdown: dict[str, Any] | None = None
 
     def to_payload(self) -> dict[str, Any]:
         total_payload = self.total.to_payload()
@@ -74,6 +76,10 @@ class VariantMetrics:
             payload["exit_reason_breakdown"] = self.exit_reason_breakdown
         if self.fee_diagnostics is not None:
             payload["fee_diagnostics"] = self.fee_diagnostics
+        if self.quality_flag_breakdown is not None:
+            payload["quality_flag_breakdown"] = self.quality_flag_breakdown
+        if self.exit_component_quality_breakdown is not None:
+            payload["exit_component_quality_breakdown"] = self.exit_component_quality_breakdown
         return payload
 
 

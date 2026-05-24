@@ -19,6 +19,12 @@ from research.strategies.ema_pullback.execution.exit_attribution import (
     ExitAttributionContext,
     classify_exit_attribution,
 )
+from research.strategies.ema_pullback.execution.trade_analyzer import (
+    build_exit_component_quality_breakdown,
+    build_quality_flag_breakdown,
+    build_trade_quality_diagnostics,
+    trade_quality_config_payload,
+)
 
 _PROFILE_KEYS = ("aligned", "countertrend", "neutral")
 _CONTEXT_LABELS = frozenset({"up", "down", "neutral"})
@@ -244,6 +250,13 @@ def build_exit_reason_breakdown(trade_records: list[dict[str, Any]]) -> dict[str
     return {reason: _bucket_metrics([r for r in closed if str(r.get("exit_reason") or "unknown") == reason]) for reason in reasons}
 
 
+def build_trade_quality_breakdowns(trade_records: list[dict[str, Any]]) -> dict[str, Any]:
+    return {
+        "quality_flag_breakdown": build_quality_flag_breakdown(trade_records),
+        "exit_component_quality_breakdown": build_exit_component_quality_breakdown(trade_records),
+    }
+
+
 def build_fee_diagnostics(
     trade_records: list[dict[str, Any]],
     *,
@@ -297,6 +310,7 @@ def extract_trade_records(
     profile_long: pd.Series | None = None,
     profile_short: pd.Series | None = None,
     context_state: pd.Series | None = None,
+    diagnostic_atr_series: pd.Series | None = None,
     base_timeframe: str | None = None,
     exit_component_map: dict[str, str] | None = None,
 ) -> list[dict[str, Any]]:
@@ -417,6 +431,25 @@ def extract_trade_records(
             if context_state is not None and 0 <= entry_idx < len(context_state):
                 record["entry_context_state"] = _context_state_label(context_state.iloc[entry_idx])
 
+            if (
+                high is not None
+                and low is not None
+                and entry_p is not None
+                and exit_p is not None
+                and entry_idx >= 0
+                and exit_idx >= entry_idx
+            ):
+                record.update(
+                    build_trade_quality_diagnostics(
+                        record,
+                        entry_idx=entry_idx,
+                        exit_idx=exit_idx,
+                        high=high,
+                        low=low,
+                        diagnostic_atr_series=diagnostic_atr_series,
+                    )
+                )
+
         out.append(record)
     return out
 
@@ -439,7 +472,7 @@ def build_research_run_payload(
     payload = {
         "run_id": run_id,
         "created_at": _format_created_at(created_at),
-        "report_schema_version": 4,
+        "report_schema_version": 5,
         "family": family,
         "symbol": symbol.strip().upper(),
         "timeframe": timeframe.strip(),
@@ -449,6 +482,7 @@ def build_research_run_payload(
             "to_open_time_ms": int(data_range_to_ms),
         },
         "variants_count": len(variants),
+        "trade_quality_config": trade_quality_config_payload(),
         "variants": variants,
     }
     if batch_metadata is not None:
