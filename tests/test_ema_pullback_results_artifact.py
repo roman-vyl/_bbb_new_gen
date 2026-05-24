@@ -82,6 +82,12 @@ def test_build_run_id_format() -> None:
     assert rid == "2026-05-01T183000Z_ema_pullback_BTCUSDT_1h"
 
 
+def test_build_run_id_with_suffix() -> None:
+    utc = datetime(2026, 5, 1, 18, 30, 0, tzinfo=timezone.utc)
+    rid = build_run_id(utc, "ema_pullback", "BTCUSDT", "1h", suffix="instance_1_current")
+    assert rid == "2026-05-01T183000Z_ema_pullback_BTCUSDT_1h__instance_1_current"
+
+
 def test_json_safe_nan_becomes_null() -> None:
     assert json_safe(float("nan")) is None
     assert json_safe({"x": float("inf")}) == {"x": None}

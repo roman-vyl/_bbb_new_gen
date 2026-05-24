@@ -38,8 +38,15 @@ def default_results_dir() -> Path:
     return _repo_root() / "research" / "results"
 
 
-def build_run_id(utc: datetime, family: str, symbol: str, timeframe: str) -> str:
-    """``<utc_timestamp>_<family>_<symbol>_<timeframe>`` (compact UTC, filesystem-safe)."""
+def build_run_id(
+    utc: datetime,
+    family: str,
+    symbol: str,
+    timeframe: str,
+    *,
+    suffix: str | None = None,
+) -> str:
+    """``<utc_timestamp>_<family>_<symbol>_<timeframe>[__<suffix>]`` (compact UTC, filesystem-safe)."""
 
     if utc.tzinfo is None:
         utc = utc.replace(tzinfo=timezone.utc)
@@ -48,7 +55,21 @@ def build_run_id(utc: datetime, family: str, symbol: str, timeframe: str) -> str
     ts = utc.strftime("%Y-%m-%dT%H%M%SZ")
     sym = symbol.strip().upper()
     tf = timeframe.strip()
-    return f"{ts}_{family}_{sym}_{tf}"
+    base = f"{ts}_{family}_{sym}_{tf}"
+    if suffix is None:
+        return base
+    return f"{base}__{sanitize_run_id_suffix(suffix)}"
+
+
+def sanitize_run_id_suffix(suffix: str) -> str:
+    """Normalize a programmatic run-id suffix to filesystem-safe characters."""
+
+    import re
+
+    cleaned = re.sub(r"[^A-Za-z0-9_.-]", "_", suffix.strip())
+    if not cleaned:
+        raise ValueError("run_id_suffix must contain at least one safe character")
+    return cleaned
 
 
 def _format_created_at(utc: datetime) -> str:

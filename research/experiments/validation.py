@@ -132,21 +132,19 @@ def _assert_single_instance(config_path: Path, candidate_id: str) -> None:
     if not isinstance(payload, dict):
         raise BatchValidationError(f"candidate {candidate_id!r}: strategy config root must be an object")
 
-    if "instances" in payload:
-        instances = payload["instances"]
-        if not isinstance(instances, list):
-            raise BatchValidationError(f"candidate {candidate_id!r}: instances must be a list")
-        if len(instances) != 1:
-            raise BatchValidationError(
-                f"candidate {candidate_id!r}: strategy config must contain exactly one instance; "
-                f"found {len(instances)}"
-            )
-        return
+    if "instances" not in payload:
+        raise BatchValidationError(
+            f"candidate {candidate_id!r}: strategy config must contain exactly one instances item"
+        )
 
-    envelope_keys = {"schema_version", "experiment_id", "family", "execution", "instances"}
-    single_keys = set(payload) - envelope_keys
-    if not single_keys:
-        raise BatchValidationError(f"candidate {candidate_id!r}: strategy config has no instance fields")
+    instances = payload["instances"]
+    if not isinstance(instances, list):
+        raise BatchValidationError(f"candidate {candidate_id!r}: instances must be a list")
+    if len(instances) != 1:
+        raise BatchValidationError(
+            f"candidate {candidate_id!r}: strategy config must contain exactly one instance; "
+            f"found {len(instances)}"
+        )
 
 
 def _repo_root() -> Path:

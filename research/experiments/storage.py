@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from research.experiments.models import ExperimentBatchResult
+from research.experiments.models import BatchValidationError, ExperimentBatchResult, validate_safe_experiment_id
 
 
 def default_batches_dir() -> Path:
@@ -13,6 +13,7 @@ def default_batches_dir() -> Path:
 
 
 def batch_result_path(experiment_id: str, *, batches_dir: Path | None = None) -> Path:
+    validate_safe_experiment_id(experiment_id)
     base = batches_dir if batches_dir is not None else default_batches_dir()
     return base / f"{experiment_id}.json"
 

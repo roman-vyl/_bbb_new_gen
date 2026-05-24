@@ -12,7 +12,7 @@ from research.experiments.storage import write_batch_result
 from research.experiments.summary import apply_summary_to_result, extract_candidate_summary
 from research.experiments.validation import _repo_root, _relative_or_posix
 
-RunCandidateFn = Callable[[str | Path], tuple[str, Path, Path]]
+RunCandidateFn = Callable[[str | Path, str], tuple[str, Path, Path]]
 
 
 class BatchRunner:
@@ -82,7 +82,7 @@ class BatchRunner:
             config_path = (repo_root / config_path).resolve()
 
         try:
-            run_id, _latest_path, run_path = run_candidate(config_path)
+            run_id, _latest_path, run_path = run_candidate(config_path, candidate.spec.candidate_id)
             if not run_path.exists():
                 raise FileNotFoundError(f"strategy report not found: {run_path}")
 
@@ -105,12 +105,15 @@ class BatchRunner:
         return result
 
 
-def _default_run_candidate(config_path: str | Path) -> tuple[str, Path, Path]:
+def _default_run_candidate(config_path: str | Path, candidate_id: str) -> tuple[str, Path, Path]:
     from research.strategies.ema_pullback.execution.runner import (
         run_strategy_specs_from_config_returning_paths,
     )
 
-    return run_strategy_specs_from_config_returning_paths(config_path)
+    return run_strategy_specs_from_config_returning_paths(
+        config_path,
+        run_id_suffix=candidate_id,
+    )
 
 
 def _format_ts(value: datetime) -> str:

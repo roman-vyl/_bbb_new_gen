@@ -5,11 +5,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 import json
 from pathlib import Path
+import re
 from typing import Any, Mapping
 
 
 class BatchValidationError(ValueError):
     """Raised when a batch spec or candidate config fails preflight validation."""
+
+
+_SAFE_ID_PATTERN = re.compile(r"^[A-Za-z0-9_.-]+$")
 
 
 @dataclass(frozen=True)
@@ -139,7 +143,7 @@ class ValidatedBatchSpec:
 
 
 def load_batch_spec(payload: Mapping[str, Any]) -> ExperimentBatchSpec:
-    experiment_id = _require_non_empty_str(payload, "experiment_id")
+    experiment_id = _require_safe_id(payload, "experiment_id")
     family = _require_non_empty_str(payload, "family")
     symbol = _require_non_empty_str(payload, "symbol").strip().upper()
     timeframe = _require_non_empty_str(payload, "timeframe").strip()
@@ -159,7 +163,7 @@ def load_batch_spec(payload: Mapping[str, Any]) -> ExperimentBatchSpec:
     for index, item in enumerate(raw_candidates):
         if not isinstance(item, Mapping):
             raise BatchValidationError(f"candidates[{index}] must be an object")
-        candidate_id = _require_non_empty_str(item, "candidate_id", prefix=f"candidates[{index}].")
+        candidate_id = _require_safe_id(item, "candidate_id", prefix=f"candidates[{index}].")
         if candidate_id in seen_ids:
             raise BatchValidationError(f"duplicate candidate_id in batch spec: {candidate_id!r}")
         seen_ids.add(candidate_id)
@@ -190,6 +194,14 @@ def load_batch_spec(payload: Mapping[str, Any]) -> ExperimentBatchSpec:
     )
 
 
+def validate_safe_experiment_id(experiment_id: str) -> str:
+    if not _SAFE_ID_PATTERN.match(experiment_id):
+        raise BatchValidationError(
+            "experiment_id must match [A-Za-z0-9_.-]+ (no path separators or spaces)"
+        )
+    return experiment_id
+
+
 def load_batch_spec_file(path: str | Path) -> ExperimentBatchSpec:
     source = Path(path)
     if not source.exists():
@@ -201,6 +213,20 @@ def load_batch_spec_file(path: str | Path) -> ExperimentBatchSpec:
     if not isinstance(payload, dict):
         raise BatchValidationError("batch spec root must be a JSON object")
     return load_batch_spec(payload)
+
+
+def _require_safe_id(
+    payload: Mapping[str, Any],
+    key: str,
+    *,
+    prefix: str = "",
+) -> str:
+    value = _require_non_empty_str(payload, key, prefix=prefix)
+    if not _SAFE_ID_PATTERN.match(value):
+        raise BatchValidationError(
+            f"{prefix}{key} must match [A-Za-z0-9_.-]+ (no path separators or spaces)"
+        )
+    return value
 
 
 def _require_non_empty_str(

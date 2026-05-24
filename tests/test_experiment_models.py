@@ -214,6 +214,63 @@ def test_validation_does_not_call_strategy_runner(tmp_path: Path, monkeypatch: p
     assert validated.candidates[0].strategy_config_hash == file_sha256(config_a)
 
 
+def test_unsafe_experiment_id_rejected() -> None:
+    with pytest.raises(BatchValidationError, match="experiment_id must match"):
+        load_batch_spec(
+            {
+                "experiment_id": "../bad",
+                "family": "ema_pullback",
+                "symbol": "BTCUSDT",
+                "timeframe": "1h",
+                "candidates": [
+                    {
+                        "candidate_id": "c1",
+                        "strategy_config_path": "research/experiments/specs/candidates/instance_1.json",
+                    }
+                ],
+            }
+        )
+
+
+def test_unsafe_candidate_id_rejected() -> None:
+    with pytest.raises(BatchValidationError, match="candidate_id must match"):
+        load_batch_spec(
+            {
+                "experiment_id": "batch_test",
+                "family": "ema_pullback",
+                "symbol": "BTCUSDT",
+                "timeframe": "1h",
+                "candidates": [
+                    {
+                        "candidate_id": "bad/id",
+                        "strategy_config_path": "research/experiments/specs/candidates/instance_1.json",
+                    }
+                ],
+            }
+        )
+
+
+def test_candidate_config_without_instances_rejected(tmp_path: Path) -> None:
+    config_path = tmp_path / "no_instances.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "experiment_id": "candidate_no_instances",
+                "family": "ema_pullback",
+                "execution": {"init_cash": 10000.0},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    batch_path = tmp_path / "batch.json"
+    _batch_spec(batch_path, [{"candidate_id": "c1", "strategy_config_path": "no_instances.json"}])
+
+    with pytest.raises(BatchValidationError, match="exactly one instances item"):
+        load_and_validate_batch_spec(batch_path, repo_root=tmp_path)
+
+
 def test_load_batch_spec_parses_candidates() -> None:
     spec = load_batch_spec(
         {
