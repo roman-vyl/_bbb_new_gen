@@ -571,63 +571,16 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
         const nonHtf = prev.filter((overlay) => !overlay.id.startsWith("htf_"));
         return mergeAuxOverlayPoints(nonHtf, htfOverlays);
       });
-
-      // #region agent log
-      fetch("http://127.0.0.1:7392/ingest/0e3e9403-0b6f-48e5-ad87-4179a1a55d87", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "8f242e" },
-        body: JSON.stringify({
-          sessionId: "8f242e",
-          hypothesisId: "H-A",
-          location: "WorkbenchContext.tsx:htf-overlays",
-          message: "HTF overlays updated from trace",
-          data: {
-            action: "update",
-            htfOverlayCount: htfOverlays.length,
-            signalTraceStatus,
-          },
-          timestamp: Date.now(),
-        }),
-      }).catch(() => {});
-      // #endregion
       return;
     }
 
     if (signalTraceStatus === "loading" || signalTraceStatus === "error") {
       // Keep stale htf_* overlays — do not strip during trace reload (avoids flicker).
-      // #region agent log
-      fetch("http://127.0.0.1:7392/ingest/0e3e9403-0b6f-48e5-ad87-4179a1a55d87", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "8f242e" },
-        body: JSON.stringify({
-          sessionId: "8f242e",
-          hypothesisId: "H-A",
-          location: "WorkbenchContext.tsx:htf-overlays",
-          message: "HTF overlays kept stale during trace non-ready",
-          data: { action: "keep_stale", signalTraceStatus, htfSpecCount },
-          timestamp: Date.now(),
-        }),
-      }).catch(() => {});
-      // #endregion
       return;
     }
 
     if (signalTraceStatus === "idle" && htfSpecCount > 0) {
       setAuxEmaOverlays((prev) => prev.filter((overlay) => !overlay.id.startsWith("htf_")));
-      // #region agent log
-      fetch("http://127.0.0.1:7392/ingest/0e3e9403-0b6f-48e5-ad87-4179a1a55d87", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "8f242e" },
-        body: JSON.stringify({
-          sessionId: "8f242e",
-          hypothesisId: "H-A",
-          location: "WorkbenchContext.tsx:htf-overlays",
-          message: "HTF overlays cleared on idle",
-          data: { action: "clear_idle", signalTraceStatus },
-          timestamp: Date.now(),
-        }),
-      }).catch(() => {});
-      // #endregion
     }
   }, [signalTrace, signalTraceStatus, auxEmaSpecs]);
 
@@ -675,9 +628,6 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     const sliced = chartView.auxEmaOverlays;
     const bffOverlays = sliced.filter((overlay) => !overlay.id.startsWith("htf_"));
     const htfSliced = sliced.filter((overlay) => overlay.id.startsWith("htf_"));
-    const htfPointCounts = Object.fromEntries(
-      htfSliced.map((overlay) => [overlay.id, overlay.points.length]),
-    );
 
     const useFrozenHtf =
       !traceMatchesWindow && lastSlicedHtfOverlaysRef.current.length > 0;
@@ -689,36 +639,8 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       lastSlicedHtfOverlaysRef.current = htfSliced;
     }
 
-    // #region agent log
-    fetch("http://127.0.0.1:7392/ingest/0e3e9403-0b6f-48e5-ad87-4179a1a55d87", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "8f242e" },
-      body: JSON.stringify({
-        sessionId: "8f242e",
-        hypothesisId: "H-E",
-        location: "WorkbenchContext.tsx:chartDisplayAuxEma",
-        message: "chart display aux EMA merge",
-        data: {
-          signalTraceStatus,
-          chartWindowKey,
-          loadedTraceWindowKey,
-          traceMatchesWindow,
-          htfPointCounts,
-          useFrozenHtf,
-          frozenPointCounts: useFrozenHtf
-            ? Object.fromEntries(
-                lastSlicedHtfOverlaysRef.current.map((o) => [o.id, o.points.length]),
-              )
-            : null,
-          selectedTradeId,
-        },
-        timestamp: Date.now(),
-      }),
-    }).catch(() => {});
-    // #endregion
-
     return [...bffOverlays, ...htfDisplay];
-  }, [chartView.auxEmaOverlays, traceMatchesWindow, selectedTradeId, chartWindowKey, loadedTraceWindowKey, signalTraceStatus]);
+  }, [chartView.auxEmaOverlays, traceMatchesWindow]);
 
   const fullCandleRange = useMemo(
     () => (cachedBundle ? candleRangeMs(cachedBundle.candles) : null),
@@ -749,22 +671,6 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    const logSignalTraceAction = (action: string, extra?: Record<string, unknown>) => {
-      // #region agent log
-      fetch("http://127.0.0.1:7392/ingest/0e3e9403-0b6f-48e5-ad87-4179a1a55d87", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "8f242e" },
-        body: JSON.stringify({
-          sessionId: "8f242e",
-          location: "WorkbenchContext.tsx:signalTrace-load",
-          message: "signalTrace load decision",
-          data: { action, chartWindowKey, loadedTraceWindowKey, ...extra },
-          timestamp: Date.now(),
-        }),
-      }).catch(() => {});
-      // #endregion
-    };
-
     if (
       report === null ||
       selectedRunId === null ||
@@ -783,7 +689,6 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
 
     const candles = chartView.candles;
     if (candles.length === 0) {
-      logSignalTraceAction("skip_idle", { reason: "empty_candles" });
       return;
     }
 
@@ -809,29 +714,14 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       request,
     });
 
-    if (decision.action === "skip_already_loaded") {
-      logSignalTraceAction("skip_already_loaded");
+    if (
+      decision.action === "skip_already_loaded" ||
+      decision.action === "skip_already_loading" ||
+      decision.action === "skip_identical_in_flight" ||
+      decision.action === "skip_idle"
+    ) {
       return;
     }
-    if (decision.action === "skip_already_loading") {
-      logSignalTraceAction("skip_already_loading");
-      return;
-    }
-    if (decision.action === "skip_identical_in_flight") {
-      logSignalTraceAction("skip_identical_in_flight");
-      return;
-    }
-    if (decision.action === "skip_idle") {
-      logSignalTraceAction("skip_idle");
-      return;
-    }
-
-    logSignalTraceAction("load_start", {
-      fromMs,
-      toOpenTimeMs,
-      variant: variantKey,
-      runId,
-    });
 
     loadingTraceWindowKeyRef.current = windowKey;
     inFlightTraceRequestRef.current = request;

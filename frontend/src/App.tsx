@@ -10,7 +10,9 @@ function WorkbenchTabs() {
 
   return (
     <>
-      {activeTab === "chart" && <ChartPanel />}
+      <div className="workbench-tab-pane" hidden={activeTab !== "chart"}>
+        <ChartPanel />
+      </div>
       {activeTab === "composer" && <ComposerPanel />}
       {activeTab === "reports" && <ReportsPanel />}
     </>

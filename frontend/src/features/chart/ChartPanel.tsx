@@ -91,7 +91,6 @@ type ViewportPlan = {
 };
 
 export function ChartPanel() {
-
   const containerRef = useRef<HTMLDivElement>(null);
   const panelBodyRef = useRef<HTMLDivElement>(null);
   const { asideWidth, maxAsideWidth, splitHandleProps } = useChartAsideResize(panelBodyRef);
@@ -574,13 +573,9 @@ export function ChartPanel() {
 
     const activeIds = new Set(chartDisplayAuxEmaOverlays.map((overlay) => overlay.id));
 
-  const removedIds: string[] = [];
-
     for (const [id, lineSeries] of [...seriesMap.entries()]) {
 
       if (!activeIds.has(id)) {
-
-        removedIds.push(id);
 
         chart.removeSeries(lineSeries);
 
@@ -617,20 +612,6 @@ export function ChartPanel() {
       }
 
       if (overlay.points.length === 0 && lineSeries) {
-        // #region agent log
-        fetch("http://127.0.0.1:7392/ingest/0e3e9403-0b6f-48e5-ad87-4179a1a55d87", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "8f242e" },
-          body: JSON.stringify({
-            sessionId: "8f242e",
-            hypothesisId: "H-D",
-            location: "ChartPanel.tsx:aux-series-skip-empty",
-            message: "skip empty setData keep prior line",
-            data: { overlayId: overlay.id, chartDataKey },
-            timestamp: Date.now(),
-          }),
-        }).catch(() => {});
-        // #endregion
         return;
       }
 
@@ -657,27 +638,6 @@ export function ChartPanel() {
       );
 
     });
-
-    // #region agent log
-    if (removedIds.length > 0 || chartDisplayAuxEmaOverlays.some((o) => o.id.startsWith("htf_"))) {
-      fetch("http://127.0.0.1:7392/ingest/0e3e9403-0b6f-48e5-ad87-4179a1a55d87", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "8f242e" },
-        body: JSON.stringify({
-          sessionId: "8f242e",
-          hypothesisId: "H-C",
-          location: "ChartPanel.tsx:aux-series-sync",
-          message: "aux EMA series sync",
-          data: {
-            activeIds: [...activeIds],
-            removedIds,
-            htfActive: chartDisplayAuxEmaOverlays.filter((o) => o.id.startsWith("htf_")).map((o) => o.id),
-          },
-          timestamp: Date.now(),
-        }),
-      }).catch(() => {});
-    }
-    // #endregion
 
   }, [chartDisplayAuxEmaOverlays, chartDataKey, selectedVariant]);
 

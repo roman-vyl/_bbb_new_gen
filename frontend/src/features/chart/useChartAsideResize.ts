@@ -27,15 +27,33 @@ export function useChartAsideResize(bodyRef: RefObject<HTMLElement | null>) {
     const el = bodyRef.current;
     if (!el) return;
 
+    let rafId = 0;
+
     const sync = () => {
-      setContainerWidth(el.clientWidth);
-      setAsideWidth((current) => clampAsideWidth(current, el.clientWidth));
+      const width = el.clientWidth;
+      if (width === 0) return;
+      setContainerWidth((prev) => (prev === width ? prev : width));
+      setAsideWidth((current) => {
+        const next = clampAsideWidth(current, width);
+        return next === current ? current : next;
+      });
     };
 
-    sync();
-    const ro = new ResizeObserver(sync);
+    const scheduleSync = () => {
+      if (rafId !== 0) return;
+      rafId = requestAnimationFrame(() => {
+        rafId = 0;
+        sync();
+      });
+    };
+
+    scheduleSync();
+    const ro = new ResizeObserver(scheduleSync);
     ro.observe(el);
-    return () => ro.disconnect();
+    return () => {
+      ro.disconnect();
+      if (rafId !== 0) cancelAnimationFrame(rafId);
+    };
   }, [bodyRef]);
 
   const endDrag = useCallback(() => {
