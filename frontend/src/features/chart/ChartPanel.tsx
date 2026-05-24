@@ -151,7 +151,9 @@ export function ChartPanel() {
 
     chartEmaOverlays,
 
-    chartAuxEmaOverlays,
+    chartDisplayAuxEmaOverlays,
+
+    htfAuxEmaOverlayStale,
 
     candlesSource,
 
@@ -292,15 +294,19 @@ export function ChartPanel() {
         : `Showing ${shown} bar${shown === 1 ? "" : "s"}`;
 
     const auxNote =
-      chartAuxEmaOverlays.length > 0
-        ? ` · +${chartAuxEmaOverlays.length} aux EMA (exit/HTF)`
+      chartDisplayAuxEmaOverlays.length > 0
+        ? ` · +${chartDisplayAuxEmaOverlays.length} aux EMA (exit/HTF)`
         : "";
+
+    const htfStaleNote = htfAuxEmaOverlayStale
+      ? " · HTF EMA may lag (signal trace reloading; stable BFF overlay planned)"
+      : "";
 
     const emaNote = stackPeriodsLabel
 
-      ? `OHLC + EMA stack ${stackPeriodsLabel} (overlay, periods from run strategy_spec)${auxNote}`
+      ? `OHLC + EMA stack ${stackPeriodsLabel} (overlay, periods from run strategy_spec)${auxNote}${htfStaleNote}`
 
-      : `OHLC · overlay EMA requires anchor_stack in strategy_spec${auxNote}`;
+      : `OHLC · overlay EMA requires anchor_stack in strategy_spec${auxNote}${htfStaleNote}`;
 
     const traceNote =
 
@@ -338,7 +344,9 @@ export function ChartPanel() {
 
     stackPeriodsLabel,
 
-    chartAuxEmaOverlays.length,
+    chartDisplayAuxEmaOverlays.length,
+
+    htfAuxEmaOverlayStale,
 
     signalTraceStatus,
 
@@ -564,11 +572,15 @@ export function ChartPanel() {
 
     const seriesMap = auxEmaSeriesRef.current;
 
-    const activeIds = new Set(chartAuxEmaOverlays.map((overlay) => overlay.id));
+    const activeIds = new Set(chartDisplayAuxEmaOverlays.map((overlay) => overlay.id));
+
+  const removedIds: string[] = [];
 
     for (const [id, lineSeries] of [...seriesMap.entries()]) {
 
       if (!activeIds.has(id)) {
+
+        removedIds.push(id);
 
         chart.removeSeries(lineSeries);
 
@@ -580,7 +592,7 @@ export function ChartPanel() {
 
 
 
-    chartAuxEmaOverlays.forEach((overlay, index) => {
+    chartDisplayAuxEmaOverlays.forEach((overlay, index) => {
 
       let lineSeries = seriesMap.get(overlay.id);
 
@@ -602,6 +614,24 @@ export function ChartPanel() {
 
         seriesMap.set(overlay.id, lineSeries);
 
+      }
+
+      if (overlay.points.length === 0 && lineSeries) {
+        // #region agent log
+        fetch("http://127.0.0.1:7392/ingest/0e3e9403-0b6f-48e5-ad87-4179a1a55d87", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "8f242e" },
+          body: JSON.stringify({
+            sessionId: "8f242e",
+            hypothesisId: "H-D",
+            location: "ChartPanel.tsx:aux-series-skip-empty",
+            message: "skip empty setData keep prior line",
+            data: { overlayId: overlay.id, chartDataKey },
+            timestamp: Date.now(),
+          }),
+        }).catch(() => {});
+        // #endregion
+        return;
       }
 
       lineSeries.applyOptions({
@@ -628,7 +658,28 @@ export function ChartPanel() {
 
     });
 
-  }, [chartAuxEmaOverlays, chartDataKey, selectedVariant]);
+    // #region agent log
+    if (removedIds.length > 0 || chartDisplayAuxEmaOverlays.some((o) => o.id.startsWith("htf_"))) {
+      fetch("http://127.0.0.1:7392/ingest/0e3e9403-0b6f-48e5-ad87-4179a1a55d87", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "8f242e" },
+        body: JSON.stringify({
+          sessionId: "8f242e",
+          hypothesisId: "H-C",
+          location: "ChartPanel.tsx:aux-series-sync",
+          message: "aux EMA series sync",
+          data: {
+            activeIds: [...activeIds],
+            removedIds,
+            htfActive: chartDisplayAuxEmaOverlays.filter((o) => o.id.startsWith("htf_")).map((o) => o.id),
+          },
+          timestamp: Date.now(),
+        }),
+      }).catch(() => {});
+    }
+    // #endregion
+
+  }, [chartDisplayAuxEmaOverlays, chartDataKey, selectedVariant]);
 
 
 
@@ -772,6 +823,20 @@ export function ChartPanel() {
 
       )}
 
+      {htfAuxEmaOverlayStale && (
+
+        <p className="banner banner--info" role="status">
+
+          HTF EMA lines are held from the previous signal trace while the chart window reloads. Values
+
+          may not match the current view until trace finishes loading. A stable BFF HTF overlay is
+
+          planned for a follow-up.
+
+        </p>
+
+      )}
+
       <div ref={panelBodyRef} className="chart-panel__body">
 
         <div className="chart-panel__main">
@@ -818,7 +883,7 @@ export function ChartPanel() {
 
               chartEmaOverlays={chartEmaOverlays}
 
-              chartAuxEmaOverlays={chartAuxEmaOverlays}
+              chartAuxEmaOverlays={chartDisplayAuxEmaOverlays}
 
               focusWarning={chartTradeFocusWarning}
 
