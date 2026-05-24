@@ -226,6 +226,60 @@ select {
   gap: 0.5rem;
 }
 
+.chart-panel__aside {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  width: min(360px, 40vw);
+  flex-shrink: 0;
+  min-height: 0;
+  overflow: auto;
+}
+
+.chart-trade-diagnostics {
+  max-height: 45vh;
+  overflow: auto;
+}
+
+.chart-trade-diagnostics__title {
+  margin: 0 0 0.5rem;
+  font-size: 1rem;
+}
+
+.chart-trade-diagnostics__hint,
+.chart-trade-diagnostics__empty {
+  margin: 0.25rem 0;
+  font-size: 0.85rem;
+  color: #94a3b8;
+}
+
+.chart-exit-components__table {
+  font-size: 0.8rem;
+}
+
+.chart-exit-components__row--closing {
+  background: rgba(251, 191, 36, 0.12);
+}
+
+.chart-exit-components__params {
+  font-size: 0.75rem;
+  word-break: break-word;
+}
+
+.chart-exit-components__ema-hints {
+  margin: 0.5rem 0 0;
+  padding-left: 1.1rem;
+  font-size: 0.8rem;
+  color: #94a3b8;
+}
+
+.chart-legend__note {
+  flex: 1 1 100%;
+  margin: 0 0 0.35rem;
+  font-size: 0.8rem;
+  color: #94a3b8;
+}
+
 .chart-canvas {
   flex: 1 1 auto;
   min-height: 0;

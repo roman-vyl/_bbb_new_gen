@@ -10,6 +10,8 @@ import {
 
   type IChartApi,
 
+  type IPriceLine,
+
   type ISeriesApi,
 
   type ISeriesMarkersPluginApi,
@@ -25,7 +27,9 @@ import { useCallback, useEffect, useMemo, useRef } from "react";
 import type { AnchorStackEmaRole, ChartBar, ChartEmaOverlay } from "@/api/types";
 
 import { ChartBarInspector } from "@/features/chart/ChartBarInspector";
+import { ChartTradeDiagnostics } from "@/features/chart/ChartTradeDiagnostics";
 import { ChartTradeFocusNav } from "@/features/chart/ChartTradeFocusNav";
+import { buildTradePriceLineSpecs } from "@/features/chart/chartTradePriceLines";
 
 import { ChartMarkerLegend } from "@/features/chart/ChartMarkerLegend";
 
@@ -98,6 +102,8 @@ export function ChartPanel() {
   );
 
   const markersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
+
+  const tradePriceLinesRef = useRef<IPriceLine[]>([]);
 
   const viewportKeyRef = useRef<string | null>(null);
 
@@ -554,6 +560,36 @@ export function ChartPanel() {
 
 
 
+  useEffect(() => {
+
+    const series = seriesRef.current;
+
+    if (!series) return;
+
+
+
+    for (const line of tradePriceLinesRef.current) {
+
+      series.removePriceLine(line);
+
+    }
+
+    tradePriceLinesRef.current = [];
+
+
+
+    if (!selectedTrade) return;
+
+
+
+    const specs = buildTradePriceLineSpecs(selectedTrade);
+
+    tradePriceLinesRef.current = specs.map((spec) => series.createPriceLine(spec.options));
+
+  }, [selectedTrade]);
+
+
+
   if (!selectedVariant) {
 
     return null;
@@ -666,23 +702,45 @@ export function ChartPanel() {
 
         </div>
 
-        <ChartBarInspector
+        <div className="chart-panel__aside">
 
-          selectedBarTimeSec={selectedBarTimeSec}
+          {selectedTradeId !== null && (
 
-          candles={chartCandles}
+            <ChartTradeDiagnostics
 
-          emaOverlays={chartEmaOverlays}
+              trade={selectedTrade}
 
-          signalTrace={signalTrace}
+              selectedTradeId={selectedTradeId}
 
-          signalTraceError={signalTraceError}
+              strategySpec={selectedVariant.strategy_spec}
 
-          signalTraceLoading={signalTraceStatus === "loading"}
+              chartEmaOverlays={chartEmaOverlays}
 
-          onClear={() => selectBar(null)}
+              focusWarning={chartTradeFocusWarning}
 
-        />
+            />
+
+          )}
+
+          <ChartBarInspector
+
+            selectedBarTimeSec={selectedBarTimeSec}
+
+            candles={chartCandles}
+
+            emaOverlays={chartEmaOverlays}
+
+            signalTrace={signalTrace}
+
+            signalTraceError={signalTraceError}
+
+            signalTraceLoading={signalTraceStatus === "loading"}
+
+            onClear={() => selectBar(null)}
+
+          />
+
+        </div>
 
       </div>
 

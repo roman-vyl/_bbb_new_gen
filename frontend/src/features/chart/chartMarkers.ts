@@ -58,6 +58,7 @@ function exitMarkerColor(kind: ExitReasonMarkerKind, highlighted: boolean): stri
   }
 }
 
+/** Bar-time markers only — `aboveBar`/`belowBar` position is not entry/exit price truth. */
 export function buildTradeMarkers(
   trades: TradeRecord[],
   selectedTradeId: number | null,

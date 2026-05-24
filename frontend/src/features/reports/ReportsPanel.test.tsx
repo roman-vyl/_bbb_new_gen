@@ -50,7 +50,9 @@ describe("ReportsPanel", () => {
     render(<ReportsPanel />);
     expect(screen.getByText("Diagnostics available for schema v4 reports.")).toBeTruthy();
     expect(screen.queryByText("Fee diagnostics")).toBeNull();
-    expect(screen.getByRole("table", { name: "" })).toBeTruthy();
+    expect(screen.queryByText("entry_profile")).toBeNull();
+    expect(screen.queryByLabelText("Show diagnostics columns")).toBeNull();
+    expect(screen.getAllByText("exit_reason").length).toBeGreaterThan(0);
   });
 
   it("v4 report renders fee and breakdown sections", () => {
