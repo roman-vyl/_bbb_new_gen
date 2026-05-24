@@ -3,6 +3,9 @@ import { ActiveExitComponentsList } from "@/features/chart/ActiveExitComponentsL
 import { anchorStackPeriodsFromStrategySpec } from "@/features/chart/anchorStackFromSpec";
 import { attachEmaAvailabilityHints } from "@/features/chart/exitEmaOverlayAvailability";
 import { listActiveExitComponents, readExitPolicy } from "@/features/chart/exitPolicyForTrade";
+import { formatMoney, formatReturnPct } from "@/features/reports/formatDiagnostics";
+import { TradeDirectionChip } from "@/features/reports/TradeDirectionChip";
+import { TradeStatusChip } from "@/features/reports/TradeStatusChip";
 import {
   buildTradeDiagnosticFields,
   EM_DASH,
@@ -17,16 +20,60 @@ type Props = {
   focusWarning: string | null;
 };
 
+function pnlToneClass(pnl: number | null, returnPct: number | null): string {
+  if (pnl !== null && !Number.isNaN(pnl)) {
+    if (pnl < 0) return "pnl-negative";
+    if (pnl > 0) return "pnl-positive";
+    return "chart-trade-diagnostics__result--flat";
+  }
+  if (returnPct !== null && !Number.isNaN(returnPct)) {
+    if (returnPct < 0) return "pnl-negative";
+    if (returnPct > 0) return "pnl-positive";
+    return "chart-trade-diagnostics__result--flat";
+  }
+  return "chart-trade-diagnostics__result--unknown";
+}
+
+function TradeResultSummary({
+  direction,
+  pnl,
+  returnPct,
+}: {
+  direction: TradeRecord["direction"];
+  pnl: number | null;
+  returnPct: number | null;
+}) {
+  const pctText = formatReturnPct(returnPct);
+  const pnlText = formatMoney(pnl);
+  const tone = pnlToneClass(pnl, returnPct);
+
+  return (
+    <p className={`chart-trade-diagnostics__result ${tone}`} data-testid="chart-trade-result">
+      <span className="chart-trade-diagnostics__result-pct">{pctText}</span>
+      <span className="chart-trade-diagnostics__result-sep" aria-hidden="true">
+        {" "}
+        ·{" "}
+      </span>
+      <span className="chart-trade-diagnostics__result-pnl">{pnlText}</span>
+      <span className="chart-trade-diagnostics__result-sep" aria-hidden="true">
+        {" "}
+        ·{" "}
+      </span>
+      <TradeDirectionChip direction={direction} />
+    </p>
+  );
+}
+
 function DiagnosticDl({
   title,
   fields,
 }: {
-  title: string;
+  title?: string;
   fields: { key: string; label: string; value: string }[];
 }) {
   return (
     <>
-      <h4 className="trade-detail__subtitle">{title}</h4>
+      {title ? <h4 className="trade-detail__subtitle">{title}</h4> : null}
       <dl>
         {fields.map((f) => (
           <div key={f.key}>
@@ -62,6 +109,14 @@ export function ChartTradeDiagnostics({
   }
 
   const { core, diagnostics } = buildTradeDiagnosticFields(trade);
+  const coreFields = core.filter(
+    (f) =>
+      f.key !== "trade_id" &&
+      f.key !== "status" &&
+      f.key !== "direction" &&
+      f.key !== "pnl" &&
+      f.key !== "return_pct",
+  );
   let anchorStack = null;
   try {
     if (strategySpec) anchorStack = anchorStackPeriodsFromStrategySpec(strategySpec);
@@ -85,8 +140,16 @@ export function ChartTradeDiagnostics({
 
   return (
     <aside className="chart-trade-diagnostics trade-detail" data-testid="chart-trade-diagnostics">
-      <h3 className="chart-trade-diagnostics__title">Trade #{trade.trade_id}</h3>
-      <DiagnosticDl title="Trade" fields={core} />
+      <div className="chart-trade-diagnostics__heading">
+        <h3 className="chart-trade-diagnostics__title">Trade #{trade.trade_id}</h3>
+        <TradeStatusChip status={trade.status} />
+      </div>
+      <TradeResultSummary
+        direction={trade.direction}
+        pnl={trade.pnl}
+        returnPct={trade.return_pct}
+      />
+      <DiagnosticDl fields={coreFields} />
       {diagnostics.length > 0 ? (
         <DiagnosticDl title="Diagnostics" fields={diagnostics} />
       ) : (

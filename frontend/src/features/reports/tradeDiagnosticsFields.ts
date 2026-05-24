@@ -8,9 +8,14 @@ export function formatMs(ms: number | null): string {
   return new Date(ms).toISOString().replace("T", " ").replace(".000Z", " UTC");
 }
 
-export function formatPrice(value: number | null | undefined): string {
+export function formatPrice(
+  value: number | null | undefined,
+  fractionDigits = 8,
+): string {
   if (value === null || value === undefined || Number.isNaN(value)) return EM_DASH;
-  return String(value);
+  const fixed = value.toFixed(fractionDigits);
+  if (!fixed.includes(".")) return fixed;
+  return fixed.replace(/\.?0+$/, "");
 }
 
 export function formatNum(value: number | null | undefined, digits = 2): string {
@@ -41,21 +46,22 @@ export function buildTradeDiagnosticFields(trade: TradeRecord): {
   core: TradeDiagnosticField[];
   diagnostics: TradeDiagnosticField[];
 } {
-  const core: TradeDiagnosticField[] = [
-    field("trade_id", "trade_id", String(trade.trade_id)),
-    field("direction", "direction", trade.direction),
-    field("status", "status", trade.status),
+  const timingFields: TradeDiagnosticField[] = [
     field("entry_time_ms", "entry_time_ms", formatMs(trade.entry_time_ms)),
     field("exit_time_ms", "exit_time_ms", formatMs(trade.exit_time_ms)),
+  ];
+
+  const core: TradeDiagnosticField[] = [
+    field("trade_id", "trade_id", String(trade.trade_id)),
     field("entry_price", "entry_price", formatPrice(trade.entry_price)),
-    field("exit_price", "exit_price", formatPrice(trade.exit_price)),
+    field("exit_price", "exit_price", formatPrice(trade.exit_price, 1)),
     field("pnl", "pnl", formatMoney(trade.pnl)),
     field("return_pct", "return_pct", formatReturnPct(trade.return_pct)),
     field("exit_reason", "exit_reason", trade.exit_reason),
   ];
 
   if (!hasTradeDiagnostics(trade)) {
-    return { core, diagnostics: [] };
+    return { core: [...core, ...timingFields], diagnostics: [] };
   }
 
   const diagnostics: TradeDiagnosticField[] = [
@@ -76,6 +82,7 @@ export function buildTradeDiagnosticFields(trade: TradeRecord): {
         ? EM_DASH
         : formatReturnPct(trade.gross_return_pct),
     ),
+    ...timingFields,
     field(
       "hold_bars",
       "hold_bars",

@@ -27,11 +27,13 @@ import { useCallback, useEffect, useMemo, useRef } from "react";
 import type { AnchorStackEmaRole, ChartBar, ChartEmaOverlay } from "@/api/types";
 import { colorForAuxEmaOverlay } from "@/features/chart/chartAuxEmaOverlays";
 
+import { ChartAsideStackSplitHandle } from "@/features/chart/ChartAsideStackSplitHandle";
 import { ChartBarInspector } from "@/features/chart/ChartBarInspector";
 import { ChartPanelSplitHandle } from "@/features/chart/ChartPanelSplitHandle";
 import { ChartTradeDiagnostics } from "@/features/chart/ChartTradeDiagnostics";
 import { ChartTradeFocusNav } from "@/features/chart/ChartTradeFocusNav";
 import { useChartAsideResize } from "@/features/chart/useChartAsideResize";
+import { useChartAsideStackResize } from "@/features/chart/useChartAsideStackResize";
 import { buildTradePriceLineSpecs } from "@/features/chart/chartTradePriceLines";
 
 import { ChartMarkerLegend } from "@/features/chart/ChartMarkerLegend";
@@ -93,6 +95,7 @@ type ViewportPlan = {
 export function ChartPanel() {
   const containerRef = useRef<HTMLDivElement>(null);
   const panelBodyRef = useRef<HTMLDivElement>(null);
+  const asideRef = useRef<HTMLDivElement>(null);
   const { asideWidth, maxAsideWidth, splitHandleProps } = useChartAsideResize(panelBodyRef);
 
   const chartRef = useRef<IChartApi | null>(null);
@@ -205,6 +208,10 @@ export function ChartPanel() {
   const trades = selectedVariant?.trade_records ?? [];
 
   const selectedTrade = findTradeById(trades, selectedTradeId);
+
+  const showAsideStack = selectedTradeId !== null;
+  const { diagnosticsHeight, maxDiagnosticsHeight, stackSplitHandleProps } =
+    useChartAsideStackResize(asideRef, showAsideStack);
 
   const rangeWarning =
 
@@ -849,46 +856,52 @@ export function ChartPanel() {
           {...splitHandleProps}
         />
 
-        <div className="chart-panel__aside" style={{ width: asideWidth, flexBasis: asideWidth }}>
-
-          {selectedTradeId !== null && (
-
-            <ChartTradeDiagnostics
-
-              trade={selectedTrade}
-
-              selectedTradeId={selectedTradeId}
-
-              strategySpec={selectedVariant.strategy_spec}
-
-              chartEmaOverlays={chartEmaOverlays}
-
-              chartAuxEmaOverlays={chartDisplayAuxEmaOverlays}
-
-              focusWarning={chartTradeFocusWarning}
-
-            />
-
+        <div
+          ref={asideRef}
+          className={
+            showAsideStack
+              ? "chart-panel__aside chart-panel__aside--stacked"
+              : "chart-panel__aside"
+          }
+          style={{ width: asideWidth, flexBasis: asideWidth }}
+        >
+          {showAsideStack && (
+            <>
+              <div
+                className="chart-panel__aside-stack-top"
+                style={{
+                  height: diagnosticsHeight,
+                  flexBasis: diagnosticsHeight,
+                }}
+              >
+                <ChartTradeDiagnostics
+                  trade={selectedTrade}
+                  selectedTradeId={selectedTradeId}
+                  strategySpec={selectedVariant.strategy_spec}
+                  chartEmaOverlays={chartEmaOverlays}
+                  chartAuxEmaOverlays={chartDisplayAuxEmaOverlays}
+                  focusWarning={chartTradeFocusWarning}
+                />
+              </div>
+              <ChartAsideStackSplitHandle
+                diagnosticsHeight={diagnosticsHeight}
+                maxDiagnosticsHeight={maxDiagnosticsHeight}
+                {...stackSplitHandleProps}
+              />
+            </>
           )}
 
-          <ChartBarInspector
-
-            selectedBarTimeSec={selectedBarTimeSec}
-
-            candles={chartCandles}
-
-            emaOverlays={chartEmaOverlays}
-
-            signalTrace={signalTrace}
-
-            signalTraceError={signalTraceError}
-
-            signalTraceLoading={signalTraceStatus === "loading"}
-
-            onClear={() => selectBar(null)}
-
-          />
-
+          <div className="chart-panel__aside-stack-bottom">
+            <ChartBarInspector
+              selectedBarTimeSec={selectedBarTimeSec}
+              candles={chartCandles}
+              emaOverlays={chartEmaOverlays}
+              signalTrace={signalTrace}
+              signalTraceError={signalTraceError}
+              signalTraceLoading={signalTraceStatus === "loading"}
+              onClear={() => selectBar(null)}
+            />
+          </div>
         </div>
 
       </div>

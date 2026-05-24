@@ -29,7 +29,6 @@ export function ActiveExitComponentsList({ rows, warning }: Props) {
             <th>profile</th>
             <th>component</th>
             <th>instance</th>
-            <th>kind</th>
             <th>params</th>
           </tr>
         </thead>
@@ -48,7 +47,6 @@ export function ActiveExitComponentsList({ rows, warning }: Props) {
               <td>
                 <code>{row.instance_id}</code>
               </td>
-              <td>{row.exit_kind}</td>
               <td>
                 <code className="chart-exit-components__params">{formatParameters(row.parameters)}</code>
               </td>

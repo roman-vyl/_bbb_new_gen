@@ -184,6 +184,9 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
   const prevVariantKeyRef = useRef("");
   const prevRunIdForTradeBootstrapRef = useRef<string | null>(null);
   const selectedVariantKeyRef = useRef("");
+  const marketLoadGenRef = useRef(0);
+  const intendedMarketCacheKeyRef = useRef<MarketCacheKey | null>(null);
+  const marketFetchInFlightKeyRef = useRef<MarketCacheKey | null>(null);
 
   useEffect(() => {
     selectedVariantKeyRef.current = selectedVariantKey;
@@ -426,17 +429,25 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       reloadToken,
     );
 
-    let cancelled = false;
+    const loadGen = ++marketLoadGenRef.current;
+    intendedMarketCacheKeyRef.current = key;
 
     async function loadMarket() {
       setMarketError(null);
 
       if (hasMarketCache(key)) {
-        if (cancelled) return;
+        if (marketLoadGenRef.current !== loadGen && intendedMarketCacheKeyRef.current !== key) {
+          return;
+        }
         setMarketCacheKey(key);
         setMarketLoadStatus("ready");
         return;
       }
+
+      if (marketFetchInFlightKeyRef.current === key) {
+        return;
+      }
+      marketFetchInFlightKeyRef.current = key;
 
       setMarketLoadStatus("loading");
       const fromMs = snapshot.data_range.from_open_time_ms;
@@ -452,12 +463,24 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
           emaAnchor: periods.anchor,
           emaSlow: periods.slow,
         });
-        if (cancelled) return;
         setMarketCacheIfAbsent(key, bundle);
+        if (marketFetchInFlightKeyRef.current === key) {
+          marketFetchInFlightKeyRef.current = null;
+        }
+        const applyToUi =
+          marketLoadGenRef.current === loadGen || intendedMarketCacheKeyRef.current === key;
+        if (!applyToUi) {
+          return;
+        }
         setMarketCacheKey(key);
         setMarketLoadStatus("ready");
       } catch (err) {
-        if (cancelled) return;
+        if (marketFetchInFlightKeyRef.current === key) {
+          marketFetchInFlightKeyRef.current = null;
+        }
+        if (marketLoadGenRef.current !== loadGen && intendedMarketCacheKeyRef.current !== key) {
+          return;
+        }
         setMarketError(marketErrorMessage(err));
         setMarketCacheKey(null);
         setMarketLoadStatus("error");
@@ -466,9 +489,9 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
 
     void loadMarket();
     return () => {
-      cancelled = true;
+      marketLoadGenRef.current += 1;
     };
-  }, [report, reportLoadStatus, chartTimeframe, reloadToken, selectedVariant]);
+  }, [report, reportLoadStatus, chartTimeframe, reloadToken, selectedVariantKey]);
 
   const setSelectedRunId = useCallback((runId: string) => {
     setSelectedRunIdState(runId);
@@ -517,6 +540,36 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
   const chartTradeFocusWarning = selectedTradeResolution.warning;
 
   const cachedBundle = marketCacheKey !== null ? getMarketCache(marketCacheKey) : undefined;
+
+  const intendedMarketCacheKey = useMemo((): MarketCacheKey | null => {
+    if (report === null || selectedVariant === null) return null;
+    try {
+      const periods = anchorStackPeriodsFromStrategySpec(selectedVariant.strategy_spec);
+      return buildMarketCacheKey(
+        report,
+        chartTimeframe,
+        selectedVariant.variant,
+        periods,
+        reloadToken,
+      );
+    } catch {
+      return null;
+    }
+  }, [report, selectedVariant, chartTimeframe, reloadToken]);
+
+  useEffect(() => {
+    intendedMarketCacheKeyRef.current = intendedMarketCacheKey;
+  }, [intendedMarketCacheKey]);
+
+  useEffect(() => {
+    if (intendedMarketCacheKey === null) return;
+    if (!hasMarketCache(intendedMarketCacheKey)) return;
+    if (marketCacheKey === intendedMarketCacheKey && marketLoadStatus === "ready") {
+      return;
+    }
+    setMarketCacheKey(intendedMarketCacheKey);
+    setMarketLoadStatus("ready");
+  }, [intendedMarketCacheKey, marketCacheKey, marketLoadStatus]);
 
   const auxEmaSpecs = useMemo(() => {
     if (!selectedVariant) return [];
@@ -616,13 +669,23 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     if (!cachedBundle || marketLoadStatus === "error") {
       return emptyChartViewWindow();
     }
+    const intendedBundle =
+      intendedMarketCacheKey !== null ? getMarketCache(intendedMarketCacheKey) : undefined;
+    const anchorEmaOverlays = intendedBundle?.ema_overlays ?? [];
     return buildChartViewWindow({
       candles: cachedBundle.candles,
-      emaOverlays: cachedBundle.ema_overlays,
+      emaOverlays: anchorEmaOverlays,
       auxEmaOverlays,
       selectedTradeEntryTimeMs,
     });
-  }, [cachedBundle, marketLoadStatus, selectedTradeEntryTimeMs, auxEmaOverlays]);
+  }, [
+    cachedBundle,
+    marketLoadStatus,
+    selectedTradeEntryTimeMs,
+    auxEmaOverlays,
+    intendedMarketCacheKey,
+    marketCacheKey,
+  ]);
 
   useEffect(() => {
     lastSlicedHtfOverlaysRef.current = [];

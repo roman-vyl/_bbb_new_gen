@@ -8,6 +8,7 @@ import {
   type ExitReasonFilterId,
 } from "@/features/reports/exitReasonFilters";
 import { EM_DASH } from "@/features/reports/formatDiagnostics";
+import { TradeStatusChip } from "@/features/reports/TradeStatusChip";
 import {
   buildTradeDiagnosticFields,
   formatMs,
@@ -312,7 +313,10 @@ function TradeDetail({ trade }: { trade: TradeRecord | undefined }) {
 
   return (
     <aside className="trade-detail">
-      <h3>Trade #{trade.trade_id}</h3>
+      <div className="trade-detail__heading">
+        <h3>Trade #{trade.trade_id}</h3>
+        <TradeStatusChip status={trade.status} />
+      </div>
       <dl>
         {core.map((f) => (
           <div key={f.key}>

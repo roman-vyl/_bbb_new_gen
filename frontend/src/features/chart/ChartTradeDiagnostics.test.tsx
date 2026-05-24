@@ -78,8 +78,34 @@ describe("ChartTradeDiagnostics", () => {
       />,
     );
     expect(screen.getByTestId("chart-trade-diagnostics")).toBeTruthy();
+    expect(screen.getByRole("heading", { level: 3, name: "Trade #2" })).toBeTruthy();
+    expect(screen.getByTestId("trade-status-chip").textContent).toBe("CLOSED");
+    expect(screen.queryByText("status")).toBeNull();
+    expect(screen.getByTestId("trade-direction-chip").textContent).toBe("LONG");
+    expect(screen.queryByText("direction")).toBeNull();
+    const result = screen.getByTestId("chart-trade-result");
+    expect(result.textContent).toContain("3.00%");
+    expect(result.textContent).toContain("100.00");
+    expect(result.className).toContain("pnl-positive");
+    expect(screen.queryByText("trade_id")).toBeNull();
     expect(screen.getByText("active_exit_profile")).toBeTruthy();
     expect(screen.getAllByText("aligned").length).toBeGreaterThan(0);
+  });
+
+  it("colors loss result red", () => {
+    render(
+      <ChartTradeDiagnostics
+        trade={{ ...trade, pnl: -39.73, return_pct: -0.0074 }}
+        selectedTradeId={2}
+        strategySpec={strategySpec}
+        chartEmaOverlays={[]}
+        focusWarning={null}
+      />,
+    );
+    const result = screen.getByTestId("chart-trade-result");
+    expect(result.className).toContain("pnl-negative");
+    expect(result.textContent).toContain("-0.74%");
+    expect(result.textContent).toContain("-39.73");
   });
 
   it("highlights closing exit component", () => {

@@ -194,6 +194,21 @@ select {
   color: #fcd34d;
 }
 
+.chart-legend__chip--closed {
+  border-color: #475569;
+  color: #94a3b8;
+}
+
+.chart-legend__chip--long {
+  border-color: #166534;
+  color: #86efac;
+}
+
+.chart-legend__chip--short {
+  border-color: #991b1b;
+  color: #fca5a5;
+}
+
 .chart-legend__chip--stop_loss {
   border-color: #9a3412;
   color: #fdba74;
@@ -280,30 +295,110 @@ select {
   overflow: hidden;
 }
 
-/* Trade diagnostics + bar inspector share aside height; each scrolls inside its slot. */
-.chart-trade-diagnostics {
-  flex: 0 1 auto;
+.chart-panel__aside--stacked {
+  gap: 0;
+}
+
+.chart-panel__aside-stack-top {
+  flex-shrink: 0;
   min-height: 0;
-  max-height: min(38%, 36vh);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.chart-panel__aside-stack-bottom {
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.chart-panel__aside-split {
+  flex: 0 0 auto;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: row-resize;
+  touch-action: none;
+  position: relative;
+  z-index: 2;
+}
+
+.chart-panel__aside-split::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 2px;
+  transform: translateY(-50%);
+  border-radius: 2px;
+  background: #243041;
+  transition: background 0.15s ease;
+}
+
+.chart-panel__aside-split:hover::before,
+.chart-panel__aside-split:focus-visible::before {
+  background: #38bdf8;
+}
+
+.chart-panel__aside-split:focus-visible {
+  outline: none;
+}
+
+.chart-trade-diagnostics {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  max-width: none;
+  align-self: auto;
   overflow-y: auto;
 }
 
 .chart-panel__aside .bar-inspector {
-  flex: 1 1 0;
+  flex: 1 1 auto;
   min-height: 0;
   width: 100%;
   max-width: none;
   align-self: auto;
 }
 
-.chart-panel__aside .bar-inspector:only-child {
-  flex: 1 1 auto;
-  max-height: none;
+.chart-trade-diagnostics__heading {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin: 0 0 0.35rem;
 }
 
 .chart-trade-diagnostics__title {
-  margin: 0 0 0.5rem;
+  margin: 0;
   font-size: 1rem;
+}
+
+.chart-trade-diagnostics__result {
+  margin: 0 0 0.75rem;
+  font-size: 1.15rem;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.chart-trade-diagnostics__result--flat,
+.chart-trade-diagnostics__result--unknown {
+  color: #cbd5e1;
+}
+
+.chart-trade-diagnostics__result-sep {
+  font-weight: 500;
+  opacity: 0.75;
+}
+
+.chart-trade-diagnostics__result .chart-legend__chip {
+  vertical-align: baseline;
 }
 
 .chart-trade-diagnostics__hint,
@@ -813,6 +908,17 @@ select {
   border: 1px solid #243041;
   border-radius: 8px;
   padding: 0.75rem 1rem;
+}
+
+.trade-detail__heading {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.trade-detail__heading h3 {
+  margin: 0;
 }
 
 .trade-detail dl {
