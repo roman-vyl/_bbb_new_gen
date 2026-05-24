@@ -148,3 +148,7 @@ Rollback is straightforward because the change is additive: remove the helper ca
 ## Open Questions
 
 - None for v1 proposal scope.
+
+## Follow-Up Candidates
+
+- `reports-quality-breakdown-ui-v1`: render `quality_flag_breakdown` and `exit_component_quality_breakdown` in Reports, including `ema_cross_loss_exit` capture/giveback stats. V1 stores and serves these aggregates but limits the UI to trade table filters/columns and selected-trade diagnostics.

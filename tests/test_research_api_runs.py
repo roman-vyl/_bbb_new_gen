@@ -221,6 +221,8 @@ _SAMPLE_REPORT_V5 = {
                     **_SAMPLE_REPORT_V4["variants"][0]["trade_records"][0],
                     "exit_reason": "signal:ema_cross",
                     "exit_component_id": "ema_cross_loss_exit",
+                    "entry_price": 10000.0,
+                    "exit_price": 10100.0,
                     "mfe_price": 400.0,
                     "mfe_pct": 0.04,
                     "mfe_atr": None,
