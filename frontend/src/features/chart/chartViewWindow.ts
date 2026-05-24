@@ -1,4 +1,5 @@
-import type { ChartBar, ChartEmaOverlay, IndicatorPoint } from "@/api/types";
+import type { ChartAuxEmaOverlay, ChartBar, ChartEmaOverlay, IndicatorPoint } from "@/api/types";
+import { sliceAuxOverlaysToCandleWindow } from "@/features/chart/chartAuxEmaOverlays";
 
 export const CHART_RENDER_BAR_LIMIT = 5000;
 
@@ -10,6 +11,7 @@ export type ChartViewWindow = {
   mode: ChartViewMode;
   candles: ChartBar[];
   emaOverlays: ChartEmaOverlay[];
+  auxEmaOverlays: ChartAuxEmaOverlay[];
   centerTimeSec: number | null;
   firstTimeSec: number | null;
   lastTimeSec: number | null;
@@ -21,6 +23,7 @@ export function emptyChartViewWindow(): ChartViewWindow {
     mode: "empty",
     candles: [],
     emaOverlays: [],
+    auxEmaOverlays: [],
     centerTimeSec: null,
     firstTimeSec: null,
     lastTimeSec: null,
@@ -108,6 +111,7 @@ export function sliceOverlaysToCandleWindow(
 export type BuildChartViewWindowParams = {
   candles: readonly ChartBar[];
   emaOverlays: readonly ChartEmaOverlay[];
+  auxEmaOverlays?: readonly ChartAuxEmaOverlay[];
   selectedTradeEntryTimeMs: number | null;
   limit?: number;
 };
@@ -118,6 +122,7 @@ function viewMeta(candles: ChartBar[], centerTimeSec: number | null, mode: Chart
     mode,
     candles,
     emaOverlays: [],
+    auxEmaOverlays: [],
     centerTimeSec,
     firstTimeSec: count > 0 ? candles[0]!.time : null,
     lastTimeSec: count > 0 ? candles[count - 1]!.time : null,
@@ -128,6 +133,7 @@ function viewMeta(candles: ChartBar[], centerTimeSec: number | null, mode: Chart
 export function buildChartViewWindow({
   candles,
   emaOverlays,
+  auxEmaOverlays = [],
   selectedTradeEntryTimeMs,
   limit = CHART_RENDER_BAR_LIMIT,
 }: BuildChartViewWindowParams): ChartViewWindow {
@@ -141,6 +147,7 @@ export function buildChartViewWindow({
     return {
       ...base,
       emaOverlays: sliceOverlaysToCandleWindow(emaOverlays, viewCandles),
+      auxEmaOverlays: sliceAuxOverlaysToCandleWindow(auxEmaOverlays, viewCandles),
     };
   }
 
@@ -150,5 +157,6 @@ export function buildChartViewWindow({
   return {
     ...base,
     emaOverlays: sliceOverlaysToCandleWindow(emaOverlays, viewCandles),
+    auxEmaOverlays: sliceAuxOverlaysToCandleWindow(auxEmaOverlays, viewCandles),
   };
 }

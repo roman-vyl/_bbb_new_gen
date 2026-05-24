@@ -10,6 +10,8 @@ import {
 
   type IChartApi,
 
+  type IPriceLine,
+
   type ISeriesApi,
 
   type ISeriesMarkersPluginApi,
@@ -23,9 +25,16 @@ import { useCallback, useEffect, useMemo, useRef } from "react";
 
 
 import type { AnchorStackEmaRole, ChartBar, ChartEmaOverlay } from "@/api/types";
+import { colorForAuxEmaOverlay } from "@/features/chart/chartAuxEmaOverlays";
 
+import { ChartAsideStackSplitHandle } from "@/features/chart/ChartAsideStackSplitHandle";
 import { ChartBarInspector } from "@/features/chart/ChartBarInspector";
+import { ChartPanelSplitHandle } from "@/features/chart/ChartPanelSplitHandle";
+import { ChartTradeDiagnostics } from "@/features/chart/ChartTradeDiagnostics";
 import { ChartTradeFocusNav } from "@/features/chart/ChartTradeFocusNav";
+import { useChartAsideResize } from "@/features/chart/useChartAsideResize";
+import { useChartAsideStackResize } from "@/features/chart/useChartAsideStackResize";
+import { buildTradePriceLineSpecs } from "@/features/chart/chartTradePriceLines";
 
 import { ChartMarkerLegend } from "@/features/chart/ChartMarkerLegend";
 
@@ -84,8 +93,10 @@ type ViewportPlan = {
 };
 
 export function ChartPanel() {
-
   const containerRef = useRef<HTMLDivElement>(null);
+  const panelBodyRef = useRef<HTMLDivElement>(null);
+  const asideRef = useRef<HTMLDivElement>(null);
+  const { asideWidth, maxAsideWidth, splitHandleProps } = useChartAsideResize(panelBodyRef);
 
   const chartRef = useRef<IChartApi | null>(null);
 
@@ -98,6 +109,10 @@ export function ChartPanel() {
   );
 
   const markersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
+
+  const tradePriceLinesRef = useRef<IPriceLine[]>([]);
+
+  const auxEmaSeriesRef = useRef<Map<string, ISeriesApi<"Line">>>(new Map());
 
   const viewportKeyRef = useRef<string | null>(null);
 
@@ -138,6 +153,10 @@ export function ChartPanel() {
 
     chartEmaOverlays,
 
+    chartDisplayAuxEmaOverlays,
+
+    htfAuxEmaOverlayStale,
+
     candlesSource,
 
     marketError,
@@ -151,6 +170,8 @@ export function ChartPanel() {
     chartTimeframe,
 
     selectedVariant,
+
+    selectedVariantKey,
 
     selectedTradeId,
 
@@ -188,6 +209,10 @@ export function ChartPanel() {
 
   const selectedTrade = findTradeById(trades, selectedTradeId);
 
+  const showAsideStack = selectedTradeId !== null;
+  const { diagnosticsHeight, maxDiagnosticsHeight, stackSplitHandleProps } =
+    useChartAsideStackResize(asideRef, showAsideStack);
+
   const rangeWarning =
 
     selectedTrade && tradeOutsideCandleRange(selectedTrade.entry_time_ms, fullCandleRange);
@@ -210,6 +235,11 @@ export function ChartPanel() {
       selectedTradeId,
       chartViewCenterTimeSec,
     ],
+  );
+
+  const viewportApplyKey = useMemo(
+    () => `${chartDataKey}|${chartViewMode}|${chartViewCenterTimeSec ?? "none"}`,
+    [chartDataKey, chartViewMode, chartViewCenterTimeSec],
   );
 
 
@@ -276,11 +306,20 @@ export function ChartPanel() {
 
         : `Showing ${shown} bar${shown === 1 ? "" : "s"}`;
 
+    const auxNote =
+      chartDisplayAuxEmaOverlays.length > 0
+        ? ` · +${chartDisplayAuxEmaOverlays.length} aux EMA (exit/HTF)`
+        : "";
+
+    const htfStaleNote = htfAuxEmaOverlayStale
+      ? " · HTF EMA may lag (signal trace reloading; stable BFF overlay planned)"
+      : "";
+
     const emaNote = stackPeriodsLabel
 
-      ? `OHLC + EMA stack ${stackPeriodsLabel} (overlay, periods from run strategy_spec)`
+      ? `OHLC + EMA stack ${stackPeriodsLabel} (overlay, periods from run strategy_spec)${auxNote}${htfStaleNote}`
 
-      : "OHLC · overlay EMA requires anchor_stack in strategy_spec";
+      : `OHLC · overlay EMA requires anchor_stack in strategy_spec${auxNote}${htfStaleNote}`;
 
     const traceNote =
 
@@ -317,6 +356,10 @@ export function ChartPanel() {
     chartViewLastTimeSec,
 
     stackPeriodsLabel,
+
+    chartDisplayAuxEmaOverlays.length,
+
+    htfAuxEmaOverlayStale,
 
     signalTraceStatus,
 
@@ -450,6 +493,10 @@ export function ChartPanel() {
 
       emaSeriesByRoleRef.current = {};
 
+      auxEmaSeriesRef.current.forEach((lineSeries) => chart.removeSeries(lineSeries));
+
+      auxEmaSeriesRef.current.clear();
+
       markersRef.current = null;
 
     };
@@ -513,20 +560,113 @@ export function ChartPanel() {
       candles: chartCandles,
     };
 
-    if (viewportKeyRef.current !== chartDataKey) {
-      viewportKeyRef.current = chartDataKey;
-      scheduleViewportApply(chart);
-    }
+  }, [chartCandles, chartEmaOverlays, selectedVariant, chartDataKey, chartViewMode, chartViewCenterTimeSec]);
 
+  useEffect(() => {
+    viewportKeyRef.current = null;
+  }, [selectedVariantKey]);
+
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart || chartDataKey === "" || chartCandles.length === 0) return;
+
+    viewportPlanRef.current = {
+      key: chartDataKey,
+      mode: chartViewMode,
+      centerTimeSec: chartViewCenterTimeSec,
+      candles: chartCandles,
+    };
+    scheduleViewportApply(chart);
   }, [
-    chartCandles,
-    chartEmaOverlays,
-    selectedVariant,
-    chartDataKey,
-    chartViewMode,
+    selectedTradeId,
+    selectedVariantKey,
     chartViewCenterTimeSec,
+    chartViewMode,
+    chartDataKey,
+    viewportApplyKey,
+    chartCandles,
     scheduleViewportApply,
   ]);
+
+
+
+  useEffect(() => {
+
+    const chart = chartRef.current;
+
+    if (!chart || !selectedVariant || chartDataKey === "") return;
+
+    const seriesMap = auxEmaSeriesRef.current;
+
+    const activeIds = new Set(chartDisplayAuxEmaOverlays.map((overlay) => overlay.id));
+
+    for (const [id, lineSeries] of [...seriesMap.entries()]) {
+
+      if (!activeIds.has(id)) {
+
+        chart.removeSeries(lineSeries);
+
+        seriesMap.delete(id);
+
+      }
+
+    }
+
+
+
+    chartDisplayAuxEmaOverlays.forEach((overlay, index) => {
+
+      let lineSeries = seriesMap.get(overlay.id);
+
+      if (!lineSeries) {
+
+        lineSeries = chart.addSeries(LineSeries, {
+
+          color: colorForAuxEmaOverlay(index),
+
+          lineWidth: 2,
+
+          lineStyle: overlay.dashed ? 2 : 0,
+
+          title: overlay.label,
+
+          priceLineVisible: false,
+
+        });
+
+        seriesMap.set(overlay.id, lineSeries);
+
+      }
+
+      if (overlay.points.length === 0 && lineSeries) {
+        return;
+      }
+
+      lineSeries.applyOptions({
+
+        color: colorForAuxEmaOverlay(index),
+
+        lineStyle: overlay.dashed ? 2 : 0,
+
+        title: overlay.label,
+
+      });
+
+      lineSeries.setData(
+
+        overlay.points.map((p) => ({
+
+          time: p.time as Time,
+
+          value: p.value,
+
+        })),
+
+      );
+
+    });
+
+  }, [chartDisplayAuxEmaOverlays, chartDataKey, selectedVariant]);
 
 
 
@@ -551,6 +691,36 @@ export function ChartPanel() {
     markersPlugin.setMarkers(markers);
 
   }, [chartCandles, selectedVariant, selectedTradeId]);
+
+
+
+  useEffect(() => {
+
+    const series = seriesRef.current;
+
+    if (!series) return;
+
+
+
+    for (const line of tradePriceLinesRef.current) {
+
+      series.removePriceLine(line);
+
+    }
+
+    tradePriceLinesRef.current = [];
+
+
+
+    if (!selectedTrade) return;
+
+
+
+    const specs = buildTradePriceLineSpecs(selectedTrade);
+
+    tradePriceLinesRef.current = specs.map((spec) => series.createPriceLine(spec.options));
+
+  }, [selectedTrade]);
 
 
 
@@ -640,7 +810,21 @@ export function ChartPanel() {
 
       )}
 
-      <div className="chart-panel__body">
+      {htfAuxEmaOverlayStale && (
+
+        <p className="banner banner--info" role="status">
+
+          HTF EMA lines are held from the previous signal trace while the chart window reloads. Values
+
+          may not match the current view until trace finishes loading. A stable BFF HTF overlay is
+
+          planned for a follow-up.
+
+        </p>
+
+      )}
+
+      <div ref={panelBodyRef} className="chart-panel__body">
 
         <div className="chart-panel__main">
 
@@ -666,23 +850,59 @@ export function ChartPanel() {
 
         </div>
 
-        <ChartBarInspector
-
-          selectedBarTimeSec={selectedBarTimeSec}
-
-          candles={chartCandles}
-
-          emaOverlays={chartEmaOverlays}
-
-          signalTrace={signalTrace}
-
-          signalTraceError={signalTraceError}
-
-          signalTraceLoading={signalTraceStatus === "loading"}
-
-          onClear={() => selectBar(null)}
-
+        <ChartPanelSplitHandle
+          asideWidth={asideWidth}
+          maxAsideWidth={maxAsideWidth}
+          {...splitHandleProps}
         />
+
+        <div
+          ref={asideRef}
+          className={
+            showAsideStack
+              ? "chart-panel__aside chart-panel__aside--stacked"
+              : "chart-panel__aside"
+          }
+          style={{ width: asideWidth, flexBasis: asideWidth }}
+        >
+          {showAsideStack && (
+            <>
+              <div
+                className="chart-panel__aside-stack-top"
+                style={{
+                  height: diagnosticsHeight,
+                  flexBasis: diagnosticsHeight,
+                }}
+              >
+                <ChartTradeDiagnostics
+                  trade={selectedTrade}
+                  selectedTradeId={selectedTradeId}
+                  strategySpec={selectedVariant.strategy_spec}
+                  chartEmaOverlays={chartEmaOverlays}
+                  chartAuxEmaOverlays={chartDisplayAuxEmaOverlays}
+                  focusWarning={chartTradeFocusWarning}
+                />
+              </div>
+              <ChartAsideStackSplitHandle
+                diagnosticsHeight={diagnosticsHeight}
+                maxDiagnosticsHeight={maxDiagnosticsHeight}
+                {...stackSplitHandleProps}
+              />
+            </>
+          )}
+
+          <div className="chart-panel__aside-stack-bottom">
+            <ChartBarInspector
+              selectedBarTimeSec={selectedBarTimeSec}
+              candles={chartCandles}
+              emaOverlays={chartEmaOverlays}
+              signalTrace={signalTrace}
+              signalTraceError={signalTraceError}
+              signalTraceLoading={signalTraceStatus === "loading"}
+              onClear={() => selectBar(null)}
+            />
+          </div>
+        </div>
 
       </div>
 

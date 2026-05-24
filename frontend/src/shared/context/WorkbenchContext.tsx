@@ -3,6 +3,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -12,6 +13,7 @@ import {
 import {
   ApiError,
   fetchChartMarketBundle,
+  fetchChartOverlayEma,
   fetchConfigState,
   fetchRunReport,
   fetchRunSummaries,
@@ -21,6 +23,7 @@ import {
 import {
   CHART_MARKET_TIMEFRAME,
   type AnchorStackPeriods,
+  type ChartAuxEmaOverlay,
   type ChartBar,
   type ChartEmaOverlay,
   type ConfigListEntry,
@@ -38,12 +41,18 @@ import {
   AnchorStackParseError,
   anchorStackPeriodsFromStrategySpec,
 } from "@/features/chart/anchorStackFromSpec";
+import { mergeAuxOverlayPoints } from "@/features/chart/chartAuxEmaOverlays";
 import { buildChartViewWindow, emptyChartViewWindow, type ChartViewMode } from "@/features/chart/chartViewWindow";
+import {
+  auxOverlayFromHtfTrace,
+  collectAuxEmaSpecs,
+} from "@/features/chart/strategySpecAuxEma";
 import { candleRangeMs } from "@/features/chart/chartMarkers";
 import {
   defaultClosedTradeSelection,
   deriveSelectedVariant,
   findTradeById,
+  isTradeInVariant,
   resolveSelectedTradeEntryTimeMs,
   resolveTradeEntryTimeMs,
   resolveVariantKeyForReport,
@@ -55,11 +64,16 @@ import {
   setMarketCacheIfAbsent,
   type MarketCacheKey,
 } from "@/features/chart/marketDataCache";
+import {
+  decideSignalTraceLoad,
+  type SignalTraceLoadStatus,
+  type SignalTraceRequest,
+} from "@/shared/context/signalTraceLoadPolicy";
 export type ReportLoadStatus = "loading" | "ready" | "error";
 export type ConfigLoadStatus = "loading" | "ready" | "empty" | "error";
 export type MarketLoadStatus = "idle" | "loading" | "ready" | "error";
 export type CandlesSource = "market" | "unavailable";
-export type SignalTraceLoadStatus = "idle" | "loading" | "ready" | "error";
+export type { SignalTraceLoadStatus };
 
 type WorkbenchState = {
   symbol: string;
@@ -79,6 +93,9 @@ type WorkbenchState = {
   report: RunReport | null;
   chartCandles: ChartBar[];
   chartEmaOverlays: ChartEmaOverlay[];
+  chartAuxEmaOverlays: ChartAuxEmaOverlay[];
+  chartDisplayAuxEmaOverlays: ChartAuxEmaOverlay[];
+  htfAuxEmaOverlayStale: boolean;
   chartViewMode: ChartViewMode;
   chartViewCenterTimeSec: number | null;
   chartViewFirstTimeSec: number | null;
@@ -149,19 +166,27 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
   const [marketLoadStatus, setMarketLoadStatus] = useState<MarketLoadStatus>("idle");
   const [marketError, setMarketError] = useState<string | null>(null);
   const [marketCacheKey, setMarketCacheKey] = useState<MarketCacheKey | null>(null);
+  const [auxEmaOverlays, setAuxEmaOverlays] = useState<ChartAuxEmaOverlay[]>([]);
+  const lastSlicedHtfOverlaysRef = useRef<ChartAuxEmaOverlay[]>([]);
   const [runs, setRuns] = useState<RunSummary[]>([]);
   const [selectedRunId, setSelectedRunIdState] = useState<string | null>(null);
   const [report, setReport] = useState<RunReport | null>(null);
-  const [selectedVariantKey, setSelectedVariantKey] = useState("");
+  const [selectedVariantKey, setSelectedVariantKeyState] = useState("");
   const [selectedTradeId, setSelectedTradeId] = useState<number | null>(null);
   const [selectedBarTimeSec, setSelectedBarTimeSec] = useState<number | null>(null);
   const [signalTrace, setSignalTrace] = useState<SignalTraceBundle | null>(null);
   const [signalTraceStatus, setSignalTraceStatus] = useState<SignalTraceLoadStatus>("idle");
   const [signalTraceError, setSignalTraceError] = useState<string | null>(null);
+  const [loadedTraceWindowKey, setLoadedTraceWindowKey] = useState<string | null>(null);
+  const loadingTraceWindowKeyRef = useRef<string | null>(null);
+  const inFlightTraceRequestRef = useRef<SignalTraceRequest | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
   const prevVariantKeyRef = useRef("");
   const prevRunIdForTradeBootstrapRef = useRef<string | null>(null);
   const selectedVariantKeyRef = useRef("");
+  const marketLoadGenRef = useRef(0);
+  const intendedMarketCacheKeyRef = useRef<MarketCacheKey | null>(null);
+  const marketFetchInFlightKeyRef = useRef<MarketCacheKey | null>(null);
 
   useEffect(() => {
     selectedVariantKeyRef.current = selectedVariantKey;
@@ -172,6 +197,20 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     setSelectedTradeId(tradeId);
     setSelectedBarTimeSec(barTimeSec);
   }, []);
+
+  const setSelectedVariantKey = useCallback(
+    (key: string) => {
+      setSelectedVariantKeyState(key);
+      if (report === null) {
+        return;
+      }
+      const variant = deriveSelectedVariant(report, key);
+      if (variant !== null) {
+        applyTradeFocusSelection(variant.trade_records);
+      }
+    },
+    [report, applyTradeFocusSelection],
+  );
 
   const applyConfigState = useCallback((state: ConfigStateResponse) => {
     setConfigList(state.configs);
@@ -328,12 +367,16 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       return;
     }
     const next = resolveVariantKeyForReport(report, selectedVariantKeyRef.current);
-    setSelectedVariantKey(next);
+    setSelectedVariantKeyState(next);
     selectedVariantKeyRef.current = next;
   }, [report]);
 
   useEffect(() => {
-    if (report === null || selectedVariant === null) {
+    if (report === null) {
+      return;
+    }
+    const variant = deriveSelectedVariant(report, selectedVariantKey);
+    if (variant === null) {
       return;
     }
     const runId = report.run_id;
@@ -344,8 +387,18 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     }
     prevVariantKeyRef.current = selectedVariantKey;
     prevRunIdForTradeBootstrapRef.current = runId;
+    applyTradeFocusSelection(variant.trade_records);
+  }, [report, report?.run_id, selectedVariantKey, applyTradeFocusSelection]);
+
+  useLayoutEffect(() => {
+    if (!selectedVariant || selectedTradeId === null) {
+      return;
+    }
+    if (isTradeInVariant(selectedVariant.trade_records, selectedTradeId)) {
+      return;
+    }
     applyTradeFocusSelection(selectedVariant.trade_records);
-  }, [report?.run_id, selectedVariantKey, selectedVariant, applyTradeFocusSelection]);
+  }, [selectedVariant, selectedTradeId, selectedVariantKey, applyTradeFocusSelection]);
 
   useEffect(() => {
     if (report === null || reportLoadStatus !== "ready" || selectedVariant === null) {
@@ -376,17 +429,25 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       reloadToken,
     );
 
-    let cancelled = false;
+    const loadGen = ++marketLoadGenRef.current;
+    intendedMarketCacheKeyRef.current = key;
 
     async function loadMarket() {
       setMarketError(null);
 
       if (hasMarketCache(key)) {
-        if (cancelled) return;
+        if (marketLoadGenRef.current !== loadGen && intendedMarketCacheKeyRef.current !== key) {
+          return;
+        }
         setMarketCacheKey(key);
         setMarketLoadStatus("ready");
         return;
       }
+
+      if (marketFetchInFlightKeyRef.current === key) {
+        return;
+      }
+      marketFetchInFlightKeyRef.current = key;
 
       setMarketLoadStatus("loading");
       const fromMs = snapshot.data_range.from_open_time_ms;
@@ -402,12 +463,24 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
           emaAnchor: periods.anchor,
           emaSlow: periods.slow,
         });
-        if (cancelled) return;
         setMarketCacheIfAbsent(key, bundle);
+        if (marketFetchInFlightKeyRef.current === key) {
+          marketFetchInFlightKeyRef.current = null;
+        }
+        const applyToUi =
+          marketLoadGenRef.current === loadGen || intendedMarketCacheKeyRef.current === key;
+        if (!applyToUi) {
+          return;
+        }
         setMarketCacheKey(key);
         setMarketLoadStatus("ready");
       } catch (err) {
-        if (cancelled) return;
+        if (marketFetchInFlightKeyRef.current === key) {
+          marketFetchInFlightKeyRef.current = null;
+        }
+        if (marketLoadGenRef.current !== loadGen && intendedMarketCacheKeyRef.current !== key) {
+          return;
+        }
         setMarketError(marketErrorMessage(err));
         setMarketCacheKey(null);
         setMarketLoadStatus("error");
@@ -416,9 +489,9 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
 
     void loadMarket();
     return () => {
-      cancelled = true;
+      marketLoadGenRef.current += 1;
     };
-  }, [report, reportLoadStatus, chartTimeframe, reloadToken, selectedVariant]);
+  }, [report, reportLoadStatus, chartTimeframe, reloadToken, selectedVariantKey]);
 
   const setSelectedRunId = useCallback((runId: string) => {
     setSelectedRunIdState(runId);
@@ -468,16 +541,197 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
 
   const cachedBundle = marketCacheKey !== null ? getMarketCache(marketCacheKey) : undefined;
 
+  const intendedMarketCacheKey = useMemo((): MarketCacheKey | null => {
+    if (report === null || selectedVariant === null) return null;
+    try {
+      const periods = anchorStackPeriodsFromStrategySpec(selectedVariant.strategy_spec);
+      return buildMarketCacheKey(
+        report,
+        chartTimeframe,
+        selectedVariant.variant,
+        periods,
+        reloadToken,
+      );
+    } catch {
+      return null;
+    }
+  }, [report, selectedVariant, chartTimeframe, reloadToken]);
+
+  useEffect(() => {
+    intendedMarketCacheKeyRef.current = intendedMarketCacheKey;
+  }, [intendedMarketCacheKey]);
+
+  useEffect(() => {
+    if (intendedMarketCacheKey === null) return;
+    if (!hasMarketCache(intendedMarketCacheKey)) return;
+    if (marketCacheKey === intendedMarketCacheKey && marketLoadStatus === "ready") {
+      return;
+    }
+    setMarketCacheKey(intendedMarketCacheKey);
+    setMarketLoadStatus("ready");
+  }, [intendedMarketCacheKey, marketCacheKey, marketLoadStatus]);
+
+  const auxEmaSpecs = useMemo(() => {
+    if (!selectedVariant) return [];
+    try {
+      const periods = anchorStackPeriodsFromStrategySpec(selectedVariant.strategy_spec);
+      return collectAuxEmaSpecs(selectedVariant.strategy_spec, chartTimeframe, periods);
+    } catch {
+      return [];
+    }
+  }, [selectedVariant, chartTimeframe]);
+
+  useEffect(() => {
+    if (marketLoadStatus !== "ready" || report === null || auxEmaSpecs.length === 0) {
+      setAuxEmaOverlays([]);
+      return;
+    }
+
+    const bffSpecs = auxEmaSpecs.filter((spec) => spec.source === "bff");
+    if (bffSpecs.length === 0) {
+      setAuxEmaOverlays((prev) => prev.filter((overlay) => overlay.id.startsWith("htf_")));
+      return;
+    }
+
+    let cancelled = false;
+    const snapshot = report;
+    const fromMs = snapshot.data_range.from_open_time_ms;
+    const toOpenTimeMs = snapshot.data_range.to_open_time_ms;
+
+    async function loadBffAuxEma() {
+      try {
+        const loaded = await Promise.all(
+          bffSpecs.map(async (spec) => {
+            const points = await fetchChartOverlayEma({
+              symbol: snapshot.symbol,
+              timeframe: chartTimeframe,
+              period: spec.period,
+              fromMs,
+              toOpenTimeMs,
+            });
+            return {
+              id: spec.id,
+              label: spec.label,
+              period: spec.period,
+              timeframe: spec.timeframe,
+              points,
+              dashed: false,
+            } satisfies ChartAuxEmaOverlay;
+          }),
+        );
+        if (cancelled) return;
+        setAuxEmaOverlays((prev) => {
+          const htfOnly = prev.filter((overlay) => overlay.id.startsWith("htf_"));
+          return mergeAuxOverlayPoints(htfOnly, loaded);
+        });
+      } catch {
+        if (!cancelled) {
+          setAuxEmaOverlays((prev) => prev.filter((overlay) => overlay.id.startsWith("htf_")));
+        }
+      }
+    }
+
+    void loadBffAuxEma();
+    return () => {
+      cancelled = true;
+    };
+  }, [marketLoadStatus, report, chartTimeframe, auxEmaSpecs]);
+
+  useEffect(() => {
+    const htfSpecCount = auxEmaSpecs.filter((spec) => spec.source === "htf_trace").length;
+
+    if (signalTraceStatus === "ready" && signalTrace !== null) {
+      const htfOverlays = auxEmaSpecs
+        .filter((spec) => spec.source === "htf_trace")
+        .map((spec) => auxOverlayFromHtfTrace(spec, signalTrace))
+        .filter((overlay): overlay is ChartAuxEmaOverlay => overlay !== null);
+
+      setAuxEmaOverlays((prev) => {
+        const nonHtf = prev.filter((overlay) => !overlay.id.startsWith("htf_"));
+        return mergeAuxOverlayPoints(nonHtf, htfOverlays);
+      });
+      return;
+    }
+
+    if (signalTraceStatus === "loading" || signalTraceStatus === "error") {
+      // Keep stale htf_* overlays — do not strip during trace reload (avoids flicker).
+      return;
+    }
+
+    if (signalTraceStatus === "idle" && htfSpecCount > 0) {
+      setAuxEmaOverlays((prev) => prev.filter((overlay) => !overlay.id.startsWith("htf_")));
+    }
+  }, [signalTrace, signalTraceStatus, auxEmaSpecs]);
+
   const chartView = useMemo(() => {
-    if (!cachedBundle || marketLoadStatus !== "ready") {
+    // Keep chart focus usable while a new variant's market bundle loads: marketCacheKey
+    // still points at the previous cached bundle (same run candles) until fetch completes.
+    if (!cachedBundle || marketLoadStatus === "error") {
       return emptyChartViewWindow();
     }
+    const intendedBundle =
+      intendedMarketCacheKey !== null ? getMarketCache(intendedMarketCacheKey) : undefined;
+    const anchorEmaOverlays = intendedBundle?.ema_overlays ?? [];
     return buildChartViewWindow({
       candles: cachedBundle.candles,
-      emaOverlays: cachedBundle.ema_overlays,
+      emaOverlays: anchorEmaOverlays,
+      auxEmaOverlays,
       selectedTradeEntryTimeMs,
     });
-  }, [cachedBundle, marketLoadStatus, selectedTradeEntryTimeMs]);
+  }, [
+    cachedBundle,
+    marketLoadStatus,
+    selectedTradeEntryTimeMs,
+    auxEmaOverlays,
+    intendedMarketCacheKey,
+    marketCacheKey,
+  ]);
+
+  useEffect(() => {
+    lastSlicedHtfOverlaysRef.current = [];
+  }, [selectedRunId, selectedVariantKey]);
+
+  const chartWindowKey = useMemo(() => {
+    if (chartView.candles.length === 0) {
+      return null;
+    }
+    const first = chartView.candles[0]!.time;
+    const last = chartView.candles[chartView.candles.length - 1]!.time;
+    return `${selectedRunId}:${selectedVariantKey}:${first}:${last}`;
+  }, [chartView.candles, selectedRunId, selectedVariantKey]);
+
+  const traceMatchesWindow =
+    signalTraceStatus === "ready" &&
+    chartWindowKey !== null &&
+    loadedTraceWindowKey === chartWindowKey;
+
+  const htfAuxEmaOverlayStale = useMemo(() => {
+    const hasHtfSpecs = auxEmaSpecs.some((spec) => spec.source === "htf_trace");
+    if (!hasHtfSpecs) return false;
+    if (traceMatchesWindow) return false;
+    return (
+      auxEmaOverlays.some((overlay) => overlay.id.startsWith("htf_")) ||
+      lastSlicedHtfOverlaysRef.current.length > 0
+    );
+  }, [auxEmaSpecs, auxEmaOverlays, traceMatchesWindow]);
+
+  const chartDisplayAuxEmaOverlays = useMemo(() => {
+    const sliced = chartView.auxEmaOverlays;
+    const bffOverlays = sliced.filter((overlay) => !overlay.id.startsWith("htf_"));
+    const htfSliced = sliced.filter((overlay) => overlay.id.startsWith("htf_"));
+
+    const useFrozenHtf =
+      !traceMatchesWindow && lastSlicedHtfOverlaysRef.current.length > 0;
+
+    let htfDisplay = htfSliced;
+    if (useFrozenHtf) {
+      htfDisplay = lastSlicedHtfOverlaysRef.current;
+    } else if (htfSliced.some((overlay) => overlay.points.length > 0)) {
+      lastSlicedHtfOverlaysRef.current = htfSliced;
+    }
+
+    return [...bffOverlays, ...htfDisplay];
+  }, [chartView.auxEmaOverlays, traceMatchesWindow]);
 
   const fullCandleRange = useMemo(
     () => (cachedBundle ? candleRangeMs(cachedBundle.candles) : null),
@@ -486,7 +740,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
 
   const marketCandlesCount = cachedBundle?.candles.length ?? 0;
   const candlesSource: CandlesSource =
-    marketLoadStatus === "ready" && cachedBundle !== undefined ? "market" : "unavailable";
+    cachedBundle !== undefined && marketLoadStatus !== "error" ? "market" : "unavailable";
 
   const selectTrade = useCallback(
     (tradeId: number | null) => {
@@ -500,21 +754,12 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
         setActiveTab("chart");
       }
     },
-    [selectedVariant],
+    [selectedVariant, selectedTradeId],
   );
 
   const selectBar = useCallback((timeSec: number | null) => {
     setSelectedBarTimeSec(timeSec);
   }, []);
-
-  const chartWindowKey = useMemo(() => {
-    if (chartView.candles.length === 0) {
-      return null;
-    }
-    const first = chartView.candles[0]!.time;
-    const last = chartView.candles[chartView.candles.length - 1]!.time;
-    return `${selectedRunId}:${selectedVariantKey}:${first}:${last}`;
-  }, [chartView.candles, selectedRunId, selectedVariantKey]);
 
   useEffect(() => {
     if (
@@ -527,19 +772,56 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       setSignalTrace(null);
       setSignalTraceStatus("idle");
       setSignalTraceError(null);
+      setLoadedTraceWindowKey(null);
+      loadingTraceWindowKeyRef.current = null;
+      inFlightTraceRequestRef.current = null;
       return;
     }
 
     const candles = chartView.candles;
+    if (candles.length === 0) {
+      return;
+    }
+
     const fromMs = candles[0]!.time * 1000;
     const toOpenTimeMs = candles[candles.length - 1]!.time * 1000;
     const runId = selectedRunId;
     const variantKey = selectedVariant.variant;
+    const windowKey = chartWindowKey;
+    const request: SignalTraceRequest = {
+      windowKey,
+      runId,
+      variant: variantKey,
+      fromMs,
+      toOpenTimeMs,
+    };
+
+    const decision = decideSignalTraceLoad({
+      chartWindowKey: windowKey,
+      loadedTraceWindowKey,
+      loadingTraceWindowKey: loadingTraceWindowKeyRef.current,
+      signalTraceStatus,
+      inFlightRequest: inFlightTraceRequestRef.current,
+      request,
+    });
+
+    if (
+      decision.action === "skip_already_loaded" ||
+      decision.action === "skip_already_loading" ||
+      decision.action === "skip_identical_in_flight" ||
+      decision.action === "skip_idle"
+    ) {
+      return;
+    }
+
+    loadingTraceWindowKeyRef.current = windowKey;
+    inFlightTraceRequestRef.current = request;
+    setSignalTraceStatus("loading");
+    setSignalTraceError(null);
+
     let cancelled = false;
 
     async function loadTrace() {
-      setSignalTraceStatus("loading");
-      setSignalTraceError(null);
       try {
         const bundle = await fetchSignalTrace({
           runId,
@@ -549,6 +831,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
         });
         if (cancelled) return;
         setSignalTrace(bundle);
+        setLoadedTraceWindowKey(windowKey);
         setSignalTraceStatus("ready");
       } catch (err) {
         if (cancelled) return;
@@ -561,6 +844,11 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
               ? err.message
               : "Failed to load signal trace.",
         );
+      } finally {
+        if (!cancelled) {
+          loadingTraceWindowKeyRef.current = null;
+          inFlightTraceRequestRef.current = null;
+        }
       }
     }
 
@@ -568,14 +856,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [
-    report,
-    selectedRunId,
-    selectedVariant,
-    chartWindowKey,
-    marketLoadStatus,
-    chartView.candles,
-  ]);
+  }, [report, selectedRunId, selectedVariant?.variant, chartWindowKey, marketLoadStatus]);
 
   const symbol = report?.symbol ?? "—";
   const timeframe = chartTimeframe;
@@ -599,6 +880,9 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       report,
       chartCandles: chartView.candles,
       chartEmaOverlays: chartView.emaOverlays,
+      chartAuxEmaOverlays: chartView.auxEmaOverlays,
+      chartDisplayAuxEmaOverlays,
+      htfAuxEmaOverlayStale,
       chartViewMode: chartView.mode,
       chartViewCenterTimeSec: chartView.centerTimeSec,
       chartViewFirstTimeSec: chartView.firstTimeSec,
@@ -647,6 +931,8 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       report,
       chartView.candles,
       chartView.emaOverlays,
+      chartDisplayAuxEmaOverlays,
+      htfAuxEmaOverlayStale,
       chartView.mode,
       chartView.centerTimeSec,
       chartView.firstTimeSec,

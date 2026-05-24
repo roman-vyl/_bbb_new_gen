@@ -1,4 +1,4 @@
-"""Run report contracts — mirror ``research/results`` JSON schema v3."""
+"""Run report contracts — mirror ``research/results`` JSON schema v3/v4."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-SUPPORTED_REPORT_SCHEMA_VERSIONS: frozenset[int] = frozenset({3})
+SUPPORTED_REPORT_SCHEMA_VERSIONS: frozenset[int] = frozenset({3, 4})
 
 
 class TradeOverlay(BaseModel):
@@ -30,6 +30,19 @@ class TradeRecord(TradeOverlay):
     size: float | None
     pnl: float | None
     return_pct: float | None
+    entry_profile: str | None = None
+    entry_context_state: str | None = None
+    active_exit_profile: str | None = None
+    exit_group: str | None = None
+    exit_profile: str | None = None
+    exit_component_id: str | None = None
+    exit_instance_id: str | None = None
+    exit_kind: str | None = None
+    gross_pnl: float | None = None
+    fees_paid: float | None = None
+    gross_return_pct: float | None = None
+    hold_bars: int | None = None
+    hold_minutes: int | None = None
 
 
 class SideMetrics(BaseModel):
@@ -57,6 +70,41 @@ class OpenTradesMetrics(BaseModel):
     total: int
 
 
+class DiagnosticBucketMetrics(BaseModel):
+    """v4 profile / exit_reason breakdown bucket (not ``SideMetrics``)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    trades: int
+    pnl: float
+    gross_pnl: float
+    fees_paid: float
+    profit_factor: float | None
+    win_rate: float | None
+    avg_return_pct: float | None
+    avg_hold_bars: float | None
+
+
+class ProfileBucketMetrics(DiagnosticBucketMetrics):
+    model_config = ConfigDict(extra="forbid")
+
+    exit_reason_mix: dict[str, int] = Field(default_factory=dict)
+
+
+class ExitReasonBucketMetrics(DiagnosticBucketMetrics):
+    model_config = ConfigDict(extra="forbid")
+
+
+class FeeDiagnostics(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    total_fees_paid: float
+    gross_pnl: float
+    net_pnl: float
+    fees_rate: float
+    fees_as_pct_of_gross_profit: float | None = None
+
+
 class VariantMetrics(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -64,6 +112,9 @@ class VariantMetrics(BaseModel):
     short: SideMetrics
     total: TotalMetrics
     open_trades: OpenTradesMetrics
+    profile_breakdown: dict[str, ProfileBucketMetrics] | None = None
+    exit_reason_breakdown: dict[str, ExitReasonBucketMetrics] | None = None
+    fee_diagnostics: FeeDiagnostics | None = None
 
 
 class DataRange(BaseModel):

@@ -1,6 +1,6 @@
 /** Mirrors future `research_api/contracts` — single source for UI types (phase 0). */
 
-export const SUPPORTED_REPORT_SCHEMA_VERSIONS = [3] as const;
+export const SUPPORTED_REPORT_SCHEMA_VERSIONS = [3, 4] as const;
 export type ReportSchemaVersion = (typeof SUPPORTED_REPORT_SCHEMA_VERSIONS)[number];
 
 /** JSON object maps in reports/config drafts (avoids bare `Record` under TS 5.8). */
@@ -45,6 +45,16 @@ export type ChartMarketBundle = {
   ema_overlays: ChartEmaOverlay[];
 };
 
+/** Non-anchor-stack EMA line (exit policy on chart TF or HTF context from signal trace). */
+export type ChartAuxEmaOverlay = {
+  id: string;
+  label: string;
+  period: number;
+  timeframe: string;
+  points: IndicatorPoint[];
+  dashed: boolean;
+};
+
 /** MVP chart market timeframe (execution/research TF for Workbench). */
 export const CHART_MARKET_TIMEFRAME = "5m" as const;
 
@@ -59,10 +69,51 @@ export type TradeOverlay = {
   exit_reason: string;
 };
 
+export type ExitProfileLabel = "aligned" | "countertrend" | "neutral";
+
 export type TradeRecord = TradeOverlay & {
   size: number | null;
   pnl: number | null;
   return_pct: number | null;
+  /** Schema v4 — closed trades only */
+  entry_profile?: ExitProfileLabel;
+  entry_context_state?: "up" | "down" | "neutral" | "unknown";
+  active_exit_profile?: ExitProfileLabel;
+  exit_group?: "always_on" | "profile" | null;
+  exit_profile?: ExitProfileLabel | null;
+  exit_component_id?: string | null;
+  exit_instance_id?: string | null;
+  exit_kind?: string | null;
+  gross_pnl?: number | null;
+  fees_paid?: number | null;
+  gross_return_pct?: number | null;
+  hold_bars?: number | null;
+  hold_minutes?: number | null;
+};
+
+export type DiagnosticBucketMetrics = {
+  trades: number;
+  pnl: number;
+  gross_pnl: number;
+  fees_paid: number;
+  profit_factor: number | null;
+  win_rate: number | null;
+  avg_return_pct: number | null;
+  avg_hold_bars: number | null;
+};
+
+export type ProfileBucketMetrics = DiagnosticBucketMetrics & {
+  exit_reason_mix: Record<string, number>;
+};
+
+export type ExitReasonBucketMetrics = DiagnosticBucketMetrics;
+
+export type FeeDiagnostics = {
+  total_fees_paid: number;
+  gross_pnl: number;
+  net_pnl: number;
+  fees_rate: number;
+  fees_as_pct_of_gross_profit?: number | null;
 };
 
 export type SideMetrics = {
@@ -83,6 +134,10 @@ export type VariantMetrics = {
   short: SideMetrics;
   total: TotalMetrics;
   open_trades: { long: number; short: number; total: number };
+  /** Schema v4 */
+  profile_breakdown?: Record<ExitProfileLabel, ProfileBucketMetrics>;
+  exit_reason_breakdown?: Record<string, ExitReasonBucketMetrics>;
+  fee_diagnostics?: FeeDiagnostics;
 };
 
 export type RunVariant = {

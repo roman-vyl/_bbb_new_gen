@@ -13,10 +13,15 @@ from typing import Any, Mapping
 
 import pandas as pd
 
+from data_engine.contracts import timeframe_ms
+
 from research.strategies.ema_pullback.execution.exit_attribution import (
     ExitAttributionContext,
-    classify_exit_reason,
+    classify_exit_attribution,
 )
+
+_PROFILE_KEYS = ("aligned", "countertrend", "neutral")
+_CONTEXT_LABELS = frozenset({"up", "down", "neutral"})
 
 
 def _repo_root() -> Path:
@@ -139,6 +144,129 @@ def _can_use_exit_attribution(
     return True
 
 
+def _context_state_label(raw: Any) -> str:
+    if isinstance(raw, str) and raw in _CONTEXT_LABELS:
+        return raw
+    return "unknown"
+
+
+def _profile_label(raw: Any) -> str | None:
+    if isinstance(raw, str) and raw in _PROFILE_KEYS:
+        return raw
+    return None
+
+
+def _trade_fees_paid(row: dict[str, Any]) -> float:
+    entry_fees = row.get("entry_fees")
+    exit_fees = row.get("exit_fees")
+    if entry_fees is not None or exit_fees is not None:
+        return float(entry_fees or 0.0) + float(exit_fees or 0.0)
+    fees = row.get("fees")
+    if fees is not None:
+        return float(fees)
+    return 0.0
+
+
+def _gross_return_pct(
+    gross_pnl: float | None,
+    entry_price: float | None,
+    size: float | None,
+) -> float | None:
+    if gross_pnl is None or entry_price is None or size is None:
+        return None
+    notional = float(entry_price) * abs(float(size))
+    if notional == 0.0:
+        return None
+    value = gross_pnl / notional
+    return _scalar_json_safe(value)  # type: ignore[return-value]
+
+
+def _closed_trades(trade_records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [record for record in trade_records if record.get("status") == "closed"]
+
+
+def _profit_factor_from_pnls(pnl_values: list[float]) -> float | None:
+    gross_profit = sum(value for value in pnl_values if value > 0.0)
+    gross_loss = abs(sum(value for value in pnl_values if value < 0.0))
+    if gross_loss == 0.0:
+        return None
+    return _scalar_json_safe(gross_profit / gross_loss)  # type: ignore[return-value]
+
+
+def _avg_hold_bars(records: list[dict[str, Any]]) -> float | None:
+    holds = [record["hold_bars"] for record in records if record.get("hold_bars") is not None]
+    if not holds:
+        return None
+    return _scalar_json_safe(sum(holds) / len(holds))  # type: ignore[return-value]
+
+
+def _bucket_metrics(records: list[dict[str, Any]]) -> dict[str, Any]:
+    trades = len(records)
+    pnl_values = [float(record.get("pnl") or 0.0) for record in records]
+    gross_pnl_values = [float(record.get("gross_pnl") or 0.0) for record in records]
+    fees_values = [float(record.get("fees_paid") or 0.0) for record in records]
+    returns = [float(record["return_pct"]) for record in records if record.get("return_pct") is not None]
+    wins = sum(1 for value in pnl_values if value > 0.0)
+    return {
+        "trades": trades,
+        "pnl": _scalar_json_safe(sum(pnl_values)),
+        "gross_pnl": _scalar_json_safe(sum(gross_pnl_values)),
+        "fees_paid": _scalar_json_safe(sum(fees_values)),
+        "profit_factor": _profit_factor_from_pnls(pnl_values),
+        "win_rate": _scalar_json_safe(wins / trades) if trades else None,
+        "avg_return_pct": _scalar_json_safe(sum(returns) / len(returns)) if returns else None,
+        "avg_hold_bars": _avg_hold_bars(records),
+    }
+
+
+def build_profile_breakdown(trade_records: list[dict[str, Any]]) -> dict[str, Any]:
+    """Aggregate closed trades by ``entry_profile``."""
+
+    closed = _closed_trades(trade_records)
+    out: dict[str, Any] = {}
+    for profile in _PROFILE_KEYS:
+        bucket = [record for record in closed if record.get("entry_profile") == profile]
+        metrics = _bucket_metrics(bucket)
+        mix: dict[str, int] = {}
+        for record in bucket:
+            reason = str(record.get("exit_reason") or "unknown")
+            mix[reason] = mix.get(reason, 0) + 1
+        metrics["exit_reason_mix"] = mix
+        out[profile] = metrics
+    return out
+
+
+def build_exit_reason_breakdown(trade_records: list[dict[str, Any]]) -> dict[str, Any]:
+    """Aggregate closed trades by full ``exit_reason`` string."""
+
+    closed = _closed_trades(trade_records)
+    reasons = sorted({str(record.get("exit_reason") or "unknown") for record in closed})
+    return {reason: _bucket_metrics([r for r in closed if str(r.get("exit_reason") or "unknown") == reason]) for reason in reasons}
+
+
+def build_fee_diagnostics(
+    trade_records: list[dict[str, Any]],
+    *,
+    fees_rate: float,
+) -> dict[str, Any]:
+    closed = _closed_trades(trade_records)
+    total_fees = sum(float(record.get("fees_paid") or 0.0) for record in closed)
+    gross_pnl = sum(float(record.get("gross_pnl") or 0.0) for record in closed)
+    net_pnl = sum(float(record.get("pnl") or 0.0) for record in closed)
+    gross_profit = sum(float(record.get("gross_pnl") or 0.0) for record in closed if float(record.get("gross_pnl") or 0.0) > 0.0)
+    out: dict[str, Any] = {
+        "total_fees_paid": _scalar_json_safe(total_fees),
+        "gross_pnl": _scalar_json_safe(gross_pnl),
+        "net_pnl": _scalar_json_safe(net_pnl),
+        "fees_rate": _scalar_json_safe(fees_rate),
+    }
+    if gross_profit > 0.0:
+        out["fees_as_pct_of_gross_profit"] = _scalar_json_safe(total_fees / gross_profit)
+    else:
+        out["fees_as_pct_of_gross_profit"] = None
+    return out
+
+
 def _index_to_open_time_ms(index: pd.Index, idx: Any) -> int | None:
     if idx is None or (isinstance(idx, float) and math.isnan(idx)):
         return None
@@ -166,6 +294,11 @@ def extract_trade_records(
     low: pd.Series | None = None,
     open_s: pd.Series | None = None,
     attribution: ExitAttributionContext | None = None,
+    profile_long: pd.Series | None = None,
+    profile_short: pd.Series | None = None,
+    context_state: pd.Series | None = None,
+    base_timeframe: str | None = None,
+    exit_component_map: dict[str, str] | None = None,
 ) -> list[dict[str, Any]]:
     """Normalize vectorbt portfolio trades into Stage 9 trade_records (library-agnostic fields)."""
 
@@ -177,6 +310,9 @@ def extract_trade_records(
     use_attr = _can_use_exit_attribution(
         close, high=high, low=low, open_s=open_s, attribution=attribution
     )
+    base_timeframe_minutes: int | None = None
+    if base_timeframe is not None:
+        base_timeframe_minutes = timeframe_ms(base_timeframe.strip()) // 60_000
 
     out: list[dict[str, Any]] = []
     # TradeDirectionT(Long=0, Short=1), TradeStatusT(Open=0, Closed=1)
@@ -199,36 +335,89 @@ def extract_trade_records(
             exit_ms = None
             exit_p = None
 
+        exit_attr = None
         if status == "open":
             exit_reason = "open"
         elif use_attr:
             assert attribution is not None and high is not None and low is not None and open_s is not None
-            exit_reason = classify_exit_reason(
+            exit_attr = classify_exit_attribution(
                 row=row,
                 close=close,
                 high=high,
                 low=low,
                 open_=open_s,
                 ctx=attribution,
+                component_map=exit_component_map,
             )
+            exit_reason = exit_attr.exit_reason
         else:
             exit_reason = "unknown"
 
-        out.append(
-            {
-                "trade_id": i + 1,
-                "direction": direction,
-                "status": status,
-                "entry_time_ms": entry_ms,
-                "exit_time_ms": exit_ms,
-                "entry_price": entry_p,
-                "exit_price": exit_p,
-                "size": size_v,
-                "pnl": pnl_v,
-                "return_pct": ret_v,
-                "exit_reason": exit_reason,
-            }
-        )
+        record: dict[str, Any] = {
+            "trade_id": i + 1,
+            "direction": direction,
+            "status": status,
+            "entry_time_ms": entry_ms,
+            "exit_time_ms": exit_ms,
+            "entry_price": entry_p,
+            "exit_price": exit_p,
+            "size": size_v,
+            "pnl": pnl_v,
+            "return_pct": ret_v,
+            "exit_reason": exit_reason,
+        }
+
+        if status == "closed":
+            fees_paid = _scalar_json_safe(_trade_fees_paid(row))
+            pnl_f = float(pnl_v) if pnl_v is not None else 0.0
+            fees_f = float(fees_paid) if fees_paid is not None else 0.0
+            gross_pnl = _scalar_json_safe(pnl_f + fees_f)
+            record["gross_pnl"] = gross_pnl
+            record["fees_paid"] = fees_paid
+            record["gross_return_pct"] = _gross_return_pct(
+                float(gross_pnl) if gross_pnl is not None else None,
+                float(entry_p) if entry_p is not None else None,
+                float(size_v) if size_v is not None else None,
+            )
+
+            if exit_attr is not None:
+                record["exit_group"] = exit_attr.exit_group
+                record["exit_profile"] = exit_attr.exit_profile
+                record["exit_component_id"] = exit_attr.exit_component_id
+                record["exit_instance_id"] = exit_attr.exit_instance_id
+                record["exit_kind"] = exit_attr.exit_kind
+            else:
+                record["exit_group"] = None
+                record["exit_profile"] = None
+                record["exit_component_id"] = None
+                record["exit_instance_id"] = None
+                record["exit_kind"] = None
+
+            try:
+                entry_idx = int(row.get("entry_idx"))
+                exit_idx = int(row.get("exit_idx"))
+            except (TypeError, ValueError):
+                entry_idx = -1
+                exit_idx = -1
+            if entry_idx >= 0 and exit_idx >= 0:
+                hold_bars = exit_idx - entry_idx + 1
+                record["hold_bars"] = hold_bars
+                if base_timeframe_minutes is not None:
+                    record["hold_minutes"] = hold_bars * base_timeframe_minutes
+
+            entry_profile: str | None = None
+            if direction == "long" and profile_long is not None and 0 <= entry_idx < len(profile_long):
+                entry_profile = _profile_label(profile_long.iloc[entry_idx])
+            elif direction == "short" and profile_short is not None and 0 <= entry_idx < len(profile_short):
+                entry_profile = _profile_label(profile_short.iloc[entry_idx])
+            if entry_profile is not None:
+                record["entry_profile"] = entry_profile
+                record["active_exit_profile"] = entry_profile
+
+            if context_state is not None and 0 <= entry_idx < len(context_state):
+                record["entry_context_state"] = _context_state_label(context_state.iloc[entry_idx])
+
+        out.append(record)
     return out
 
 
@@ -250,7 +439,7 @@ def build_research_run_payload(
     payload = {
         "run_id": run_id,
         "created_at": _format_created_at(created_at),
-        "report_schema_version": 3,
+        "report_schema_version": 4,
         "family": family,
         "symbol": symbol.strip().upper(),
         "timeframe": timeframe.strip(),

@@ -8,6 +8,8 @@ from typing import Any, Literal
 
 import pandas as pd
 
+from research.strategies.ema_pullback.spec import EmaPullbackStrategySpec
+
 
 @dataclass(frozen=True)
 class ExitAttributionContext:
@@ -25,6 +27,31 @@ class ExitAttributionContext:
     tp_stop_agg_by_profile: dict[str, pd.Series] | None = None
     sl_stop_agg: pd.Series | None = None
     tp_stop_agg: pd.Series | None = None
+
+
+@dataclass(frozen=True)
+class ExitAttributionResult:
+    exit_reason: str
+    exit_group: str | None
+    exit_profile: str | None
+    exit_component_id: str | None
+    exit_instance_id: str | None
+    exit_kind: str | None
+
+
+def build_exit_instance_component_map(spec: EmaPullbackStrategySpec) -> dict[str, str]:
+    """Map exit rule ``instance_id`` → ``component_id`` from compiled exit policy."""
+
+    policy = spec.trade_management.exit_policy
+    out: dict[str, str] = {}
+    for rule in (
+        policy.always_on.exits
+        + policy.profiles.aligned.exits
+        + policy.profiles.countertrend.exits
+        + policy.profiles.neutral.exits
+    ):
+        out[rule.instance_id] = rule.component_id
+    return out
 
 
 def _finite(x: Any) -> bool:
@@ -49,6 +76,57 @@ def _resolve_profile(direction: str, context_state: str) -> str:
     if context_state == "up":
         return "countertrend"
     return "neutral"
+
+
+def _null_attribution(exit_reason: str) -> ExitAttributionResult:
+    return ExitAttributionResult(exit_reason, None, None, None, None, None)
+
+
+def _rule_index_for_instance(ctx: ExitAttributionContext, instance_id: str) -> int | None:
+    for i, inst in enumerate(ctx.instance_ids):
+        if inst == instance_id:
+            return i
+    return None
+
+
+def _metadata_for_rule(
+    ctx: ExitAttributionContext,
+    rule_i: int,
+    *,
+    component_map: dict[str, str] | None,
+) -> tuple[str | None, str | None, str | None, str | None, str | None]:
+    inst = ctx.instance_ids[rule_i]
+    kind = ctx.exit_kinds[rule_i]
+    group = ctx.rule_groups[rule_i] if rule_i < len(ctx.rule_groups) else "always_on"
+    component_id = (component_map or {}).get(inst)
+    if group == "always_on":
+        return "always_on", None, component_id, inst, kind
+    if group in {"aligned", "countertrend", "neutral"}:
+        return "profile", group, component_id, inst, kind
+    return None, None, component_id, inst, kind
+
+
+def _attribution_for_instance(
+    ctx: ExitAttributionContext,
+    instance_id: str,
+    *,
+    prefix: str,
+    component_map: dict[str, str] | None,
+) -> ExitAttributionResult:
+    rule_i = _rule_index_for_instance(ctx, instance_id)
+    if rule_i is None:
+        return _null_attribution("unknown")
+    exit_group, exit_profile, exit_component_id, exit_instance_id, exit_kind = _metadata_for_rule(
+        ctx, rule_i, component_map=component_map
+    )
+    return ExitAttributionResult(
+        f"{prefix}:{instance_id}",
+        exit_group,
+        exit_profile,
+        exit_component_id,
+        exit_instance_id,
+        exit_kind,
+    )
 
 
 def _agg_sl_tp_at_entry(
@@ -165,7 +243,7 @@ def _levels_from_ratios(
     return sl_level, tp_level
 
 
-def classify_exit_reason(
+def classify_exit_attribution(
     *,
     row: dict[str, Any],
     close: pd.Series,
@@ -173,12 +251,13 @@ def classify_exit_reason(
     low: pd.Series,
     open_: pd.Series,
     ctx: ExitAttributionContext,
-) -> str:
-    """Return ``exit_reason`` string for one ``pf.trades.records`` row."""
+    component_map: dict[str, str] | None = None,
+) -> ExitAttributionResult:
+    """Return ``exit_reason`` and structured exit metadata for one trade record row."""
 
     status_code = int(row.get("status", 0))
     if status_code == 0:
-        return "open"
+        return _null_attribution("open")
 
     direction_code = int(row.get("direction", 0))
     direction = "long" if direction_code == 0 else "short"
@@ -186,25 +265,25 @@ def classify_exit_reason(
     exit_idx_raw = row.get("exit_idx")
     entry_idx_raw = row.get("entry_idx")
     if exit_idx_raw is None or entry_idx_raw is None:
-        return "unknown"
+        return _null_attribution("unknown")
     try:
         exit_idx = int(exit_idx_raw)
         entry_idx = int(entry_idx_raw)
     except (TypeError, ValueError):
-        return "unknown"
+        return _null_attribution("unknown")
 
     if exit_idx < 0 or entry_idx < 0 or exit_idx >= len(close) or entry_idx >= len(close):
-        return "unknown"
+        return _null_attribution("unknown")
 
     stop_anchor = float(close.iloc[entry_idx])
     if not math.isfinite(stop_anchor):
-        return "unknown"
+        return _null_attribution("unknown")
 
     o_x = float(open_.iloc[exit_idx])
     h_x = float(high.iloc[exit_idx])
     l_x = float(low.iloc[exit_idx])
     if not all(map(math.isfinite, (o_x, h_x, l_x))):
-        return "unknown"
+        return _null_attribution("unknown")
 
     raw_state = ctx.context_state.iloc[entry_idx] if ctx.context_state is not None else "neutral"
     state = str(raw_state) if isinstance(raw_state, str) else "neutral"
@@ -219,14 +298,22 @@ def classify_exit_reason(
             inst = _pick_distance_instance(
                 ctx, entry_idx, exit_kind="stop_loss", agg_value=sl_agg, profile=profile
             )
-            return f"stop_loss:{inst}" if inst else "unknown"
+            if inst:
+                return _attribution_for_instance(
+                    ctx, inst, prefix="stop_loss", component_map=component_map
+                )
+            return _null_attribution("unknown")
         if tp_level is not None and tp_agg is not None and _stop_hit_long(
             o_x, h_x, l_x, tp_level, is_loss=False
         ):
             inst = _pick_distance_instance(
                 ctx, entry_idx, exit_kind="take_profit", agg_value=tp_agg, profile=profile
             )
-            return f"take_profit:{inst}" if inst else "unknown"
+            if inst:
+                return _attribution_for_instance(
+                    ctx, inst, prefix="take_profit", component_map=component_map
+                )
+            return _null_attribution("unknown")
     else:
         if sl_level is not None and sl_agg is not None and _stop_hit_short(
             o_x, h_x, l_x, sl_level, is_loss=True
@@ -234,14 +321,22 @@ def classify_exit_reason(
             inst = _pick_distance_instance(
                 ctx, entry_idx, exit_kind="stop_loss", agg_value=sl_agg, profile=profile
             )
-            return f"stop_loss:{inst}" if inst else "unknown"
+            if inst:
+                return _attribution_for_instance(
+                    ctx, inst, prefix="stop_loss", component_map=component_map
+                )
+            return _null_attribution("unknown")
         if tp_level is not None and tp_agg is not None and _stop_hit_short(
             o_x, h_x, l_x, tp_level, is_loss=False
         ):
             inst = _pick_distance_instance(
                 ctx, entry_idx, exit_kind="take_profit", agg_value=tp_agg, profile=profile
             )
-            return f"take_profit:{inst}" if inst else "unknown"
+            if inst:
+                return _attribution_for_instance(
+                    ctx, inst, prefix="take_profit", component_map=component_map
+                )
+            return _null_attribution("unknown")
 
     masks = ctx.long_signal_by_rule if direction == "long" else ctx.short_signal_by_rule
     for i, series in enumerate(masks):
@@ -251,6 +346,38 @@ def classify_exit_reason(
         if group not in {"always_on", profile}:
             continue
         if bool(series.iloc[exit_idx]):
-            return f"signal:{ctx.instance_ids[i]}"
+            inst = ctx.instance_ids[i]
+            exit_group, exit_profile, exit_component_id, exit_instance_id, exit_kind = _metadata_for_rule(
+                ctx, i, component_map=component_map
+            )
+            return ExitAttributionResult(
+                f"signal:{inst}",
+                exit_group,
+                exit_profile,
+                exit_component_id,
+                exit_instance_id,
+                exit_kind,
+            )
 
-    return "unknown"
+    return _null_attribution("unknown")
+
+
+def classify_exit_reason(
+    *,
+    row: dict[str, Any],
+    close: pd.Series,
+    high: pd.Series,
+    low: pd.Series,
+    open_: pd.Series,
+    ctx: ExitAttributionContext,
+) -> str:
+    """Return ``exit_reason`` string for one ``pf.trades.records`` row."""
+
+    return classify_exit_attribution(
+        row=row,
+        close=close,
+        high=high,
+        low=low,
+        open_=open_,
+        ctx=ctx,
+    ).exit_reason

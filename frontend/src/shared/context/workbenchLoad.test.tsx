@@ -12,6 +12,7 @@ import type {
   SignalTraceBundle,
   VariantMetrics,
 } from "@/api/types";
+import { clearMarketCache } from "@/features/chart/marketDataCache";
 import { WorkbenchProvider, useWorkbench } from "@/shared/context/WorkbenchContext";
 
 const fetchRunReport = vi.fn<typeof import("@/api/client").fetchRunReport>();
@@ -19,6 +20,7 @@ const fetchRunSummaries = vi.fn<typeof import("@/api/client").fetchRunSummaries>
 const fetchConfigState = vi.fn<typeof import("@/api/client").fetchConfigState>();
 const fetchChartMarketBundle = vi.fn<typeof import("@/api/client").fetchChartMarketBundle>();
 const fetchSignalTrace = vi.fn<typeof import("@/api/client").fetchSignalTrace>();
+const fetchChartOverlayEma = vi.fn<typeof import("@/api/client").fetchChartOverlayEma>();
 
 vi.mock("@/api/client", () => ({
   ApiError: class ApiError extends Error {
@@ -39,6 +41,8 @@ vi.mock("@/api/client", () => ({
     fetchChartMarketBundle(...args),
   fetchSignalTrace: (...args: Parameters<typeof fetchSignalTrace>) =>
     fetchSignalTrace(...args),
+  fetchChartOverlayEma: (...args: Parameters<typeof fetchChartOverlayEma>) =>
+    fetchChartOverlayEma(...args),
   selectSavedConfig: vi.fn(),
 }));
 
@@ -217,6 +221,7 @@ describe("Workbench report-load invariant", () => {
   beforeEach(() => {
     workbenchRef = null;
     vi.clearAllMocks();
+    clearMarketCache();
     fetchRunSummaries.mockResolvedValue(RUNS);
     fetchConfigState.mockResolvedValue({
       family: "ema_pullback",
@@ -231,6 +236,7 @@ describe("Workbench report-load invariant", () => {
       ema_overlays: [],
     });
     fetchSignalTrace.mockResolvedValue(EMPTY_SIGNAL_TRACE);
+    fetchChartOverlayEma.mockResolvedValue([]);
   });
 
   it("calls fetchRunReport exactly once on mount", async () => {
@@ -278,6 +284,9 @@ describe("Workbench report-load invariant", () => {
     await waitFor(() => {
       expect(workbenchRef?.reportLoadStatus).toBe("ready");
     });
+    await waitFor(() => {
+      expect(workbenchRef?.selectedTradeId).toBe(2);
+    });
     const callsAfterReady = fetchRunReport.mock.calls.length;
 
     act(() => {
@@ -312,3 +321,4 @@ describe("Workbench report-load invariant", () => {
     expect(fetchRunReport).toHaveBeenLastCalledWith("run-b");
   });
 });
+
