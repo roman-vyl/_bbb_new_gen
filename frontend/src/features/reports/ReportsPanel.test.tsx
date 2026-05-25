@@ -55,6 +55,7 @@ describe("ReportsPanel", () => {
     expect(screen.queryByText("entry_profile")).toBeNull();
     expect(screen.queryByLabelText("Show diagnostics columns")).toBeNull();
     expect(screen.getAllByText("exit_reason").length).toBeGreaterThan(0);
+    expect(screen.getByTestId("filter-direction")).toBeTruthy();
   });
 
   it("v4 report renders fee and breakdown sections", () => {
@@ -65,6 +66,20 @@ describe("ReportsPanel", () => {
     expect(screen.getByText("Profile breakdown")).toBeTruthy();
     expect(screen.getByText("Exit reason breakdown")).toBeTruthy();
     expect(screen.getByText("Total fees")).toBeTruthy();
+  });
+
+  it("filters trades by long side", () => {
+    mockWorkbench({ report: v4Report, variant: v4Report.variants[0] });
+    render(<ReportsPanel />);
+    fireEvent.click(
+      within(screen.getByTestId("filter-direction")).getByRole("button", { name: "long" }),
+    );
+    const tradeTable = document.querySelector(".trade-table:not(.breakdown-table)");
+    const rows = within(tradeTable as HTMLElement).getAllByRole("row").slice(1);
+    expect(rows.length).toBeGreaterThan(0);
+    for (const row of rows) {
+      expect(within(row).getByText("LONG")).toBeTruthy();
+    }
   });
 
   it("filtered row click calls selectTrade with trade id", () => {

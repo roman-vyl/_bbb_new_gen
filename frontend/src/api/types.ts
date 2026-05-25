@@ -124,6 +124,14 @@ export type ProfileBucketMetrics = DiagnosticBucketMetrics & {
   exit_reason_mix: Record<string, number>;
 };
 
+export type ProfileSideSection = Record<ExitProfileLabel | "total", ProfileBucketMetrics>;
+
+export type ProfileSideBreakdown = {
+  long: ProfileSideSection;
+  short: ProfileSideSection;
+  total: ProfileSideSection;
+};
+
 export type ExitReasonBucketMetrics = DiagnosticBucketMetrics;
 
 export type FeeDiagnostics = {
@@ -188,6 +196,8 @@ export type VariantMetrics = {
   open_trades: { long: number; short: number; total: number };
   /** Schema v4 */
   profile_breakdown?: Record<ExitProfileLabel, ProfileBucketMetrics>;
+  /** Schema v5 — side × HTF entry profile */
+  profile_side_breakdown?: ProfileSideBreakdown;
   exit_reason_breakdown?: Record<string, ExitReasonBucketMetrics>;
   fee_diagnostics?: FeeDiagnostics;
   quality_flag_breakdown?: Record<string, QualityFlagBucketMetrics>;

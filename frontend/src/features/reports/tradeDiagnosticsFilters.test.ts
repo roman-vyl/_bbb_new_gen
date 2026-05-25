@@ -29,6 +29,19 @@ function makeTrade(overrides: Partial<TradeRecord> = {}): TradeRecord {
 }
 
 describe("tradeDiagnosticsFilters", () => {
+  it("filters by direction", () => {
+    const trades = [
+      makeTrade({ trade_id: 1, direction: "long" }),
+      makeTrade({ trade_id: 2, direction: "short" }),
+    ];
+    expect(
+      filterTrades(trades, { ...DEFAULT_TRADE_DIAGNOSTICS_FILTERS, direction: "long" }),
+    ).toHaveLength(1);
+    expect(
+      filterTrades(trades, { ...DEFAULT_TRADE_DIAGNOSTICS_FILTERS, direction: "short" }),
+    ).toHaveLength(1);
+  });
+
   it("filters by entry_profile", () => {
     const trades = [
       makeTrade({ trade_id: 1, entry_profile: "aligned" }),

@@ -97,6 +97,25 @@ _DIAGNOSTIC_BUCKET = {
     "avg_hold_bars": 3.0,
 }
 
+_EMPTY_PROFILE_BUCKET = {
+    "trades": 0,
+    "pnl": 0.0,
+    "gross_pnl": 0.0,
+    "fees_paid": 0.0,
+    "profit_factor": None,
+    "win_rate": None,
+    "avg_return_pct": None,
+    "avg_hold_bars": None,
+    "exit_reason_mix": {},
+}
+
+_PROFILE_SIDE_SECTION = {
+    "aligned": {**_DIAGNOSTIC_BUCKET, "exit_reason_mix": {"signal:rsi_exit": 1}},
+    "countertrend": _EMPTY_PROFILE_BUCKET,
+    "neutral": _EMPTY_PROFILE_BUCKET,
+    "total": {**_DIAGNOSTIC_BUCKET, "exit_reason_mix": {"signal:rsi_exit": 1}},
+}
+
 _SAMPLE_REPORT_V4 = {
     **_SAMPLE_REPORT,
     "report_schema_version": 4,
@@ -209,6 +228,16 @@ _SAMPLE_REPORT_V5 = {
             **_SAMPLE_REPORT_V4["variants"][0],
             "metrics": {
                 **_SAMPLE_REPORT_V4["variants"][0]["metrics"],
+                "profile_side_breakdown": {
+                    "long": _PROFILE_SIDE_SECTION,
+                    "short": {
+                        "aligned": _EMPTY_PROFILE_BUCKET,
+                        "countertrend": _EMPTY_PROFILE_BUCKET,
+                        "neutral": _EMPTY_PROFILE_BUCKET,
+                        "total": _EMPTY_PROFILE_BUCKET,
+                    },
+                    "total": _PROFILE_SIDE_SECTION,
+                },
                 "quality_flag_breakdown": {
                     "high_mfe_low_capture": _QUALITY_BUCKET,
                 },
@@ -320,6 +349,11 @@ def test_load_schema_v5_report_with_trade_quality_diagnostics(tmp_path: Path) ->
     assert report.trade_quality_config.atr_source is None
 
     variant = report.variants[0]
+    assert variant.metrics.profile_side_breakdown is not None
+    assert variant.metrics.profile_side_breakdown.long.aligned.trades == 1
+    assert variant.metrics.profile_side_breakdown.total.total.pnl == 9.0
+    assert variant.metrics.profile_side_breakdown.short.total.trades == 0
+
     assert variant.metrics.quality_flag_breakdown is not None
     flag_bucket = variant.metrics.quality_flag_breakdown["high_mfe_low_capture"]
     assert flag_bucket.avg_mfe_atr is None
@@ -342,6 +376,7 @@ def test_load_schema_v3_report_still_valid(tmp_path: Path) -> None:
     report = load_run_report(run_id=run_id, results_dir=tmp_path)
     assert report.report_schema_version == 3
     assert report.variants[0].metrics.profile_breakdown is None
+    assert report.variants[0].metrics.profile_side_breakdown is None
     assert report.variants[0].trade_records[0].entry_profile is None
 
 

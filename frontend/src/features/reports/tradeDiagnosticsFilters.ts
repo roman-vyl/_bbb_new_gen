@@ -4,6 +4,7 @@ import {
   type ExitReasonFilterId,
 } from "@/features/reports/exitReasonFilters";
 
+export type DirectionFilterId = "all" | "long" | "short";
 export type EntryProfileFilterId = ExitProfileLabel | "all";
 export type EntryContextFilterId = "up" | "down" | "neutral" | "unknown" | "all";
 export type ExitGroupFilterId = "all" | "always_on" | "profile";
@@ -18,6 +19,7 @@ export type QualityFlagFilterId =
   | "stop_loss_after_bad_context";
 
 export type TradeDiagnosticsFilterState = {
+  direction: DirectionFilterId;
   entryProfile: EntryProfileFilterId;
   entryContextState: EntryContextFilterId;
   exitKind: string;
@@ -28,6 +30,7 @@ export type TradeDiagnosticsFilterState = {
 };
 
 export const DEFAULT_TRADE_DIAGNOSTICS_FILTERS: TradeDiagnosticsFilterState = {
+  direction: "all",
   entryProfile: "all",
   entryContextState: "all",
   exitKind: "all",
@@ -36,6 +39,12 @@ export const DEFAULT_TRADE_DIAGNOSTICS_FILTERS: TradeDiagnosticsFilterState = {
   outcome: "all",
   qualityFlag: "all",
 };
+
+export const DIRECTION_FILTER_OPTIONS = [
+  { id: "all" as const, label: "All" },
+  { id: "long" as const, label: "long" },
+  { id: "short" as const, label: "short" },
+];
 
 export const ENTRY_PROFILE_FILTER_OPTIONS = [
   { id: "all" as const, label: "All" },
@@ -79,6 +88,10 @@ export function matchesTradeDiagnosticsFilters(
   filters: TradeDiagnosticsFilterState,
 ): boolean {
   if (!matchesExitReasonFilter(trade.exit_reason, filters.exitReason)) return false;
+
+  if (filters.direction !== "all") {
+    if (trade.direction !== filters.direction) return false;
+  }
 
   if (filters.entryProfile !== "all") {
     if (trade.entry_profile !== filters.entryProfile) return false;
