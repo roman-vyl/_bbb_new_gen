@@ -78,7 +78,7 @@ describe("ReportsPanel", () => {
     const rows = within(tradeTable as HTMLElement).getAllByRole("row").slice(1);
     expect(rows.length).toBeGreaterThan(0);
     for (const row of rows) {
-      expect(within(row).getByText("LONG")).toBeTruthy();
+      expect(within(row).getByText("long")).toBeTruthy();
     }
   });
 

@@ -804,8 +804,30 @@ select {
   margin-bottom: 0.25rem;
 }
 
+.diagnostics-section .table-wrap {
+  flex: 0 0 auto;
+  overflow-x: visible;
+  overflow-y: visible;
+  max-width: 100%;
+}
+
 .breakdown-table {
   font-size: 0.78rem;
+  width: 100%;
+}
+
+.breakdown-table--exit-reason {
+  table-layout: fixed;
+}
+
+.breakdown-table--exit-reason .exit-reason-col {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  vertical-align: top;
+}
+
+.breakdown-table--exit-reason .exit-reason-col .exit-reason {
+  white-space: normal;
 }
 
 .breakdown-table .exit-mix-cell {
@@ -876,10 +898,15 @@ select {
 }
 
 .table-wrap {
-  flex: 1;
   overflow: auto;
   border: 1px solid #243041;
   border-radius: 8px;
+  max-width: 100%;
+}
+
+.table-wrap--fill {
+  flex: 1;
+  min-height: 0;
 }
 
 .trade-table {

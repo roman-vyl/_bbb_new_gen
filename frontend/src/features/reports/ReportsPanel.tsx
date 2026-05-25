@@ -270,7 +270,7 @@ export function ReportsPanel() {
         </>
       )}
 
-      <div className="table-wrap">
+      <div className="table-wrap table-wrap--fill">
         <table className="trade-table">
           <thead>
             <tr>

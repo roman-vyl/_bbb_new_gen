@@ -16,11 +16,11 @@ export function ExitReasonBreakdownTable({ exitReasonBreakdown }: Props) {
   const reasons = Object.keys(exitReasonBreakdown).sort();
 
   return (
-    <div className="table-wrap">
-      <table className="trade-table breakdown-table">
+    <div className="table-wrap breakdown-table-wrap">
+      <table className="trade-table breakdown-table breakdown-table--exit-reason">
         <thead>
           <tr>
-            <th>exit_reason</th>
+            <th className="exit-reason-col">exit_reason</th>
             <th>Trades</th>
             <th>Win rate</th>
             <th>PF</th>
@@ -37,7 +37,7 @@ export function ExitReasonBreakdownTable({ exitReasonBreakdown }: Props) {
             const empty = bucket.trades === 0;
             return (
               <tr key={reason}>
-                <td>
+                <td className="exit-reason-col">
                   <code className="exit-reason">{reason}</code>
                 </td>
                 <td>{bucket.trades}</td>
