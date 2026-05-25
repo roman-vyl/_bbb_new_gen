@@ -8,10 +8,13 @@ from pathlib import Path
 
 import pytest
 
+from research.strategies.ema_pullback.execution.backtest import build_trade_side_metrics
+from research.strategies.ema_pullback.execution.exits import _active_rule_group_for_side
 from research.strategies.ema_pullback.execution.results import (
     build_exit_reason_breakdown,
     build_fee_diagnostics,
     build_profile_breakdown,
+    build_profile_side_breakdown,
     build_research_run_payload,
     build_run_id,
     build_trade_quality_breakdowns,
@@ -236,6 +239,137 @@ def test_extract_trade_records_closed_and_open() -> None:
     assert rec_s[0]["exit_reason"] == "unknown"
     assert rec_c[0]["hold_bars"] == 3
     assert rec_c[0]["hold_minutes"] == 180
+
+
+def _both_sides_closed_fixture() -> list[dict[str, object]]:
+    return [
+        {
+            "status": "closed",
+            "direction": "long",
+            "entry_profile": "aligned",
+            "pnl": 2.0,
+            "gross_pnl": 2.5,
+            "fees_paid": 0.5,
+            "return_pct": 0.02,
+            "hold_bars": 3,
+            "exit_reason": "take_profit:tp",
+        },
+        {
+            "status": "closed",
+            "direction": "long",
+            "entry_profile": "countertrend",
+            "pnl": -1.0,
+            "gross_pnl": -0.9,
+            "fees_paid": 0.1,
+            "return_pct": -0.01,
+            "hold_bars": 4,
+            "exit_reason": "stop_loss:sl",
+        },
+        {
+            "status": "closed",
+            "direction": "short",
+            "entry_profile": "aligned",
+            "pnl": 3.0,
+            "gross_pnl": 3.2,
+            "fees_paid": 0.2,
+            "return_pct": 0.03,
+            "hold_bars": 5,
+            "exit_reason": "signal:ema",
+        },
+        {
+            "status": "closed",
+            "direction": "short",
+            "entry_profile": "neutral",
+            "pnl": 0.5,
+            "gross_pnl": 0.5,
+            "fees_paid": 0.0,
+            "return_pct": 0.005,
+            "hold_bars": 2,
+            "exit_reason": "signal:ema",
+        },
+    ]
+
+
+def test_active_rule_group_side_aware_short() -> None:
+    assert _active_rule_group_for_side(side="short", context_state="up") == "countertrend"
+    assert _active_rule_group_for_side(side="short", context_state="down") == "aligned"
+    assert _active_rule_group_for_side(side="long", context_state="up") == "aligned"
+    assert _active_rule_group_for_side(side="long", context_state="down") == "countertrend"
+
+
+def test_profile_side_breakdown_long_only() -> None:
+    records = [
+        {
+            "status": "closed",
+            "direction": "long",
+            "entry_profile": "aligned",
+            "pnl": 1.0,
+            "gross_pnl": 1.0,
+            "fees_paid": 0.0,
+            "return_pct": 0.01,
+            "hold_bars": 2,
+            "exit_reason": "signal:a",
+        }
+    ]
+    breakdown = build_profile_side_breakdown(records)
+    assert breakdown["long"]["aligned"]["trades"] == 1
+    assert breakdown["long"]["total"]["trades"] == 1
+    assert breakdown["short"]["total"]["trades"] == 0
+    assert breakdown["short"]["aligned"]["trades"] == 0
+
+
+def test_profile_side_breakdown_both_sides() -> None:
+    breakdown = build_profile_side_breakdown(_both_sides_closed_fixture())
+    assert breakdown["long"]["total"]["trades"] == 2
+    assert breakdown["short"]["total"]["trades"] == 2
+    assert breakdown["long"]["aligned"]["trades"] == 1
+    assert breakdown["short"]["aligned"]["trades"] == 1
+
+
+def test_profile_side_breakdown_total_aligned_sum() -> None:
+    breakdown = build_profile_side_breakdown(_both_sides_closed_fixture())
+    long_aligned = breakdown["long"]["aligned"]
+    short_aligned = breakdown["short"]["aligned"]
+    total_aligned = breakdown["total"]["aligned"]
+    assert total_aligned["trades"] == long_aligned["trades"] + short_aligned["trades"]
+    assert total_aligned["pnl"] == long_aligned["pnl"] + short_aligned["pnl"]
+
+
+def test_profile_side_breakdown_side_total_sum() -> None:
+    breakdown = build_profile_side_breakdown(_both_sides_closed_fixture())
+    long = breakdown["long"]
+    profile_sum_trades = (
+        long["aligned"]["trades"] + long["countertrend"]["trades"] + long["neutral"]["trades"]
+    )
+    profile_sum_pnl = long["aligned"]["pnl"] + long["countertrend"]["pnl"] + long["neutral"]["pnl"]
+    assert long["total"]["trades"] == profile_sum_trades
+    assert long["total"]["pnl"] == profile_sum_pnl
+
+
+def test_profile_side_breakdown_total_leaf_contracts() -> None:
+    records = _both_sides_closed_fixture()
+    profile_breakdown = build_profile_breakdown(records)
+    side_breakdown = build_profile_side_breakdown(records)
+    metrics = build_trade_side_metrics(
+        records,
+        init_cash=100.0,
+        sharpe=0.0,
+        max_drawdown=0.0,
+    )
+
+    for profile in ("aligned", "countertrend", "neutral"):
+        assert side_breakdown["total"][profile] == profile_breakdown[profile]
+
+    total_leaf = side_breakdown["total"]["total"]
+    assert total_leaf["trades"] == metrics.total.trades
+    assert total_leaf["pnl"] == metrics.total.pnl
+    assert total_leaf["profit_factor"] == metrics.total.profit_factor
+    assert total_leaf["win_rate"] == metrics.total.win_rate
+
+    fee_diag = metrics.fee_diagnostics
+    assert fee_diag is not None
+    assert total_leaf["gross_pnl"] == fee_diag["gross_pnl"]
+    assert total_leaf["fees_paid"] == fee_diag["total_fees_paid"]
 
 
 def test_profile_and_exit_reason_breakdown_sums() -> None:

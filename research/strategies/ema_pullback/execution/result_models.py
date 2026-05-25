@@ -55,6 +55,7 @@ class VariantMetrics:
     max_drawdown: float
     open_trades: OpenTradesBreakdown
     profile_breakdown: dict[str, Any] | None = None
+    profile_side_breakdown: dict[str, Any] | None = None
     exit_reason_breakdown: dict[str, Any] | None = None
     fee_diagnostics: dict[str, Any] | None = None
     quality_flag_breakdown: dict[str, Any] | None = None
@@ -72,6 +73,8 @@ class VariantMetrics:
         }
         if self.profile_breakdown is not None:
             payload["profile_breakdown"] = self.profile_breakdown
+        if self.profile_side_breakdown is not None:
+            payload["profile_side_breakdown"] = self.profile_side_breakdown
         if self.exit_reason_breakdown is not None:
             payload["exit_reason_breakdown"] = self.exit_reason_breakdown
         if self.fee_diagnostics is not None:

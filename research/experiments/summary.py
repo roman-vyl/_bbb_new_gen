@@ -15,6 +15,29 @@ _QUALITY_FLAG_FIELDS: tuple[tuple[str, str], ...] = (
     ("stop_loss_after_bad_context", "stop_loss_after_bad_context"),
 )
 
+_PROFILE_SIDE_SUMMARY_PATHS: tuple[tuple[str, str, str], ...] = (
+    ("long", "total", "long"),
+    ("short", "total", "short"),
+    ("total", "aligned", "aligned"),
+    ("total", "countertrend", "countertrend"),
+    ("total", "neutral", "neutral"),
+    ("long", "aligned", "long_aligned"),
+    ("long", "countertrend", "long_countertrend"),
+    ("long", "neutral", "long_neutral"),
+    ("short", "aligned", "short_aligned"),
+    ("short", "countertrend", "short_countertrend"),
+    ("short", "neutral", "short_neutral"),
+)
+
+_PROFILE_SIDE_SUMMARY_METRICS: tuple[tuple[str, str], ...] = (
+    ("trades", "trades"),
+    ("pnl", "pnl"),
+    ("gross_pnl", "gross_pnl"),
+    ("fees_paid", "fees_paid"),
+    ("profit_factor", "profit_factor"),
+    ("win_rate", "win_rate"),
+)
+
 
 def extract_candidate_summary(report_payload: Mapping[str, Any]) -> dict[str, Any]:
     """Extract summary metrics from a schema v5-like report (single-instance → variants[0])."""
@@ -66,6 +89,27 @@ def extract_candidate_summary(report_payload: Mapping[str, Any]) -> dict[str, An
     else:
         for _, result_field in _QUALITY_FLAG_FIELDS:
             out[result_field] = None
+
+    for _, _, prefix in _PROFILE_SIDE_SUMMARY_PATHS:
+        for _, metric_suffix in _PROFILE_SIDE_SUMMARY_METRICS:
+            out[f"{prefix}_{metric_suffix}"] = None
+
+    profile_side_breakdown = metrics.get("profile_side_breakdown")
+    if isinstance(profile_side_breakdown, dict):
+        for side_key, profile_key, prefix in _PROFILE_SIDE_SUMMARY_PATHS:
+            side_block = profile_side_breakdown.get(side_key)
+            if not isinstance(side_block, dict):
+                continue
+            leaf = side_block.get(profile_key)
+            if not isinstance(leaf, dict):
+                continue
+            for leaf_key, metric_suffix in _PROFILE_SIDE_SUMMARY_METRICS:
+                value = leaf.get(leaf_key)
+                field_name = f"{prefix}_{metric_suffix}"
+                if metric_suffix == "trades":
+                    out[field_name] = _optional_int(value)
+                else:
+                    out[field_name] = _optional_float(value)
 
     return out
 

@@ -246,20 +246,51 @@ def _bucket_metrics(records: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _profile_bucket_metrics(records: list[dict[str, Any]]) -> dict[str, Any]:
+    metrics = _bucket_metrics(records)
+    mix: dict[str, int] = {}
+    for record in records:
+        reason = str(record.get("exit_reason") or "unknown")
+        mix[reason] = mix.get(reason, 0) + 1
+    metrics["exit_reason_mix"] = mix
+    return metrics
+
+
 def build_profile_breakdown(trade_records: list[dict[str, Any]]) -> dict[str, Any]:
     """Aggregate closed trades by ``entry_profile``."""
 
     closed = _closed_trades(trade_records)
+    return {
+        profile: _profile_bucket_metrics(
+            [record for record in closed if record.get("entry_profile") == profile]
+        )
+        for profile in _PROFILE_KEYS
+    }
+
+
+def build_profile_side_breakdown(trade_records: list[dict[str, Any]]) -> dict[str, Any]:
+    """Aggregate closed trades by direction and ``entry_profile`` (side × context)."""
+
+    closed = _closed_trades(trade_records)
     out: dict[str, Any] = {}
-    for profile in _PROFILE_KEYS:
-        bucket = [record for record in closed if record.get("entry_profile") == profile]
-        metrics = _bucket_metrics(bucket)
-        mix: dict[str, int] = {}
-        for record in bucket:
-            reason = str(record.get("exit_reason") or "unknown")
-            mix[reason] = mix.get(reason, 0) + 1
-        metrics["exit_reason_mix"] = mix
-        out[profile] = metrics
+    for side in ("long", "short"):
+        side_closed = [record for record in closed if record.get("direction") == side]
+        section: dict[str, Any] = {
+            profile: _profile_bucket_metrics(
+                [record for record in side_closed if record.get("entry_profile") == profile]
+            )
+            for profile in _PROFILE_KEYS
+        }
+        section["total"] = _profile_bucket_metrics(side_closed)
+        out[side] = section
+    total_section: dict[str, Any] = {
+        profile: _profile_bucket_metrics(
+            [record for record in closed if record.get("entry_profile") == profile]
+        )
+        for profile in _PROFILE_KEYS
+    }
+    total_section["total"] = _profile_bucket_metrics(closed)
+    out["total"] = total_section
     return out
 
 

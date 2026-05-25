@@ -7,11 +7,53 @@ import pytest
 
 from research.experiments.batch_runner import BatchRunner
 from research.experiments.models import BatchValidationError
-from research.experiments.summary import extract_candidate_summary
+from research.experiments.models import ExperimentCandidateResult
+from research.experiments.summary import apply_summary_to_result, extract_candidate_summary
 from research.experiments.validation import load_and_validate_batch_spec
 
 
-def _v5_report(*, with_quality: bool = True) -> dict[str, object]:
+def _profile_side_breakdown_fixture() -> dict[str, object]:
+    leaf = {
+        "trades": 2,
+        "pnl": 4.0,
+        "gross_pnl": 4.5,
+        "fees_paid": 0.5,
+        "profit_factor": 2.0,
+        "win_rate": 0.5,
+        "avg_return_pct": 0.01,
+        "avg_hold_bars": 3.0,
+        "exit_reason_mix": {"signal:ema": 2},
+    }
+    empty_leaf = {
+        "trades": 0,
+        "pnl": 0.0,
+        "gross_pnl": 0.0,
+        "fees_paid": 0.0,
+        "profit_factor": None,
+        "win_rate": None,
+        "avg_return_pct": None,
+        "avg_hold_bars": None,
+        "exit_reason_mix": {},
+    }
+    profile_triplet = {
+        "aligned": dict(leaf),
+        "countertrend": dict(empty_leaf),
+        "neutral": dict(empty_leaf),
+        "total": dict(leaf),
+    }
+    return {
+        "long": dict(profile_triplet),
+        "short": {
+            "aligned": dict(empty_leaf),
+            "countertrend": dict(empty_leaf),
+            "neutral": dict(empty_leaf),
+            "total": dict(empty_leaf),
+        },
+        "total": dict(profile_triplet),
+    }
+
+
+def _v5_report(*, with_quality: bool = True, with_profile_side: bool = True) -> dict[str, object]:
     metrics: dict[str, object] = {
         "total": {
             "trades": 1,
@@ -29,6 +71,8 @@ def _v5_report(*, with_quality: bool = True) -> dict[str, object]:
             "high_mfe_low_capture": {"trades": 1},
             "signal_exit_winner": {"trades": 2},
         }
+    if with_profile_side:
+        metrics["profile_side_breakdown"] = _profile_side_breakdown_fixture()
 
     return {
         "run_id": "2026-05-24T120000Z_ema_pullback_BTCUSDT_5m_fixture",
@@ -93,12 +137,59 @@ def test_extract_candidate_summary_v5_quality_counts() -> None:
 
 
 def test_extract_candidate_summary_v4_null_quality_counts() -> None:
-    summary = extract_candidate_summary(_v5_report(with_quality=False))
+    summary = extract_candidate_summary(_v5_report(with_quality=False, with_profile_side=False))
 
     assert summary["report_schema_version"] == 4
     assert summary["high_mfe_low_capture_count"] is None
     assert summary["signal_exit_winners"] is None
     assert summary["total_trades"] == 1
+    assert summary["long_trades"] is None
+    assert summary["aligned_gross_pnl"] is None
+
+
+def test_extract_candidate_summary_v5_profile_side_fields() -> None:
+    summary = extract_candidate_summary(_v5_report(with_quality=True, with_profile_side=True))
+
+    assert summary["long_trades"] == 2
+    assert summary["long_pnl"] == 4.0
+    assert summary["long_gross_pnl"] == 4.5
+    assert summary["long_fees_paid"] == 0.5
+    assert summary["long_profit_factor"] == 2.0
+    assert summary["long_win_rate"] == 0.5
+    assert summary["short_trades"] == 0
+    assert summary["short_pnl"] == 0.0
+    assert summary["aligned_trades"] == 2
+    assert summary["aligned_gross_pnl"] == 4.5
+    assert summary["aligned_fees_paid"] == 0.5
+    assert summary["long_aligned_trades"] == 2
+    assert summary["long_aligned_pnl"] == 4.0
+    assert summary["long_aligned_gross_pnl"] == 4.5
+    assert summary["short_countertrend_fees_paid"] == 0.0
+    assert summary["countertrend_profit_factor"] is None
+
+
+def test_extract_candidate_summary_v5_without_profile_side_breakdown() -> None:
+    summary = extract_candidate_summary(_v5_report(with_quality=True, with_profile_side=False))
+
+    assert summary["total_trades"] == 1
+    assert summary["pnl"] == 100.0
+    assert summary["long_trades"] is None
+    assert summary["long_aligned_gross_pnl"] is None
+    assert summary["aligned_fees_paid"] is None
+
+
+def test_apply_summary_profile_side_round_trip() -> None:
+    summary = extract_candidate_summary(_v5_report(with_profile_side=True))
+    result = ExperimentCandidateResult(
+        candidate_id="c1",
+        status="ok",
+        strategy_config_path="x.json",
+        strategy_config_hash="abc",
+    )
+    apply_summary_to_result(result, summary)
+    payload = result.to_payload()
+    assert payload["long_aligned_gross_pnl"] == 4.5
+    assert payload["aligned_fees_paid"] == 0.5
 
 
 def test_batch_runner_collects_full_result_shape(tmp_path: Path) -> None:

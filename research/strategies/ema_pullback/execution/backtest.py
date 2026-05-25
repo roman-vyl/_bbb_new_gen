@@ -20,6 +20,7 @@ from research.strategies.ema_pullback.execution.results import (
     build_exit_reason_breakdown,
     build_fee_diagnostics,
     build_profile_breakdown,
+    build_profile_side_breakdown,
     build_trade_quality_breakdowns,
     extract_trade_records,
 )
@@ -127,6 +128,7 @@ def build_trade_side_metrics(
         max_drawdown=ensure_finite_metric("max_drawdown", max_drawdown),
         open_trades=open_trades,
         profile_breakdown=build_profile_breakdown(trade_records),
+        profile_side_breakdown=build_profile_side_breakdown(trade_records),
         exit_reason_breakdown=build_exit_reason_breakdown(trade_records),
         fee_diagnostics=build_fee_diagnostics(trade_records, fees_rate=fees_rate),
         **build_trade_quality_breakdowns(trade_records),
