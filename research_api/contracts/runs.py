@@ -108,6 +108,27 @@ class ProfileBucketMetrics(DiagnosticBucketMetrics):
     exit_reason_mix: dict[str, int] = Field(default_factory=dict)
 
 
+class ProfileSideSection(BaseModel):
+    """One side (or total) slice of ``profile_side_breakdown``."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    aligned: ProfileBucketMetrics
+    countertrend: ProfileBucketMetrics
+    neutral: ProfileBucketMetrics
+    total: ProfileBucketMetrics
+
+
+class ProfileSideBreakdown(BaseModel):
+    """Closed-trade aggregates by direction × HTF entry profile."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    long: ProfileSideSection
+    short: ProfileSideSection
+    total: ProfileSideSection
+
+
 class ExitReasonBucketMetrics(DiagnosticBucketMetrics):
     model_config = ConfigDict(extra="forbid")
 
@@ -156,6 +177,7 @@ class VariantMetrics(BaseModel):
     total: TotalMetrics
     open_trades: OpenTradesMetrics
     profile_breakdown: dict[str, ProfileBucketMetrics] | None = None
+    profile_side_breakdown: ProfileSideBreakdown | None = None
     exit_reason_breakdown: dict[str, ExitReasonBucketMetrics] | None = None
     fee_diagnostics: FeeDiagnostics | None = None
     quality_flag_breakdown: dict[str, QualityFlagBucketMetrics] | None = None

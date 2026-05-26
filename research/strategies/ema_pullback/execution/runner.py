@@ -16,6 +16,7 @@ from research.strategies.ema_pullback.execution.report_table import (
 from research.strategies.ema_pullback.execution.results import (
     build_research_run_payload,
     build_run_id,
+    default_results_dir,
     write_research_results,
 )
 from research.strategies.ema_pullback.spec import EmaPullbackStrategySpec
@@ -23,7 +24,12 @@ from research.strategies.ema_pullback.spec import EmaPullbackStrategySpec
 _ROOT = Path(__file__).resolve().parents[4]
 
 
-def run_strategy_specs_from_config(config_source_file: str | Path, *, db_path: Path | None = None) -> str:
+def run_strategy_specs_from_config(
+    config_source_file: str | Path,
+    *,
+    db_path: Path | None = None,
+    run_id_suffix: str | None = None,
+) -> str:
     loaded_config = load_strategy_config_file(config_source_file)
     specs = _validated_specs_for_single_market(loaded_config)
     ex = loaded_config.execution
@@ -61,6 +67,7 @@ def run_strategy_specs_from_config(config_source_file: str | Path, *, db_path: P
         run_config.family,
         run_config.symbol,
         run_config.timeframe,
+        suffix=run_id_suffix,
     )
     payload = build_research_run_payload(
         run_id=run_id,
@@ -79,6 +86,25 @@ def run_strategy_specs_from_config(config_source_file: str | Path, *, db_path: P
     print(f"run_artifact={run_path.relative_to(_ROOT).as_posix()}")
     print("status=ok")
     return run_id
+
+
+def run_strategy_specs_from_config_returning_paths(
+    config_source_file: str | Path,
+    *,
+    db_path: Path | None = None,
+    run_id_suffix: str | None = None,
+) -> tuple[str, Path, Path]:
+    """Run one external config and return ``(run_id, latest_path, run_path)``."""
+
+    run_id = run_strategy_specs_from_config(
+        config_source_file,
+        db_path=db_path,
+        run_id_suffix=run_id_suffix,
+    )
+    base = default_results_dir()
+    run_path = base / "runs" / f"{run_id}.json"
+    latest_path = base / "latest.json"
+    return run_id, latest_path, run_path
 
 
 def _validated_specs_for_single_market(

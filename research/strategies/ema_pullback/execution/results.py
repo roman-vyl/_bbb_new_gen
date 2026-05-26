@@ -38,8 +38,15 @@ def default_results_dir() -> Path:
     return _repo_root() / "research" / "results"
 
 
-def build_run_id(utc: datetime, family: str, symbol: str, timeframe: str) -> str:
-    """``<utc_timestamp>_<family>_<symbol>_<timeframe>`` (compact UTC, filesystem-safe)."""
+def build_run_id(
+    utc: datetime,
+    family: str,
+    symbol: str,
+    timeframe: str,
+    *,
+    suffix: str | None = None,
+) -> str:
+    """``<utc_timestamp>_<family>_<symbol>_<timeframe>[__<suffix>]`` (compact UTC, filesystem-safe)."""
 
     if utc.tzinfo is None:
         utc = utc.replace(tzinfo=timezone.utc)
@@ -48,7 +55,21 @@ def build_run_id(utc: datetime, family: str, symbol: str, timeframe: str) -> str
     ts = utc.strftime("%Y-%m-%dT%H%M%SZ")
     sym = symbol.strip().upper()
     tf = timeframe.strip()
-    return f"{ts}_{family}_{sym}_{tf}"
+    base = f"{ts}_{family}_{sym}_{tf}"
+    if suffix is None:
+        return base
+    return f"{base}__{sanitize_run_id_suffix(suffix)}"
+
+
+def sanitize_run_id_suffix(suffix: str) -> str:
+    """Normalize a programmatic run-id suffix to filesystem-safe characters."""
+
+    import re
+
+    cleaned = re.sub(r"[^A-Za-z0-9_.-]", "_", suffix.strip())
+    if not cleaned:
+        raise ValueError("run_id_suffix must contain at least one safe character")
+    return cleaned
 
 
 def _format_created_at(utc: datetime) -> str:
@@ -225,20 +246,51 @@ def _bucket_metrics(records: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _profile_bucket_metrics(records: list[dict[str, Any]]) -> dict[str, Any]:
+    metrics = _bucket_metrics(records)
+    mix: dict[str, int] = {}
+    for record in records:
+        reason = str(record.get("exit_reason") or "unknown")
+        mix[reason] = mix.get(reason, 0) + 1
+    metrics["exit_reason_mix"] = mix
+    return metrics
+
+
 def build_profile_breakdown(trade_records: list[dict[str, Any]]) -> dict[str, Any]:
     """Aggregate closed trades by ``entry_profile``."""
 
     closed = _closed_trades(trade_records)
+    return {
+        profile: _profile_bucket_metrics(
+            [record for record in closed if record.get("entry_profile") == profile]
+        )
+        for profile in _PROFILE_KEYS
+    }
+
+
+def build_profile_side_breakdown(trade_records: list[dict[str, Any]]) -> dict[str, Any]:
+    """Aggregate closed trades by direction and ``entry_profile`` (side × context)."""
+
+    closed = _closed_trades(trade_records)
     out: dict[str, Any] = {}
-    for profile in _PROFILE_KEYS:
-        bucket = [record for record in closed if record.get("entry_profile") == profile]
-        metrics = _bucket_metrics(bucket)
-        mix: dict[str, int] = {}
-        for record in bucket:
-            reason = str(record.get("exit_reason") or "unknown")
-            mix[reason] = mix.get(reason, 0) + 1
-        metrics["exit_reason_mix"] = mix
-        out[profile] = metrics
+    for side in ("long", "short"):
+        side_closed = [record for record in closed if record.get("direction") == side]
+        section: dict[str, Any] = {
+            profile: _profile_bucket_metrics(
+                [record for record in side_closed if record.get("entry_profile") == profile]
+            )
+            for profile in _PROFILE_KEYS
+        }
+        section["total"] = _profile_bucket_metrics(side_closed)
+        out[side] = section
+    total_section: dict[str, Any] = {
+        profile: _profile_bucket_metrics(
+            [record for record in closed if record.get("entry_profile") == profile]
+        )
+        for profile in _PROFILE_KEYS
+    }
+    total_section["total"] = _profile_bucket_metrics(closed)
+    out["total"] = total_section
     return out
 
 

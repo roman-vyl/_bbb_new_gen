@@ -19,6 +19,7 @@ import { hasVariantDiagnostics, isDiagnosticsV4 } from "@/features/reports/repor
 import {
   DEFAULT_TRADE_DIAGNOSTICS_FILTERS,
   distinctExitKinds,
+  DIRECTION_FILTER_OPTIONS,
   ENTRY_CONTEXT_FILTER_OPTIONS,
   ENTRY_PROFILE_FILTER_OPTIONS,
   EXIT_GROUP_FILTER_OPTIONS,
@@ -128,6 +129,20 @@ export function ReportsPanel() {
           </>
         )}
       </section>
+
+      <div className="filter-row" data-testid="filter-direction">
+        <span>side</span>
+        {DIRECTION_FILTER_OPTIONS.map((opt) => (
+          <button
+            key={opt.id}
+            type="button"
+            className={filters.direction === opt.id ? "chip chip--active" : "chip"}
+            onClick={() => setFilters((prev) => ({ ...prev, direction: opt.id }))}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
 
       {diagnosticsV4 && (
         <>
@@ -255,7 +270,7 @@ export function ReportsPanel() {
         </>
       )}
 
-      <div className="table-wrap">
+      <div className="table-wrap table-wrap--fill">
         <table className="trade-table">
           <thead>
             <tr>
