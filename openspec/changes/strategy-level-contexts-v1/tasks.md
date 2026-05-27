@@ -18,17 +18,17 @@
 
 ## Phase 1 — Research target shape + equivalence
 
-- [ ] 1.1 Add `StrategyContextsSpec` / `ContextProviderSpec` and root `contexts` field with default `{}`
-- [ ] 1.2 Implement `ContextBundle` + `ContextOutput` (`research/strategies/ema_pullback/context/`)
-- [ ] 1.3 Wire feature plan and `htf_context` provider from `strategy.contexts` only
-- [ ] 1.4 Add `ContextConsumptionSpec` on `ExitPolicySpec`; remove `HtfContextConfigSpec` from exit policy
-- [ ] 1.5 Implement `exit_profile_by_htf_state` policy; refactor exit compiler to use bundle + consumption
-- [ ] 1.6 Loader/API validation: reject `trade_management.exit_policy.context` (hard error)
-- [ ] 1.7 Loader/API validation: reject non-empty profile exits without `exit_policy.context_consumption`; allow always_on-only without consumption
-- [ ] 1.7a Loader/API validation: `context_ref` keys are case-sensitive and used as-is (no normalization collisions)
-- [ ] 1.8 Migrate default templates and examples to `strategy.contexts` + `exit_policy.context_consumption` (target shape in-repo)
-- [ ] 1.9 Equivalence pytest: target-shape JSON vs pre-change baseline (trades, `active_exit_profile`) — fixtures migrated offline, not dual-read
-- [ ] 1.10 Optional: add **one-off** CLI migration script (`scripts/migrate_exit_context_to_strategy_contexts.py` or similar) — not called by loader/runtime
+- [x] 1.1 Add `StrategyContextsSpec` / `ContextProviderSpec` and root `contexts` field with default `{}`
+- [x] 1.2 Implement `ContextBundle` + `ContextOutput` (`research/strategies/ema_pullback/context/`)
+- [x] 1.3 Wire feature plan and `htf_context` provider from `strategy.contexts` only
+- [x] 1.4 Add `ContextConsumptionSpec` on `ExitPolicySpec`; remove `HtfContextConfigSpec` from exit policy
+- [x] 1.5 Implement `exit_profile_by_htf_state` policy; refactor exit compiler to use bundle + consumption
+- [x] 1.6 Loader/API validation: reject `trade_management.exit_policy.context` (hard error)
+- [x] 1.7 Loader/API validation: reject non-empty profile exits without `exit_policy.context_consumption`; allow always_on-only without consumption
+- [x] 1.7a Loader/API validation: `context_ref` keys are case-sensitive and used as-is (no normalization collisions)
+- [x] 1.8 Migrate default templates and examples to `strategy.contexts` + `exit_policy.context_consumption` (target shape in-repo)
+- [x] 1.9 Equivalence pytest: target-shape JSON vs pre-change baseline (trades, `active_exit_profile`) — fixtures migrated offline, not dual-read
+- [x] 1.10 Optional: add **one-off** CLI migration script (`scripts/migrate_exit_context_to_strategy_contexts.py` or similar) — not called by loader/runtime
 
 ## Phase 2 — research_api + Composer
 

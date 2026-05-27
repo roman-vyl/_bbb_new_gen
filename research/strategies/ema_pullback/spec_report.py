@@ -17,9 +17,11 @@ from research.strategies.ema_pullback.spec import (
     EmaSpec,
     ExitPolicyGroupSpec,
     ExitPolicyProfilesSpec,
+    ContextConsumptionPolicySpec,
+    ContextConsumptionSpec,
+    ContextProviderSpec,
     ExitPolicySpec,
     ExitRuleSpec,
-    HtfContextConfigSpec,
     ReclaimTriggerSpec,
     StrongReclaimTriggerSpec,
     RsiFeatureSpec,
@@ -150,18 +152,15 @@ def strategy_spec_from_report_dict(payload: Mapping[str, Any]) -> EmaPullbackStr
         "trade_management.exit_policy",
         tm_raw.get("exit_policy"),
     )
-    ctx_raw = _require_mapping("trade_management.exit_policy.context", ep_raw.get("context"))
     profiles_raw = _require_mapping("trade_management.exit_policy.profiles", ep_raw.get("profiles"))
+    contexts = _parse_report_contexts(root.get("contexts"), ep_raw.get("context"))
+    context_consumption = _parse_report_context_consumption(
+        ep_raw.get("context_consumption"),
+        legacy_context=ep_raw.get("context"),
+        has_profile_exits=_report_has_profile_exits(profiles_raw),
+    )
     trade_management = TradeManagementSpec(
         exit_policy=ExitPolicySpec(
-            context=HtfContextConfigSpec(
-                component_id=str(ctx_raw["component_id"]),
-                timeframe=str(ctx_raw["timeframe"]),
-                source=str(ctx_raw["source"]),
-                fast_period=int(ctx_raw["fast_period"]),
-                anchor_period=int(ctx_raw["anchor_period"]),
-                slow_period=int(ctx_raw["slow_period"]),
-            ),
             always_on=_exit_policy_group(
                 _require_mapping("trade_management.exit_policy.always_on", ep_raw.get("always_on")),
                 name="trade_management.exit_policy.always_on",
@@ -183,6 +182,7 @@ def strategy_spec_from_report_dict(payload: Mapping[str, Any]) -> EmaPullbackStr
                     name="trade_management.exit_policy.profiles.neutral",
                 ),
             ),
+            context_consumption=context_consumption,
         )
     )
 
@@ -208,4 +208,80 @@ def strategy_spec_from_report_dict(payload: Mapping[str, Any]) -> EmaPullbackStr
             active_bars=int(setup_raw.get("active_bars", 3)),
         ),
         trade_management=trade_management,
+        contexts=contexts,
     )
+
+
+def _parse_report_contexts(
+    contexts_raw: Any,
+    legacy_context: Any,
+) -> tuple[tuple[str, ContextProviderSpec], ...]:
+    if isinstance(contexts_raw, Mapping) and contexts_raw:
+        providers: list[tuple[str, ContextProviderSpec]] = []
+        for context_ref, provider_raw in contexts_raw.items():
+            provider = _require_mapping(f"contexts.{context_ref}", provider_raw)
+            providers.append(
+                (
+                    str(context_ref),
+                    ContextProviderSpec(
+                        component_id=str(provider["component_id"]),
+                        timeframe=str(provider["timeframe"]),
+                        source=str(provider.get("source", "close")),
+                        fast_period=int(provider["fast_period"]),
+                        anchor_period=int(provider["anchor_period"]),
+                        slow_period=int(provider["slow_period"]),
+                    ),
+                )
+            )
+        return tuple(providers)
+    if isinstance(legacy_context, Mapping):
+        return (
+            (
+                "htf",
+                ContextProviderSpec(
+                    component_id=str(legacy_context["component_id"]),
+                    timeframe=str(legacy_context["timeframe"]),
+                    source=str(legacy_context.get("source", "close")),
+                    fast_period=int(legacy_context["fast_period"]),
+                    anchor_period=int(legacy_context["anchor_period"]),
+                    slow_period=int(legacy_context["slow_period"]),
+                ),
+            ),
+        )
+    return ()
+
+
+def _parse_report_context_consumption(
+    consumption_raw: Any,
+    *,
+    legacy_context: Any,
+    has_profile_exits: bool,
+) -> ContextConsumptionSpec | None:
+    if isinstance(consumption_raw, Mapping):
+        policy_raw = _require_mapping("context_consumption.policy", consumption_raw.get("policy"))
+        return ContextConsumptionSpec(
+            context_ref=str(consumption_raw["context_ref"]),
+            policy=ContextConsumptionPolicySpec(
+                policy_id=str(policy_raw["policy_id"]),
+                params=tuple(),
+            ),
+        )
+    if has_profile_exits and isinstance(legacy_context, Mapping):
+        from research.strategies.ema_pullback.context.policies import EXIT_PROFILE_BY_HTF_STATE_POLICY
+
+        return ContextConsumptionSpec(
+            context_ref="htf",
+            policy=ContextConsumptionPolicySpec(policy_id=EXIT_PROFILE_BY_HTF_STATE_POLICY, params=()),
+        )
+    return None
+
+
+def _report_has_profile_exits(profiles_raw: Mapping[str, Any]) -> bool:
+    for key in ("aligned", "countertrend", "neutral"):
+        group = profiles_raw.get(key)
+        if not isinstance(group, Mapping):
+            continue
+        exits = group.get("exits")
+        if isinstance(exits, (list, tuple)) and len(exits) > 0:
+            return True
+    return False

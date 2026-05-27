@@ -283,25 +283,41 @@ def build_signal_trace_from_spec(
     )
 
     trigger_rule = spec.components.trigger
-    context_cols = plan.htf_context_columns
-    context_cfg = spec.trade_management.exit_policy.context
-    htf_payload = {
-        "state": [
-            str(v) if isinstance(v, str) else "neutral"
-            for v in exit_outputs.context_state.to_list()
-        ],
-        "fast": _float_list(df[context_cols["fast"]].astype(float)),
-        "anchor": _float_list(df[context_cols["anchor"]].astype(float)),
-        "slow": _float_list(df[context_cols["slow"]].astype(float)),
-        "meta": {
-            "component_id": context_cfg.component_id,
-            "timeframe": context_cfg.timeframe,
-            "source": context_cfg.source,
-            "fast_period": context_cfg.fast_period,
-            "anchor_period": context_cfg.anchor_period,
-            "slow_period": context_cfg.slow_period,
-        },
-    }
+    consumption = spec.trade_management.exit_policy.context_consumption
+    if consumption is not None and consumption.context_ref in plan.htf_context_columns_by_ref:
+        context_ref = consumption.context_ref
+        context_cols = plan.htf_context_columns_for(context_ref)
+        provider = spec.contexts_by_ref()[context_ref]
+        htf_payload = {
+            "state": [
+                str(v) if isinstance(v, str) else "neutral"
+                for v in exit_outputs.context_state.to_list()
+            ],
+            "fast": _float_list(df[context_cols["fast"]].astype(float)),
+            "anchor": _float_list(df[context_cols["anchor"]].astype(float)),
+            "slow": _float_list(df[context_cols["slow"]].astype(float)),
+            "meta": {
+                "context_ref": context_ref,
+                "component_id": provider.component_id,
+                "timeframe": provider.timeframe,
+                "source": provider.source,
+                "fast_period": provider.fast_period,
+                "anchor_period": provider.anchor_period,
+                "slow_period": provider.slow_period,
+                "policy_id": consumption.policy.policy_id,
+            },
+        }
+    else:
+        htf_payload = {
+            "state": [
+                str(v) if isinstance(v, str) else "neutral"
+                for v in exit_outputs.context_state.to_list()
+            ],
+            "fast": [],
+            "anchor": [],
+            "slow": [],
+            "meta": {},
+        }
     meta = {
         "variant": spec.variant,
         "component_ids": {
@@ -383,9 +399,21 @@ def slice_signal_trace(
         meta=trace.meta,
         htf_context={
             "state": [trace.htf_context["state"][i] for i in indices],
-            "fast": [trace.htf_context["fast"][i] for i in indices],
-            "anchor": [trace.htf_context["anchor"][i] for i in indices],
-            "slow": [trace.htf_context["slow"][i] for i in indices],
+            "fast": (
+                [trace.htf_context["fast"][i] for i in indices]
+                if trace.htf_context["fast"]
+                else []
+            ),
+            "anchor": (
+                [trace.htf_context["anchor"][i] for i in indices]
+                if trace.htf_context["anchor"]
+                else []
+            ),
+            "slow": (
+                [trace.htf_context["slow"][i] for i in indices]
+                if trace.htf_context["slow"]
+                else []
+            ),
             "meta": trace.htf_context["meta"],
         },
         long=_slice_side(trace.long),

@@ -113,7 +113,7 @@ def test_atr_stop_rejects_usd_distance() -> None:
 
 def test_trade_management_requires_exit_policy() -> None:
     spec = make_ema_pullback_strategy_spec()
-    assert spec.trade_management.exit_policy.context.component_id == "htf_context"
+    assert spec.contexts_by_ref()["htf"].component_id == "htf_context"
 
 
 def test_component_stack_uses_typed_rule_specs() -> None:

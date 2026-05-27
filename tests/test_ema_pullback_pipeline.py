@@ -11,11 +11,10 @@ import pandas as pd
 from research.strategies.ema_pullback.component_builders import (
     exit_atr_stop_loss,
     exit_atr_take_profit,
-    exit_policy,
     exit_rsi,
-    htf_context_config,
     trade_management,
 )
+from tests.ema_pullback_context_helpers import exit_policy_htf_consumption, htf_strategy_contexts
 from research.strategies.ema_pullback.execution.exits import (
     build_exit_outputs_from_spec,
     compose_exit_signals,
@@ -104,23 +103,15 @@ def test_build_exit_outputs_from_spec_uses_unified_exit_rules() -> None:
 def test_exit_outputs_include_boolean_and_distance_instance_counters() -> None:
     base = make_ema_pullback_strategy_spec()
     spec = make_ema_pullback_strategy_spec(
+        contexts=htf_strategy_contexts(),
         trade_management_spec=trade_management(
-            exit_policy_spec=exit_policy(
-                context=htf_context_config(
-                    timeframe="4h",
-                    fast_period=100,
-                    anchor_period=200,
-                    slow_period=1000,
-                ),
+            exit_policy_spec=exit_policy_htf_consumption(
                 always_on=(
                     exit_rsi(instance_id="rsi_exit_base", period=3, long_exit_above=60.0),
                     exit_atr_stop_loss(atr_period=14, atr_multiplier=1.5),
                     exit_atr_take_profit(atr_period=14, atr_multiplier=4.0),
                 ),
-                aligned=(),
-                countertrend=(),
-                neutral=(),
-            )
+            ),
         ),
     )
     plan = build_feature_plan_from_strategy_spec(spec)

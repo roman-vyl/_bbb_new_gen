@@ -71,16 +71,9 @@ def _instance(
             "trigger": {"component_id": "reclaim_anchor"},
             "blockers": [{"instance_id": "no_blockers", "component_id": "no_blockers"}],
             "risk": {"component_id": "no_risk_filter"},
+            "contexts": {},
             "trade_management": {
                 "exit_policy": {
-                    "context": {
-                        "component_id": "htf_context",
-                        "timeframe": "4h",
-                        "source": "close",
-                        "fast_period": 20,
-                        "anchor_period": 50,
-                        "slow_period": 200,
-                    },
                     "always_on": {"exits": default_exits},
                     "profiles": {
                         "aligned": {"exits": []},

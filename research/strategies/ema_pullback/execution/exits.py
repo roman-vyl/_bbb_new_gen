@@ -7,8 +7,12 @@ from typing import Any, Callable
 
 import pandas as pd
 
-from research.strategies.ema_pullback.components.context import htf_context
 from research.strategies.ema_pullback.components.registry import resolve_component
+from research.strategies.ema_pullback.context.bundle import ContextBundle
+from research.strategies.ema_pullback.context.policies import (
+    EXIT_PROFILE_BY_HTF_STATE_POLICY,
+    apply_exit_profile_by_htf_state,
+)
 from research.strategies.ema_pullback.execution.exit_attribution import ExitAttributionContext
 from research.strategies.ema_pullback.features.plan import FeaturePlan
 from research.strategies.ema_pullback.spec import (
@@ -341,29 +345,26 @@ def build_exit_outputs_from_spec(
                     },
                 }
             )
-    context_cols = plan.htf_context_columns
-    context_col_names = (
-        context_cols["fast"],
-        context_cols["anchor"],
-        context_cols["slow"],
-    )
-    if all(col in df.columns for col in context_col_names):
-        context_masks = htf_context(
-            df,
-            fast_col=context_cols["fast"],
-            anchor_col=context_cols["anchor"],
-            slow_col=context_cols["slow"],
+    context_bundle = ContextBundle.build(spec, df, plan)
+    consumption = spec.trade_management.exit_policy.context_consumption
+    if consumption is not None:
+        if consumption.policy.policy_id != EXIT_PROFILE_BY_HTF_STATE_POLICY:
+            raise ValueError(
+                "unsupported exit_policy context_consumption.policy_id: "
+                f"{consumption.policy.policy_id!r}"
+            )
+        context_output = context_bundle.get(consumption.context_ref)
+        context_state = context_output.state_series()
+        profile_long, profile_short = apply_exit_profile_by_htf_state(
+            context_output,
+            policy=consumption.policy,
+            index=index,
+            sides=spec.trade_sides.enabled,
         )
-        context_state = context_masks.state_series()
     else:
         context_state = pd.Series("neutral", index=index, dtype="object")
-
-    profile_long = context_state.map(
-        lambda state: _active_rule_group_for_side(side="long", context_state=state)
-    ).astype("object")
-    profile_short = context_state.map(
-        lambda state: _active_rule_group_for_side(side="short", context_state=state)
-    ).astype("object")
+        profile_long = pd.Series("neutral", index=index, dtype="object")
+        profile_short = pd.Series("neutral", index=index, dtype="object")
 
     long_exits_by_profile, short_exits_by_profile = _compile_signal_series(
         spec=spec,

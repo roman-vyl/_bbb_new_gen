@@ -59,12 +59,17 @@ def _warmup_bars_ms(spec: Any, timeframe: str) -> int:
     slow_period = int(spec.anchor_stack.slow.period)
     anchor_warmup_ms = (max(lookback, slow_period) + 5) * base_ms
 
-    context = spec.trade_management.exit_policy.context
-    context_tf = base_tf if str(context.timeframe).strip() == "base" else validate_timeframe(context.timeframe)
-    context_ms = timeframe_ms(context_tf)
-    context_warmup_ms = (int(context.slow_period) + 5) * context_ms
-
-    return max(anchor_warmup_ms, context_warmup_ms)
+    warmup_ms = anchor_warmup_ms
+    for _context_ref, provider in spec.contexts:
+        context_tf = (
+            base_tf
+            if str(provider.timeframe).strip() == "base"
+            else validate_timeframe(provider.timeframe)
+        )
+        context_ms = timeframe_ms(context_tf)
+        context_warmup_ms = (int(provider.slow_period) + 5) * context_ms
+        warmup_ms = max(warmup_ms, context_warmup_ms)
+    return warmup_ms
 
 
 def _load_ohlcv_frame(

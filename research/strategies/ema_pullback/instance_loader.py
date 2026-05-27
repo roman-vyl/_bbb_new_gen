@@ -26,14 +26,17 @@ from research.strategies.ema_pullback.components.registry import (
     TOUCH_ANCHOR_COMPONENT,
     resolve_component,
 )
+from research.strategies.ema_pullback.context.policies import EXIT_PROFILE_BY_HTF_STATE_POLICY
 from research.strategies.ema_pullback.spec import (
     BlockerRuleSpec,
+    ContextConsumptionPolicySpec,
+    ContextConsumptionSpec,
+    ContextProviderSpec,
     EmaSpec,
     EmaPullbackStrategySpec,
     ExitPolicySpec,
     ExitPolicyProfilesSpec,
     ExitPolicyGroupSpec,
-    HtfContextConfigSpec,
     TradeManagementSpec,
     ExitRuleSpec,
     TradeSide,
@@ -74,6 +77,7 @@ _STRATEGY_FIELDS = frozenset(
         "blockers",
         "risk",
         "trade_management",
+        "contexts",
     }
 )
 
@@ -105,6 +109,7 @@ def load_ema_pullback_instance(instance: Mapping[str, Any]) -> EmaPullbackStrate
     blockers = _parse_blockers(strategy["blockers"])
     risk = _parse_risk(strategy["risk"])
     trade_management_spec = _parse_trade_management(strategy["trade_management"])
+    contexts = _parse_contexts(strategy.get("contexts", {}))
 
     components = builders.component_stack(
         direction=direction,
@@ -128,8 +133,40 @@ def load_ema_pullback_instance(instance: Mapping[str, Any]) -> EmaPullbackStrate
         enabled_sides=_parse_trade_sides(strategy["trade_sides"]),
         components=components,
         trade_management_spec=trade_management_spec,
+        contexts=contexts,
     )
     return spec
+
+
+def _parse_contexts(value: Any) -> tuple[tuple[str, ContextProviderSpec], ...]:
+    payload = _require_mapping("strategy.contexts", value if value is not None else {})
+    if not payload:
+        return ()
+    providers: list[tuple[str, ContextProviderSpec]] = []
+    for context_ref, provider_raw in payload.items():
+        if not isinstance(context_ref, str) or not context_ref.strip():
+            raise EmaPullbackInstanceValidationError("strategy.contexts keys must be non-empty strings")
+        path = f"strategy.contexts.{context_ref}"
+        provider_payload = _require_mapping(path, provider_raw)
+        _reject_unknown_fields(
+            path,
+            provider_payload,
+            {"component_id", "timeframe", "source", "fast_period", "anchor_period", "slow_period"},
+        )
+        providers.append(
+            (
+                context_ref,
+                ContextProviderSpec(
+                    component_id=_require_non_empty_str(provider_payload, "component_id"),
+                    timeframe=_require_non_empty_str(provider_payload, "timeframe"),
+                    source=_optional_non_empty_str(provider_payload, "source", default="close"),
+                    fast_period=_require_positive_int(provider_payload, "fast_period"),
+                    anchor_period=_require_positive_int(provider_payload, "anchor_period"),
+                    slow_period=_require_positive_int(provider_payload, "slow_period"),
+                ),
+            )
+        )
+    return tuple(providers)
 
 
 def _parse_market(value: Any) -> dict[str, str]:
@@ -148,7 +185,8 @@ def _parse_strategy(value: Any) -> Mapping[str, Any]:
             "strategy.exits is no longer supported; use strategy.trade_management.exit_policy"
         )
     _reject_unknown_fields("strategy", payload, _STRATEGY_FIELDS)
-    for key in _STRATEGY_FIELDS:
+    required = _STRATEGY_FIELDS - {"contexts"}
+    for key in required:
         _require_present(payload, key)
     return payload
 
@@ -160,28 +198,17 @@ def _parse_trade_management(value: Any) -> TradeManagementSpec:
         "trade_management.exit_policy",
         _require_present(payload, "exit_policy"),
     )
+    if "context" in exit_policy_payload:
+        raise EmaPullbackInstanceValidationError(
+            "trade_management.exit_policy.context is no longer supported; "
+            "use strategy.contexts and trade_management.exit_policy.context_consumption"
+        )
     _reject_unknown_fields(
         "trade_management.exit_policy",
         exit_policy_payload,
-        {"context", "always_on", "profiles"},
+        {"context_consumption", "always_on", "profiles"},
     )
-    context_payload = _require_mapping(
-        "trade_management.exit_policy.context",
-        _require_present(exit_policy_payload, "context"),
-    )
-    _reject_unknown_fields(
-        "trade_management.exit_policy.context",
-        context_payload,
-        {"component_id", "timeframe", "source", "fast_period", "anchor_period", "slow_period"},
-    )
-    context = HtfContextConfigSpec(
-        component_id=_require_non_empty_str(context_payload, "component_id"),
-        timeframe=_require_non_empty_str(context_payload, "timeframe"),
-        source=_optional_non_empty_str(context_payload, "source", default="close"),
-        fast_period=_require_positive_int(context_payload, "fast_period"),
-        anchor_period=_require_positive_int(context_payload, "anchor_period"),
-        slow_period=_require_positive_int(context_payload, "slow_period"),
-    )
+    context_consumption = _parse_context_consumption(exit_policy_payload.get("context_consumption"))
     always_on = _parse_exit_policy_group(
         _require_present(exit_policy_payload, "always_on"),
         path="trade_management.exit_policy.always_on",
@@ -209,13 +236,68 @@ def _parse_trade_management(value: Any) -> TradeManagementSpec:
             path="trade_management.exit_policy.profiles.neutral",
         ),
     )
+    _validate_profile_exits_require_consumption(profiles, context_consumption)
     return TradeManagementSpec(
         exit_policy=ExitPolicySpec(
-            context=context,
             always_on=always_on,
             profiles=profiles,
+            context_consumption=context_consumption,
         )
     )
+
+
+def _parse_context_consumption(value: Any) -> ContextConsumptionSpec | None:
+    if value is None:
+        return None
+    payload = _require_mapping("trade_management.exit_policy.context_consumption", value)
+    _reject_unknown_fields(
+        "trade_management.exit_policy.context_consumption",
+        payload,
+        {"context_ref", "policy"},
+    )
+    policy_payload = _require_mapping(
+        "trade_management.exit_policy.context_consumption.policy",
+        _require_present(payload, "policy"),
+    )
+    _reject_unknown_fields(
+        "trade_management.exit_policy.context_consumption.policy",
+        policy_payload,
+        {"policy_id", "params"},
+    )
+    params_raw = policy_payload.get("params", {})
+    if params_raw is None:
+        params: tuple[tuple[str, Any], ...] = ()
+    else:
+        params_map = _require_mapping(
+            "trade_management.exit_policy.context_consumption.policy.params",
+            params_raw,
+        )
+        params = tuple(sorted(params_map.items(), key=lambda item: item[0]))
+    policy_id = _require_non_empty_str(policy_payload, "policy_id")
+    if policy_id != EXIT_PROFILE_BY_HTF_STATE_POLICY:
+        raise EmaPullbackInstanceValidationError(
+            "trade_management.exit_policy.context_consumption.policy.policy_id "
+            f"must be {EXIT_PROFILE_BY_HTF_STATE_POLICY!r}"
+        )
+    return ContextConsumptionSpec(
+        context_ref=_require_non_empty_str(payload, "context_ref"),
+        policy=ContextConsumptionPolicySpec(policy_id=policy_id, params=params),
+    )
+
+
+def _validate_profile_exits_require_consumption(
+    profiles: ExitPolicyProfilesSpec,
+    context_consumption: ContextConsumptionSpec | None,
+) -> None:
+    has_profile_exits = any(
+        len(group.exits) > 0
+        for group in (profiles.aligned, profiles.countertrend, profiles.neutral)
+    )
+    if has_profile_exits and context_consumption is None:
+        raise EmaPullbackInstanceValidationError(
+            "trade_management.exit_policy.context_consumption is required when "
+            "profile-scoped exits are non-empty"
+        )
 
 
 def _parse_exit_policy_group(value: Any, *, path: str) -> ExitPolicyGroupSpec:

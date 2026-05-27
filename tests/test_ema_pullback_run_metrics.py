@@ -14,7 +14,6 @@ import pandas as pd
 from research.strategies.ema_pullback.component_builders import (
     exit_policy,
     exit_rsi,
-    htf_context_config,
     trade_management,
 )
 from research.strategies.ema_pullback.execution import backtest
@@ -383,7 +382,6 @@ def test_run_strategy_spec_accepts_signal_only_exits_with_nan_stops() -> None:
     spec = make_ema_pullback_strategy_spec(
         trade_management_spec=trade_management(
             exit_policy_spec=exit_policy(
-                context=htf_context_config(timeframe="4h", fast_period=100, anchor_period=200, slow_period=1000),
                 always_on=(
                     exit_rsi(
                         instance_id="rsi_signal_only",
@@ -439,7 +437,7 @@ def test_entry_lock_distance_uses_entry_profile_distance(monkeypatch: pytest.Mon
         anchor_columns={"fast": "ema_fast", "anchor": "ema_anchor", "slow": "ema_slow"},
         exit_distance_columns={},
         rsi_columns={},
-        htf_context_columns={},
+        htf_context_columns_by_ref={},
     )
 
     def fake_plan(_spec: object) -> FeaturePlan:
@@ -512,7 +510,7 @@ def test_entry_lock_signal_ignores_inactive_profile_and_honors_always_on(
         anchor_columns={"fast": "ema_fast", "anchor": "ema_anchor", "slow": "ema_slow"},
         exit_distance_columns={},
         rsi_columns={},
-        htf_context_columns={},
+        htf_context_columns_by_ref={},
     )
 
     def fake_plan(_spec: object) -> FeaturePlan:

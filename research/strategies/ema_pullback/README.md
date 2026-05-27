@@ -7,7 +7,9 @@
 Слой exits мигрирован на `strategy.trade_management.exit_policy`:
 
 - legacy путь `strategy.exits` fail-fast отклоняется в loader;
-- контекст `trade_management.exit_policy.context` использует `component_id: htf_context`;
+- HTF provider config живёт в `strategy.contexts[<context_ref>]` (`component_id: htf_context`);
+- exit policy потребляет контекст через `trade_management.exit_policy.context_consumption` (policy `exit_profile_by_htf_state`);
+- legacy `trade_management.exit_policy.context` **не поддерживается** loader (one-off: `scripts/migrate_exit_context_to_strategy_contexts.py`);
 - активные правила на сделке: `always_on + profile(side + htf_context.state)`;
 - сигнальные exits внутри активной группы агрегируются через OR;
 - distance exits внутри активной группы агрегируются через min;

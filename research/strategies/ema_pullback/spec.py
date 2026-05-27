@@ -291,7 +291,7 @@ class ExitRuleSpec:
 
 
 @dataclass(frozen=True)
-class HtfContextConfigSpec:
+class ContextProviderSpec:
     component_id: str
     timeframe: str
     source: str
@@ -300,16 +300,41 @@ class HtfContextConfigSpec:
     slow_period: int
 
     def __post_init__(self) -> None:
+        path = "strategy.contexts"
         if self.component_id != "htf_context":
-            raise ValueError("trade_management.exit_policy.context.component_id must be 'htf_context'")
+            raise ValueError(f"{path} provider component_id must be 'htf_context'")
         if not self.timeframe.strip():
-            raise ValueError("trade_management.exit_policy.context.timeframe must be non-empty")
+            raise ValueError(f"{path} provider timeframe must be non-empty")
         if self.source != "close":
-            raise ValueError("trade_management.exit_policy.context.source must be 'close'")
+            raise ValueError(f"{path} provider source must be 'close'")
         if self.fast_period <= 0 or self.anchor_period <= 0 or self.slow_period <= 0:
-            raise ValueError("trade_management.exit_policy.context periods must be > 0")
+            raise ValueError(f"{path} provider periods must be > 0")
         if not (self.fast_period < self.anchor_period < self.slow_period):
-            raise ValueError("trade_management.exit_policy.context must satisfy fast < anchor < slow periods")
+            raise ValueError(f"{path} provider must satisfy fast < anchor < slow periods")
+
+
+# Backward-compatible alias for builders/tests during migration.
+HtfContextConfigSpec = ContextProviderSpec
+
+
+@dataclass(frozen=True)
+class ContextConsumptionPolicySpec:
+    policy_id: str
+    params: tuple[tuple[str, Any], ...] = ()
+
+    def __post_init__(self) -> None:
+        if not self.policy_id.strip():
+            raise ValueError("context_consumption.policy.policy_id must be non-empty")
+
+
+@dataclass(frozen=True)
+class ContextConsumptionSpec:
+    context_ref: str
+    policy: ContextConsumptionPolicySpec
+
+    def __post_init__(self) -> None:
+        if not self.context_ref.strip():
+            raise ValueError("context_consumption.context_ref must be non-empty")
 
 
 @dataclass(frozen=True)
@@ -324,13 +349,25 @@ class ExitPolicyProfilesSpec:
     neutral: ExitPolicyGroupSpec
 
 
+def _exit_policy_has_profile_exits(profiles: ExitPolicyProfilesSpec) -> bool:
+    return any(
+        len(group.exits) > 0
+        for group in (profiles.aligned, profiles.countertrend, profiles.neutral)
+    )
+
+
 @dataclass(frozen=True)
 class ExitPolicySpec:
-    context: HtfContextConfigSpec
     always_on: ExitPolicyGroupSpec
     profiles: ExitPolicyProfilesSpec
+    context_consumption: ContextConsumptionSpec | None = None
 
     def __post_init__(self) -> None:
+        if _exit_policy_has_profile_exits(self.profiles) and self.context_consumption is None:
+            raise ValueError(
+                "trade_management.exit_policy.context_consumption is required when "
+                "profile-scoped exits are non-empty"
+            )
         rules_with_scope: list[tuple[str, tuple[ExitRuleSpec, ...]]] = [
             ("trade_management.exit_policy.always_on.exits", self.always_on.exits),
             ("trade_management.exit_policy.profiles.aligned.exits", self.profiles.aligned.exits),
@@ -370,6 +407,10 @@ class EmaPullbackStrategySpec:
     trade_sides: TradeSideSpec
     setup: UntouchedAnchorSetupSpec
     trade_management: TradeManagementSpec
+    contexts: tuple[tuple[str, ContextProviderSpec], ...] = ()
+
+    def contexts_by_ref(self) -> dict[str, ContextProviderSpec]:
+        return dict(self.contexts)
 
     def __post_init__(self) -> None:
         if not self.variant.strip():
@@ -378,6 +419,17 @@ class EmaPullbackStrategySpec:
             raise ValueError("symbol must be non-empty")
         if not self.base_timeframe.strip():
             raise ValueError("base_timeframe must be non-empty")
+        seen_refs: set[str] = set()
+        for context_ref, _provider in self.contexts:
+            if context_ref in seen_refs:
+                raise ValueError(f"strategy.contexts has duplicate context_ref: {context_ref!r}")
+            seen_refs.add(context_ref)
+        consumption = self.trade_management.exit_policy.context_consumption
+        if consumption is not None and consumption.context_ref not in seen_refs:
+            raise ValueError(
+                "trade_management.exit_policy.context_consumption.context_ref "
+                f"{consumption.context_ref!r} is not defined in strategy.contexts"
+            )
 
 
 def strategy_spec_to_dict(spec: EmaPullbackStrategySpec) -> dict[str, Any]:

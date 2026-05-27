@@ -12,7 +12,6 @@ from research.strategies.ema_pullback.component_builders import (
     exit_policy,
     exit_constant_usd_stop_loss,
     exit_constant_usd_take_profit,
-    htf_context_config,
     trade_management,
 )
 from research.strategies.ema_pullback.features.calculations import add_feature_columns_from_plan
@@ -116,7 +115,6 @@ def test_base_rsi_feature_plan_and_calculation() -> None:
         ),
         trade_management_spec=trade_management(
             exit_policy_spec=exit_policy(
-                context=htf_context_config(timeframe="4h", fast_period=100, anchor_period=200, slow_period=1000),
                 always_on=(
                     ExitRuleSpec(
                         instance_id="rsi_exit_base",
@@ -183,7 +181,7 @@ def test_mtf_ema_and_rsi_align_only_after_completed_candle() -> None:
         anchor_columns={},
         exit_distance_columns={},
         rsi_columns={("4h", 1): "rsi_close_4h_1"},
-        htf_context_columns={},
+        htf_context_columns_by_ref={},
     )
 
     out = add_feature_columns_from_plan(df, plan)
@@ -221,7 +219,7 @@ def test_mtf_atr_distance_feature_uses_distance_timeframe() -> None:
         anchor_columns={},
         exit_distance_columns={"atr_sl_4h": "atr_close_4h_3_x1_5"},
         rsi_columns={},
-        htf_context_columns={},
+        htf_context_columns_by_ref={},
     )
     out = add_feature_columns_from_plan(_ohlcv(24), plan)
     assert "atr_close_4h_3" in out.columns
@@ -238,7 +236,6 @@ def test_feature_plan_skips_atr_when_only_constant_usd_exits() -> None:
     spec = make_ema_pullback_strategy_spec(
         trade_management_spec=trade_management(
             exit_policy_spec=exit_policy(
-                context=htf_context_config(timeframe="4h", fast_period=100, anchor_period=200, slow_period=1000),
                 always_on=(
                     exit_constant_usd_stop_loss(usd_distance=500.0),
                     exit_constant_usd_take_profit(usd_distance=1200.0),

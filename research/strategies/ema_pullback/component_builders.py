@@ -33,6 +33,9 @@ from research.strategies.ema_pullback.spec import (
     EmaSpec,
     ExitPolicyGroupSpec,
     ExitPolicyProfilesSpec,
+    ContextConsumptionPolicySpec,
+    ContextConsumptionSpec,
+    ContextProviderSpec,
     ExitPolicySpec,
     ExitKind,
     ExitRuleSpec,
@@ -306,6 +309,25 @@ def exits_atr_default(
     )
 
 
+def context_provider(
+    *,
+    timeframe: str,
+    fast_period: int,
+    anchor_period: int,
+    slow_period: int,
+    source: str = "close",
+    component_id: str = "htf_context",
+) -> ContextProviderSpec:
+    return ContextProviderSpec(
+        component_id=component_id,
+        timeframe=timeframe,
+        source=source,
+        fast_period=fast_period,
+        anchor_period=anchor_period,
+        slow_period=slow_period,
+    )
+
+
 def htf_context_config(
     *,
     timeframe: str,
@@ -314,14 +336,35 @@ def htf_context_config(
     slow_period: int,
     source: str = "close",
     component_id: str = "htf_context",
-) -> HtfContextConfigSpec:
-    return HtfContextConfigSpec(
-        component_id=component_id,
+) -> ContextProviderSpec:
+    return context_provider(
         timeframe=timeframe,
-        source=source,
         fast_period=fast_period,
         anchor_period=anchor_period,
         slow_period=slow_period,
+        source=source,
+        component_id=component_id,
+    )
+
+
+def strategy_contexts(
+    providers: Sequence[tuple[str, ContextProviderSpec]],
+) -> tuple[tuple[str, ContextProviderSpec], ...]:
+    return _normalize_sequence("strategy.contexts", providers)
+
+
+def context_consumption(
+    *,
+    context_ref: str,
+    policy_id: str,
+    params: Sequence[tuple[str, object]] = (),
+) -> ContextConsumptionSpec:
+    return ContextConsumptionSpec(
+        context_ref=context_ref,
+        policy=ContextConsumptionPolicySpec(
+            policy_id=policy_id,
+            params=tuple(params),
+        ),
     )
 
 
@@ -344,20 +387,20 @@ def exit_policy_profiles(
 
 def exit_policy(
     *,
-    context: HtfContextConfigSpec,
     always_on: Sequence[ExitRuleSpec],
     aligned: Sequence[ExitRuleSpec],
     countertrend: Sequence[ExitRuleSpec],
     neutral: Sequence[ExitRuleSpec],
+    context_consumption_spec: ContextConsumptionSpec | None = None,
 ) -> ExitPolicySpec:
     return ExitPolicySpec(
-        context=context,
         always_on=exit_policy_group(always_on),
         profiles=exit_policy_profiles(
             aligned=aligned,
             countertrend=countertrend,
             neutral=neutral,
         ),
+        context_consumption=context_consumption_spec,
     )
 
 
