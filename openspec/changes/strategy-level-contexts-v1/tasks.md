@@ -32,13 +32,13 @@
 
 ## Phase 2 — research_api + Composer
 
-- [ ] 2.1 Catalog: `strategy_contexts` section; remove `exit_policy_context` provider section; consumption metadata per `(role, component_id)`
-- [ ] 2.2 Shared validate function (research + BFF): `context_ref`, policies, reject `exit_policy.context`, profile-exits rule
-- [ ] 2.3 Frontend: Strategy contexts section (add/edit/remove `context_ref` providers)
-- [ ] 2.4 Frontend: Exit policy — remove provider fields; `context_consumption` UI; require consumption when profile exits non-empty
-- [ ] 2.5 Frontend: No auto-select `context_ref`; strip optional entry `context_consumption` when disabled
-- [ ] 2.5a Frontend: Render entry `context_consumption` only for component_ids already enabled in catalog (before Phase 3 this may be none or exit-only)
-- [ ] 2.6 Vitest: Composer saves target shape only; rejects `exit_policy.context`; rejects profile exits without consumption
+- [x] 2.1 Catalog: `strategy_contexts` section; remove `exit_policy_context` provider section; consumption metadata per `(role, component_id)`
+- [x] 2.2 Shared validate function (research + BFF): `context_ref`, policies, reject `exit_policy.context`, profile-exits rule
+- [x] 2.3 Frontend: Strategy contexts section (add/edit/remove `context_ref` providers)
+- [x] 2.4 Frontend: Exit policy — remove provider fields; `context_consumption` UI; require consumption when profile exits non-empty
+- [x] 2.5 Frontend: No auto-select `context_ref`; strip optional entry `context_consumption` when disabled
+- [x] 2.5a Frontend: Render entry `context_consumption` only for component_ids already enabled in catalog (before Phase 3 this may be none or exit-only)
+- [x] 2.6 Vitest: Composer saves target shape only; rejects `exit_policy.context`; rejects profile exits without consumption
 
 ## Phase 3 — Reference entry consumer
 

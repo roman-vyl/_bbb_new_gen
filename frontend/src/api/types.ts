@@ -267,6 +267,25 @@ export type ParamFieldSchema = {
   default?: unknown;
 };
 
+export type ContextConsumptionPolicySchema = {
+  policy_id: string;
+  label: string;
+  params_schema?: Record<string, ParamFieldSchema>;
+};
+
+export type ContextConsumptionRoleSchema = {
+  role: string;
+  label: string;
+  policies: ContextConsumptionPolicySchema[];
+};
+
+export type ContextProviderSchema = {
+  component_id: string;
+  label: string;
+  description?: string | null;
+  params_schema?: Record<string, ParamFieldSchema>;
+};
+
 export type ComponentSchema = {
   component_id: string;
   role: "direction" | "setup" | "trigger" | "blockers" | "exits" | "risk";
@@ -274,6 +293,8 @@ export type ComponentSchema = {
   description?: string | null;
   params_schema?: Record<string, ParamFieldSchema>;
   list_slot?: boolean;
+  supports_context_consumption?: boolean;
+  context_consumption_policies?: ContextConsumptionPolicySchema[];
 };
 
 export type ComposerSectionSchema = {
@@ -288,6 +309,8 @@ export type ComponentCatalog = {
   schema_version: number;
   sections: ComposerSectionSchema[];
   components: ComponentSchema[];
+  context_providers?: ContextProviderSchema[];
+  context_consumption_roles?: ContextConsumptionRoleSchema[];
 };
 
 export type ValidationErrorItem = {

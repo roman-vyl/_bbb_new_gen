@@ -106,6 +106,13 @@ def test_component_catalog_returns_ema_pullback_components(client: TestClient) -
     assert strong_params["lookback"]["default"] == 1
     assert strong_params["lookback"]["min"] == 1
     assert all(c["component_id"] != "htf_context" for c in body["components"])
+    assert any(s["section_id"] == "strategy_contexts" for s in body["sections"])
+    assert not any(s["section_id"] == "exit_policy_context" for s in body["sections"])
+    providers = body.get("context_providers") or []
+    assert any(p["component_id"] == "htf_context" for p in providers)
+    roles = body.get("context_consumption_roles") or []
+    exit_role = next(r for r in roles if r["role"] == "exit_policy")
+    assert any(p["policy_id"] == "exit_profile_by_htf_state" for p in exit_role["policies"])
     close_loss = next(c for c in body["components"] if c["component_id"] == "ema_close_loss_exit")
     assert close_loss["params_schema"]["confirm_bars"]["default"] == 1
     assert "ema.timeframe" in close_loss["params_schema"]
@@ -119,6 +126,191 @@ def test_validate_config_ok(client: TestClient) -> None:
     assert res.status_code == 200
     assert res.json()["ok"] is True
     assert res.json()["errors"] == []
+
+
+def test_component_catalog_strategy_contexts_section(client: TestClient) -> None:
+    res = client.get("/api/research/component-catalog?family=ema_pullback")
+    assert res.status_code == 200
+    body = res.json()
+    section_ids = [s["section_id"] for s in body["sections"]]
+    assert "strategy_contexts" in section_ids
+    assert "exit_policy_context" not in section_ids
+    assert any(p["component_id"] == "htf_context" for p in body["context_providers"])
+    exit_roles = [r for r in body["context_consumption_roles"] if r["role"] == "exit_policy"]
+    assert len(exit_roles) == 1
+    assert exit_roles[0]["policies"][0]["policy_id"] == "exit_profile_by_htf_state"
+
+
+def test_validate_rejects_exit_policy_context(client: TestClient) -> None:
+    draft = _valid_draft()
+    instances = list(draft["instances"])  # type: ignore[index]
+    inst = dict(instances[0])  # type: ignore[arg-type]
+    strategy = dict(inst["strategy"])  # type: ignore[arg-type]
+    trade_management = dict(strategy["trade_management"])  # type: ignore[arg-type]
+    exit_policy = dict(trade_management["exit_policy"])  # type: ignore[arg-type]
+    exit_policy["context"] = {
+        "component_id": "htf_context",
+        "timeframe": "4h",
+        "source": "close",
+        "fast_period": 100,
+        "anchor_period": 200,
+        "slow_period": 1000,
+    }
+    trade_management["exit_policy"] = exit_policy
+    strategy["trade_management"] = trade_management
+    inst["strategy"] = strategy
+    instances[0] = inst
+    draft["instances"] = instances
+
+    res = client.post("/api/research/config/validate", json=draft)
+    assert res.status_code == 200
+    body = res.json()
+    assert body["ok"] is False
+    assert any("exit_policy.context" in e["message"] for e in body["errors"])
+
+
+def test_validate_rejects_profile_exits_without_consumption(client: TestClient) -> None:
+    draft = _valid_draft()
+    instances = list(draft["instances"])  # type: ignore[index]
+    inst = dict(instances[0])  # type: ignore[arg-type]
+    strategy = dict(inst["strategy"])  # type: ignore[arg-type]
+    strategy["contexts"] = {
+        "htf": {
+            "component_id": "htf_context",
+            "timeframe": "4h",
+            "source": "close",
+            "fast_period": 100,
+            "anchor_period": 200,
+            "slow_period": 1000,
+        }
+    }
+    trade_management = dict(strategy["trade_management"])  # type: ignore[arg-type]
+    exit_policy = dict(trade_management["exit_policy"])  # type: ignore[arg-type]
+    profiles = dict(exit_policy["profiles"])  # type: ignore[arg-type]
+    profiles["aligned"] = {
+        "exits": [{"instance_id": "profile_exit", "component_id": "no_signal_exit"}]
+    }
+    exit_policy["profiles"] = profiles
+    trade_management["exit_policy"] = exit_policy
+    strategy["trade_management"] = trade_management
+    inst["strategy"] = strategy
+    instances[0] = inst
+    draft["instances"] = instances
+
+    res = client.post("/api/research/config/validate", json=draft)
+    assert res.status_code == 200
+    body = res.json()
+    assert body["ok"] is False
+    assert any(
+        "context_consumption" in (e.get("path") or "")
+        and "required" in (e.get("message") or "")
+        for e in body["errors"]
+    )
+
+
+def test_validate_rejects_unknown_context_ref(client: TestClient) -> None:
+    draft = _valid_draft()
+    instances = list(draft["instances"])  # type: ignore[index]
+    inst = dict(instances[0])  # type: ignore[arg-type]
+    strategy = dict(inst["strategy"])  # type: ignore[arg-type]
+    strategy["contexts"] = {
+        "htf": {
+            "component_id": "htf_context",
+            "timeframe": "4h",
+            "source": "close",
+            "fast_period": 100,
+            "anchor_period": 200,
+            "slow_period": 1000,
+        }
+    }
+    trade_management = dict(strategy["trade_management"])  # type: ignore[arg-type]
+    exit_policy = dict(trade_management["exit_policy"])  # type: ignore[arg-type]
+    profiles = dict(exit_policy["profiles"])  # type: ignore[arg-type]
+    profiles["aligned"] = {
+        "exits": [{"instance_id": "profile_exit", "component_id": "no_signal_exit"}]
+    }
+    exit_policy["profiles"] = profiles
+    exit_policy["context_consumption"] = {
+        "context_ref": "missing_ref",
+        "policy": {"policy_id": "exit_profile_by_htf_state", "params": {}},
+    }
+    trade_management["exit_policy"] = exit_policy
+    strategy["trade_management"] = trade_management
+    inst["strategy"] = strategy
+    instances[0] = inst
+    draft["instances"] = instances
+
+    res = client.post("/api/research/config/validate", json=draft)
+    assert res.status_code == 200
+    body = res.json()
+    assert body["ok"] is False
+    assert any("missing_ref" in e["message"] for e in body["errors"])
+
+
+def test_validate_config_rejects_exit_policy_context(client: TestClient) -> None:
+    draft = _valid_draft()
+    instances = list(draft["instances"])  # type: ignore[index]
+    inst = dict(instances[0])  # type: ignore[arg-type]
+    strategy = dict(inst["strategy"])  # type: ignore[arg-type]
+    trade_management = dict(strategy["trade_management"])  # type: ignore[arg-type]
+    exit_policy = dict(trade_management["exit_policy"])  # type: ignore[arg-type]
+    exit_policy["context"] = {
+        "component_id": "htf_context",
+        "timeframe": "4h",
+        "source": "close",
+        "fast_period": 100,
+        "anchor_period": 200,
+        "slow_period": 1000,
+    }
+    trade_management["exit_policy"] = exit_policy
+    strategy["trade_management"] = trade_management
+    inst["strategy"] = strategy
+    instances[0] = inst
+    draft["instances"] = instances
+
+    res = client.post("/api/research/config/validate", json=draft)
+    assert res.status_code == 200
+    body = res.json()
+    assert body["ok"] is False
+    assert any("exit_policy.context" in e["message"] for e in body["errors"])
+
+
+def test_validate_config_rejects_profile_exits_without_consumption(client: TestClient) -> None:
+    draft = _valid_draft()
+    instances = list(draft["instances"])  # type: ignore[index]
+    inst = dict(instances[0])  # type: ignore[arg-type]
+    strategy = dict(inst["strategy"])  # type: ignore[arg-type]
+    strategy["contexts"] = {
+        "htf": {
+            "component_id": "htf_context",
+            "timeframe": "4h",
+            "source": "close",
+            "fast_period": 100,
+            "anchor_period": 200,
+            "slow_period": 1000,
+        },
+    }
+    trade_management = dict(strategy["trade_management"])  # type: ignore[arg-type]
+    exit_policy = dict(trade_management["exit_policy"])  # type: ignore[arg-type]
+    profiles = dict(exit_policy["profiles"])  # type: ignore[arg-type]
+    profiles["aligned"] = {
+        "exits": [{"instance_id": "rsi_exit", "component_id": "rsi_signal_exit"}],
+    }
+    exit_policy["profiles"] = profiles
+    trade_management["exit_policy"] = exit_policy
+    strategy["trade_management"] = trade_management
+    inst["strategy"] = strategy
+    instances[0] = inst
+    draft["instances"] = instances
+
+    res = client.post("/api/research/config/validate", json=draft)
+    assert res.status_code == 200
+    body = res.json()
+    assert body["ok"] is False
+    assert any(
+        e.get("path") == "trade_management.exit_policy.context_consumption"
+        for e in body["errors"]
+    )
 
 
 def test_validate_config_rejects_bad_instance(client: TestClient) -> None:

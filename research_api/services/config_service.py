@@ -104,7 +104,7 @@ def validate_draft(draft: StrategyConfigDraft) -> ValidationResult:
     try:
         load_strategy_config(draft_to_canonical_payload(draft), source_file="<draft>")
         return ValidationResult(ok=True)
-    except (ConfigValidationError, EmaPullbackInstanceValidationError) as exc:
+    except (ConfigValidationError, EmaPullbackInstanceValidationError, ValueError) as exc:
         return ValidationResult(ok=False, errors=[_parse_validation_message(str(exc))])
 
 
