@@ -87,8 +87,7 @@ export function writeExitPolicyContextConsumption(
 ): JsonObject {
   const tradeManagement = (strategy.trade_management as JsonObject | undefined) ?? {};
   const exitPolicy = readExitPolicy(strategy);
-  const { context: _legacy, context_consumption: _old, ...exitRest } = exitPolicy;
-  const nextExitPolicy: JsonObject = { ...exitRest };
+  const nextExitPolicy: JsonObject = { ...exitPolicy };
   if (consumption) {
     nextExitPolicy.context_consumption = {
       context_ref: consumption.context_ref,
@@ -99,6 +98,8 @@ export function writeExitPolicyContextConsumption(
           : {}),
       },
     };
+  } else {
+    delete nextExitPolicy.context_consumption;
   }
   return {
     ...strategy,
@@ -123,28 +124,12 @@ export function exitPolicyRequiresContextConsumption(strategy: JsonObject): bool
   return profileExitCount(strategy) > 0;
 }
 
+/** Omit optional exit_policy.context_consumption when profile exits are empty (target shape). */
 export function normalizeStrategyForTargetShape(strategy: JsonObject): JsonObject {
-  let next = { ...strategy };
-  const exitPolicy = readExitPolicy(next);
-  if ("context" in exitPolicy) {
-    const { context: _legacy, ...rest } = exitPolicy;
-    next = writeExitPolicyFromParts(next, rest);
+  if (exitPolicyRequiresContextConsumption(strategy)) {
+    return strategy;
   }
-  if (exitPolicyRequiresContextConsumption(next)) {
-    return next;
-  }
-  return writeExitPolicyContextConsumption(next, null);
-}
-
-function writeExitPolicyFromParts(strategy: JsonObject, exitPolicy: JsonObject): JsonObject {
-  const tradeManagement = (strategy.trade_management as JsonObject | undefined) ?? {};
-  return {
-    ...strategy,
-    trade_management: {
-      ...tradeManagement,
-      exit_policy: exitPolicy,
-    },
-  };
+  return writeExitPolicyContextConsumption(strategy, null);
 }
 
 export function defaultHtfProvider(catalog: ComponentCatalog | null): ContextProviderDraft {
@@ -169,49 +154,6 @@ export function exitPolicyPolicies(catalog: ComponentCatalog | null) {
   return catalog?.context_consumption_roles?.find((r) => r.role === "exit_policy")?.policies ?? [];
 }
 
-export function stripUnsupportedEntryContextConsumption(
-  strategy: JsonObject,
-  catalog: ComponentCatalog | null,
-): JsonObject {
-  if (!catalog) {
-    return strategy;
-  }
-  let next = { ...strategy };
-  for (const role of ["direction", "setup", "trigger"] as const) {
-    const block = next[role];
-    if (!block || typeof block !== "object" || Array.isArray(block)) {
-      continue;
-    }
-    const slot = block as JsonObject;
-    const componentId = String(slot.component_id ?? "");
-    if (
-      slot.context_consumption &&
-      !supportsEntryContextConsumption(catalog, role, componentId)
-    ) {
-      const { context_consumption: _removed, ...rest } = slot;
-      next = { ...next, [role]: rest };
-    }
-  }
-  const blockers = (next.blockers as JsonObject[] | undefined) ?? [];
-  if (blockers.length > 0) {
-    next = {
-      ...next,
-      blockers: blockers.map((slot) => {
-        const componentId = String(slot.component_id ?? "");
-        if (
-          slot.context_consumption &&
-          !supportsEntryContextConsumption(catalog, "blockers", componentId)
-        ) {
-          const { context_consumption: _removed, ...rest } = slot;
-          return rest;
-        }
-        return slot;
-      }),
-    };
-  }
-  return next;
-}
-
 export function prepareStrategyForApi(strategy: JsonObject): JsonObject {
   let next = normalizeStrategyForTargetShape(strategy);
   const contexts = readStrategyContexts(next);
@@ -226,23 +168,73 @@ export function prepareStrategyForApi(strategy: JsonObject): JsonObject {
 
 export function prepareConfigDraftForApi<T extends { instances: { strategy: JsonObject }[] }>(
   draft: T,
-  catalog: ComponentCatalog | null = null,
 ): T {
   return {
     ...draft,
-    instances: draft.instances.map((inst) => {
-      let strategy = prepareStrategyForApi(inst.strategy);
-      if (catalog) {
-        strategy = stripUnsupportedEntryContextConsumption(strategy, catalog);
-      }
-      return { ...inst, strategy };
-    }),
+    instances: draft.instances.map((inst) => ({
+      ...inst,
+      strategy: prepareStrategyForApi(inst.strategy),
+    })),
   };
+}
+
+export function supportsEntryContextConsumption(
+  catalog: ComponentCatalog | null,
+  role: string,
+  componentId: string,
+): boolean {
+  const component = catalog?.components.find(
+    (c) => c.role === role && c.component_id === componentId,
+  );
+  return component?.supports_context_consumption === true;
+}
+
+export function collectUnsupportedEntryContextConsumptionErrors(
+  strategy: JsonObject,
+  pathPrefix: string,
+  catalog: ComponentCatalog | null,
+): ValidationErrorItem[] {
+  if (!catalog) {
+    return [];
+  }
+  const errors: ValidationErrorItem[] = [];
+  for (const role of ["direction", "setup", "trigger"] as const) {
+    const block = strategy[role];
+    if (!block || typeof block !== "object" || Array.isArray(block)) {
+      continue;
+    }
+    const slot = block as JsonObject;
+    const componentId = String(slot.component_id ?? "");
+    if (
+      slot.context_consumption &&
+      !supportsEntryContextConsumption(catalog, role, componentId)
+    ) {
+      errors.push({
+        path: `${pathPrefix}.${role}.context_consumption`,
+        message: `context_consumption is not supported for ${role} component ${componentId}`,
+      });
+    }
+  }
+  const blockers = (strategy.blockers as JsonObject[] | undefined) ?? [];
+  blockers.forEach((slot, index) => {
+    const componentId = String(slot.component_id ?? "");
+    if (
+      slot.context_consumption &&
+      !supportsEntryContextConsumption(catalog, "blockers", componentId)
+    ) {
+      errors.push({
+        path: `${pathPrefix}.blockers[${index}].context_consumption`,
+        message: `context_consumption is not supported for blockers component ${componentId}`,
+      });
+    }
+  });
+  return errors;
 }
 
 export function collectComposerStrategyErrors(
   strategy: JsonObject,
   pathPrefix: string,
+  catalog: ComponentCatalog | null = null,
 ): ValidationErrorItem[] {
   const errors: ValidationErrorItem[] = [];
   const exitPolicy = readExitPolicy(strategy);
@@ -252,6 +244,7 @@ export function collectComposerStrategyErrors(
       message: "exit_policy.context is no longer supported; use strategy.contexts",
     });
   }
+  errors.push(...collectUnsupportedEntryContextConsumptionErrors(strategy, pathPrefix, catalog));
   if (!exitPolicyRequiresContextConsumption(strategy)) {
     return errors;
   }
@@ -281,21 +274,13 @@ export function collectComposerStrategyErrors(
 
 export function collectComposerDraftErrors(
   draft: { instances: { strategy: JsonObject }[] },
+  catalog: ComponentCatalog | null = null,
 ): ValidationErrorItem[] {
   const errors: ValidationErrorItem[] = [];
   draft.instances.forEach((inst, index) => {
-    errors.push(...collectComposerStrategyErrors(inst.strategy, `instances[${index}].strategy`));
+    errors.push(
+      ...collectComposerStrategyErrors(inst.strategy, `instances[${index}].strategy`, catalog),
+    );
   });
   return errors;
-}
-
-export function supportsEntryContextConsumption(
-  catalog: ComponentCatalog | null,
-  role: string,
-  componentId: string,
-): boolean {
-  const component = catalog?.components.find(
-    (c) => c.role === role && c.component_id === componentId,
-  );
-  return component?.supports_context_consumption === true;
 }

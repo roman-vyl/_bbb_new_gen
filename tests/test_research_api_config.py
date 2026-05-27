@@ -208,6 +208,28 @@ def test_validate_rejects_profile_exits_without_consumption(client: TestClient) 
     )
 
 
+def test_validate_setup_context_consumption_has_structured_path(client: TestClient) -> None:
+    draft = _valid_draft()
+    instances = list(draft["instances"])  # type: ignore[index]
+    inst = dict(instances[0])  # type: ignore[arg-type]
+    strategy = dict(inst["strategy"])  # type: ignore[arg-type]
+    setup = dict(strategy["setup"])  # type: ignore[arg-type]
+    setup["context_consumption"] = {
+        "context_ref": "htf",
+        "policy": {"policy_id": "htf_state_gate", "params": {}},
+    }
+    strategy["setup"] = setup
+    inst["strategy"] = strategy
+    instances[0] = inst
+    draft["instances"] = instances
+
+    res = client.post("/api/research/config/validate", json=draft)
+    assert res.status_code == 200
+    body = res.json()
+    assert body["ok"] is False
+    assert any(e["path"] == "setup" for e in body["errors"])
+
+
 def test_validate_rejects_unknown_context_ref(client: TestClient) -> None:
     draft = _valid_draft()
     instances = list(draft["instances"])  # type: ignore[index]

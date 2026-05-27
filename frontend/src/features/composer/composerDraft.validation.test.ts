@@ -1,12 +1,30 @@
 import { describe, expect, it } from "vitest";
 
+import type { ComponentCatalog } from "@/api/types";
+
+import { createBlankConfigDraft } from "./composerDraft";
 import {
   collectComposerDraftErrors,
   collectComposerStrategyErrors,
   prepareConfigDraftForApi,
   readExitPolicy,
 } from "./composerStrategyContexts";
-import { createBlankConfigDraft } from "./composerDraft";
+
+const CATALOG_STUB: ComponentCatalog = {
+  family: "ema_pullback",
+  schema_version: 1,
+  sections: [],
+  components: [
+    {
+      component_id: "untouched_anchor_setup",
+      role: "setup",
+      label: "Setup",
+      supports_context_consumption: false,
+    },
+  ],
+  context_providers: [],
+  context_consumption_roles: [],
+};
 
 describe("collectComposerStrategyErrors", () => {
   it("rejects legacy exit_policy.context in draft", () => {
@@ -44,10 +62,32 @@ describe("collectComposerStrategyErrors", () => {
     const errors = collectComposerStrategyErrors(strategy, "instances[0].strategy");
     expect(errors.some((e) => e.path.includes("context_consumption"))).toBe(true);
   });
+
+  it("rejects unsupported setup.context_consumption when catalog disallows it", () => {
+    const strategy = {
+      setup: {
+        component_id: "untouched_anchor_setup",
+        lookback: 50,
+        active_bars: 3,
+        context_consumption: {
+          context_ref: "htf",
+          policy: { policy_id: "htf_state_gate" },
+        },
+      },
+    };
+    const errors = collectComposerStrategyErrors(
+      strategy,
+      "instances[0].strategy",
+      CATALOG_STUB,
+    );
+    expect(errors.some((e) => e.path === "instances[0].strategy.setup.context_consumption")).toBe(
+      true,
+    );
+  });
 });
 
 describe("prepareConfigDraftForApi", () => {
-  it("strips exit_policy.context before save shape", () => {
+  it("does not strip exit_policy.context — client validation must block save", () => {
     const draft = createBlankConfigDraft();
     const inst = draft.instances[0]!;
     inst.strategy = {
@@ -64,9 +104,9 @@ describe("prepareConfigDraftForApi", () => {
         },
       },
     };
+    expect(collectComposerDraftErrors(draft).length).toBeGreaterThan(0);
     const prepared = prepareConfigDraftForApi(draft);
-    const exitPolicy = readExitPolicy(prepared.instances[0]!.strategy);
-    expect(exitPolicy.context).toBeUndefined();
+    expect(readExitPolicy(prepared.instances[0]!.strategy).context).toBeDefined();
   });
 
   it("collectComposerDraftErrors blocks profile exits without consumption", () => {

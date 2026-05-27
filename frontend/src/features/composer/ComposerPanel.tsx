@@ -419,15 +419,15 @@ export function ComposerPanel() {
     if (!configDraft) {
       return null;
     }
-    return prepareConfigDraftForApi(configDraft, catalog);
-  }, [catalog, configDraft]);
+    return prepareConfigDraftForApi(configDraft);
+  }, [configDraft]);
 
   const runValidate = useCallback(async () => {
     if (!configDraft || !apiDraft) return;
     setBusy("validate");
     setActionError(null);
     setSaveMessage(null);
-    const clientErrors = collectComposerDraftErrors(configDraft);
+    const clientErrors = collectComposerDraftErrors(configDraft, catalog);
     if (clientErrors.length > 0) {
       setValidation({ ok: false, errors: clientErrors });
       setSerializeContent(null);
@@ -445,13 +445,13 @@ export function ComposerPanel() {
     } finally {
       setBusy(null);
     }
-  }, [apiDraft, configDraft]);
+  }, [apiDraft, catalog, configDraft]);
 
   const runSerialize = useCallback(async () => {
     if (!configDraft || !apiDraft) return;
     setBusy("serialize");
     setActionError(null);
-    const clientErrors = collectComposerDraftErrors(configDraft);
+    const clientErrors = collectComposerDraftErrors(configDraft, catalog);
     if (clientErrors.length > 0) {
       setValidation({ ok: false, errors: clientErrors });
       setSerializeContent(null);
@@ -473,7 +473,7 @@ export function ComposerPanel() {
     } finally {
       setBusy(null);
     }
-  }, [apiDraft, configDraft, serializeFormat]);
+  }, [apiDraft, catalog, configDraft, serializeFormat]);
 
   const runSave = useCallback(async () => {
     if (!configDraft || !apiDraft) return;
@@ -481,7 +481,7 @@ export function ComposerPanel() {
     setActionError(null);
     setSaveMessage(null);
     setBacktestMessage(null);
-    const clientErrors = collectComposerDraftErrors(configDraft);
+    const clientErrors = collectComposerDraftErrors(configDraft, catalog);
     if (clientErrors.length > 0) {
       setValidation({ ok: false, errors: clientErrors });
       setBusy(null);
@@ -500,14 +500,14 @@ export function ComposerPanel() {
     } finally {
       setBusy(null);
     }
-  }, [apiDraft, configDraft, reloadConfig]);
+  }, [apiDraft, catalog, configDraft, reloadConfig]);
 
   const runBacktestAction = useCallback(async () => {
     if (!configDraft || !apiDraft) return;
     setBusy("backtest");
     setActionError(null);
     setBacktestMessage(null);
-    const clientErrors = collectComposerDraftErrors(configDraft);
+    const clientErrors = collectComposerDraftErrors(configDraft, catalog);
     if (clientErrors.length > 0) {
       setValidation({ ok: false, errors: clientErrors });
       setBusy(null);
@@ -535,7 +535,7 @@ export function ComposerPanel() {
     } finally {
       setBusy(null);
     }
-  }, [apiDraft, configDraft, refreshRunsAndSelectRun, setActiveTab]);
+  }, [apiDraft, catalog, configDraft, refreshRunsAndSelectRun, setActiveTab]);
 
   const addInstance = () => {
     if (!configDraft) return;

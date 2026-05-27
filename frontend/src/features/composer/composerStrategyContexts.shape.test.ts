@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { createDefaultInstance } from "./composerDraft";
+import { createBlankConfigDraft, createDefaultInstance } from "./composerDraft";
 import {
+  collectComposerDraftErrors,
+  collectComposerStrategyErrors,
   exitPolicyRequiresContextConsumption,
   normalizeStrategyForTargetShape,
+  prepareConfigDraftForApi,
   prepareStrategyForApi,
   readExitPolicy,
   readExitPolicyContextConsumption,
@@ -23,7 +26,7 @@ describe("createDefaultInstance target shape", () => {
 });
 
 describe("prepareStrategyForApi", () => {
-  it("strips legacy exit_policy.context", () => {
+  it("does not strip exit_policy.context (authoring error stays visible)", () => {
     const strategy = {
       contexts: { htf: { component_id: "htf_context", timeframe: "4h" } },
       trade_management: {
@@ -40,7 +43,10 @@ describe("prepareStrategyForApi", () => {
       },
     };
     const prepared = prepareStrategyForApi(strategy);
-    expect(readExitPolicy(prepared).context).toBeUndefined();
+    expect(readExitPolicy(prepared).context).toBeDefined();
+    expect(collectComposerStrategyErrors(strategy, "instances[0].strategy").length).toBeGreaterThan(
+      0,
+    );
   });
 
   it("keeps context_consumption when profile exits are non-empty", () => {
@@ -85,6 +91,31 @@ describe("prepareStrategyForApi", () => {
     };
     const prepared = normalizeStrategyForTargetShape(strategy);
     expect(readExitPolicyContextConsumption(prepared)).toBeNull();
+  });
+});
+
+describe("prepareConfigDraftForApi", () => {
+  it("blocks draft with exit_policy.context from passing client validation", () => {
+    const draft = createBlankConfigDraft();
+    const inst = draft.instances[0]!;
+    inst.strategy = {
+      ...inst.strategy,
+      trade_management: {
+        exit_policy: {
+          context: { component_id: "htf_context" },
+          always_on: { exits: [] },
+          profiles: {
+            aligned: { exits: [] },
+            countertrend: { exits: [] },
+            neutral: { exits: [] },
+          },
+        },
+      },
+    };
+    expect(collectComposerDraftErrors(draft).some((e) => e.path.includes("exit_policy.context")))
+      .toBe(true);
+    const prepared = prepareConfigDraftForApi(draft);
+    expect(readExitPolicy(prepared.instances[0]!.strategy).context).toBeDefined();
   });
 });
 
