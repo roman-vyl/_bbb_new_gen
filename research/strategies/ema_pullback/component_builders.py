@@ -39,7 +39,6 @@ from research.strategies.ema_pullback.spec import (
     ExitPolicySpec,
     ExitKind,
     ExitRuleSpec,
-    HtfContextConfigSpec,
     TradeManagementSpec,
     UntouchedAnchorSetupSpec,
     RsiFeatureSpec,
@@ -325,25 +324,6 @@ def context_provider(
         fast_period=fast_period,
         anchor_period=anchor_period,
         slow_period=slow_period,
-    )
-
-
-def htf_context_config(
-    *,
-    timeframe: str,
-    fast_period: int,
-    anchor_period: int,
-    slow_period: int,
-    source: str = "close",
-    component_id: str = "htf_context",
-) -> ContextProviderSpec:
-    return context_provider(
-        timeframe=timeframe,
-        fast_period=fast_period,
-        anchor_period=anchor_period,
-        slow_period=slow_period,
-        source=source,
-        component_id=component_id,
     )
 
 

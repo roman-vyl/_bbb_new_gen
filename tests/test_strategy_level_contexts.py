@@ -37,11 +37,24 @@ def test_exit_policy_rejects_profile_exits_without_consumption() -> None:
 
 
 def test_always_on_only_exit_policy_without_consumption_is_valid() -> None:
-    spec = make_ema_pullback_strategy_spec(
-        contexts=(),
-        trade_management_spec=make_ema_pullback_strategy_spec().trade_management,
-    )
+    spec = make_ema_pullback_strategy_spec()
     assert spec.trade_management.exit_policy.context_consumption is None
+    assert spec.contexts == ()
+
+
+def test_factory_adds_default_htf_when_exit_consumption_without_contexts() -> None:
+    from research.strategies.ema_pullback.component_builders import exit_rsi, trade_management
+    from tests.ema_pullback_context_helpers import exit_policy_htf_consumption
+
+    spec = make_ema_pullback_strategy_spec(
+        trade_management_spec=trade_management(
+            exit_policy_spec=exit_policy_htf_consumption(
+                always_on=make_ema_pullback_strategy_spec().trade_management.exit_policy.always_on.exits,
+                aligned=(exit_rsi(instance_id="rsi_profile"),),
+            ),
+        ),
+    )
+    assert "htf" in spec.contexts_by_ref()
 
 
 def test_context_ref_keys_are_case_sensitive() -> None:
@@ -98,7 +111,20 @@ def test_context_bundle_builds_per_ref() -> None:
     pytest.importorskip("pandas")
     import pandas as pd
 
-    spec = make_ema_pullback_strategy_spec()
+    from research.strategies.ema_pullback.component_builders import trade_management
+    from tests.ema_pullback_context_helpers import exit_policy_htf_consumption, htf_strategy_contexts
+
+    from research.strategies.ema_pullback.component_builders import exit_rsi
+
+    spec = make_ema_pullback_strategy_spec(
+        contexts=htf_strategy_contexts(),
+        trade_management_spec=trade_management(
+            exit_policy_spec=exit_policy_htf_consumption(
+                always_on=make_ema_pullback_strategy_spec().trade_management.exit_policy.always_on.exits,
+                aligned=(exit_rsi(instance_id="rsi_profile"),),
+            ),
+        ),
+    )
     plan = build_feature_plan_from_strategy_spec(spec)
     idx = pd.date_range("2024-01-01", periods=3, freq="h", tz="UTC")
     close = pd.Series([100.0, 101.0, 102.0], index=idx)

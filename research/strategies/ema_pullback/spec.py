@@ -313,10 +313,6 @@ class ContextProviderSpec:
             raise ValueError(f"{path} provider must satisfy fast < anchor < slow periods")
 
 
-# Backward-compatible alias for builders/tests during migration.
-HtfContextConfigSpec = ContextProviderSpec
-
-
 @dataclass(frozen=True)
 class ContextConsumptionPolicySpec:
     policy_id: str

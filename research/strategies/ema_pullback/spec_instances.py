@@ -67,7 +67,6 @@ def make_ema_pullback_strategy_spec(
     htf_fast_period: int = 100,
     htf_anchor_period: int = 200,
     htf_slow_period: int = 1000,
-    htf_context_ref: str = "htf",
     enabled_sides: Sequence[TradeSide] = ("long",),
     components: ComponentStackSpec | None = None,
     trade_management_spec: TradeManagementSpec | None = None,
@@ -89,21 +88,6 @@ def make_ema_pullback_strategy_spec(
         stop_atr_multiplier=stop_atr_multiplier,
         take_atr_multiplier=take_atr_multiplier,
     )
-    resolved_contexts = strategy_contexts(
-        contexts
-        if contexts is not None
-        else (
-            (
-                htf_context_ref,
-                context_provider(
-                    timeframe=htf_context_timeframe,
-                    fast_period=htf_fast_period,
-                    anchor_period=htf_anchor_period,
-                    slow_period=htf_slow_period,
-                ),
-            ),
-        )
-    )
     trade_mgmt = (
         trade_management_spec
         if trade_management_spec is not None
@@ -116,6 +100,26 @@ def make_ema_pullback_strategy_spec(
             )
         )
     )
+    consumption = trade_mgmt.exit_policy.context_consumption
+    if contexts is not None:
+        resolved_contexts = strategy_contexts(contexts)
+    elif consumption is not None:
+        context_ref = consumption.context_ref
+        resolved_contexts = strategy_contexts(
+            (
+                (
+                    context_ref,
+                    context_provider(
+                        timeframe=htf_context_timeframe,
+                        fast_period=htf_fast_period,
+                        anchor_period=htf_anchor_period,
+                        slow_period=htf_slow_period,
+                    ),
+                ),
+            )
+        )
+    else:
+        resolved_contexts = ()
 
     return EmaPullbackStrategySpec(
         variant=(
