@@ -5,7 +5,7 @@ import { AppLayout } from "@/shared/layout/AppLayout";
 import { WorkbenchGate } from "@/shared/layout/WorkbenchGate";
 import { useWorkbench } from "@/shared/context/WorkbenchContext";
 
-function WorkbenchTabs() {
+function ReportBackedTabs() {
   const { activeTab } = useWorkbench();
 
   return (
@@ -13,18 +13,29 @@ function WorkbenchTabs() {
       <div className="workbench-tab-pane" hidden={activeTab !== "chart"}>
         <ChartPanel />
       </div>
-      {activeTab === "composer" && <ComposerPanel />}
       {activeTab === "reports" && <ReportsPanel />}
     </>
+  );
+}
+
+function WorkbenchTabs() {
+  const { activeTab } = useWorkbench();
+
+  if (activeTab === "composer") {
+    return <ComposerPanel />;
+  }
+
+  return (
+    <WorkbenchGate>
+      <ReportBackedTabs />
+    </WorkbenchGate>
   );
 }
 
 export function App() {
   return (
     <AppLayout>
-      <WorkbenchGate>
-        <WorkbenchTabs />
-      </WorkbenchGate>
+      <WorkbenchTabs />
     </AppLayout>
   );
 }
