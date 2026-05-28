@@ -13,9 +13,12 @@ from research.strategies.ema_pullback.component_builders import (
     exit_ema_cross_loss,
     trade_management,
 )
-from tests.ema_pullback_context_helpers import exit_policy_htf_consumption, htf_strategy_contexts
+from tests.ema_pullback_context_helpers import (
+    build_exit_outputs_with_context_bundle,
+    exit_policy_htf_consumption,
+    htf_strategy_contexts,
+)
 from research.strategies.ema_pullback.components.exits import ema_close_loss_exit, ema_cross_loss_exit
-from research.strategies.ema_pullback.execution.exits import build_exit_outputs_from_spec
 from research.strategies.ema_pullback.features.plan import build_feature_plan_from_strategy_spec
 from research.strategies.ema_pullback.instance_loader import (
     EmaPullbackInstanceValidationError,
@@ -165,7 +168,7 @@ def test_profile_only_aligned_exit_not_in_countertrend_series() -> None:
         index=idx,
     )
 
-    out = build_exit_outputs_from_spec(df, spec, plan)
+    out = build_exit_outputs_with_context_bundle(df, spec, plan)
     assert bool(out.long_exits_by_profile["aligned"].any())
     assert not bool(out.long_exits_by_profile["countertrend"].any())
 

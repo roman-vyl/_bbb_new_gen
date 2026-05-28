@@ -54,6 +54,37 @@ function ParamInput({
     );
   }
 
+  if (field.type === "array" && field.enum && field.enum.length > 0) {
+    const selected = Array.isArray(value)
+      ? (value as unknown[]).map(String)
+      : Array.isArray(field.default)
+        ? (field.default as unknown[]).map(String)
+        : [];
+    return (
+      <div className="param-array">
+        {field.enum.map((opt) => (
+          <label key={opt} className="field field--inline">
+            <input
+              type="checkbox"
+              checked={selected.includes(opt)}
+              disabled={disabled}
+              onChange={(e) => {
+                const next = new Set(selected);
+                if (e.target.checked) {
+                  next.add(opt);
+                } else {
+                  next.delete(opt);
+                }
+                onChange([...field.enum!.filter((item) => next.has(item))]);
+              }}
+            />
+            <span>{opt}</span>
+          </label>
+        ))}
+      </div>
+    );
+  }
+
   if (field.enum && field.enum.length > 0) {
     return (
       <select

@@ -52,22 +52,13 @@ def apply_exit_profile_by_htf_state(
 
 
 def _allowed_states_from_policy(policy: ContextConsumptionPolicySpec) -> frozenset[str]:
+    """Assumes loader/spec validation already checked allowed_states shape."""
+
     params = dict(policy.params)
     raw = params.get("allowed_states")
     if raw is None:
         return frozenset(_STATE_ORDER)
-    if not isinstance(raw, list) or not raw:
-        raise ValueError(
-            "context_consumption.policy.params.allowed_states must be a non-empty list"
-        )
-    states = frozenset(str(item) for item in raw)
-    unknown = states - frozenset(_STATE_ORDER)
-    if unknown:
-        raise ValueError(
-            "context_consumption.policy.params.allowed_states has invalid values: "
-            f"{sorted(unknown)}"
-        )
-    return states
+    return frozenset(str(item) for item in raw)
 
 
 def apply_htf_state_gate(

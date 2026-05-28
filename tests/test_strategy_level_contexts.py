@@ -6,6 +6,8 @@ import pytest
 
 from research.strategies.ema_pullback.component_builders import (
     blocker_counter_candle,
+    blocker_none,
+    blocker_rule,
     component_stack,
     context_consumption,
     context_provider,
@@ -16,10 +18,19 @@ from research.strategies.ema_pullback.component_builders import (
     strategy_contexts,
     trigger_reclaim_anchor,
 )
-from research.strategies.ema_pullback.components.registry import resolve_component
+from research.strategies.ema_pullback.components.registry import (
+    COUNTER_CANDLE_BLOCKER_COMPONENT,
+    NO_BLOCKERS_COMPONENT,
+    resolve_component,
+)
 from research.strategies.ema_pullback.context.bundle import ContextBundle
+from research.strategies.ema_pullback.context.pipeline import build_context_bundle_for_spec
 from research.strategies.ema_pullback.context.policies import HTF_STATE_GATE_POLICY
-from research.strategies.ema_pullback.execution.signals import _apply_blocker_context_gate
+from research.strategies.ema_pullback.execution.exits import build_exit_outputs_from_spec
+from research.strategies.ema_pullback.execution.signals import (
+    _apply_blocker_context_gate,
+    build_signals_from_spec,
+)
 from research.strategies.ema_pullback.context.policies import EXIT_PROFILE_BY_HTF_STATE_POLICY
 from research.strategies.ema_pullback.features.plan import build_feature_plan_from_strategy_spec
 from research.strategies.ema_pullback.instance_loader import (

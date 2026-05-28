@@ -259,7 +259,7 @@ export type StrategyInstanceDraft = {
 };
 
 export type ParamFieldSchema = {
-  type: "integer" | "number" | "string" | "boolean";
+  type: "integer" | "number" | "string" | "boolean" | "array";
   label?: string | null;
   min?: number | null;
   max?: number | null;

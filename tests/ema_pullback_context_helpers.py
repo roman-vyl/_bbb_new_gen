@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from typing import Any
+
+import pandas as pd
+
 from research.strategies.ema_pullback.component_builders import (
     blocker_counter_candle,
     context_consumption,
@@ -13,7 +17,42 @@ from research.strategies.ema_pullback.context.policies import (
     EXIT_PROFILE_BY_HTF_STATE_POLICY,
     HTF_STATE_GATE_POLICY,
 )
-from research.strategies.ema_pullback.spec import ExitRuleSpec
+from research.strategies.ema_pullback.context.pipeline import build_context_bundle_for_spec
+from research.strategies.ema_pullback.execution.exits import build_exit_outputs_from_spec
+from research.strategies.ema_pullback.execution.exits import PortfolioExitOutputs
+from research.strategies.ema_pullback.execution.signals import PortfolioSignals, build_signals_from_spec
+from research.strategies.ema_pullback.features.plan import FeaturePlan
+from research.strategies.ema_pullback.spec import EmaPullbackStrategySpec, ExitRuleSpec
+
+
+def context_bundle_for_spec(
+    spec: EmaPullbackStrategySpec,
+    df: pd.DataFrame,
+    plan: FeaturePlan,
+):
+    return build_context_bundle_for_spec(spec, df, plan)
+
+
+def build_signals_with_context_bundle(
+    df: pd.DataFrame,
+    spec: EmaPullbackStrategySpec,
+    plan: FeaturePlan,
+) -> PortfolioSignals:
+    return build_signals_from_spec(
+        df,
+        spec,
+        plan,
+        context_bundle=context_bundle_for_spec(spec, df, plan),
+    )
+
+
+def build_exit_outputs_with_context_bundle(
+    df: pd.DataFrame,
+    spec: EmaPullbackStrategySpec,
+    plan: FeaturePlan,
+) -> PortfolioExitOutputs:
+    bundle = context_bundle_for_spec(spec, df, plan)
+    return build_exit_outputs_from_spec(df, spec, plan, context_bundle=bundle)
 
 
 def htf_strategy_contexts(

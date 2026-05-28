@@ -14,7 +14,11 @@ from research.strategies.ema_pullback.component_builders import (
     exit_rsi,
     trade_management,
 )
-from tests.ema_pullback_context_helpers import exit_policy_htf_consumption, htf_strategy_contexts
+from tests.ema_pullback_context_helpers import (
+    build_exit_outputs_with_context_bundle,
+    exit_policy_htf_consumption,
+    htf_strategy_contexts,
+)
 from research.strategies.ema_pullback.execution.exits import (
     build_exit_outputs_from_spec,
     compose_exit_signals,
@@ -121,7 +125,7 @@ def test_exit_outputs_include_boolean_and_distance_instance_counters() -> None:
     df[plan.anchor_columns["anchor"]] = df["close"]
     df[plan.rsi_columns[("base", 3)]] = [50.0, 70.0] * 15
 
-    exit_outputs = build_exit_outputs_from_spec(df, spec, plan)
+    exit_outputs = build_exit_outputs_with_context_bundle(df, spec, plan)
     counters = {
         (item["instance_id"], item["output_type"], item.get("side")): item
         for item in exit_outputs.output_counters

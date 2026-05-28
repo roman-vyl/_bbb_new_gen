@@ -9,6 +9,7 @@ import pandas as pd
 
 from research.strategies.ema_pullback.components.registry import resolve_component
 from research.strategies.ema_pullback.context.bundle import ContextBundle
+from research.strategies.ema_pullback.context.pipeline import require_context_bundle
 from research.strategies.ema_pullback.context.policies import (
     EXIT_PROFILE_BY_HTF_STATE_POLICY,
     apply_exit_profile_by_htf_state,
@@ -238,8 +239,12 @@ def build_exit_outputs_from_spec(
     df: pd.DataFrame,
     spec: EmaPullbackStrategySpec,
     plan: FeaturePlan,
+    *,
+    context_bundle: ContextBundle | None = None,
 ) -> PortfolioExitOutputs:
     """Build profile-aware signal exits and stop/take series."""
+
+    require_context_bundle(spec, context_bundle)
     all_exit_rules = (
         spec.trade_management.exit_policy.always_on.exits
         + spec.trade_management.exit_policy.profiles.aligned.exits
@@ -345,7 +350,6 @@ def build_exit_outputs_from_spec(
                     },
                 }
             )
-    context_bundle = ContextBundle.build(spec, df, plan)
     consumption = spec.trade_management.exit_policy.context_consumption
     if consumption is not None:
         if consumption.policy.policy_id != EXIT_PROFILE_BY_HTF_STATE_POLICY:
@@ -353,6 +357,7 @@ def build_exit_outputs_from_spec(
                 "unsupported exit_policy context_consumption.policy_id: "
                 f"{consumption.policy.policy_id!r}"
             )
+        assert context_bundle is not None
         context_output = context_bundle.get(consumption.context_ref)
         context_state = context_output.state_series()
         profile_long, profile_short = apply_exit_profile_by_htf_state(

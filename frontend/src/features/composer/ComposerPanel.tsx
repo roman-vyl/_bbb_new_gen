@@ -1771,6 +1771,37 @@ function EntryContextConsumptionFields({
               ))}
             </select>
           </label>
+          {(() => {
+            const activePolicy = policies.find(
+              (policy) => policy.policy_id === String(policyObj?.policy_id ?? ""),
+            );
+            const paramsSchema = activePolicy?.params_schema;
+            if (
+              !consumption?.context_ref ||
+              !paramsSchema ||
+              Object.keys(paramsSchema).length === 0
+            ) {
+              return null;
+            }
+            return (
+              <ParamFields
+                paramsSchema={paramsSchema}
+                value={(policyObj?.params as JsonObject | undefined) ?? {}}
+                onChange={(params) =>
+                  onChange({
+                    ...value,
+                    context_consumption: {
+                      context_ref: String(consumption?.context_ref ?? ""),
+                      policy: {
+                        policy_id: String(policyObj?.policy_id ?? ""),
+                        params,
+                      },
+                    },
+                  })
+                }
+              />
+            );
+          })()}
         </>
       ) : null}
     </div>

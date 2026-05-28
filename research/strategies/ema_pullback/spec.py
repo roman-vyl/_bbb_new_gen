@@ -108,6 +108,11 @@ class BlockerRuleSpec:
             value = getattr(self, field_name)
             if value is not None and not (0 <= value <= 100):
                 raise ValueError(f"blocker {field_name} must be between 0 and 100")
+        from research.strategies.ema_pullback.context.consumption_validation import (
+            validate_blocker_context_consumption,
+        )
+
+        validate_blocker_context_consumption(self)
 
 
 TradeSide = Literal["long", "short"]

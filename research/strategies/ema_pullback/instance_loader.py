@@ -26,6 +26,9 @@ from research.strategies.ema_pullback.components.registry import (
     TOUCH_ANCHOR_COMPONENT,
     resolve_component,
 )
+from research.strategies.ema_pullback.context.consumption_validation import (
+    validate_htf_state_gate_params,
+)
 from research.strategies.ema_pullback.context.policies import (
     EXIT_PROFILE_BY_HTF_STATE_POLICY,
     HTF_STATE_GATE_POLICY,
@@ -266,18 +269,23 @@ def _parse_context_consumption(
     policy_path = f"{path}.policy"
     policy_payload = _require_mapping(policy_path, _require_present(payload, "policy"))
     _reject_unknown_fields(policy_path, policy_payload, {"policy_id", "params"})
-    params_raw = policy_payload.get("params", {})
-    if params_raw is None:
-        params: tuple[tuple[str, Any], ...] = ()
-    else:
-        params_map = _require_mapping(f"{policy_path}.params", params_raw)
-        params = tuple(sorted(params_map.items(), key=lambda item: item[0]))
     policy_id = _require_non_empty_str(policy_payload, "policy_id")
     if policy_id not in allowed_policy_ids:
         allowed = ", ".join(repr(item) for item in allowed_policy_ids)
         raise EmaPullbackInstanceValidationError(
             f"{policy_path}.policy_id must be one of: {allowed}; got {policy_id!r}"
         )
+    params_raw = policy_payload.get("params", {})
+    if params_raw is None:
+        params_map: dict[str, Any] = {}
+    else:
+        params_map = _require_mapping(f"{policy_path}.params", params_raw)
+    if policy_id == HTF_STATE_GATE_POLICY:
+        try:
+            validate_htf_state_gate_params(params_map, path=policy_path)
+        except ValueError as exc:
+            raise EmaPullbackInstanceValidationError(str(exc)) from exc
+    params = tuple(sorted(params_map.items(), key=lambda item: item[0]))
     return ContextConsumptionSpec(
         context_ref=_require_non_empty_str(payload, "context_ref"),
         policy=ContextConsumptionPolicySpec(policy_id=policy_id, params=params),

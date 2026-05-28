@@ -12,7 +12,7 @@ class ParamFieldSchema(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    type: Literal["integer", "number", "string", "boolean"]
+    type: Literal["integer", "number", "string", "boolean", "array"]
     label: str | None = None
     min: float | None = None
     max: float | None = None

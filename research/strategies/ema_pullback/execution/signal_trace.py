@@ -27,6 +27,7 @@ from research.strategies.ema_pullback.components.triggers import (
     touch_anchor_trace,
 )
 from research.strategies.ema_pullback.components.risk import no_risk_filter
+from research.strategies.ema_pullback.context.pipeline import build_context_bundle_for_spec
 from research.strategies.ema_pullback.execution.exits import build_exit_outputs_from_spec
 from research.strategies.ema_pullback.execution.signals import compose_blocker_signals, compose_final_signals
 from research.strategies.ema_pullback.features.plan import FeaturePlan
@@ -259,7 +260,10 @@ def build_signal_trace_from_spec(
     anchor_col = plan.anchor_columns["anchor"]
     slow_col = plan.anchor_columns["slow"]
 
-    exit_outputs = build_exit_outputs_from_spec(df, spec, plan)
+    context_bundle = build_context_bundle_for_spec(spec, df, plan)
+    exit_outputs = build_exit_outputs_from_spec(
+        df, spec, plan, context_bundle=context_bundle
+    )
 
     long_trace = _build_side_trace(
         df=df,

@@ -11,6 +11,7 @@ from research.strategies.ema_pullback.components.registry import (
     resolve_component,
 )
 from research.strategies.ema_pullback.context.bundle import ContextBundle
+from research.strategies.ema_pullback.context.pipeline import require_context_bundle
 from research.strategies.ema_pullback.context.policies import (
     HTF_STATE_GATE_POLICY,
     apply_htf_state_gate,
@@ -108,12 +109,13 @@ def _build_side_signals(
     setup_fn: Callable[..., pd.Series],
     trigger_fn: Callable[..., pd.Series],
     risk_fn: Callable[..., pd.Series],
+    context_bundle: ContextBundle | None,
 ) -> _SideSignalOutputs:
     if not spec.trade_sides.includes(side):
         return _SideSignalOutputs(signal=_false_series(df), output_counters=())
 
     direction = direction_fn(df, fast_col, anchor_col, slow_col, side=side)
-    bundle = ContextBundle.build(spec, df, plan) if spec.contexts else None
+    bundle = require_context_bundle(spec, context_bundle)
     blocker_signals_list: list[pd.Series] = []
     for blockers_fn, rule in zip(blockers_fns, spec.components.blockers, strict=True):
         signal = blockers_fn(
@@ -123,10 +125,7 @@ def _build_side_signals(
             rsi_col=_rsi_column(plan, rule.rsi),
         )
         if rule.context_consumption is not None:
-            if bundle is None:
-                raise ValueError(
-                    "strategy.contexts is required when a blocker uses context_consumption"
-                )
+            assert bundle is not None
             signal = _apply_blocker_context_gate(signal, rule=rule, bundle=bundle)
         blocker_signals_list.append(signal)
     blocker_signals = tuple(blocker_signals_list)
@@ -175,9 +174,12 @@ def build_signals_from_spec(
     df: pd.DataFrame,
     spec: EmaPullbackStrategySpec,
     plan: FeaturePlan,
+    *,
+    context_bundle: ContextBundle | None = None,
 ) -> PortfolioSignals:
     """Build entry signals via component registry using StrategySpec ids."""
 
+    require_context_bundle(spec, context_bundle)
     direction_fn = resolve_component("direction", spec.components.direction).func
     blockers_fns = tuple(
         resolve_component("blockers", rule.component_id).func for rule in spec.components.blockers
@@ -203,6 +205,7 @@ def build_signals_from_spec(
         setup_fn=setup_fn,
         trigger_fn=trigger_fn,
         risk_fn=risk_fn,
+        context_bundle=context_bundle,
     )
     short_outputs = _build_side_signals(
         df=df,
@@ -217,6 +220,7 @@ def build_signals_from_spec(
         setup_fn=setup_fn,
         trigger_fn=trigger_fn,
         risk_fn=risk_fn,
+        context_bundle=context_bundle,
     )
 
     return PortfolioSignals(

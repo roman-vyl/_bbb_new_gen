@@ -24,6 +24,7 @@ from research.strategies.ema_pullback.execution.results import (
     build_trade_quality_breakdowns,
     extract_trade_records,
 )
+from research.strategies.ema_pullback.context.pipeline import build_context_bundle_for_spec
 from research.strategies.ema_pullback.execution.exits import build_exit_outputs_from_spec
 from research.strategies.ema_pullback.execution.signals import build_signals_from_spec
 from research.strategies.ema_pullback.features.calculations import add_feature_columns_from_plan
@@ -155,8 +156,13 @@ def run_strategy_spec(
     plan = build_feature_plan_from_strategy_spec(spec)
     enriched = add_feature_columns_from_plan(ohlcv, plan)
     open_s, high_s, low_s = _open_high_low_for_vectorbt(enriched)
-    signals = build_signals_from_spec(enriched, spec, plan)
-    exit_outputs = build_exit_outputs_from_spec(enriched, spec, plan)
+    context_bundle = build_context_bundle_for_spec(spec, enriched, plan)
+    signals = build_signals_from_spec(
+        enriched, spec, plan, context_bundle=context_bundle
+    )
+    exit_outputs = build_exit_outputs_from_spec(
+        enriched, spec, plan, context_bundle=context_bundle
+    )
 
     close = enriched["close"].astype(float)
     if close.isna().any():

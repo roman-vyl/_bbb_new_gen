@@ -154,8 +154,10 @@ def get_component_catalog(*, family: str = "ema_pullback") -> ComponentCatalog:
                     label="HTF state gate",
                     params_schema={
                         "allowed_states": ParamFieldSchema(
-                            type="string",
-                            label="Allowed HTF states (comma-separated: up, down, neutral)",
+                            type="array",
+                            label="Allowed HTF states",
+                            enum=["up", "down", "neutral"],
+                            default=["up", "down", "neutral"],
                         ),
                     },
                 ),
