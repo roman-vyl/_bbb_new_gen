@@ -904,6 +904,8 @@ export function ChartPanel() {
                   chartEmaOverlays={chartEmaOverlays}
                   chartAuxEmaOverlays={chartDisplayAuxEmaOverlays}
                   focusWarning={chartTradeFocusWarning}
+                  signalTrace={signalTrace}
+                  signalTraceStatus={signalTraceStatus}
                 />
               </div>
               <ChartAsideStackSplitHandle

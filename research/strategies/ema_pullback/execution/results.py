@@ -366,6 +366,7 @@ def extract_trade_records(
     base_timeframe: str | None = None,
     exit_component_map: dict[str, str] | None = None,
     strategy_spec: Any | None = None,
+    context_bundle: Any | None = None,
 ) -> list[dict[str, Any]]:
     """Normalize vectorbt portfolio trades into Stage 9 trade_records (library-agnostic fields)."""
 
@@ -493,6 +494,8 @@ def extract_trade_records(
                     strategy_spec,
                     entry_idx=entry_idx,
                     direction=direction,
+                    context_bundle=context_bundle,
+                    index=index,
                 )
                 if entry_cc is not None:
                     record["entry_context_consumption"] = entry_cc

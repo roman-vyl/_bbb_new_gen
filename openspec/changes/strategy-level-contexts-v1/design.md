@@ -275,6 +275,10 @@ No Phase for runtime dual-read or loader shim.
 - **Reports**: Additive v5 only; never rewrite historical report files on disk.
 - If Phase 1 equivalence fails, do not merge Phase 2 Composer until policy mapping is fixed.
 
+## 17. Follow-up changes
+
+- **[`trade-context-causal-diagnostics-v1`](../trade-context-causal-diagnostics-v1/)** — wiring vs causal diagnostics: honest `applied` on trade rows, Chart trade panel **Entry/Exit bar decision** from `signal_trace` (Bar Inspector stays per-click bar). Phase 4 v5 fields remain provenance; gate allow/block lives in trace.
+
 ## Open questions
 
 1. Exact `policy_id` and params for first entry reference consumer (setup vs blocker).

@@ -61,8 +61,8 @@ export function buildContextConsumptionDiagnosticFields(
   const prefix = side === "entry" ? "entry_context_consumption" : "exit_context_consumption";
   const sectionHint =
     side === "entry"
-      ? "Which entry-side consumer applied a context policy (not raw HTF state at entry)"
-      : "Which exit policy consumed strategy context for this trade";
+      ? "Configured consumer (not bar-level gate decision)"
+      : "Configured exit policy consumer (not per-bar profile selection)";
 
   const fields: TradeDiagnosticField[] = [
     field(`${prefix}.context_ref`, "context_ref", attribution.context_ref, sectionHint),

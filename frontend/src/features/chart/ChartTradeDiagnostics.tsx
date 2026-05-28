@@ -1,8 +1,20 @@
-import type { ChartAuxEmaOverlay, ChartEmaOverlay, JsonObject, TradeRecord } from "@/api/types";
+import type {
+  ChartAuxEmaOverlay,
+  ChartEmaOverlay,
+  JsonObject,
+  SignalTraceBundle,
+  TradeRecord,
+} from "@/api/types";
 import { ActiveExitComponentsList } from "@/features/chart/ActiveExitComponentsList";
 import { anchorStackPeriodsFromStrategySpec } from "@/features/chart/anchorStackFromSpec";
 import { attachEmaAvailabilityHints } from "@/features/chart/exitEmaOverlayAvailability";
 import { listActiveExitComponents, readExitPolicy } from "@/features/chart/exitPolicyForTrade";
+import {
+  buildEntryBarCausalDiagnostics,
+  buildExitBarCausalDiagnostics,
+  causalEmptyMessage,
+  type CausalSectionStatus,
+} from "@/features/chart/tradeContextCausalDiagnostics";
 import { formatMoney, formatReturnPct } from "@/features/reports/formatDiagnostics";
 import { TradeDirectionChip } from "@/features/reports/TradeDirectionChip";
 import { TradeStatusChip } from "@/features/reports/TradeStatusChip";
@@ -12,6 +24,7 @@ import {
   EM_DASH,
   type TradeDiagnosticField,
 } from "@/features/reports/tradeDiagnosticsFields";
+import type { SignalTraceLoadStatus } from "@/shared/context/signalTraceLoadPolicy";
 
 type Props = {
   trade: TradeRecord | undefined;
@@ -20,6 +33,8 @@ type Props = {
   chartEmaOverlays: ChartEmaOverlay[];
   chartAuxEmaOverlays?: ChartAuxEmaOverlay[];
   focusWarning: string | null;
+  signalTrace: SignalTraceBundle | null;
+  signalTraceStatus: SignalTraceLoadStatus;
 };
 
 function pnlToneClass(pnl: number | null, returnPct: number | null): string {
@@ -100,6 +115,28 @@ function DiagnosticDl({
   );
 }
 
+function CausalSection({
+  title,
+  status,
+  testId,
+}: {
+  title: string;
+  status: CausalSectionStatus;
+  testId: string;
+}) {
+  if (status.kind === "ready") {
+    return <DiagnosticDl title={title} fields={status.fields} />;
+  }
+  return (
+    <>
+      <h4 className="trade-detail__subtitle">{title}</h4>
+      <p className="chart-trade-diagnostics__hint" data-testid={testId}>
+        {causalEmptyMessage(status)}
+      </p>
+    </>
+  );
+}
+
 export function ChartTradeDiagnostics({
   trade,
   selectedTradeId,
@@ -107,6 +144,8 @@ export function ChartTradeDiagnostics({
   chartEmaOverlays,
   chartAuxEmaOverlays = [],
   focusWarning,
+  signalTrace,
+  signalTraceStatus,
 }: Props) {
   if (!trade) {
     return (
@@ -144,13 +183,27 @@ export function ChartTradeDiagnostics({
   const rowsWithEma = attachEmaAvailabilityHints(rows, anchorStack, chartEmaOverlays).map(
     (row) => {
       if (row.emaPeriods.length === 0) return row;
-      const onChart = row.emaPeriods.every((p) => loadedAuxPeriods.has(p) || anchorStack?.fast === p || anchorStack?.anchor === p || anchorStack?.slow === p);
+      const onChart = row.emaPeriods.every(
+        (p) =>
+          loadedAuxPeriods.has(p) ||
+          anchorStack?.fast === p ||
+          anchorStack?.anchor === p ||
+          anchorStack?.slow === p,
+      );
       if (onChart && row.emaAvailabilityHint?.includes("unavailable")) {
         return { ...row, emaAvailabilityHint: "Shown on chart (auxiliary EMA line)" };
       }
       return row;
     },
   );
+
+  const entryCausal = buildEntryBarCausalDiagnostics(
+    trade,
+    signalTrace,
+    signalTraceStatus,
+    strategySpec,
+  );
+  const exitCausal = buildExitBarCausalDiagnostics(trade, signalTrace, signalTraceStatus);
 
   return (
     <aside className="chart-trade-diagnostics trade-detail" data-testid="chart-trade-diagnostics">
@@ -171,7 +224,7 @@ export function ChartTradeDiagnostics({
       )}
       {trade.entry_context_consumption ? (
         <DiagnosticDl
-          title="Entry context consumption"
+          title="Entry context consumption (configured)"
           fields={buildContextConsumptionDiagnosticFields(
             trade.entry_context_consumption,
             "entry",
@@ -180,11 +233,23 @@ export function ChartTradeDiagnostics({
       ) : null}
       {trade.exit_context_consumption ? (
         <DiagnosticDl
-          title="Exit context consumption"
+          title="Exit context consumption (configured)"
           fields={buildContextConsumptionDiagnosticFields(
             trade.exit_context_consumption,
             "exit",
           )}
+        />
+      ) : null}
+      <CausalSection
+        title="Entry bar decision"
+        status={entryCausal}
+        testId="chart-trade-entry-causal-empty"
+      />
+      {trade.status === "closed" ? (
+        <CausalSection
+          title="Exit bar decision"
+          status={exitCausal}
+          testId="chart-trade-exit-causal-empty"
         />
       ) : null}
       <h4 className="trade-detail__subtitle">Active exit components</h4>

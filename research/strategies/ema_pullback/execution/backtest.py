@@ -350,6 +350,7 @@ def run_strategy_spec(
         base_timeframe=spec.base_timeframe,
         exit_component_map=exit_component_map,
         strategy_spec=spec,
+        context_bundle=context_bundle,
     )
 
     sharpe = ensure_finite_metric("sharpe_ratio", float(pf.sharpe_ratio()))

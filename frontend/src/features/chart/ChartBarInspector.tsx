@@ -8,6 +8,7 @@ import {
   formatChartPrice,
   ohlcPriceDecimals,
 } from "@/features/chart/signalTraceLookup";
+import { formatGateDecisionLabel } from "@/features/chart/tradeContextCausalDiagnostics";
 
 type ChartBarInspectorProps = {
   selectedBarTimeSec: number | null;
@@ -238,8 +239,18 @@ export function ChartBarInspector({
                   <dd>{record.context_ref}</dd>
                   <dt>policy_id</dt>
                   <dd>{record.policy_id}</dd>
-                  <dt>context_applied</dt>
-                  <dd>{formatBool(record.context_applied[index] ?? false)}</dd>
+                  <dt>gate</dt>
+                  <dd>
+                    {record.role === "exit_policy"
+                      ? "—"
+                      : formatGateDecisionLabel(record.context_applied[index] ?? false)}
+                  </dd>
+                  {record.role === "exit_policy" ? (
+                    <>
+                      <dt>context_applied</dt>
+                      <dd>{formatBool(record.context_applied[index] ?? false)}</dd>
+                    </>
+                  ) : null}
                 </dl>
               ))}
             </>
