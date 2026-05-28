@@ -42,11 +42,11 @@
 
 ## Phase 3 — Reference entry consumer
 
-- [ ] 3.1 Register first entry policy (e.g. `htf_state_gate`) for one role (blocker or setup)
-- [ ] 3.2 Apply policy in entry pipeline for reference component when `context_consumption` present (same `component_id`, no `htf_gated_*`)
-- [ ] 3.3 Catalog: mark reference component `supports_context_consumption` + policy schema
-- [ ] 3.4 Tests: policy param changes alter entry mask; omitting `context_consumption` restores baseline for that component
-- [ ] 3.5 Tests: unknown `context_ref` fails validation (no fallback)
+- [x] 3.1 Register first entry policy (e.g. `htf_state_gate`) for one role (blocker or setup)
+- [x] 3.2 Apply policy in entry pipeline for reference component when `context_consumption` present (same `component_id`, no `htf_gated_*`)
+- [x] 3.3 Catalog: mark reference component `supports_context_consumption` + policy schema
+- [x] 3.4 Tests: policy param changes alter entry mask; omitting `context_consumption` restores baseline for that component
+- [x] 3.5 Tests: unknown `context_ref` fails validation (no fallback)
 
 ## Phase 4 — Diagnostics, chart, report schema v5
 

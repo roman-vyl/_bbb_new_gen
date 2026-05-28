@@ -3,12 +3,16 @@
 from research.strategies.ema_pullback.context.bundle import ContextBundle, ContextOutput
 from research.strategies.ema_pullback.context.policies import (
     EXIT_PROFILE_BY_HTF_STATE_POLICY,
+    HTF_STATE_GATE_POLICY,
     apply_exit_profile_by_htf_state,
+    apply_htf_state_gate,
 )
 
 __all__ = [
     "ContextBundle",
     "ContextOutput",
     "EXIT_PROFILE_BY_HTF_STATE_POLICY",
+    "HTF_STATE_GATE_POLICY",
     "apply_exit_profile_by_htf_state",
+    "apply_htf_state_gate",
 ]

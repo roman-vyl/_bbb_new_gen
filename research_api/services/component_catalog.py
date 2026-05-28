@@ -147,6 +147,19 @@ def get_component_catalog(*, family: str = "ema_pullback") -> ComponentCatalog:
             role="blockers",
             label="Counter candle blocker",
             list_slot=True,
+            supports_context_consumption=True,
+            context_consumption_policies=[
+                ContextConsumptionPolicySchema(
+                    policy_id="htf_state_gate",
+                    label="HTF state gate",
+                    params_schema={
+                        "allowed_states": ParamFieldSchema(
+                            type="string",
+                            label="Allowed HTF states (comma-separated: up, down, neutral)",
+                        ),
+                    },
+                ),
+            ],
         ),
         ComponentSchema(
             component_id="rsi_lookback_extreme_blocker",
@@ -278,6 +291,16 @@ def get_component_catalog(*, family: str = "ema_pullback") -> ComponentCatalog:
                 ContextConsumptionPolicySchema(
                     policy_id="exit_profile_by_htf_state",
                     label="Profile by HTF state",
+                ),
+            ],
+        ),
+        ContextConsumptionRoleSchema(
+            role="blockers",
+            label="Blockers",
+            policies=[
+                ContextConsumptionPolicySchema(
+                    policy_id="htf_state_gate",
+                    label="HTF state gate",
                 ),
             ],
         ),

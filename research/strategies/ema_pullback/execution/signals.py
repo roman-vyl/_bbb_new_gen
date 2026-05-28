@@ -10,6 +10,12 @@ import pandas as pd
 from research.strategies.ema_pullback.components.registry import (
     resolve_component,
 )
+from research.strategies.ema_pullback.context.bundle import ContextBundle
+from research.strategies.ema_pullback.context.policies import (
+    HTF_STATE_GATE_POLICY,
+    apply_htf_state_gate,
+)
+from research.strategies.ema_pullback.spec import BlockerRuleSpec
 from research.strategies.ema_pullback.features.plan import FeaturePlan
 from research.strategies.ema_pullback.spec import EmaPullbackStrategySpec
 from research.strategies.ema_pullback.spec import ReclaimTriggerSpec, StrongReclaimTriggerSpec
@@ -59,6 +65,29 @@ def _false_series(df: pd.DataFrame) -> pd.Series:
     return pd.Series(False, index=df.index, dtype=bool)
 
 
+def _apply_blocker_context_gate(
+    signal: pd.Series,
+    *,
+    rule: BlockerRuleSpec,
+    bundle: ContextBundle,
+) -> pd.Series:
+    consumption = rule.context_consumption
+    if consumption is None:
+        return signal
+    if consumption.policy.policy_id != HTF_STATE_GATE_POLICY:
+        raise ValueError(
+            "unsupported blocker context_consumption.policy_id: "
+            f"{consumption.policy.policy_id!r}"
+        )
+    context_output = bundle.get(consumption.context_ref)
+    gate = apply_htf_state_gate(
+        context_output,
+        policy=consumption.policy,
+        index=signal.index,
+    )
+    return signal & gate.fillna(False).astype(bool)
+
+
 def _rsi_column(plan: FeaturePlan, rsi: RsiFeatureSpec | None) -> str | None:
     if rsi is None:
         return None
@@ -84,15 +113,23 @@ def _build_side_signals(
         return _SideSignalOutputs(signal=_false_series(df), output_counters=())
 
     direction = direction_fn(df, fast_col, anchor_col, slow_col, side=side)
-    blocker_signals = tuple(
-        blockers_fn(
+    bundle = ContextBundle.build(spec, df, plan) if spec.contexts else None
+    blocker_signals_list: list[pd.Series] = []
+    for blockers_fn, rule in zip(blockers_fns, spec.components.blockers, strict=True):
+        signal = blockers_fn(
             df,
             side=side,
             rule=rule,
             rsi_col=_rsi_column(plan, rule.rsi),
         )
-        for blockers_fn, rule in zip(blockers_fns, spec.components.blockers, strict=True)
-    )
+        if rule.context_consumption is not None:
+            if bundle is None:
+                raise ValueError(
+                    "strategy.contexts is required when a blocker uses context_consumption"
+                )
+            signal = _apply_blocker_context_gate(signal, rule=rule, bundle=bundle)
+        blocker_signals_list.append(signal)
+    blocker_signals = tuple(blocker_signals_list)
     blocker_counters = tuple(
         {
             "role": "blockers",

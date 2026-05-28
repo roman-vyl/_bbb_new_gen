@@ -8,6 +8,7 @@ from research.strategies.ema_pullback.context.bundle import ContextOutput
 from research.strategies.ema_pullback.spec import ContextConsumptionPolicySpec, TradeSide
 
 EXIT_PROFILE_BY_HTF_STATE_POLICY = "exit_profile_by_htf_state"
+HTF_STATE_GATE_POLICY = "htf_state_gate"
 
 _STATE_ORDER = ("up", "down", "neutral")
 
@@ -48,3 +49,33 @@ def apply_exit_profile_by_htf_state(
     if "short" not in sides:
         profile_short = pd.Series("neutral", index=index, dtype="object")
     return profile_long, profile_short
+
+
+def _allowed_states_from_policy(policy: ContextConsumptionPolicySpec) -> frozenset[str]:
+    params = dict(policy.params)
+    raw = params.get("allowed_states")
+    if raw is None:
+        return frozenset(_STATE_ORDER)
+    if not isinstance(raw, list) or not raw:
+        raise ValueError(
+            "context_consumption.policy.params.allowed_states must be a non-empty list"
+        )
+    states = frozenset(str(item) for item in raw)
+    unknown = states - frozenset(_STATE_ORDER)
+    if unknown:
+        raise ValueError(
+            "context_consumption.policy.params.allowed_states has invalid values: "
+            f"{sorted(unknown)}"
+        )
+    return states
+
+
+def apply_htf_state_gate(
+    output: ContextOutput,
+    *,
+    policy: ContextConsumptionPolicySpec,
+    index: pd.Index,
+) -> pd.Series:
+    allowed_states = _allowed_states_from_policy(policy)
+    context_state = output.state_series().reindex(index).fillna("neutral")
+    return context_state.isin(allowed_states).astype(bool)

@@ -95,6 +95,7 @@ class BlockerRuleSpec:
     lookback: int = 20
     long_block_above: float | None = None
     short_block_below: float | None = None
+    context_consumption: ContextConsumptionSpec | None = None
 
     def __post_init__(self) -> None:
         if not self.instance_id.strip():
@@ -426,6 +427,15 @@ class EmaPullbackStrategySpec:
                 "trade_management.exit_policy.context_consumption.context_ref "
                 f"{consumption.context_ref!r} is not defined in strategy.contexts"
             )
+        for rule in self.components.blockers:
+            blocker_consumption = rule.context_consumption
+            if blocker_consumption is None:
+                continue
+            if blocker_consumption.context_ref not in seen_refs:
+                raise ValueError(
+                    f"blockers[{rule.instance_id!r}].context_consumption.context_ref "
+                    f"{blocker_consumption.context_ref!r} is not defined in strategy.contexts"
+                )
 
 
 def strategy_spec_to_dict(spec: EmaPullbackStrategySpec) -> dict[str, Any]:

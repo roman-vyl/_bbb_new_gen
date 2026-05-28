@@ -113,6 +113,7 @@ def blocker_rule(
     lookback: int = 20,
     long_block_above: float | None = None,
     short_block_below: float | None = None,
+    context_consumption: ContextConsumptionSpec | None = None,
 ) -> BlockerRuleSpec:
     return BlockerRuleSpec(
         instance_id=instance_id,
@@ -121,6 +122,7 @@ def blocker_rule(
         lookback=lookback,
         long_block_above=long_block_above,
         short_block_below=short_block_below,
+        context_consumption=context_consumption,
     )
 
 
@@ -128,8 +130,16 @@ def blocker_none() -> BlockerRuleSpec:
     return blocker_rule(NO_BLOCKERS_COMPONENT, instance_id="no_blockers")
 
 
-def blocker_counter_candle(*, instance_id: str = "counter_candle_blocker") -> BlockerRuleSpec:
-    return blocker_rule(COUNTER_CANDLE_BLOCKER_COMPONENT, instance_id=instance_id)
+def blocker_counter_candle(
+    *,
+    instance_id: str = "counter_candle_blocker",
+    context_consumption: ContextConsumptionSpec | None = None,
+) -> BlockerRuleSpec:
+    return blocker_rule(
+        COUNTER_CANDLE_BLOCKER_COMPONENT,
+        instance_id=instance_id,
+        context_consumption=context_consumption,
+    )
 
 
 def blocker_extreme_rsi(

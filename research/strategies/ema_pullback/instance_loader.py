@@ -26,7 +26,10 @@ from research.strategies.ema_pullback.components.registry import (
     TOUCH_ANCHOR_COMPONENT,
     resolve_component,
 )
-from research.strategies.ema_pullback.context.policies import EXIT_PROFILE_BY_HTF_STATE_POLICY
+from research.strategies.ema_pullback.context.policies import (
+    EXIT_PROFILE_BY_HTF_STATE_POLICY,
+    HTF_STATE_GATE_POLICY,
+)
 from research.strategies.ema_pullback.spec import (
     BlockerRuleSpec,
     ContextConsumptionPolicySpec,
@@ -208,7 +211,11 @@ def _parse_trade_management(value: Any) -> TradeManagementSpec:
         exit_policy_payload,
         {"context_consumption", "always_on", "profiles"},
     )
-    context_consumption = _parse_context_consumption(exit_policy_payload.get("context_consumption"))
+    context_consumption = _parse_context_consumption(
+        exit_policy_payload.get("context_consumption"),
+        path="trade_management.exit_policy.context_consumption",
+        allowed_policy_ids=(EXIT_PROFILE_BY_HTF_STATE_POLICY,),
+    )
     always_on = _parse_exit_policy_group(
         _require_present(exit_policy_payload, "always_on"),
         path="trade_management.exit_policy.always_on",
@@ -246,38 +253,30 @@ def _parse_trade_management(value: Any) -> TradeManagementSpec:
     )
 
 
-def _parse_context_consumption(value: Any) -> ContextConsumptionSpec | None:
+def _parse_context_consumption(
+    value: Any,
+    *,
+    path: str,
+    allowed_policy_ids: tuple[str, ...],
+) -> ContextConsumptionSpec | None:
     if value is None:
         return None
-    payload = _require_mapping("trade_management.exit_policy.context_consumption", value)
-    _reject_unknown_fields(
-        "trade_management.exit_policy.context_consumption",
-        payload,
-        {"context_ref", "policy"},
-    )
-    policy_payload = _require_mapping(
-        "trade_management.exit_policy.context_consumption.policy",
-        _require_present(payload, "policy"),
-    )
-    _reject_unknown_fields(
-        "trade_management.exit_policy.context_consumption.policy",
-        policy_payload,
-        {"policy_id", "params"},
-    )
+    payload = _require_mapping(path, value)
+    _reject_unknown_fields(path, payload, {"context_ref", "policy"})
+    policy_path = f"{path}.policy"
+    policy_payload = _require_mapping(policy_path, _require_present(payload, "policy"))
+    _reject_unknown_fields(policy_path, policy_payload, {"policy_id", "params"})
     params_raw = policy_payload.get("params", {})
     if params_raw is None:
         params: tuple[tuple[str, Any], ...] = ()
     else:
-        params_map = _require_mapping(
-            "trade_management.exit_policy.context_consumption.policy.params",
-            params_raw,
-        )
+        params_map = _require_mapping(f"{policy_path}.params", params_raw)
         params = tuple(sorted(params_map.items(), key=lambda item: item[0]))
     policy_id = _require_non_empty_str(policy_payload, "policy_id")
-    if policy_id != EXIT_PROFILE_BY_HTF_STATE_POLICY:
+    if policy_id not in allowed_policy_ids:
+        allowed = ", ".join(repr(item) for item in allowed_policy_ids)
         raise EmaPullbackInstanceValidationError(
-            "trade_management.exit_policy.context_consumption.policy.policy_id "
-            f"must be {EXIT_PROFILE_BY_HTF_STATE_POLICY!r}"
+            f"{policy_path}.policy_id must be one of: {allowed}; got {policy_id!r}"
         )
     return ContextConsumptionSpec(
         context_ref=_require_non_empty_str(payload, "context_ref"),
@@ -419,8 +418,17 @@ def _parse_blocker(index: int, value: Any) -> BlockerRuleSpec:
         _reject_unknown_fields(f"blockers[{index}]", payload, common)
         return builders.blocker_rule(NO_BLOCKERS_COMPONENT, instance_id=instance_id)
     if component_id == COUNTER_CANDLE_BLOCKER_COMPONENT:
-        _reject_unknown_fields(f"blockers[{index}]", payload, common)
-        return builders.blocker_counter_candle(instance_id=instance_id)
+        allowed = common | {"context_consumption"}
+        _reject_unknown_fields(f"blockers[{index}]", payload, allowed)
+        context_consumption = _parse_context_consumption(
+            payload.get("context_consumption"),
+            path=f"blockers[{index}].context_consumption",
+            allowed_policy_ids=(HTF_STATE_GATE_POLICY,),
+        )
+        return builders.blocker_counter_candle(
+            instance_id=instance_id,
+            context_consumption=context_consumption,
+        )
     if component_id == RSI_LOOKBACK_EXTREME_BLOCKER_COMPONENT:
         allowed = common | {
             "rsi",

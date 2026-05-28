@@ -101,10 +101,19 @@ def make_ema_pullback_strategy_spec(
         )
     )
     consumption = trade_mgmt.exit_policy.context_consumption
+    blocker_consumption_refs = tuple(
+        rule.context_consumption.context_ref
+        for rule in resolved_components.blockers
+        if rule.context_consumption is not None
+    )
     if contexts is not None:
         resolved_contexts = strategy_contexts(contexts)
-    elif consumption is not None:
-        context_ref = consumption.context_ref
+    elif consumption is not None or blocker_consumption_refs:
+        context_ref = (
+            consumption.context_ref
+            if consumption is not None
+            else blocker_consumption_refs[0]
+        )
         resolved_contexts = strategy_contexts(
             (
                 (

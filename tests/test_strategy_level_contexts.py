@@ -5,12 +5,21 @@ from __future__ import annotations
 import pytest
 
 from research.strategies.ema_pullback.component_builders import (
+    blocker_counter_candle,
+    component_stack,
     context_consumption,
     context_provider,
+    direction_ema_anchor_stack,
     exit_policy,
+    risk_no_filter,
+    setup_untouched_anchor,
     strategy_contexts,
+    trigger_reclaim_anchor,
 )
+from research.strategies.ema_pullback.components.registry import resolve_component
 from research.strategies.ema_pullback.context.bundle import ContextBundle
+from research.strategies.ema_pullback.context.policies import HTF_STATE_GATE_POLICY
+from research.strategies.ema_pullback.execution.signals import _apply_blocker_context_gate
 from research.strategies.ema_pullback.context.policies import EXIT_PROFILE_BY_HTF_STATE_POLICY
 from research.strategies.ema_pullback.features.plan import build_feature_plan_from_strategy_spec
 from research.strategies.ema_pullback.instance_loader import (
@@ -19,7 +28,11 @@ from research.strategies.ema_pullback.instance_loader import (
 )
 from research.strategies.ema_pullback.spec import ContextConsumptionSpec, ExitPolicySpec
 from research.strategies.ema_pullback.spec_instances import make_ema_pullback_strategy_spec
-from tests.ema_pullback_context_helpers import exit_policy_htf_consumption
+from tests.ema_pullback_context_helpers import (
+    blocker_htf_state_gate,
+    exit_policy_htf_consumption,
+    htf_strategy_contexts,
+)
 
 
 def test_exit_policy_rejects_profile_exits_without_consumption() -> None:
@@ -134,3 +147,116 @@ def test_context_bundle_builds_per_ref() -> None:
     bundle = ContextBundle.build(spec, df, plan)
     assert bundle.has("htf")
     assert bundle.get("htf").state_series().tolist() == ["neutral", "neutral", "neutral"]
+
+
+def test_loader_rejects_blocker_unknown_context_ref() -> None:
+    instance = {
+        "instance_id": "gate",
+        "variant": "v",
+        "market": {"symbol": "BTCUSDT", "base_timeframe": "1h"},
+        "strategy": {
+            "trade_sides": ["long"],
+            "anchor_stack": {"source": "close", "timeframe": "base", "fast": 100, "anchor": 200, "slow": 1000},
+            "direction": {"component_id": "ema_anchor_stack_trend"},
+            "setup": {"component_id": "untouched_anchor_setup", "lookback": 50, "active_bars": 3},
+            "trigger": {"component_id": "reclaim_anchor"},
+            "blockers": [
+                {
+                    "instance_id": "ccb",
+                    "component_id": "counter_candle_blocker",
+                    "context_consumption": {
+                        "context_ref": "missing",
+                        "policy": {
+                            "policy_id": HTF_STATE_GATE_POLICY,
+                            "params": {"allowed_states": ["up"]},
+                        },
+                    },
+                }
+            ],
+            "risk": {"component_id": "no_risk_filter"},
+            "contexts": {
+                "htf": {
+                    "component_id": "htf_context",
+                    "timeframe": "4h",
+                    "source": "close",
+                    "fast_period": 100,
+                    "anchor_period": 200,
+                    "slow_period": 1000,
+                }
+            },
+            "trade_management": {
+                "exit_policy": {
+                    "always_on": {
+                        "exits": [
+                            {
+                                "instance_id": "atr_sl",
+                                "component_id": "atr_stop_loss",
+                                "distance": {"timeframe": "base", "period": 14, "multiplier": 1.5},
+                            }
+                        ]
+                    },
+                    "profiles": {
+                        "aligned": {"exits": []},
+                        "countertrend": {"exits": []},
+                        "neutral": {"exits": []},
+                    },
+                }
+            },
+        },
+    }
+    with pytest.raises(ValueError, match="missing"):
+        load_ema_pullback_instance(instance)
+
+
+def test_htf_state_gate_changes_blocker_mask_and_omitting_consumption_restores_baseline() -> None:
+    pytest.importorskip("pandas")
+    import pandas as pd
+
+    idx = pd.date_range("2024-01-01", periods=3, freq="h", tz="UTC")
+    df = pd.DataFrame(
+        {
+            "open": [10.0, 10.0, 10.0],
+            "close": [11.0, 11.0, 11.0],
+            "high": [11.0, 11.0, 11.0],
+            "low": [10.0, 10.0, 10.0],
+            "volume": [1.0, 1.0, 1.0],
+        },
+        index=idx,
+    )
+
+    rule_baseline = blocker_counter_candle()
+    rule_gate_up = blocker_htf_state_gate(allowed_states=("up",))
+    rule_gate_up_down = blocker_htf_state_gate(allowed_states=("up", "down"))
+
+    spec = make_ema_pullback_strategy_spec(
+        contexts=htf_strategy_contexts(),
+        components=component_stack(
+            direction=direction_ema_anchor_stack(),
+            blockers=(rule_gate_up,),
+            setup=setup_untouched_anchor(),
+            trigger=trigger_reclaim_anchor(),
+            risk=risk_no_filter(),
+        ),
+        enabled_sides=("long",),
+    )
+    plan = build_feature_plan_from_strategy_spec(spec)
+    cols = plan.htf_context_columns_for("htf")
+    df[cols["fast"]] = [103.0, 101.0, 102.0]
+    df[cols["anchor"]] = [102.0, 102.0, 102.0]
+    df[cols["slow"]] = [101.0, 103.0, 102.0]
+
+    fn = resolve_component("blockers", "counter_candle_blocker").func
+    base_mask = fn(df, side="long")
+    assert base_mask.tolist() == [True, True, True]
+    assert rule_baseline.context_consumption is None
+
+    bundle = ContextBundle.build(spec, df, plan)
+    assert bundle.get("htf").state_series().tolist() == ["up", "down", "neutral"]
+
+    gated_up = _apply_blocker_context_gate(base_mask, rule=rule_gate_up, bundle=bundle)
+    assert gated_up.tolist() == [True, False, False]
+
+    gated_up_down = _apply_blocker_context_gate(base_mask, rule=rule_gate_up_down, bundle=bundle)
+    assert gated_up_down.tolist() == [True, True, False]
+
+    assert base_mask.tolist() == fn(df, side="long").tolist()
