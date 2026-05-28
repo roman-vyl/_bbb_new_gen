@@ -9,6 +9,13 @@ from research.strategies.ema_pullback.components.registry import (
     NO_BLOCKERS_COMPONENT,
     RSI_LOOKBACK_EXTREME_BLOCKER_COMPONENT,
 )
+
+_BLOCKER_COMPONENTS_WITH_CONTEXT_CONSUMPTION = frozenset(
+    {
+        COUNTER_CANDLE_BLOCKER_COMPONENT,
+        RSI_LOOKBACK_EXTREME_BLOCKER_COMPONENT,
+    }
+)
 from research.strategies.ema_pullback.context.policies import HTF_STATE_GATE_POLICY
 from research.strategies.ema_pullback.spec import BlockerRuleSpec, ContextConsumptionPolicySpec
 
@@ -40,14 +47,14 @@ def validate_blocker_context_consumption(rule: BlockerRuleSpec) -> None:
     if consumption is None:
         return
     path = f"blockers[{rule.instance_id!r}].context_consumption"
-    if rule.component_id not in (COUNTER_CANDLE_BLOCKER_COMPONENT,):
-        raise ValueError(
-            f"{path} is not supported for component_id {rule.component_id!r}; "
-            f"only {COUNTER_CANDLE_BLOCKER_COMPONENT!r} supports entry context consumption"
-        )
-    if rule.component_id in (NO_BLOCKERS_COMPONENT, RSI_LOOKBACK_EXTREME_BLOCKER_COMPONENT):
+    if rule.component_id == NO_BLOCKERS_COMPONENT:
         raise ValueError(
             f"{path} is not supported for component_id {rule.component_id!r}"
+        )
+    if rule.component_id not in _BLOCKER_COMPONENTS_WITH_CONTEXT_CONSUMPTION:
+        raise ValueError(
+            f"{path} is not supported for component_id {rule.component_id!r}; "
+            f"supported blockers: {sorted(_BLOCKER_COMPONENTS_WITH_CONTEXT_CONSUMPTION)}"
         )
     if consumption.policy.policy_id != HTF_STATE_GATE_POLICY:
         raise ValueError(

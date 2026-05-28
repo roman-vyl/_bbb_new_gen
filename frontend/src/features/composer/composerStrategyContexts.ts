@@ -150,6 +150,107 @@ export function contextRefOptions(contexts: Record<string, ContextProviderDraft>
   return Object.keys(contexts).sort();
 }
 
+/** Safe default key: htf_1, htf_2, … (no collision with existing refs). */
+export function generateUniqueContextRef(
+  contexts: Record<string, ContextProviderDraft>,
+): string {
+  let n = 1;
+  while (`htf_${n}` in contexts) {
+    n += 1;
+  }
+  return `htf_${n}`;
+}
+
+export function addStrategyContext(
+  contexts: Record<string, ContextProviderDraft>,
+  catalog: ComponentCatalog | null,
+  preferredRef?: string,
+): { contexts: Record<string, ContextProviderDraft>; ref: string } {
+  const trimmed = preferredRef?.trim();
+  const ref =
+    trimmed && !(trimmed in contexts) ? trimmed : generateUniqueContextRef(contexts);
+  return {
+    ref,
+    contexts: { ...contexts, [ref]: defaultHtfProvider(catalog) },
+  };
+}
+
+/** Rename provider key only; consumers keep old ref until user fixes (validation surfaces errors). */
+export function renameStrategyContext(
+  contexts: Record<string, ContextProviderDraft>,
+  oldRef: string,
+  newRef: string,
+): Record<string, ContextProviderDraft> | null {
+  const trimmed = newRef.trim();
+  if (!trimmed || trimmed === oldRef) {
+    return contexts;
+  }
+  if (trimmed in contexts) {
+    return null;
+  }
+  const provider = contexts[oldRef];
+  if (!provider) {
+    return contexts;
+  }
+  const next = { ...contexts };
+  delete next[oldRef];
+  next[trimmed] = provider;
+  return next;
+}
+
+function readContextConsumptionRef(block: unknown): string | null {
+  if (!block || typeof block !== "object" || Array.isArray(block)) {
+    return null;
+  }
+  const ref = (block as JsonObject).context_ref;
+  return typeof ref === "string" ? ref : null;
+}
+
+export function collectUndefinedConsumerContextRefErrors(
+  strategy: JsonObject,
+  pathPrefix: string,
+): ValidationErrorItem[] {
+  const contexts = readStrategyContexts(strategy);
+  const errors: ValidationErrorItem[] = [];
+
+  const check = (ref: string | null | undefined, path: string) => {
+    const trimmed = ref?.trim();
+    if (trimmed && !(trimmed in contexts)) {
+      errors.push({
+        path,
+        message: `context_ref "${trimmed}" is not defined in strategy.contexts`,
+      });
+    }
+  };
+
+  const exitConsumption = readExitPolicy(strategy).context_consumption;
+  check(
+    readContextConsumptionRef(exitConsumption),
+    `${pathPrefix}.trade_management.exit_policy.context_consumption.context_ref`,
+  );
+
+  for (const role of ["direction", "setup", "trigger"] as const) {
+    const slot = strategy[role];
+    if (!slot || typeof slot !== "object" || Array.isArray(slot)) {
+      continue;
+    }
+    check(
+      readContextConsumptionRef((slot as JsonObject).context_consumption),
+      `${pathPrefix}.${role}.context_consumption.context_ref`,
+    );
+  }
+
+  const blockers = (strategy.blockers as JsonObject[] | undefined) ?? [];
+  blockers.forEach((slot, index) => {
+    check(
+      readContextConsumptionRef(slot.context_consumption),
+      `${pathPrefix}.blockers[${index}].context_consumption.context_ref`,
+    );
+  });
+
+  return errors;
+}
+
 export function exitPolicyPolicies(catalog: ComponentCatalog | null) {
   return catalog?.context_consumption_roles?.find((r) => r.role === "exit_policy")?.policies ?? [];
 }
@@ -261,14 +362,7 @@ export function collectComposerStrategyErrors(
       message: "policy_id is required when profile-scoped exits are configured",
     });
   }
-  const contexts = readStrategyContexts(strategy);
-  const ref = consumption?.context_ref?.trim();
-  if (ref && !(ref in contexts)) {
-    errors.push({
-      path: `${pathPrefix}.trade_management.exit_policy.context_consumption.context_ref`,
-      message: `context_ref "${ref}" is not defined in strategy.contexts`,
-    });
-  }
+  errors.push(...collectUndefinedConsumerContextRefErrors(strategy, pathPrefix));
   return errors;
 }
 

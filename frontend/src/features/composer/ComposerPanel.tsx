@@ -35,9 +35,12 @@ import {
   strategyPath,
 } from "./composerDraft";
 import {
+  addStrategyContext,
   contextRefOptions,
   defaultHtfProvider,
   exitPolicyPolicies,
+  generateUniqueContextRef,
+  renameStrategyContext,
   collectComposerDraftErrors,
   exitPolicyRequiresContextConsumption,
   prepareConfigDraftForApi,
@@ -1223,6 +1226,7 @@ export function ComposerPanel() {
                         title="Blockers"
                         role="blockers"
                         catalog={catalog}
+                        strategy={instStrategy}
                         slots={((instStrategy.blockers as JsonObject[]) ?? []) as JsonObject[]}
                         instanceIndex={index}
                         errors={validationErrors}
@@ -1585,6 +1589,47 @@ function ContextProviderFields({
   );
 }
 
+function ContextRefSelect({
+  value,
+  options,
+  onChange,
+  invalidHint = "(not defined)",
+  emptyHint = "Add a strategy context first",
+}: {
+  value: string;
+  options: string[];
+  onChange: (ref: string) => void;
+  invalidHint?: string;
+  emptyHint?: string;
+}) {
+  if (options.length === 0) {
+    return (
+      <>
+        <select value="" disabled onChange={() => undefined}>
+          <option value="">— select context —</option>
+        </select>
+        <p className="composer-hint">{emptyHint}</p>
+      </>
+    );
+  }
+  const orphan = value.trim() !== "" && !options.includes(value);
+  return (
+    <select value={value} onChange={(e) => onChange(e.target.value)}>
+      <option value="">— select context —</option>
+      {orphan ? (
+        <option value={value}>
+          {value} {invalidHint}
+        </option>
+      ) : null}
+      {options.map((ref) => (
+        <option key={ref} value={ref}>
+          {ref}
+        </option>
+      ))}
+    </select>
+  );
+}
+
 function StrategyContextsSection({
   compact = false,
   catalog,
@@ -1600,48 +1645,78 @@ function StrategyContextsSection({
   errors: ValidationErrorItem[];
   onChange: (next: Record<string, ContextProviderDraft>) => void;
 }) {
-  const [newRef, setNewRef] = useState("");
+  const [preferredRef, setPreferredRef] = useState("");
+  const [renameDraft, setRenameDraft] = useState<Record<string, string>>({});
   const refs = contextRefOptions(contexts);
   const addContext = () => {
-    const ref = newRef.trim();
-    if (!ref || contexts[ref]) {
-      return;
-    }
-    onChange({ ...contexts, [ref]: defaultHtfProvider(catalog) });
-    setNewRef("");
+    const { contexts: next, ref } = addStrategyContext(contexts, catalog, preferredRef);
+    onChange(next);
+    setPreferredRef("");
+    setRenameDraft((prev) => ({ ...prev, [ref]: ref }));
   };
   const removeContext = (ref: string) => {
     const next = { ...contexts };
     delete next[ref];
     onChange(next);
+    setRenameDraft((prev) => {
+      const copy = { ...prev };
+      delete copy[ref];
+      return copy;
+    });
   };
   const updateContext = (ref: string, provider: ContextProviderDraft) => {
     onChange({ ...contexts, [ref]: provider });
+  };
+  const commitRename = (oldRef: string) => {
+    const nextRef = (renameDraft[oldRef] ?? oldRef).trim();
+    if (!nextRef || nextRef === oldRef) {
+      setRenameDraft((prev) => ({ ...prev, [oldRef]: oldRef }));
+      return;
+    }
+    const renamed = renameStrategyContext(contexts, oldRef, nextRef);
+    if (!renamed) {
+      setRenameDraft((prev) => ({ ...prev, [oldRef]: oldRef }));
+      return;
+    }
+    onChange(renamed);
+    setRenameDraft((prev) => {
+      const copy = { ...prev };
+      delete copy[oldRef];
+      copy[nextRef] = nextRef;
+      return copy;
+    });
   };
   return (
     <div className={compact ? "composer-collapsible-inner" : "composer-block"}>
       <div className="composer-list-add">
         <input
-          placeholder="context_ref"
-          value={newRef}
-          onChange={(e) => setNewRef(e.target.value)}
+          placeholder={`optional name (default ${generateUniqueContextRef(contexts)})`}
+          value={preferredRef}
+          onChange={(e) => setPreferredRef(e.target.value)}
         />
-        <button
-          type="button"
-          className="composer-btn"
-          disabled={!newRef.trim() || Boolean(contexts[newRef.trim()])}
-          onClick={addContext}
-        >
+        <button type="button" className="composer-btn" onClick={addContext}>
           Add context
         </button>
       </div>
+      <p className="composer-hint">
+        Adds a provider under strategy.contexts with catalog defaults. Consumers are not auto-linked.
+      </p>
       {refs.length === 0 ? (
         <p className="composer-hint">No strategy-level context providers.</p>
       ) : null}
       {refs.map((ref) => (
         <div key={ref} className="composer-slot">
           <div className="composer-row">
-            <strong>{ref}</strong>
+            <label className="field field--inline">
+              <span>context_ref</span>
+              <input
+                value={renameDraft[ref] ?? ref}
+                onChange={(e) =>
+                  setRenameDraft((prev) => ({ ...prev, [ref]: e.target.value }))
+                }
+                onBlur={() => commitRename(ref)}
+              />
+            </label>
             <button type="button" className="composer-btn composer-btn--danger" onClick={() => removeContext(ref)}>
               Remove
             </button>
@@ -1726,13 +1801,14 @@ function EntryContextConsumptionFields({
           <SectionErrors errors={errors} pathPrefix={`${pathPrefix}.context_consumption`} />
           <label className="field">
             <span>context_ref</span>
-            <select
+            <ContextRefSelect
               value={String(consumption?.context_ref ?? "")}
-              onChange={(e) =>
+              options={refs}
+              onChange={(contextRef) =>
                 onChange({
                   ...value,
                   context_consumption: {
-                    context_ref: e.target.value,
+                    context_ref: contextRef,
                     policy: {
                       policy_id: String(policyObj?.policy_id ?? ""),
                       params: (policyObj?.params as JsonObject | undefined) ?? {},
@@ -1740,14 +1816,7 @@ function EntryContextConsumptionFields({
                   },
                 })
               }
-            >
-              <option value="">— select context —</option>
-              {refs.map((ref) => (
-                <option key={ref} value={ref}>
-                  {ref}
-                </option>
-              ))}
-            </select>
+            />
           </label>
           <label className="field">
             <span>policy_id</span>
@@ -1842,10 +1911,10 @@ function ExitPolicyContextConsumptionSection({
       <SectionErrors errors={errors} pathPrefix={pathPrefix} />
       <label className="field">
         <span>context_ref</span>
-        <select
+        <ContextRefSelect
           value={consumption?.context_ref ?? ""}
-          onChange={(e) => {
-            const contextRef = e.target.value;
+          options={refs}
+          onChange={(contextRef) => {
             if (!contextRef) {
               onChange(null);
               return;
@@ -1858,14 +1927,7 @@ function ExitPolicyContextConsumptionSection({
               },
             });
           }}
-        >
-          <option value="">— select context —</option>
-          {refs.map((ref) => (
-            <option key={ref} value={ref}>
-              {ref}
-            </option>
-          ))}
-        </select>
+        />
       </label>
       <label className="field">
         <span>policy_id</span>
@@ -1997,12 +2059,13 @@ function SingletonComponentSection({
   );
 }
 
-function ListComponentSection({
+export function ListComponentSection({
   compact = false,
   title,
   role,
   pathRole = role,
   catalog,
+  strategy,
   slots,
   instanceIndex,
   errors,
@@ -2021,6 +2084,7 @@ function ListComponentSection({
     | "countertrend_exits"
     | "neutral_exits";
   catalog: ComponentCatalog;
+  strategy?: JsonObject;
   slots: JsonObject[];
   instanceIndex: number;
   errors: ValidationErrorItem[];
@@ -2099,6 +2163,17 @@ function ListComponentSection({
               onChange={(next) => onChange(slotIndex, next)}
             />
           )}
+          {strategy && role === "blockers" ? (
+            <EntryContextConsumptionFields
+              catalog={catalog}
+              role="blockers"
+              strategy={strategy}
+              value={slot}
+              pathPrefix={path}
+              errors={errors}
+              onChange={(next) => onChange(slotIndex, next)}
+            />
+          ) : null}
         </div>
       </div>
     );

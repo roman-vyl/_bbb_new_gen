@@ -293,32 +293,34 @@ def test_builder_rejects_no_blockers_with_context_consumption() -> None:
         )
 
 
-def test_builder_rejects_rsi_blocker_with_context_consumption() -> None:
+def test_builder_accepts_rsi_blocker_with_context_consumption() -> None:
     from research.strategies.ema_pullback.component_builders import rsi_feature
     from research.strategies.ema_pullback.components.registry import (
         RSI_LOOKBACK_EXTREME_BLOCKER_COMPONENT,
     )
 
-    with pytest.raises(ValueError, match="context_consumption is not supported"):
-        make_ema_pullback_strategy_spec(
-            components=component_stack(
-                direction=direction_ema_anchor_stack(),
-                blockers=(
-                    blocker_rule(
-                        RSI_LOOKBACK_EXTREME_BLOCKER_COMPONENT,
-                        instance_id="rsi_block",
-                        rsi=rsi_feature(timeframe="base", period=14),
-                        context_consumption=context_consumption(
-                            context_ref="htf",
-                            policy_id=HTF_STATE_GATE_POLICY,
-                        ),
+    spec = make_ema_pullback_strategy_spec(
+        components=component_stack(
+            direction=direction_ema_anchor_stack(),
+            blockers=(
+                blocker_rule(
+                    RSI_LOOKBACK_EXTREME_BLOCKER_COMPONENT,
+                    instance_id="rsi_block",
+                    rsi=rsi_feature(timeframe="base", period=14),
+                    context_consumption=context_consumption(
+                        context_ref="htf",
+                        policy_id=HTF_STATE_GATE_POLICY,
                     ),
                 ),
-                setup=setup_untouched_anchor(),
-                trigger=trigger_reclaim_anchor(),
-                risk=risk_no_filter(),
             ),
-        )
+            setup=setup_untouched_anchor(),
+            trigger=trigger_reclaim_anchor(),
+            risk=risk_no_filter(),
+        ),
+    )
+    rule = spec.components.blockers[0]
+    assert rule.context_consumption is not None
+    assert rule.context_consumption.policy.policy_id == HTF_STATE_GATE_POLICY
 
 
 def test_loader_rejects_allowed_states_string_type() -> None:

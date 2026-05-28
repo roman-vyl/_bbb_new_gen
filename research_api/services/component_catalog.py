@@ -27,6 +27,22 @@ def _num_param(label: str, *, default: float) -> ParamFieldSchema:
     return ParamFieldSchema(type="number", label=label, default=default)
 
 
+_BLOCKER_HTF_STATE_GATE_POLICIES = [
+    ContextConsumptionPolicySchema(
+        policy_id="htf_state_gate",
+        label="HTF state gate",
+        params_schema={
+            "allowed_states": ParamFieldSchema(
+                type="array",
+                label="Allowed HTF states",
+                enum=["up", "down", "neutral"],
+                default=["up", "down", "neutral"],
+            ),
+        },
+    ),
+]
+
+
 def get_component_catalog(*, family: str = "ema_pullback") -> ComponentCatalog:
     if family != "ema_pullback":
         raise ValueError(f"unsupported family {family!r}; supported: ema_pullback")
@@ -148,26 +164,15 @@ def get_component_catalog(*, family: str = "ema_pullback") -> ComponentCatalog:
             label="Counter candle blocker",
             list_slot=True,
             supports_context_consumption=True,
-            context_consumption_policies=[
-                ContextConsumptionPolicySchema(
-                    policy_id="htf_state_gate",
-                    label="HTF state gate",
-                    params_schema={
-                        "allowed_states": ParamFieldSchema(
-                            type="array",
-                            label="Allowed HTF states",
-                            enum=["up", "down", "neutral"],
-                            default=["up", "down", "neutral"],
-                        ),
-                    },
-                ),
-            ],
+            context_consumption_policies=_BLOCKER_HTF_STATE_GATE_POLICIES,
         ),
         ComponentSchema(
             component_id="rsi_lookback_extreme_blocker",
             role="blockers",
             label="RSI lookback extreme blocker",
             list_slot=True,
+            supports_context_consumption=True,
+            context_consumption_policies=_BLOCKER_HTF_STATE_GATE_POLICIES,
             params_schema={
                 "rsi.timeframe": _tf_param("RSI timeframe", default="5m"),
                 "rsi.period": _int_param("RSI period", default=14),

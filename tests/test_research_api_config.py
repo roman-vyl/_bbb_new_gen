@@ -139,6 +139,12 @@ def test_component_catalog_strategy_contexts_section(client: TestClient) -> None
     exit_roles = [r for r in body["context_consumption_roles"] if r["role"] == "exit_policy"]
     assert len(exit_roles) == 1
     assert exit_roles[0]["policies"][0]["policy_id"] == "exit_profile_by_htf_state"
+    rsi_blocker = next(
+        c for c in body["components"] if c["component_id"] == "rsi_lookback_extreme_blocker"
+    )
+    assert rsi_blocker.get("supports_context_consumption") is True
+    no_blockers = next(c for c in body["components"] if c["component_id"] == "no_blockers")
+    assert no_blockers.get("supports_context_consumption") is not True
 
 
 def test_validate_rejects_exit_policy_context(client: TestClient) -> None:
