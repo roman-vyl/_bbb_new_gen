@@ -389,6 +389,19 @@ def build_signal_trace_from_spec(
     )
 
 
+def _slice_indexed_list(
+    values: list[Any],
+    indices: list[int],
+    *,
+    full_length: int,
+) -> list[Any]:
+    """Slice per-bar series only when aligned with ``trace.times`` (full_length)."""
+
+    if not values or len(values) != full_length:
+        return []
+    return [values[i] for i in indices]
+
+
 def slice_signal_trace(
     trace: SignalTraceBundleData,
     *,
@@ -401,6 +414,7 @@ def slice_signal_trace(
     indices = [i for i, t in enumerate(trace.times) if from_time_sec <= t <= to_time_sec]
     if len(indices) > max_bars:
         indices = indices[-max_bars:]
+    full_length = len(trace.times)
 
     def _slice_side(side: SideSignalTrace) -> SideSignalTrace:
         def pick(values: list[bool]) -> list[bool]:
@@ -440,41 +454,54 @@ def slice_signal_trace(
                 sliced_records.append(record)
                 continue
             next_record = dict(record)
-            next_record["context_applied"] = [applied[i] for i in indices]
+            next_record["context_applied"] = _slice_indexed_list(
+                applied,
+                indices,
+                full_length=full_length,
+            )
             outcome = record.get("outcome")
             if isinstance(outcome, dict):
                 next_outcome: dict[str, Any] = {}
                 for key, values in outcome.items():
                     if isinstance(values, list):
-                        next_outcome[key] = [values[i] for i in indices]
+                        next_outcome[key] = _slice_indexed_list(
+                            values,
+                            indices,
+                            full_length=full_length,
+                        )
                     else:
                         next_outcome[key] = values
                 next_record["outcome"] = next_outcome
             sliced_records.append(next_record)
         return sliced_records
 
+    htf = trace.htf_context
     times = [trace.times[i] for i in indices]
     return SignalTraceBundleData(
         times=times,
         meta=trace.meta,
         htf_context={
-            "state": [trace.htf_context["state"][i] for i in indices],
-            "fast": (
-                [trace.htf_context["fast"][i] for i in indices]
-                if trace.htf_context["fast"]
-                else []
+            "state": _slice_indexed_list(
+                list(htf.get("state") or []),
+                indices,
+                full_length=full_length,
             ),
-            "anchor": (
-                [trace.htf_context["anchor"][i] for i in indices]
-                if trace.htf_context["anchor"]
-                else []
+            "fast": _slice_indexed_list(
+                list(htf.get("fast") or []),
+                indices,
+                full_length=full_length,
             ),
-            "slow": (
-                [trace.htf_context["slow"][i] for i in indices]
-                if trace.htf_context["slow"]
-                else []
+            "anchor": _slice_indexed_list(
+                list(htf.get("anchor") or []),
+                indices,
+                full_length=full_length,
             ),
-            "meta": trace.htf_context["meta"],
+            "slow": _slice_indexed_list(
+                list(htf.get("slow") or []),
+                indices,
+                full_length=full_length,
+            ),
+            "meta": htf.get("meta") or {},
         },
         context_consumption_trace=_slice_consumption_trace(trace.context_consumption_trace),
         long=_slice_side(trace.long),

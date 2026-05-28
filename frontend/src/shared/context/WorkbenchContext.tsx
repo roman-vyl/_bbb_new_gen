@@ -47,7 +47,10 @@ import {
   auxOverlayFromHtfTrace,
   collectAuxEmaSpecs,
 } from "@/features/chart/strategySpecAuxEma";
-import { strategyContextRefOptions } from "@/features/chart/strategyContexts";
+import {
+  defaultChartContextOverlayRef,
+  strategyContextRefOptions,
+} from "@/features/chart/strategyContexts";
 import { candleRangeMs } from "@/features/chart/chartMarkers";
 import {
   defaultClosedTradeSelection,
@@ -588,9 +591,13 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
   }, [contextOverlayRef, contextOverlayRefOptions]);
 
   useEffect(() => {
-    setContextOverlayRef(null);
     setLoadedTraceWindowKey(null);
-  }, [selectedRunId, selectedVariantKey]);
+    if (!selectedVariant) {
+      setContextOverlayRef(null);
+      return;
+    }
+    setContextOverlayRef(defaultChartContextOverlayRef(selectedVariant.strategy_spec));
+  }, [selectedRunId, selectedVariantKey, selectedVariant]);
 
   const auxEmaSpecs = useMemo(() => {
     if (!selectedVariant) return [];

@@ -88,7 +88,7 @@ export function collectAuxEmaSpecs(
         seen.add(id);
         specs.push({
           id,
-          label: `HTF ${contextOverlayRef} ${role} ${period}/${htfTf}`,
+          label: `${period}/${htfTf}`,
           period,
           timeframe: htfTf,
           source: "htf_trace",
