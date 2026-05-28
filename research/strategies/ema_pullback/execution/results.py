@@ -365,6 +365,7 @@ def extract_trade_records(
     diagnostic_atr_series: pd.Series | None = None,
     base_timeframe: str | None = None,
     exit_component_map: dict[str, str] | None = None,
+    strategy_spec: Any | None = None,
 ) -> list[dict[str, Any]]:
     """Normalize vectorbt portfolio trades into Stage 9 trade_records (library-agnostic fields)."""
 
@@ -482,6 +483,21 @@ def extract_trade_records(
 
             if context_state is not None and 0 <= entry_idx < len(context_state):
                 record["entry_context_state"] = _context_state_label(context_state.iloc[entry_idx])
+
+            if strategy_spec is not None:
+                from research.strategies.ema_pullback.context.consumption_trace import (
+                    consumption_attribution_for_trade,
+                )
+
+                entry_cc, exit_cc = consumption_attribution_for_trade(
+                    strategy_spec,
+                    entry_idx=entry_idx,
+                    direction=direction,
+                )
+                if entry_cc is not None:
+                    record["entry_context_consumption"] = entry_cc
+                if exit_cc is not None:
+                    record["exit_context_consumption"] = exit_cc
 
             if (
                 high is not None

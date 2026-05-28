@@ -50,15 +50,15 @@
 
 ## Phase 4 — Diagnostics, chart, report schema v5
 
-- [ ] 4.1 Emit `context_consumption_trace` in signal trace builder
-- [ ] 4.2 Add `entry_context_consumption` / `exit_context_consumption`; bump `report_schema_version` to 5 for new runs
-- [ ] 4.3 Keep v3/v4 readers accepting missing v5 fields; document historical vs authoring split
-- [ ] 4.4 Chart: explicit `context_overlay_ref` (or picker / consumer-attributed overlay) — no first-provider default
-- [ ] 4.5 Chart bar inspector / trade diagnostics: per-consumer `context_ref`, `policy_id`, `context_applied`
-- [ ] 4.6 `signal_trace_service`: HTF meta from `strategy.contexts` by explicit ref
-- [ ] 4.7 Integration test: trace proves `context_applied`; entry vs exit attribution separated
-- [ ] 4.8 Manual Workbench: validate → run → Reports + Chart with explicit overlay ref
-- [ ] 4.9 Ensure loading historical reports with embedded `exit_policy.context` never populates Composer draft in legacy shape
+- [x] 4.1 Emit `context_consumption_trace` in signal trace builder
+- [x] 4.2 Add `entry_context_consumption` / `exit_context_consumption`; bump `report_schema_version` to 5 for new runs
+- [x] 4.3 Keep v3/v4 readers accepting missing v5 fields; document historical vs authoring split
+- [x] 4.4 Chart: explicit `context_overlay_ref` (or picker / consumer-attributed overlay) — no first-provider default
+- [x] 4.5 Chart bar inspector / trade diagnostics: per-consumer `context_ref`, `policy_id`, `context_applied`
+- [x] 4.6 `signal_trace_service`: HTF meta from `strategy.contexts` by explicit ref
+- [x] 4.7 Integration test: trace proves `context_applied`; entry vs exit attribution separated
+- [x] 4.8 Manual Workbench: validate → run → Reports + Chart with explicit overlay ref
+- [x] 4.9 Ensure loading historical reports with embedded `exit_policy.context` never populates Composer draft in legacy shape
 
 ## Cross-cutting
 

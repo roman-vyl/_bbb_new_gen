@@ -107,6 +107,17 @@ export type TradeRecord = TradeOverlay & {
   giveback_atr?: number | null;
   bars_from_mfe_to_exit?: number | null;
   quality_flags?: string[] | null;
+  entry_context_consumption?: ContextConsumptionAttribution | null;
+  exit_context_consumption?: ContextConsumptionAttribution | null;
+};
+
+export type ContextConsumptionAttribution = {
+  role: string;
+  component_id: string;
+  context_ref: string;
+  policy_id: string;
+  applied: boolean;
+  instance_id?: string | null;
 };
 
 export type DiagnosticBucketMetrics = {
@@ -403,10 +414,21 @@ export type HtfContextTrace = {
   meta: Record<string, unknown>;
 };
 
+export type ContextConsumptionTraceRecord = {
+  role: string;
+  component_id: string;
+  context_ref: string;
+  policy_id: string;
+  context_applied: boolean[];
+  instance_id?: string | null;
+  outcome?: Record<string, unknown> | null;
+};
+
 export type SignalTraceBundle = {
   times: number[];
   meta: SignalTraceMeta;
   htf_context?: HtfContextTrace;
+  context_consumption_trace?: ContextConsumptionTraceRecord[];
   long: SideSignalTrace;
   short: SideSignalTrace;
 };

@@ -349,6 +349,7 @@ def run_strategy_spec(
         diagnostic_atr_series=None,
         base_timeframe=spec.base_timeframe,
         exit_component_map=exit_component_map,
+        strategy_spec=spec,
     )
 
     sharpe = ensure_finite_metric("sharpe_ratio", float(pf.sharpe_ratio()))

@@ -27,7 +27,10 @@ from research.strategies.ema_pullback.components.triggers import (
     touch_anchor_trace,
 )
 from research.strategies.ema_pullback.components.risk import no_risk_filter
+from research.strategies.ema_pullback.context.consumption_trace import build_context_consumption_trace
+from research.strategies.ema_pullback.context.bundle import ContextBundle
 from research.strategies.ema_pullback.context.pipeline import build_context_bundle_for_spec
+from research.strategies.ema_pullback.context.policies import HTF_STATE_GATE_POLICY, apply_htf_state_gate
 from research.strategies.ema_pullback.execution.exits import build_exit_outputs_from_spec
 from research.strategies.ema_pullback.execution.signals import compose_blocker_signals, compose_final_signals
 from research.strategies.ema_pullback.features.plan import FeaturePlan
@@ -128,6 +131,7 @@ class SignalTraceBundleData:
     times: list[int]
     meta: dict[str, Any]
     htf_context: dict[str, Any]
+    context_consumption_trace: list[dict[str, Any]]
     long: SideSignalTrace
     short: SideSignalTrace
 
@@ -142,6 +146,7 @@ def _build_side_trace(
     anchor_col: str,
     slow_col: str,
     stop_ready: pd.Series,
+    context_bundle: ContextBundle | None = None,
 ) -> SideSignalTrace:
     if not spec.trade_sides.includes(side):
         n = len(df)
@@ -192,8 +197,24 @@ def _build_side_trace(
             )
         else:
             trace = trace_fn(df, side=side)
+        allowed = trace["allowed"]
+        consumption = rule.context_consumption
+        if consumption is not None and context_bundle is not None:
+            if consumption.policy.policy_id != HTF_STATE_GATE_POLICY:
+                raise ValueError(
+                    "unsupported blocker context_consumption.policy_id: "
+                    f"{consumption.policy.policy_id!r}"
+                )
+            context_output = context_bundle.get(consumption.context_ref)
+            gate = apply_htf_state_gate(
+                context_output,
+                policy=consumption.policy,
+                index=df.index,
+            )
+            allowed = allowed & gate.fillna(False).astype(bool)
+            trace = {**trace, "allowed": allowed, "htf_gate": gate}
         blocker_traces[rule.instance_id] = trace
-        blocker_signals.append(trace["allowed"])
+        blocker_signals.append(allowed)
 
     blockers = compose_blocker_signals(tuple(blocker_signals))
 
@@ -253,6 +274,8 @@ def build_signal_trace_from_spec(
     df: pd.DataFrame,
     spec: EmaPullbackStrategySpec,
     plan: FeaturePlan,
+    *,
+    context_overlay_ref: str | None = None,
 ) -> SignalTraceBundleData:
     """Full-index entry pipeline trace aligned with backtest signal composition."""
 
@@ -274,6 +297,7 @@ def build_signal_trace_from_spec(
         anchor_col=anchor_col,
         slow_col=slow_col,
         stop_ready=exit_outputs.stop_ready_long,
+        context_bundle=context_bundle,
     )
     short_trace = _build_side_trace(
         df=df,
@@ -284,44 +308,54 @@ def build_signal_trace_from_spec(
         anchor_col=anchor_col,
         slow_col=slow_col,
         stop_ready=exit_outputs.stop_ready_short,
+        context_bundle=context_bundle,
     )
 
     trigger_rule = spec.components.trigger
-    consumption = spec.trade_management.exit_policy.context_consumption
-    if consumption is not None and consumption.context_ref in plan.htf_context_columns_by_ref:
-        context_ref = consumption.context_ref
-        context_cols = plan.htf_context_columns_for(context_ref)
-        provider = spec.contexts_by_ref()[context_ref]
+    overlay_ref = context_overlay_ref
+    if overlay_ref is not None and overlay_ref not in spec.contexts_by_ref():
+        raise ValueError(
+            f"context_overlay_ref {overlay_ref!r} is not defined in strategy.contexts"
+        )
+    if overlay_ref is not None and context_bundle is not None:
+        context_output = context_bundle.get(overlay_ref)
+        context_cols = plan.htf_context_columns_for(overlay_ref)
+        provider = spec.contexts_by_ref()[overlay_ref]
         htf_payload = {
             "state": [
                 str(v) if isinstance(v, str) else "neutral"
-                for v in exit_outputs.context_state.to_list()
+                for v in context_output.state_series().to_list()
             ],
             "fast": _float_list(df[context_cols["fast"]].astype(float)),
             "anchor": _float_list(df[context_cols["anchor"]].astype(float)),
             "slow": _float_list(df[context_cols["slow"]].astype(float)),
             "meta": {
-                "context_ref": context_ref,
+                "context_ref": overlay_ref,
                 "component_id": provider.component_id,
                 "timeframe": provider.timeframe,
                 "source": provider.source,
                 "fast_period": provider.fast_period,
                 "anchor_period": provider.anchor_period,
                 "slow_period": provider.slow_period,
-                "policy_id": consumption.policy.policy_id,
             },
         }
     else:
         htf_payload = {
-            "state": [
-                str(v) if isinstance(v, str) else "neutral"
-                for v in exit_outputs.context_state.to_list()
-            ],
+            "state": [],
             "fast": [],
             "anchor": [],
             "slow": [],
             "meta": {},
         }
+
+    consumption_trace = build_context_consumption_trace(
+        spec,
+        df,
+        plan,
+        context_bundle=context_bundle,
+        exit_outputs=exit_outputs,
+        context_overlay_ref=overlay_ref,
+    )
     meta = {
         "variant": spec.variant,
         "component_ids": {
@@ -349,6 +383,7 @@ def build_signal_trace_from_spec(
         times=_index_to_times_sec(df.index),
         meta=meta,
         htf_context=htf_payload,
+        context_consumption_trace=consumption_trace,
         long=long_trace,
         short=short_trace,
     )
@@ -397,6 +432,27 @@ def slice_signal_trace(
             internals=pick_internals(side.internals),
         )
 
+    def _slice_consumption_trace(raw: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        sliced_records: list[dict[str, Any]] = []
+        for record in raw:
+            applied = record.get("context_applied")
+            if not isinstance(applied, list):
+                sliced_records.append(record)
+                continue
+            next_record = dict(record)
+            next_record["context_applied"] = [applied[i] for i in indices]
+            outcome = record.get("outcome")
+            if isinstance(outcome, dict):
+                next_outcome: dict[str, Any] = {}
+                for key, values in outcome.items():
+                    if isinstance(values, list):
+                        next_outcome[key] = [values[i] for i in indices]
+                    else:
+                        next_outcome[key] = values
+                next_record["outcome"] = next_outcome
+            sliced_records.append(next_record)
+        return sliced_records
+
     times = [trace.times[i] for i in indices]
     return SignalTraceBundleData(
         times=times,
@@ -420,6 +476,7 @@ def slice_signal_trace(
             ),
             "meta": trace.htf_context["meta"],
         },
+        context_consumption_trace=_slice_consumption_trace(trace.context_consumption_trace),
         long=_slice_side(trace.long),
         short=_slice_side(trace.short),
     )

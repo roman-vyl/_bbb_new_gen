@@ -25,6 +25,7 @@ from research.strategies.ema_pullback.spec_report import (
 
 from research_api.contracts.runs import RunReport, RunVariant
 from research_api.contracts.signal_trace import (
+    ContextConsumptionTraceRecord,
     HtfContextTrace,
     SignalTraceBundle,
     SignalTraceMeta,
@@ -108,6 +109,9 @@ def _to_contract(data: SignalTraceBundleData) -> SignalTraceBundle:
         times=data.times,
         meta=SignalTraceMeta(**data.meta),
         htf_context=HtfContextTrace(**data.htf_context),
+        context_consumption_trace=[
+            ContextConsumptionTraceRecord(**record) for record in data.context_consumption_trace
+        ],
         long=side(data.long),
         short=side(data.short),
     )
@@ -133,6 +137,7 @@ def fetch_signal_trace_bundle(
     variant_key: str,
     from_ms: int,
     to_ms: int,
+    context_overlay_ref: str | None = None,
     db_path: Path | None = None,
 ) -> SignalTraceBundle:
     """Compute entry pipeline trace for ``[from_ms, to_ms]`` (chart view window)."""
@@ -172,7 +177,16 @@ def fetch_signal_trace_bundle(
 
     plan = build_feature_plan_from_strategy_spec(spec)
     enriched = add_feature_columns_from_plan(ohlcv, plan)
-    full_trace = build_signal_trace_from_spec(enriched, spec, plan)
+    if context_overlay_ref is not None and context_overlay_ref not in spec.contexts_by_ref():
+        raise ValueError(
+            f"context_overlay_ref {context_overlay_ref!r} is not defined in strategy.contexts"
+        )
+    full_trace = build_signal_trace_from_spec(
+        enriched,
+        spec,
+        plan,
+        context_overlay_ref=context_overlay_ref,
+    )
     sliced = slice_signal_trace(
         full_trace,
         from_time_sec=from_sec,

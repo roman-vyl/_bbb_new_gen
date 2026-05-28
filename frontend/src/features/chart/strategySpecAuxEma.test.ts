@@ -14,15 +14,17 @@ const strategySpec = {
     anchor: { period: 500 },
     slow: { period: 1000 },
   },
+  contexts: {
+    htf: {
+      component_id: "htf_context",
+      timeframe: "4h",
+      fast_period: 100,
+      anchor_period: 200,
+      slow_period: 1000,
+    },
+  },
   trade_management: {
     exit_policy: {
-      context: {
-        component_id: "htf_context",
-        timeframe: "4h",
-        fast_period: 100,
-        anchor_period: 200,
-        slow_period: 1000,
-      },
       always_on: { exits: [] },
       profiles: {
         aligned: {
@@ -48,12 +50,34 @@ const strategySpec = {
 };
 
 describe("collectAuxEmaSpecs", () => {
-  it("includes HTF context and non-anchor exit EMA periods on chart TF", () => {
-    const specs = collectAuxEmaSpecs(strategySpec, "5m", anchorStack);
+  it("includes HTF context when explicit overlay ref is selected", () => {
+    const specs = collectAuxEmaSpecs(strategySpec, "5m", anchorStack, "htf");
     expect(specs.some((s) => s.id === "htf_fast" && s.source === "htf_trace")).toBe(true);
     expect(specs.some((s) => s.id === "exit_ema_cross_fast_ema")).toBe(true);
     expect(specs.some((s) => s.id === "exit_ema_cross_slow_ema")).toBe(true);
     expect(specs.some((s) => s.id.startsWith("exit_ema_close"))).toBe(false);
+  });
+
+  it("does not infer HTF overlay from legacy exit_policy.context", () => {
+    const legacy = {
+      ...strategySpec,
+      contexts: {},
+      trade_management: {
+        exit_policy: {
+          context: {
+            component_id: "htf_context",
+            timeframe: "4h",
+            fast_period: 100,
+            anchor_period: 200,
+            slow_period: 1000,
+          },
+          always_on: { exits: [] },
+          profiles: strategySpec.trade_management.exit_policy.profiles,
+        },
+      },
+    };
+    const specs = collectAuxEmaSpecs(legacy, "5m", anchorStack, null);
+    expect(specs.some((s) => s.source === "htf_trace")).toBe(false);
   });
 });
 

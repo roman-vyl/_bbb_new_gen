@@ -59,6 +59,29 @@ def _rsi_spec(payload: Mapping[str, Any] | None) -> RsiFeatureSpec | None:
     )
 
 
+def _parse_blocker_context_consumption(value: Any) -> ContextConsumptionSpec | None:
+    if value is None:
+        return None
+    consumption = _require_mapping("blocker.context_consumption", value)
+    policy = _require_mapping("blocker.context_consumption.policy", consumption.get("policy"))
+    params_raw = policy.get("params", {})
+    if params_raw is None:
+        params: tuple[tuple[str, Any], ...] = ()
+    elif isinstance(params_raw, Mapping):
+        params = tuple(sorted(params_raw.items(), key=lambda item: item[0]))
+    else:
+        raise StrategySpecReportParseError(
+            "blocker.context_consumption.policy.params must be an object"
+        )
+    return ContextConsumptionSpec(
+        context_ref=str(consumption["context_ref"]),
+        policy=ContextConsumptionPolicySpec(
+            policy_id=str(policy["policy_id"]),
+            params=params,
+        ),
+    )
+
+
 def _blocker_rule(payload: Mapping[str, Any]) -> BlockerRuleSpec:
     return BlockerRuleSpec(
         instance_id=str(payload["instance_id"]),
@@ -67,6 +90,7 @@ def _blocker_rule(payload: Mapping[str, Any]) -> BlockerRuleSpec:
         lookback=int(payload.get("lookback", 20)),
         long_block_above=payload.get("long_block_above"),
         short_block_below=payload.get("short_block_below"),
+        context_consumption=_parse_blocker_context_consumption(payload.get("context_consumption")),
     )
 
 

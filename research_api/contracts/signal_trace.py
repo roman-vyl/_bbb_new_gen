@@ -31,6 +31,18 @@ class SideSignalTrace(BaseModel):
     internals: dict[str, Any] = Field(default_factory=dict)
 
 
+class ContextConsumptionTraceRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    role: str
+    component_id: str
+    context_ref: str
+    policy_id: str
+    context_applied: list[bool]
+    instance_id: str | None = None
+    outcome: dict[str, Any] | None = None
+
+
 class HtfContextTrace(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -49,5 +61,6 @@ class SignalTraceBundle(BaseModel):
     htf_context: HtfContextTrace = Field(
         default_factory=lambda: HtfContextTrace(state=[], fast=[], anchor=[], slow=[], meta={})
     )
+    context_consumption_trace: list[ContextConsumptionTraceRecord] = Field(default_factory=list)
     long: SideSignalTrace
     short: SideSignalTrace
