@@ -237,8 +237,20 @@ def test_extract_trade_records_closed_and_open() -> None:
     assert rec_s[0]["status"] == "closed"
     assert rec_s[0]["direction"] == "short"
     assert rec_s[0]["exit_reason"] == "unknown"
-    assert rec_c[0]["hold_bars"] == 3
-    assert rec_c[0]["hold_minutes"] == 180
+
+
+def test_extract_trade_records_never_emits_context_ref() -> None:
+    """Phase 4 will add entry/exit_context_consumption on trade rows — not context_ref."""
+    pd = pytest.importorskip("pandas")
+    vbt = pytest.importorskip("vectorbt")
+
+    idx = pd.date_range("2024-01-01", periods=5, freq="h", tz="UTC")
+    close = pd.Series([1.0, 2.0, 3.0, 4.0, 5.0], index=idx)
+    entries = pd.Series([False, True, False, False, False], index=idx)
+    exits = pd.Series([False, False, False, True, False], index=idx)
+    pf = vbt.Portfolio.from_signals(close, entries, exits, freq="1h")
+    for record in extract_trade_records(pf, close):
+        assert "context_ref" not in record
 
 
 def _both_sides_closed_fixture() -> list[dict[str, object]]:

@@ -11,13 +11,15 @@ from research.strategies.ema_pullback.component_builders import (
     exit_atr_take_profit,
     exit_constant_usd_stop_loss,
     exit_constant_usd_take_profit,
-    exit_policy,
     exit_rsi,
     exits_atr_default,
-    htf_context_config,
     trade_management,
 )
-from research.strategies.ema_pullback.execution.exits import build_exit_outputs_from_spec
+from tests.ema_pullback_context_helpers import (
+    build_exit_outputs_with_context_bundle,
+    exit_policy_htf_consumption,
+    htf_strategy_contexts,
+)
 from research.strategies.ema_pullback.features.calculations import add_feature_columns_from_plan
 from research.strategies.ema_pullback.features.plan import build_feature_plan_from_strategy_spec
 from research.strategies.ema_pullback.spec_instances import make_ema_pullback_strategy_spec
@@ -27,19 +29,9 @@ def _spec_with_exits(exits: tuple) -> object:
     base = make_ema_pullback_strategy_spec()
     return make_ema_pullback_strategy_spec(
         components=base.components,
+        contexts=base.contexts,
         trade_management_spec=trade_management(
-            exit_policy_spec=exit_policy(
-                context=htf_context_config(
-                    timeframe=base.trade_management.exit_policy.context.timeframe,
-                    fast_period=base.trade_management.exit_policy.context.fast_period,
-                    anchor_period=base.trade_management.exit_policy.context.anchor_period,
-                    slow_period=base.trade_management.exit_policy.context.slow_period,
-                ),
-                always_on=exits,
-                aligned=(),
-                countertrend=(),
-                neutral=(),
-            )
+            exit_policy_spec=exit_policy_htf_consumption(always_on=exits),
         ),
     )
 
@@ -77,7 +69,7 @@ def test_build_exit_outputs_supports_stop_loss_and_take_profit_distances() -> No
         index=idx,
     )
 
-    exits = build_exit_outputs_from_spec(df, spec, plan)
+    exits = build_exit_outputs_with_context_bundle(df, spec, plan)
     pd.testing.assert_series_equal(exits.sl_stop, stop_dist / close, check_names=False)
     pd.testing.assert_series_equal(exits.tp_stop, take_dist / close, check_names=False)
     assert exits.exits.tolist() == [False, False, False, False]
@@ -95,7 +87,7 @@ def test_build_exit_outputs_constant_usd_distances() -> None:
     assert plan.exit_distance_columns == {}
 
     df = _ohlcv(n=10)
-    out = build_exit_outputs_from_spec(df, spec, plan)
+    out = build_exit_outputs_with_context_bundle(df, spec, plan)
     close = df["close"].astype(float)
     pd.testing.assert_series_equal(
         out.sl_stop,
@@ -121,9 +113,9 @@ def test_default_factory_exit_rules_match_atr_shortcut_defaults() -> None:
 def test_build_exit_outputs_skips_boolean_counters_for_disabled_trade_side() -> None:
     spec = make_ema_pullback_strategy_spec(
         enabled_sides=("long",),
+        contexts=htf_strategy_contexts(fast_period=20, anchor_period=50, slow_period=200),
         trade_management_spec=trade_management(
-            exit_policy_spec=exit_policy(
-                context=htf_context_config(timeframe="4h", fast_period=20, anchor_period=50, slow_period=200),
+            exit_policy_spec=exit_policy_htf_consumption(
                 always_on=(
                     exit_rsi(
                         instance_id="rsi_long_only",
@@ -133,10 +125,7 @@ def test_build_exit_outputs_skips_boolean_counters_for_disabled_trade_side() -> 
                         short_exit_below=30.0,
                     ),
                 ),
-                aligned=(),
-                countertrend=(),
-                neutral=(),
-            )
+            ),
         ),
     )
     plan = build_feature_plan_from_strategy_spec(spec)
@@ -150,7 +139,7 @@ def test_build_exit_outputs_skips_boolean_counters_for_disabled_trade_side() -> 
         },
         index=idx,
     )
-    out = build_exit_outputs_from_spec(df, spec, plan)
+    out = build_exit_outputs_with_context_bundle(df, spec, plan)
     boolean_counters = [c for c in out.output_counters if c["output_type"] == "boolean"]
     assert len(boolean_counters) == 1
     assert boolean_counters[0]["side"] == "long"
@@ -183,7 +172,7 @@ def test_build_exit_outputs_attribution_matches_aggregated_stops() -> None:
         },
         index=idx,
     )
-    out = build_exit_outputs_from_spec(df, spec, plan)
+    out = build_exit_outputs_with_context_bundle(df, spec, plan)
     assert out.attribution is not None
     ctx = out.attribution
     pd.testing.assert_series_equal(ctx.sl_stop_agg, out.sl_stop, check_names=False)
@@ -217,7 +206,7 @@ def test_build_exit_outputs_aggregates_repeated_distance_instances_by_kind() -> 
         index=idx,
     )
 
-    exits = build_exit_outputs_from_spec(df, spec, plan)
+    exits = build_exit_outputs_with_context_bundle(df, spec, plan)
 
     pd.testing.assert_series_equal(exits.sl_stop, fast_stop / close, check_names=False)
     pd.testing.assert_series_equal(exits.tp_stop, take_dist / close, check_names=False)
@@ -243,7 +232,7 @@ def test_build_exit_outputs_supports_only_stop_loss_distance() -> None:
         index=idx,
     )
 
-    exits = build_exit_outputs_from_spec(df, spec, plan)
+    exits = build_exit_outputs_with_context_bundle(df, spec, plan)
     pd.testing.assert_series_equal(exits.sl_stop, stop_dist / close, check_names=False)
     assert exits.tp_stop.isna().all()
 
@@ -271,7 +260,7 @@ def test_build_exit_outputs_supports_only_take_profit_distance() -> None:
         index=idx,
     )
 
-    exits = build_exit_outputs_from_spec(df, spec, plan)
+    exits = build_exit_outputs_with_context_bundle(df, spec, plan)
     assert exits.sl_stop.isna().all()
     pd.testing.assert_series_equal(exits.tp_stop, take_dist / close, check_names=False)
 
@@ -300,7 +289,7 @@ def test_build_exit_outputs_supports_signal_only_exits() -> None:
         index=idx,
     )
 
-    exits = build_exit_outputs_from_spec(df, spec, plan)
+    exits = build_exit_outputs_with_context_bundle(df, spec, plan)
     assert exits.sl_stop.isna().all()
     assert exits.tp_stop.isna().all()
     assert exits.exits.tolist() == [False, True, False, False]
@@ -333,7 +322,7 @@ def test_build_exit_outputs_supports_signal_exit_with_stop_loss_distance() -> No
         index=idx,
     )
 
-    exits = build_exit_outputs_from_spec(df, spec, plan)
+    exits = build_exit_outputs_with_context_bundle(df, spec, plan)
     pd.testing.assert_series_equal(exits.sl_stop, stop_dist / close, check_names=False)
     assert exits.tp_stop.isna().all()
     assert exits.exits.tolist() == [False, True, False, False]
@@ -366,7 +355,7 @@ def test_build_exit_outputs_supports_signal_exit_with_take_profit_distance() -> 
         index=idx,
     )
 
-    exits = build_exit_outputs_from_spec(df, spec, plan)
+    exits = build_exit_outputs_with_context_bundle(df, spec, plan)
     assert exits.sl_stop.isna().all()
     pd.testing.assert_series_equal(exits.tp_stop, take_dist / close, check_names=False)
     assert exits.exits.tolist() == [False, True, False, False]
@@ -375,9 +364,9 @@ def test_build_exit_outputs_supports_signal_exit_with_take_profit_distance() -> 
 def test_stop_ready_is_per_profile_not_global_sl_tp_requirement() -> None:
     """TP-only aligned profile must not require SL readiness on aligned bars (draft config shape)."""
     spec = make_ema_pullback_strategy_spec(
+        contexts=htf_strategy_contexts(fast_period=20, anchor_period=50, slow_period=200),
         trade_management_spec=trade_management(
-            exit_policy_spec=exit_policy(
-                context=htf_context_config(timeframe="4h", fast_period=20, anchor_period=50, slow_period=200),
+            exit_policy_spec=exit_policy_htf_consumption(
                 always_on=(),
                 aligned=(exit_atr_take_profit(atr_period=14, atr_multiplier=4.0, instance_id="aligned_tp"),),
                 countertrend=(exit_atr_stop_loss(atr_period=14, atr_multiplier=2.0, instance_id="counter_sl"),),
@@ -387,7 +376,7 @@ def test_stop_ready_is_per_profile_not_global_sl_tp_requirement() -> None:
     )
     plan = build_feature_plan_from_strategy_spec(spec)
     df = add_feature_columns_from_plan(_ohlcv(120), plan)
-    exits = build_exit_outputs_from_spec(df, spec, plan)
+    exits = build_exit_outputs_with_context_bundle(df, spec, plan)
 
     aligned_mask = exits.profile_long == "aligned"
     assert aligned_mask.any()

@@ -8,6 +8,7 @@ import {
   formatChartPrice,
   ohlcPriceDecimals,
 } from "@/features/chart/signalTraceLookup";
+import { formatGateDecisionLabel } from "@/features/chart/tradeContextCausalDiagnostics";
 
 type ChartBarInspectorProps = {
   selectedBarTimeSec: number | null;
@@ -202,10 +203,12 @@ export function ChartBarInspector({
       )}
       {signalTrace && index >= 0 && (
         <>
-          {signalTrace.htf_context && (
+          {signalTrace.htf_context && signalTrace.htf_context.state.length > 0 && (
             <>
               <h4 className="bar-inspector__section">HTF context</h4>
               <dl className="bar-inspector__dl">
+                <dt>context_ref</dt>
+                <dd>{String(signalTrace.htf_context.meta?.context_ref ?? "—")}</dd>
                 <dt>state</dt>
                 <dd>{String(signalTrace.htf_context.state[index] ?? "neutral")}</dd>
                 <dt>EMA fast / anchor / slow</dt>
@@ -220,6 +223,36 @@ export function ChartBarInspector({
                   {String((signalTrace.htf_context.meta?.source as string | undefined) ?? "—")}
                 </dd>
               </dl>
+            </>
+          )}
+          {(signalTrace.context_consumption_trace ?? []).length > 0 && (
+            <>
+              <h4 className="bar-inspector__section">Context consumption</h4>
+              {(signalTrace.context_consumption_trace ?? []).map((record) => (
+                <dl key={`${record.role}:${record.component_id}:${record.context_ref}`} className="bar-inspector__dl">
+                  <dt>{record.role}</dt>
+                  <dd>
+                    {record.component_id}
+                    {record.instance_id ? ` (${record.instance_id})` : ""}
+                  </dd>
+                  <dt>context_ref</dt>
+                  <dd>{record.context_ref}</dd>
+                  <dt>policy_id</dt>
+                  <dd>{record.policy_id}</dd>
+                  <dt>gate</dt>
+                  <dd>
+                    {record.role === "exit_policy"
+                      ? "—"
+                      : formatGateDecisionLabel(record.context_applied[index] ?? false)}
+                  </dd>
+                  {record.role === "exit_policy" ? (
+                    <>
+                      <dt>context_applied</dt>
+                      <dd>{formatBool(record.context_applied[index] ?? false)}</dd>
+                    </>
+                  ) : null}
+                </dl>
+              ))}
             </>
           )}
           <h4 className="bar-inspector__section">Final entry</h4>

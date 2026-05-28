@@ -7,11 +7,25 @@
 Слой exits мигрирован на `strategy.trade_management.exit_policy`:
 
 - legacy путь `strategy.exits` fail-fast отклоняется в loader;
-- контекст `trade_management.exit_policy.context` использует `component_id: htf_context`;
+- HTF provider config живёт в `strategy.contexts[<context_ref>]` (`component_id: htf_context`);
+- exit policy потребляет контекст через `trade_management.exit_policy.context_consumption` (policy `exit_profile_by_htf_state`);
+- legacy `trade_management.exit_policy.context` **не поддерживается** loader (one-off: `scripts/migrate_exit_context_to_strategy_contexts.py`);
 - активные правила на сделке: `always_on + profile(side + htf_context.state)`;
 - сигнальные exits внутри активной группы агрегируются через OR;
 - distance exits внутри активной группы агрегируются через min;
-- signal trace / Bar Inspector получают диагностику `htf_context` (`state`, `fast/anchor/slow`, `meta`).
+- signal trace / Bar Inspector получают диагностику `htf_context` (`state`, `fast/anchor/slow`, `meta`) **только при явном `context_overlay_ref`** в Chart (не первый provider по умолчанию);
+- `context_consumption_trace` в signal trace: per-consumer `role`, `context_ref`, `policy_id`, `context_applied` (Phase 4);
+- новые run reports: `report_schema_version: 5` с `entry_context_consumption` / `exit_context_consumption` на closed trades (отдельно от `entry_context_state`);
+- v3/v4 reports остаются read-only; Composer не авторит `exit_policy.context` (только `strategy.contexts` + `context_consumption`).
+
+### Context diagnostics: wiring vs causal
+
+| Layer | Where | Answers |
+|-------|--------|---------|
+| **Wiring** | `trade_records.entry_context_consumption` / `exit_context_consumption` | Which consumer and `policy_id` were configured; entry `applied` = `htf_state_gate` allow on **entry bar** (when bundle available at extract) |
+| **Causal** | `signal_trace.context_consumption_trace` + `htf_context.state[]` | Per-bar `context_applied` (gate allow/block), HTF `state`, exit `outcome.profile_*` |
+
+Chart **trade diagnostics** show both: configured consumer + **Entry/Exit bar decision** from loaded signal trace. Bar Inspector remains per-click bar. See `openspec/changes/trade-context-causal-diagnostics-v1/`.
 
 Spike по entry-lock semantics задокументирован в `docs/research/17_exit_policy_entry_lock_spike.md`.
 

@@ -8,12 +8,14 @@ from research.strategies.ema_pullback.component_builders import (
     anchor_stack_from_periods,
     blocker_none,
     component_stack,
+    context_consumption,
+    context_provider,
     direction_ema_anchor_stack,
     exit_policy,
     exits_atr_default,
-    htf_context_config,
     risk_no_filter,
     setup_untouched_anchor,
+    strategy_contexts,
     trade_management,
     trade_sides,
     trigger_reclaim_anchor,
@@ -21,6 +23,7 @@ from research.strategies.ema_pullback.component_builders import (
 )
 from research.strategies.ema_pullback.spec import (
     ComponentStackSpec,
+    ContextProviderSpec,
     EmaPullbackStrategySpec,
     TradeManagementSpec,
     TradeSide,
@@ -67,6 +70,7 @@ def make_ema_pullback_strategy_spec(
     enabled_sides: Sequence[TradeSide] = ("long",),
     components: ComponentStackSpec | None = None,
     trade_management_spec: TradeManagementSpec | None = None,
+    contexts: Sequence[tuple[str, ContextProviderSpec]] | None = None,
 ) -> EmaPullbackStrategySpec:
     resolved_components = (
         component_stack(
@@ -89,13 +93,6 @@ def make_ema_pullback_strategy_spec(
         if trade_management_spec is not None
         else trade_management(
             exit_policy_spec=exit_policy(
-                context=htf_context_config(
-                    timeframe=htf_context_timeframe,
-                    source="close",
-                    fast_period=htf_fast_period,
-                    anchor_period=htf_anchor_period,
-                    slow_period=htf_slow_period,
-                ),
                 always_on=(default_sl, default_tp),
                 aligned=(),
                 countertrend=(),
@@ -103,6 +100,35 @@ def make_ema_pullback_strategy_spec(
             )
         )
     )
+    consumption = trade_mgmt.exit_policy.context_consumption
+    blocker_consumption_refs = tuple(
+        rule.context_consumption.context_ref
+        for rule in resolved_components.blockers
+        if rule.context_consumption is not None
+    )
+    if contexts is not None:
+        resolved_contexts = strategy_contexts(contexts)
+    elif consumption is not None or blocker_consumption_refs:
+        context_ref = (
+            consumption.context_ref
+            if consumption is not None
+            else blocker_consumption_refs[0]
+        )
+        resolved_contexts = strategy_contexts(
+            (
+                (
+                    context_ref,
+                    context_provider(
+                        timeframe=htf_context_timeframe,
+                        fast_period=htf_fast_period,
+                        anchor_period=htf_anchor_period,
+                        slow_period=htf_slow_period,
+                    ),
+                ),
+            )
+        )
+    else:
+        resolved_contexts = ()
 
     return EmaPullbackStrategySpec(
         variant=(
@@ -126,4 +152,5 @@ def make_ema_pullback_strategy_spec(
             active_bars=setup_active_bars,
         ),
         trade_management=trade_mgmt,
+        contexts=resolved_contexts,
     )

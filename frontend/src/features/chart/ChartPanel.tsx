@@ -197,6 +197,12 @@ export function ChartPanel() {
 
     signalTraceError,
 
+    contextOverlayRef,
+
+    setContextOverlayRef,
+
+    contextOverlayRefOptions,
+
     selectedBarTimeSec,
 
     selectBar,
@@ -742,6 +748,23 @@ export function ChartPanel() {
 
         <p className="panel__hint">{chartHint}</p>
 
+        {contextOverlayRefOptions.length > 0 ? (
+          <label className="field field--inline chart-panel__overlay-ref">
+            <span>HTF overlay context</span>
+            <select
+              value={contextOverlayRef ?? ""}
+              onChange={(e) => setContextOverlayRef(e.target.value || null)}
+            >
+              <option value="">— select context —</option>
+              {contextOverlayRefOptions.map((ref) => (
+                <option key={ref} value={ref}>
+                  {ref}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
+
       </div>
 
       {timeframeMismatch && reportTimeframe !== null && (
@@ -881,6 +904,8 @@ export function ChartPanel() {
                   chartEmaOverlays={chartEmaOverlays}
                   chartAuxEmaOverlays={chartDisplayAuxEmaOverlays}
                   focusWarning={chartTradeFocusWarning}
+                  signalTrace={signalTrace}
+                  signalTraceStatus={signalTraceStatus}
                 />
               </div>
               <ChartAsideStackSplitHandle

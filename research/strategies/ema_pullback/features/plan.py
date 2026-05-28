@@ -30,7 +30,20 @@ class FeaturePlan:
     exit_distance_columns: dict[str, str]
     rsi_columns: dict[tuple[str, int], str]
     ema_columns: dict[tuple[str, int], str] = field(default_factory=dict)
-    htf_context_columns: dict[str, str] = field(default_factory=dict)
+    htf_context_columns_by_ref: dict[str, dict[str, str]] = field(default_factory=dict)
+
+    def htf_context_columns_for(self, context_ref: str) -> dict[str, str]:
+        if context_ref not in self.htf_context_columns_by_ref:
+            raise KeyError(f"HTF context columns not planned for context_ref={context_ref!r}")
+        return self.htf_context_columns_by_ref[context_ref]
+
+    @property
+    def htf_context_columns(self) -> dict[str, str]:
+        """First planned context ref columns (tests); prefer htf_context_columns_for."""
+        if not self.htf_context_columns_by_ref:
+            return {}
+        first_ref = next(iter(self.htf_context_columns_by_ref))
+        return self.htf_context_columns_by_ref[first_ref]
 
     def ema_column(self, ema: EmaSpec) -> str:
         key = (ema.timeframe, ema.period)
@@ -107,19 +120,25 @@ def build_feature_plan_from_strategy_spec(spec: EmaPullbackStrategySpec) -> Feat
                 multiplier=None,
             )
         )
-    context = spec.trade_management.exit_policy.context
-    for period in (context.fast_period, context.anchor_period, context.slow_period):
-        add(
-            PlannedFeature(
-                feature_id=_ema_feature_id(context.timeframe, period),
-                kind="ema",
-                source=context.source,
-                timeframe=context.timeframe,
-                period=period,
-                base_feature_id=None,
-                multiplier=None,
+    htf_context_columns_by_ref: dict[str, dict[str, str]] = {}
+    for context_ref, provider in spec.contexts:
+        for period in (provider.fast_period, provider.anchor_period, provider.slow_period):
+            add(
+                PlannedFeature(
+                    feature_id=_ema_feature_id(provider.timeframe, period),
+                    kind="ema",
+                    source=provider.source,
+                    timeframe=provider.timeframe,
+                    period=period,
+                    base_feature_id=None,
+                    multiplier=None,
+                )
             )
-        )
+        htf_context_columns_by_ref[context_ref] = {
+            "fast": _ema_feature_id(provider.timeframe, provider.fast_period),
+            "anchor": _ema_feature_id(provider.timeframe, provider.anchor_period),
+            "slow": _ema_feature_id(provider.timeframe, provider.slow_period),
+        }
 
     all_exit_rules = (
         spec.trade_management.exit_policy.always_on.exits
@@ -193,11 +212,7 @@ def build_feature_plan_from_strategy_spec(spec: EmaPullbackStrategySpec) -> Feat
             "anchor": _ema_feature_id(spec.anchor_stack.anchor.timeframe, spec.anchor_stack.anchor.period),
             "slow": _ema_feature_id(spec.anchor_stack.slow.timeframe, spec.anchor_stack.slow.period),
         },
-        htf_context_columns={
-            "fast": _ema_feature_id(context.timeframe, context.fast_period),
-            "anchor": _ema_feature_id(context.timeframe, context.anchor_period),
-            "slow": _ema_feature_id(context.timeframe, context.slow_period),
-        },
+        htf_context_columns_by_ref=htf_context_columns_by_ref,
         exit_distance_columns=exit_columns,
         rsi_columns=rsi_columns,
         ema_columns=ema_columns,

@@ -14,7 +14,6 @@ import pandas as pd
 from research.strategies.ema_pullback.component_builders import (
     exit_policy,
     exit_rsi,
-    htf_context_config,
     trade_management,
 )
 from research.strategies.ema_pullback.execution import backtest
@@ -224,7 +223,9 @@ def test_run_strategy_spec_wires_short_signals_and_masks_warmup(
 
     monkeypatch.setitem(sys.modules, "vectorbt", SimpleNamespace(Portfolio=FakePortfolioFactory))
 
-    def fake_build_signals_from_spec(df: pd.DataFrame, spec: object, plan: object) -> PortfolioSignals:
+    def fake_build_signals_from_spec(
+        df: pd.DataFrame, spec: object, plan: object, *, context_bundle: object = None
+    ) -> PortfolioSignals:
         values = pd.Series([True, True, True, True], index=df.index, dtype=bool)
         return PortfolioSignals(
             entries=values,
@@ -232,7 +233,11 @@ def test_run_strategy_spec_wires_short_signals_and_masks_warmup(
         )
 
     def fake_build_exit_outputs_from_spec(
-        df: pd.DataFrame, spec: object, plan: object
+        df: pd.DataFrame,
+        spec: object,
+        plan: object,
+        *,
+        context_bundle: object = None,
     ) -> PortfolioExitOutputs:
         exits = pd.Series(False, index=df.index, dtype=bool)
         sl_stop = pd.Series(sl_values, index=df.index)
@@ -327,12 +332,18 @@ def test_run_strategy_spec_raises_when_ohlc_column_missing(
 
     monkeypatch.setitem(sys.modules, "vectorbt", SimpleNamespace(Portfolio=FakePortfolioFactory))
 
-    def fake_build_signals_from_spec(df: pd.DataFrame, spec: object, plan: object) -> PortfolioSignals:
+    def fake_build_signals_from_spec(
+        df: pd.DataFrame, spec: object, plan: object, *, context_bundle: object = None
+    ) -> PortfolioSignals:
         values = pd.Series([True, True, True, True], index=df.index, dtype=bool)
         return PortfolioSignals(entries=values, short_entries=values)
 
     def fake_build_exit_outputs_from_spec(
-        df: pd.DataFrame, spec: object, plan: object
+        df: pd.DataFrame,
+        spec: object,
+        plan: object,
+        *,
+        context_bundle: object = None,
     ) -> PortfolioExitOutputs:
         idx = df.index
         nan4 = [float("nan")] * 4
@@ -383,7 +394,6 @@ def test_run_strategy_spec_accepts_signal_only_exits_with_nan_stops() -> None:
     spec = make_ema_pullback_strategy_spec(
         trade_management_spec=trade_management(
             exit_policy_spec=exit_policy(
-                context=htf_context_config(timeframe="4h", fast_period=100, anchor_period=200, slow_period=1000),
                 always_on=(
                     exit_rsi(
                         instance_id="rsi_signal_only",
@@ -439,7 +449,7 @@ def test_entry_lock_distance_uses_entry_profile_distance(monkeypatch: pytest.Mon
         anchor_columns={"fast": "ema_fast", "anchor": "ema_anchor", "slow": "ema_slow"},
         exit_distance_columns={},
         rsi_columns={},
-        htf_context_columns={},
+        htf_context_columns_by_ref={},
     )
 
     def fake_plan(_spec: object) -> FeaturePlan:
@@ -452,12 +462,16 @@ def test_entry_lock_distance_uses_entry_profile_distance(monkeypatch: pytest.Mon
         out["ema_slow"] = out["close"]
         return out
 
-    def fake_signals(df: pd.DataFrame, _spec: object, _plan: object) -> PortfolioSignals:
+    def fake_signals(
+        df: pd.DataFrame, _spec: object, _plan: object, *, context_bundle: object = None
+    ) -> PortfolioSignals:
         entries = pd.Series(False, index=df.index, dtype=bool)
         entries.iloc[1] = True
         return PortfolioSignals(entries=entries, short_entries=pd.Series(False, index=df.index, dtype=bool))
 
-    def fake_exits(df: pd.DataFrame, _spec: object, _plan: object) -> PortfolioExitOutputs:
+    def fake_exits(
+        df: pd.DataFrame, _spec: object, _plan: object, *, context_bundle: object = None
+    ) -> PortfolioExitOutputs:
         false_s = pd.Series(False, index=df.index, dtype=bool)
         nan_s = pd.Series(float("nan"), index=df.index, dtype=float)
         sl_aligned = pd.Series(0.10, index=df.index, dtype=float)
@@ -512,7 +526,7 @@ def test_entry_lock_signal_ignores_inactive_profile_and_honors_always_on(
         anchor_columns={"fast": "ema_fast", "anchor": "ema_anchor", "slow": "ema_slow"},
         exit_distance_columns={},
         rsi_columns={},
-        htf_context_columns={},
+        htf_context_columns_by_ref={},
     )
 
     def fake_plan(_spec: object) -> FeaturePlan:
@@ -525,12 +539,16 @@ def test_entry_lock_signal_ignores_inactive_profile_and_honors_always_on(
         out["ema_slow"] = out["close"]
         return out
 
-    def fake_signals(df: pd.DataFrame, _spec: object, _plan: object) -> PortfolioSignals:
+    def fake_signals(
+        df: pd.DataFrame, _spec: object, _plan: object, *, context_bundle: object = None
+    ) -> PortfolioSignals:
         entries = pd.Series(False, index=df.index, dtype=bool)
         entries.iloc[1] = True
         return PortfolioSignals(entries=entries, short_entries=pd.Series(False, index=df.index, dtype=bool))
 
-    def fake_exits(df: pd.DataFrame, _spec: object, _plan: object) -> PortfolioExitOutputs:
+    def fake_exits(
+        df: pd.DataFrame, _spec: object, _plan: object, *, context_bundle: object = None
+    ) -> PortfolioExitOutputs:
         false_s = pd.Series(False, index=df.index, dtype=bool)
         nan_s = pd.Series(float("nan"), index=df.index, dtype=float)
         aligned = false_s.copy()

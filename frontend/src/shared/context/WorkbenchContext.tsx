@@ -47,6 +47,10 @@ import {
   auxOverlayFromHtfTrace,
   collectAuxEmaSpecs,
 } from "@/features/chart/strategySpecAuxEma";
+import {
+  defaultChartContextOverlayRef,
+  strategyContextRefOptions,
+} from "@/features/chart/strategyContexts";
 import { candleRangeMs } from "@/features/chart/chartMarkers";
 import {
   defaultClosedTradeSelection,
@@ -124,6 +128,9 @@ type WorkbenchState = {
   signalTrace: SignalTraceBundle | null;
   signalTraceStatus: SignalTraceLoadStatus;
   signalTraceError: string | null;
+  contextOverlayRef: string | null;
+  setContextOverlayRef: (ref: string | null) => void;
+  contextOverlayRefOptions: string[];
   selectedBarTimeSec: number | null;
   selectBar: (timeSec: number | null) => void;
 };
@@ -178,6 +185,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
   const [signalTraceStatus, setSignalTraceStatus] = useState<SignalTraceLoadStatus>("idle");
   const [signalTraceError, setSignalTraceError] = useState<string | null>(null);
   const [loadedTraceWindowKey, setLoadedTraceWindowKey] = useState<string | null>(null);
+  const [contextOverlayRef, setContextOverlayRef] = useState<string | null>(null);
   const loadingTraceWindowKeyRef = useRef<string | null>(null);
   const inFlightTraceRequestRef = useRef<SignalTraceRequest | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
@@ -571,15 +579,40 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     setMarketLoadStatus("ready");
   }, [intendedMarketCacheKey, marketCacheKey, marketLoadStatus]);
 
+  const contextOverlayRefOptions = useMemo(() => {
+    if (!selectedVariant) return [];
+    return strategyContextRefOptions(selectedVariant.strategy_spec);
+  }, [selectedVariant]);
+
+  useEffect(() => {
+    if (contextOverlayRef !== null && !contextOverlayRefOptions.includes(contextOverlayRef)) {
+      setContextOverlayRef(null);
+    }
+  }, [contextOverlayRef, contextOverlayRefOptions]);
+
+  useEffect(() => {
+    setLoadedTraceWindowKey(null);
+    if (!selectedVariant) {
+      setContextOverlayRef(null);
+      return;
+    }
+    setContextOverlayRef(defaultChartContextOverlayRef(selectedVariant.strategy_spec));
+  }, [selectedRunId, selectedVariantKey, selectedVariant]);
+
   const auxEmaSpecs = useMemo(() => {
     if (!selectedVariant) return [];
     try {
       const periods = anchorStackPeriodsFromStrategySpec(selectedVariant.strategy_spec);
-      return collectAuxEmaSpecs(selectedVariant.strategy_spec, chartTimeframe, periods);
+      return collectAuxEmaSpecs(
+        selectedVariant.strategy_spec,
+        chartTimeframe,
+        periods,
+        contextOverlayRef,
+      );
     } catch {
       return [];
     }
-  }, [selectedVariant, chartTimeframe]);
+  }, [selectedVariant, chartTimeframe, contextOverlayRef]);
 
   useEffect(() => {
     if (marketLoadStatus !== "ready" || report === null || auxEmaSpecs.length === 0) {
@@ -697,8 +730,9 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     }
     const first = chartView.candles[0]!.time;
     const last = chartView.candles[chartView.candles.length - 1]!.time;
-    return `${selectedRunId}:${selectedVariantKey}:${first}:${last}`;
-  }, [chartView.candles, selectedRunId, selectedVariantKey]);
+    const overlay = contextOverlayRef ?? "";
+    return `${selectedRunId}:${selectedVariantKey}:${first}:${last}:${overlay}`;
+  }, [chartView.candles, selectedRunId, selectedVariantKey, contextOverlayRef]);
 
   const traceMatchesWindow =
     signalTraceStatus === "ready" &&
@@ -828,6 +862,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
           variant: variantKey,
           fromMs,
           toOpenTimeMs,
+          contextOverlayRef,
         });
         if (cancelled) return;
         setSignalTrace(bundle);
@@ -856,7 +891,14 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [report, selectedRunId, selectedVariant?.variant, chartWindowKey, marketLoadStatus]);
+  }, [
+    report,
+    selectedRunId,
+    selectedVariant?.variant,
+    chartWindowKey,
+    marketLoadStatus,
+    contextOverlayRef,
+  ]);
 
   const symbol = report?.symbol ?? "—";
   const timeframe = chartTimeframe;
@@ -911,6 +953,9 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       signalTrace,
       signalTraceStatus,
       signalTraceError,
+      contextOverlayRef,
+      setContextOverlayRef,
+      contextOverlayRefOptions,
       selectedBarTimeSec,
       selectBar,
     }),
@@ -959,6 +1004,8 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       signalTrace,
       signalTraceStatus,
       signalTraceError,
+      contextOverlayRef,
+      contextOverlayRefOptions,
       selectedBarTimeSec,
       selectBar,
     ],

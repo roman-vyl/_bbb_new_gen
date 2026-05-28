@@ -8,7 +8,6 @@ from research.strategies.ema_pullback.component_builders import (
     exit_no_signal,
     exit_rsi,
     exits_atr_default,
-    htf_context_config,
     trade_management,
     trigger_touch_anchor,
 )
@@ -116,7 +115,6 @@ def test_factory_accepts_custom_components_as_source_of_truth() -> None:
     )
     custom_tm = trade_management(
         exit_policy_spec=exit_policy(
-            context=htf_context_config(timeframe="4h", fast_period=100, anchor_period=200, slow_period=1000),
             always_on=(
                 exit_no_signal(),
                 exit_rsi(instance_id="rsi_exit_base", long_exit_above=75.0, short_exit_below=25.0),
@@ -146,7 +144,6 @@ def test_factory_accepts_custom_components_as_source_of_truth() -> None:
 def test_factory_does_not_override_custom_exits_with_atr_defaults() -> None:
     custom_tm = trade_management(
         exit_policy_spec=exit_policy(
-            context=htf_context_config(timeframe="4h", fast_period=100, anchor_period=200, slow_period=1000),
             always_on=(exit_no_signal(),),
             aligned=(),
             countertrend=(),

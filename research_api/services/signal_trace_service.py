@@ -25,6 +25,7 @@ from research.strategies.ema_pullback.spec_report import (
 
 from research_api.contracts.runs import RunReport, RunVariant
 from research_api.contracts.signal_trace import (
+    ContextConsumptionTraceRecord,
     HtfContextTrace,
     SignalTraceBundle,
     SignalTraceMeta,
@@ -59,12 +60,17 @@ def _warmup_bars_ms(spec: Any, timeframe: str) -> int:
     slow_period = int(spec.anchor_stack.slow.period)
     anchor_warmup_ms = (max(lookback, slow_period) + 5) * base_ms
 
-    context = spec.trade_management.exit_policy.context
-    context_tf = base_tf if str(context.timeframe).strip() == "base" else validate_timeframe(context.timeframe)
-    context_ms = timeframe_ms(context_tf)
-    context_warmup_ms = (int(context.slow_period) + 5) * context_ms
-
-    return max(anchor_warmup_ms, context_warmup_ms)
+    warmup_ms = anchor_warmup_ms
+    for _context_ref, provider in spec.contexts:
+        context_tf = (
+            base_tf
+            if str(provider.timeframe).strip() == "base"
+            else validate_timeframe(provider.timeframe)
+        )
+        context_ms = timeframe_ms(context_tf)
+        context_warmup_ms = (int(provider.slow_period) + 5) * context_ms
+        warmup_ms = max(warmup_ms, context_warmup_ms)
+    return warmup_ms
 
 
 def _load_ohlcv_frame(
@@ -103,6 +109,9 @@ def _to_contract(data: SignalTraceBundleData) -> SignalTraceBundle:
         times=data.times,
         meta=SignalTraceMeta(**data.meta),
         htf_context=HtfContextTrace(**data.htf_context),
+        context_consumption_trace=[
+            ContextConsumptionTraceRecord(**record) for record in data.context_consumption_trace
+        ],
         long=side(data.long),
         short=side(data.short),
     )
@@ -128,6 +137,7 @@ def fetch_signal_trace_bundle(
     variant_key: str,
     from_ms: int,
     to_ms: int,
+    context_overlay_ref: str | None = None,
     db_path: Path | None = None,
 ) -> SignalTraceBundle:
     """Compute entry pipeline trace for ``[from_ms, to_ms]`` (chart view window)."""
@@ -167,7 +177,16 @@ def fetch_signal_trace_bundle(
 
     plan = build_feature_plan_from_strategy_spec(spec)
     enriched = add_feature_columns_from_plan(ohlcv, plan)
-    full_trace = build_signal_trace_from_spec(enriched, spec, plan)
+    if context_overlay_ref is not None and context_overlay_ref not in spec.contexts_by_ref():
+        raise ValueError(
+            f"context_overlay_ref {context_overlay_ref!r} is not defined in strategy.contexts"
+        )
+    full_trace = build_signal_trace_from_spec(
+        enriched,
+        spec,
+        plan,
+        context_overlay_ref=context_overlay_ref,
+    )
     sliced = slice_signal_trace(
         full_trace,
         from_time_sec=from_sec,

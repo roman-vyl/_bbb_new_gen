@@ -19,7 +19,6 @@ from research.strategies.ema_pullback.component_builders import (
     exit_no_signal,
     exit_rsi,
     exit_policy,
-    htf_context_config,
     trade_management,
     exits_atr_default,
     trade_sides,
@@ -37,6 +36,7 @@ from research.strategies.ema_pullback.cli import parse_args
 from research.strategies.ema_pullback.spec import TradeSideSpec, strategy_spec_config_id
 from research.strategies.ema_pullback.spec_instances import make_ema_pullback_strategy_spec
 
+from tests.ema_pullback_context_helpers import exit_policy_htf_consumption, htf_strategy_contexts
 from tests.test_external_config_loader import _bundle, _instance
 
 
@@ -283,17 +283,9 @@ def test_component_stack_rejects_duplicate_instance_ids_per_role() -> None:
 
     with pytest.raises(ValueError, match="globally unique"):
         trade_management(
-            exit_policy_spec=exit_policy(
-                context=htf_context_config(
-                    timeframe="4h",
-                    fast_period=20,
-                    anchor_period=50,
-                    slow_period=200,
-                ),
+            exit_policy_spec=exit_policy_htf_consumption(
                 always_on=(exit_no_signal(),),
                 aligned=(exit_rsi(instance_id="no_signal_exit"),),
-                countertrend=(),
-                neutral=(),
             )
         )
 

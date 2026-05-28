@@ -32,6 +32,8 @@ class TradeRecord(TradeOverlay):
     return_pct: float | None
     entry_profile: str | None = None
     entry_context_state: str | None = None
+    entry_context_consumption: dict[str, Any] | None = None
+    exit_context_consumption: dict[str, Any] | None = None
     active_exit_profile: str | None = None
     exit_group: str | None = None
     exit_profile: str | None = None

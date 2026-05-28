@@ -11,7 +11,9 @@ from fastapi.testclient import TestClient
 from research_api.contracts.signal_trace import SignalTraceBundle
 from research_api.main import app
 from research_api.services.signal_trace_service import _warmup_bars_ms
+from research.strategies.ema_pullback.component_builders import trade_management
 from research.strategies.ema_pullback.spec_instances import make_ema_pullback_strategy_spec
+from tests.ema_pullback_context_helpers import exit_policy_htf_consumption, htf_strategy_contexts
 
 
 def test_signal_trace_endpoint_returns_bundle(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -71,15 +73,43 @@ def test_signal_trace_endpoint_returns_bundle(monkeypatch: pytest.MonkeyPatch) -
     assert body["long"]["setup_ok"] == [False, True]
 
 
-def test_signal_trace_warmup_accounts_for_htf_context() -> None:
+def test_signal_trace_warmup_ignores_htf_without_context_consumption() -> None:
+    """always_on-only spec: no strategy.contexts → warmup is anchor/setup only."""
     spec = make_ema_pullback_strategy_spec(
         base_timeframe="5m",
-        htf_context_timeframe="4h",
-        htf_fast_period=20,
-        htf_anchor_period=50,
-        htf_slow_period=200,
+        fast_period=20,
+        anchor_period=50,
+        slow_period=200,
         setup_lookback=50,
     )
+    assert spec.contexts == ()
     warmup_ms = _warmup_bars_ms(spec, "5m")
-    # 200 * 4h must dominate 1000 * 5m and setup-based warmup.
+    htf_slow_warmup_ms = 200 * 4 * 60 * 60 * 1000
+    assert warmup_ms < htf_slow_warmup_ms
+
+
+def test_signal_trace_warmup_accounts_for_htf_context() -> None:
+    """Target shape: strategy.contexts.htf drives HTF warmup (via feature plan)."""
+    from research.strategies.ema_pullback.component_builders import exit_rsi
+
+    spec = make_ema_pullback_strategy_spec(
+        base_timeframe="5m",
+        fast_period=20,
+        anchor_period=50,
+        slow_period=200,
+        setup_lookback=50,
+        contexts=htf_strategy_contexts(
+            timeframe="4h",
+            fast_period=20,
+            anchor_period=50,
+            slow_period=200,
+        ),
+        trade_management_spec=trade_management(
+            exit_policy_spec=exit_policy_htf_consumption(
+                aligned=(exit_rsi(instance_id="rsi_profile"),),
+            ),
+        ),
+    )
+    assert len(spec.contexts) == 1
+    warmup_ms = _warmup_bars_ms(spec, "5m")
     assert warmup_ms >= 200 * 4 * 60 * 60 * 1000

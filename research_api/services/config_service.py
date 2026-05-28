@@ -31,7 +31,10 @@ _CONFIGS_ROOT = _REPO_ROOT / "research" / "experiments" / "configs"
 _SELECTION_FILE: Path | None = None
 _CONFIG_EXTENSIONS = frozenset({".json", ".yaml", ".yml"})
 _PATH_RE = re.compile(
-    r"^(?P<prefix>(?:instances\[\d+\]|blockers\[\d+\]|exits\[\d+\]|strategy|trade_management|exit_policy|profiles|always_on|context|market|execution|experiment_id|family|schema_version)[^\s]*)?"
+    r"^(?P<prefix>(?:instances\[\d+\]|blockers\[\d+\]|exits\[\d+\]|"
+    r"strategy|trade_management|exit_policy|profiles|always_on|context|contexts|"
+    r"context_consumption|market|execution|experiment_id|family|schema_version|"
+    r"setup|trigger|direction|risk)[^\s]*)?"
 )
 SUPPORTED_CONFIG_FAMILIES = {"ema_pullback"}
 
@@ -104,7 +107,7 @@ def validate_draft(draft: StrategyConfigDraft) -> ValidationResult:
     try:
         load_strategy_config(draft_to_canonical_payload(draft), source_file="<draft>")
         return ValidationResult(ok=True)
-    except (ConfigValidationError, EmaPullbackInstanceValidationError) as exc:
+    except (ConfigValidationError, EmaPullbackInstanceValidationError, ValueError) as exc:
         return ValidationResult(ok=False, errors=[_parse_validation_message(str(exc))])
 
 

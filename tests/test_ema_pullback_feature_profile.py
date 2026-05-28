@@ -11,6 +11,7 @@ from research.strategies.ema_pullback.spec import (
     ExitRuleSpec,
     strategy_spec_config_id,
 )
+from research.strategies.ema_pullback.features.plan import build_feature_plan_from_strategy_spec
 from research.strategies.ema_pullback.spec_instances import (
     make_ema_pullback_strategy_spec,
     variant_from_spec,
@@ -111,9 +112,48 @@ def test_atr_stop_rejects_usd_distance() -> None:
         )
 
 
-def test_trade_management_requires_exit_policy() -> None:
+def test_default_always_on_spec_has_no_strategy_contexts() -> None:
     spec = make_ema_pullback_strategy_spec()
-    assert spec.trade_management.exit_policy.context.component_id == "htf_context"
+    assert spec.contexts == ()
+    assert spec.trade_management.exit_policy.context_consumption is None
+    plan = build_feature_plan_from_strategy_spec(spec)
+    assert plan.htf_context_columns_by_ref == {}
+    assert not any("4h" in feature.feature_id for feature in plan.features)
+
+
+def test_spec_with_exit_context_consumption_has_htf_provider() -> None:
+    from research.strategies.ema_pullback.component_builders import exit_rsi, trade_management
+    from tests.ema_pullback_context_helpers import exit_policy_htf_consumption, htf_strategy_contexts
+
+    base = make_ema_pullback_strategy_spec()
+    spec = make_ema_pullback_strategy_spec(
+        contexts=htf_strategy_contexts(),
+        trade_management_spec=trade_management(
+            exit_policy_spec=exit_policy_htf_consumption(
+                always_on=base.trade_management.exit_policy.always_on.exits,
+                aligned=(exit_rsi(instance_id="rsi_profile"),),
+            ),
+        ),
+    )
+    assert spec.trade_management.exit_policy.context_consumption is not None
+    assert spec.contexts_by_ref()["htf"].component_id == "htf_context"
+    plan = build_feature_plan_from_strategy_spec(spec)
+    assert "htf" in plan.htf_context_columns_by_ref
+
+
+def test_factory_adds_htf_provider_when_consumption_without_explicit_contexts() -> None:
+    from research.strategies.ema_pullback.component_builders import exit_rsi, trade_management
+    from tests.ema_pullback_context_helpers import exit_policy_htf_consumption
+
+    spec = make_ema_pullback_strategy_spec(
+        trade_management_spec=trade_management(
+            exit_policy_spec=exit_policy_htf_consumption(
+                always_on=make_ema_pullback_strategy_spec().trade_management.exit_policy.always_on.exits,
+                aligned=(exit_rsi(instance_id="rsi_profile"),),
+            ),
+        ),
+    )
+    assert spec.contexts_by_ref()["htf"].component_id == "htf_context"
 
 
 def test_component_stack_uses_typed_rule_specs() -> None:

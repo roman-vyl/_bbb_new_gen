@@ -11,6 +11,7 @@ import {
 import type {
   ComponentCatalog,
   ComponentSchema,
+  ContextConsumptionPolicySchema,
   JsonObject,
   StrategyConfigDraft,
   StrategyInstanceDraft,
@@ -33,6 +34,24 @@ import {
   nextInstanceId,
   strategyPath,
 } from "./composerDraft";
+import {
+  addStrategyContext,
+  contextRefOptions,
+  defaultHtfProvider,
+  exitPolicyPolicies,
+  generateUniqueContextRef,
+  renameStrategyContext,
+  collectComposerDraftErrors,
+  exitPolicyRequiresContextConsumption,
+  prepareConfigDraftForApi,
+  readExitPolicyContextConsumption,
+  readStrategyContexts,
+  supportsEntryContextConsumption,
+  writeExitPolicyContextConsumption,
+  writeStrategyContexts,
+  type ContextConsumptionDraft,
+  type ContextProviderDraft,
+} from "./composerStrategyContexts";
 import { ParamFields } from "./ParamFields";
 
 type PreviewTab = "draft" | "serialized";
@@ -83,6 +102,9 @@ function firstPipelineSectionFromErrors(errors: ValidationErrorItem[]): string |
     if (key === "anchor_stack" || key === "trade_sides") {
       return "instance-setup";
     }
+    if (key === "contexts") {
+      return "strategy_contexts";
+    }
     if (
       key === "direction" ||
       key === "setup" ||
@@ -93,6 +115,9 @@ function firstPipelineSectionFromErrors(errors: ValidationErrorItem[]): string |
       key === "trade_management"
     ) {
       return key === "trade_management" ? "exits" : key;
+    }
+    if (path.includes("context_consumption")) {
+      return "exits";
     }
   }
   return null;
@@ -166,23 +191,12 @@ function readExitPolicy(strategy: JsonObject): JsonObject {
   return ((tradeManagement.exit_policy as JsonObject | undefined) ?? {}) as JsonObject;
 }
 
-function readContextConfig(strategy: JsonObject): JsonObject {
-  return ((readExitPolicy(strategy).context as JsonObject | undefined) ?? {}) as JsonObject;
-}
-
-function writeContextConfig(strategy: JsonObject, context: JsonObject): JsonObject {
-  const tradeManagement = (strategy.trade_management as JsonObject | undefined) ?? {};
-  const exitPolicy = readExitPolicy(strategy);
-  return {
-    ...strategy,
-    trade_management: {
-      ...tradeManagement,
-      exit_policy: {
-        ...exitPolicy,
-        context,
-      },
-    },
-  };
+function contextsSummary(contexts: Record<string, ContextProviderDraft>): string {
+  const keys = Object.keys(contexts);
+  if (keys.length === 0) {
+    return "none";
+  }
+  return keys.join(", ");
 }
 
 function readProfileExits(strategy: JsonObject, profile: "aligned" | "countertrend" | "neutral"): JsonObject[] {
@@ -404,13 +418,27 @@ export function ComposerPanel() {
     [configDraft, patchInstance],
   );
 
+  const apiDraft = useMemo(() => {
+    if (!configDraft) {
+      return null;
+    }
+    return prepareConfigDraftForApi(configDraft);
+  }, [configDraft]);
+
   const runValidate = useCallback(async () => {
-    if (!configDraft) return;
+    if (!configDraft || !apiDraft) return;
     setBusy("validate");
     setActionError(null);
     setSaveMessage(null);
+    const clientErrors = collectComposerDraftErrors(configDraft, catalog);
+    if (clientErrors.length > 0) {
+      setValidation({ ok: false, errors: clientErrors });
+      setSerializeContent(null);
+      setBusy(null);
+      return;
+    }
     try {
-      const result = await validateConfigDraft(configDraft);
+      const result = await validateConfigDraft(apiDraft);
       setValidation(result);
       if (!result.ok) {
         setSerializeContent(null);
@@ -420,14 +448,21 @@ export function ComposerPanel() {
     } finally {
       setBusy(null);
     }
-  }, [configDraft]);
+  }, [apiDraft, catalog, configDraft]);
 
   const runSerialize = useCallback(async () => {
-    if (!configDraft) return;
+    if (!configDraft || !apiDraft) return;
     setBusy("serialize");
     setActionError(null);
+    const clientErrors = collectComposerDraftErrors(configDraft, catalog);
+    if (clientErrors.length > 0) {
+      setValidation({ ok: false, errors: clientErrors });
+      setSerializeContent(null);
+      setBusy(null);
+      return;
+    }
     try {
-      const result = await serializeConfigDraft(configDraft, serializeFormat);
+      const result = await serializeConfigDraft(apiDraft, serializeFormat);
       if (!result.ok) {
         setValidation({ ok: false, errors: result.errors });
         setSerializeContent(null);
@@ -441,16 +476,22 @@ export function ComposerPanel() {
     } finally {
       setBusy(null);
     }
-  }, [configDraft, serializeFormat]);
+  }, [apiDraft, catalog, configDraft, serializeFormat]);
 
   const runSave = useCallback(async () => {
-    if (!configDraft) return;
+    if (!configDraft || !apiDraft) return;
     setBusy("save");
     setActionError(null);
     setSaveMessage(null);
     setBacktestMessage(null);
+    const clientErrors = collectComposerDraftErrors(configDraft, catalog);
+    if (clientErrors.length > 0) {
+      setValidation({ ok: false, errors: clientErrors });
+      setBusy(null);
+      return;
+    }
     try {
-      const result = await saveConfigDraft(configDraft);
+      const result = await saveConfigDraft(apiDraft);
       if (!result.ok) {
         setValidation({ ok: false, errors: result.errors });
         return;
@@ -462,15 +503,21 @@ export function ComposerPanel() {
     } finally {
       setBusy(null);
     }
-  }, [configDraft, reloadConfig]);
+  }, [apiDraft, catalog, configDraft, reloadConfig]);
 
   const runBacktestAction = useCallback(async () => {
-    if (!configDraft) return;
+    if (!configDraft || !apiDraft) return;
     setBusy("backtest");
     setActionError(null);
     setBacktestMessage(null);
+    const clientErrors = collectComposerDraftErrors(configDraft, catalog);
+    if (clientErrors.length > 0) {
+      setValidation({ ok: false, errors: clientErrors });
+      setBusy(null);
+      return;
+    }
     try {
-      const result = await runBacktest({ draft: configDraft });
+      const result = await runBacktest({ draft: apiDraft });
       if (!result.ok) {
         setValidation({ ok: false, errors: result.errors });
         return;
@@ -491,7 +538,7 @@ export function ComposerPanel() {
     } finally {
       setBusy(null);
     }
-  }, [configDraft, refreshRunsAndSelectRun, setActiveTab]);
+  }, [apiDraft, catalog, configDraft, refreshRunsAndSelectRun, setActiveTab]);
 
   const addInstance = () => {
     if (!configDraft) return;
@@ -1059,6 +1106,7 @@ export function ComposerPanel() {
                         title="Direction"
                         role="direction"
                         catalog={catalog}
+                        strategy={instStrategy}
                         value={(instStrategy.direction as JsonObject) ?? {}}
                         pathPrefix={`${strategyPath(index)}.direction`}
                         errors={validationErrors}
@@ -1098,6 +1146,7 @@ export function ComposerPanel() {
                         title="Setup"
                         role="setup"
                         catalog={catalog}
+                        strategy={instStrategy}
                         value={(instStrategy.setup as JsonObject) ?? {}}
                         pathPrefix={`${strategyPath(index)}.setup`}
                         errors={validationErrors}
@@ -1137,6 +1186,7 @@ export function ComposerPanel() {
                         title="Trigger"
                         role="trigger"
                         catalog={catalog}
+                        strategy={instStrategy}
                         value={(instStrategy.trigger as JsonObject) ?? {}}
                         pathPrefix={`${strategyPath(index)}.trigger`}
                         errors={validationErrors}
@@ -1176,6 +1226,7 @@ export function ComposerPanel() {
                         title="Blockers"
                         role="blockers"
                         catalog={catalog}
+                        strategy={instStrategy}
                         slots={((instStrategy.blockers as JsonObject[]) ?? []) as JsonObject[]}
                         instanceIndex={index}
                         errors={validationErrors}
@@ -1216,11 +1267,52 @@ export function ComposerPanel() {
                         title="Risk"
                         role="risk"
                         catalog={catalog}
+                        strategy={instStrategy}
                         value={(instStrategy.risk as JsonObject) ?? {}}
                         pathPrefix={`${strategyPath(index)}.risk`}
                         errors={validationErrors}
                         onSelect={(id) => setSingletonComponent(index, "risk", id)}
                         onChange={(risk) => patchStrategy(index, { risk })}
+                      />
+                    );
+                  }}
+                </ComposerInstanceGrid>
+              </ComposerCollapsible>
+
+              <ComposerCollapsible
+                id="strategy_contexts"
+                title="Strategy contexts"
+                summary={joinInstanceSummaries(
+                  configDraft.instances.map((inst) =>
+                    contextsSummary(readStrategyContexts((inst.strategy ?? {}) as JsonObject)),
+                  ),
+                )}
+                open={openPipelineSections.has("strategy_contexts")}
+                onToggle={togglePipeline}
+                hasError={anyInstancePathHasError(
+                  validationErrors,
+                  configDraft.instances.length,
+                  (i) => `${strategyPath(i)}.contexts`,
+                )}
+              >
+                <ComposerInstanceGrid
+                  instances={configDraft.instances}
+                  selectedIndex={selectedIndex}
+                >
+                  {(index, inst) => {
+                    const instStrategy = (inst.strategy ?? {}) as JsonObject;
+                    return (
+                      <StrategyContextsSection
+                        compact
+                        catalog={catalog}
+                        contexts={readStrategyContexts(instStrategy)}
+                        pathPrefix={`${strategyPath(index)}.contexts`}
+                        errors={validationErrors}
+                        onChange={(contexts) =>
+                          patchInstance(index, {
+                            strategy: writeStrategyContexts(instStrategy, contexts),
+                          })
+                        }
                       />
                     );
                   }}
@@ -1240,7 +1332,7 @@ export function ComposerPanel() {
                 hasError={anyInstancePathHasError(
                   validationErrors,
                   configDraft.instances.length,
-                  (i) => `${strategyPath(i)}.exits`,
+                  (i) => `${strategyPath(i)}.trade_management`,
                 )}
               >
                 <ComposerInstanceGrid
@@ -1251,14 +1343,15 @@ export function ComposerPanel() {
                     const instStrategy = (inst.strategy ?? {}) as JsonObject;
                     return (
                       <div className="composer-collapsible-inner">
-                        <h4 className="composer-subhead">HTF context</h4>
-                        <HtfContextFields
-                          value={readContextConfig(instStrategy)}
-                          pathPrefix={`${strategyPath(index)}.trade_management.exit_policy.context`}
+                        <ExitPolicyContextConsumptionSection
+                          catalog={catalog}
+                          strategy={instStrategy}
+                          contexts={readStrategyContexts(instStrategy)}
+                          pathPrefix={`${strategyPath(index)}.trade_management.exit_policy.context_consumption`}
                           errors={validationErrors}
-                          onChange={(context) =>
+                          onChange={(consumption) =>
                             patchInstance(index, {
-                              strategy: writeContextConfig(instStrategy, context),
+                              strategy: writeExitPolicyContextConsumption(instStrategy, consumption),
                             })
                           }
                         />
@@ -1438,16 +1531,16 @@ function TradeSidesFields({
   );
 }
 
-function HtfContextFields({
+function ContextProviderFields({
   value,
   pathPrefix,
   errors,
   onChange,
 }: {
-  value: JsonObject;
+  value: ContextProviderDraft;
   pathPrefix: string;
   errors: ValidationErrorItem[];
-  onChange: (next: JsonObject) => void;
+  onChange: (next: ContextProviderDraft) => void;
 }) {
   const patch = (key: string, next: unknown) => onChange({ ...value, [key]: next });
   return (
@@ -1455,7 +1548,10 @@ function HtfContextFields({
       <SectionErrors errors={errors} pathPrefix={pathPrefix} />
       <label className="field">
         <span>component_id</span>
-        <input value={String(value.component_id ?? "htf_context")} onChange={(e) => patch("component_id", e.target.value)} />
+        <input
+          value={String(value.component_id ?? "htf_context")}
+          onChange={(e) => patch("component_id", e.target.value)}
+        />
       </label>
       <label className="field">
         <span>timeframe</span>
@@ -1493,11 +1589,407 @@ function HtfContextFields({
   );
 }
 
+function ContextRefSelect({
+  value,
+  options,
+  onChange,
+  invalidHint = "(not defined)",
+  emptyHint = "Add a strategy context first",
+}: {
+  value: string;
+  options: string[];
+  onChange: (ref: string) => void;
+  invalidHint?: string;
+  emptyHint?: string;
+}) {
+  if (options.length === 0) {
+    return (
+      <>
+        <select value="" disabled onChange={() => undefined}>
+          <option value="">— select context —</option>
+        </select>
+        <p className="composer-hint">{emptyHint}</p>
+      </>
+    );
+  }
+  const orphan = value.trim() !== "" && !options.includes(value);
+  return (
+    <select value={value} onChange={(e) => onChange(e.target.value)}>
+      <option value="">— select context —</option>
+      {orphan ? (
+        <option value={value}>
+          {value} {invalidHint}
+        </option>
+      ) : null}
+      {options.map((ref) => (
+        <option key={ref} value={ref}>
+          {ref}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+function StrategyContextsSection({
+  compact = false,
+  catalog,
+  contexts,
+  pathPrefix,
+  errors,
+  onChange,
+}: {
+  compact?: boolean;
+  catalog: ComponentCatalog | null;
+  contexts: Record<string, ContextProviderDraft>;
+  pathPrefix: string;
+  errors: ValidationErrorItem[];
+  onChange: (next: Record<string, ContextProviderDraft>) => void;
+}) {
+  const [preferredRef, setPreferredRef] = useState("");
+  const [renameDraft, setRenameDraft] = useState<Record<string, string>>({});
+  const refs = contextRefOptions(contexts);
+  const addContext = () => {
+    const { contexts: next, ref } = addStrategyContext(contexts, catalog, preferredRef);
+    onChange(next);
+    setPreferredRef("");
+    setRenameDraft((prev) => ({ ...prev, [ref]: ref }));
+  };
+  const removeContext = (ref: string) => {
+    const next = { ...contexts };
+    delete next[ref];
+    onChange(next);
+    setRenameDraft((prev) => {
+      const copy = { ...prev };
+      delete copy[ref];
+      return copy;
+    });
+  };
+  const updateContext = (ref: string, provider: ContextProviderDraft) => {
+    onChange({ ...contexts, [ref]: provider });
+  };
+  const commitRename = (oldRef: string) => {
+    const nextRef = (renameDraft[oldRef] ?? oldRef).trim();
+    if (!nextRef || nextRef === oldRef) {
+      setRenameDraft((prev) => ({ ...prev, [oldRef]: oldRef }));
+      return;
+    }
+    const renamed = renameStrategyContext(contexts, oldRef, nextRef);
+    if (!renamed) {
+      setRenameDraft((prev) => ({ ...prev, [oldRef]: oldRef }));
+      return;
+    }
+    onChange(renamed);
+    setRenameDraft((prev) => {
+      const copy = { ...prev };
+      delete copy[oldRef];
+      copy[nextRef] = nextRef;
+      return copy;
+    });
+  };
+  return (
+    <div className={compact ? "composer-collapsible-inner" : "composer-block"}>
+      <div className="composer-list-add">
+        <input
+          placeholder={`optional name (default ${generateUniqueContextRef(contexts)})`}
+          value={preferredRef}
+          onChange={(e) => setPreferredRef(e.target.value)}
+        />
+        <button type="button" className="composer-btn" onClick={addContext}>
+          Add context
+        </button>
+      </div>
+      <p className="composer-hint">
+        Adds a provider under strategy.contexts with catalog defaults. Consumers are not auto-linked.
+      </p>
+      {refs.length === 0 ? (
+        <p className="composer-hint">No strategy-level context providers.</p>
+      ) : null}
+      {refs.map((ref) => (
+        <div key={ref} className="composer-slot">
+          <div className="composer-row">
+            <label className="field field--inline">
+              <span>context_ref</span>
+              <input
+                value={renameDraft[ref] ?? ref}
+                onChange={(e) =>
+                  setRenameDraft((prev) => ({ ...prev, [ref]: e.target.value }))
+                }
+                onBlur={() => commitRename(ref)}
+              />
+            </label>
+            <button type="button" className="composer-btn composer-btn--danger" onClick={() => removeContext(ref)}>
+              Remove
+            </button>
+          </div>
+          <ContextProviderFields
+            value={contexts[ref] ?? defaultHtfProvider(catalog)}
+            pathPrefix={`${pathPrefix}.${ref}`}
+            errors={errors}
+            onChange={(provider) => updateContext(ref, provider)}
+          />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function EntryContextConsumptionFields({
+  catalog,
+  role,
+  strategy,
+  value,
+  pathPrefix,
+  errors,
+  onChange,
+}: {
+  catalog: ComponentCatalog;
+  role: ComponentSchema["role"];
+  strategy: JsonObject;
+  value: JsonObject;
+  pathPrefix: string;
+  errors: ValidationErrorItem[];
+  onChange: (next: JsonObject) => void;
+}) {
+  const componentId = String(value.component_id ?? "");
+  if (!supportsEntryContextConsumption(catalog, role, componentId)) {
+    return null;
+  }
+  const schema = findComponentSchema(catalog, componentId);
+  const policies = schema?.context_consumption_policies ?? [];
+  const contexts = readStrategyContexts(strategy);
+  const refs = contextRefOptions(contexts);
+  const raw = value.context_consumption;
+  const enabled =
+    raw !== undefined &&
+    raw !== null &&
+    typeof raw === "object" &&
+    !Array.isArray(raw);
+  const consumption = enabled ? (raw as JsonObject) : null;
+  const policyRaw = consumption?.policy;
+  const policyObj =
+    policyRaw && typeof policyRaw === "object" && !Array.isArray(policyRaw)
+      ? (policyRaw as JsonObject)
+      : null;
+
+  const setEnabled = (next: boolean) => {
+    if (!next) {
+      const { context_consumption: _removed, ...rest } = value;
+      onChange(rest);
+      return;
+    }
+    onChange({
+      ...value,
+      context_consumption: {
+        context_ref: "",
+        policy: { policy_id: "", params: {} },
+      },
+    });
+  };
+
+  return (
+    <div className="composer-block">
+      <label className="field field--inline">
+        <input
+          type="checkbox"
+          checked={enabled}
+          onChange={(e) => setEnabled(e.target.checked)}
+        />
+        <span>Context consumption</span>
+      </label>
+      {enabled ? (
+        <>
+          <SectionErrors errors={errors} pathPrefix={`${pathPrefix}.context_consumption`} />
+          <label className="field">
+            <span>context_ref</span>
+            <ContextRefSelect
+              value={String(consumption?.context_ref ?? "")}
+              options={refs}
+              onChange={(contextRef) =>
+                onChange({
+                  ...value,
+                  context_consumption: {
+                    context_ref: contextRef,
+                    policy: {
+                      policy_id: String(policyObj?.policy_id ?? ""),
+                      params: (policyObj?.params as JsonObject | undefined) ?? {},
+                    },
+                  },
+                })
+              }
+            />
+          </label>
+          <label className="field">
+            <span>policy_id</span>
+            <select
+              value={String(policyObj?.policy_id ?? "")}
+              onChange={(e) =>
+                onChange({
+                  ...value,
+                  context_consumption: {
+                    context_ref: String(consumption?.context_ref ?? ""),
+                    policy: { policy_id: e.target.value, params: {} },
+                  },
+                })
+              }
+            >
+              <option value="">— select policy —</option>
+              {policies.map((policy) => (
+                <option key={policy.policy_id} value={policy.policy_id}>
+                  {policy.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          {(() => {
+            const activePolicy = policies.find(
+              (policy) => policy.policy_id === String(policyObj?.policy_id ?? ""),
+            );
+            const paramsSchema = activePolicy?.params_schema;
+            if (
+              !consumption?.context_ref ||
+              !paramsSchema ||
+              Object.keys(paramsSchema).length === 0
+            ) {
+              return null;
+            }
+            return (
+              <ParamFields
+                paramsSchema={paramsSchema}
+                value={(policyObj?.params as JsonObject | undefined) ?? {}}
+                onChange={(params) =>
+                  onChange({
+                    ...value,
+                    context_consumption: {
+                      context_ref: String(consumption?.context_ref ?? ""),
+                      policy: {
+                        policy_id: String(policyObj?.policy_id ?? ""),
+                        params,
+                      },
+                    },
+                  })
+                }
+              />
+            );
+          })()}
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+function ExitPolicyContextConsumptionSection({
+  catalog,
+  strategy,
+  contexts,
+  pathPrefix,
+  errors,
+  onChange,
+}: {
+  catalog: ComponentCatalog | null;
+  strategy: JsonObject;
+  contexts: Record<string, ContextProviderDraft>;
+  pathPrefix: string;
+  errors: ValidationErrorItem[];
+  onChange: (consumption: ContextConsumptionDraft | null) => void;
+}) {
+  const required = exitPolicyRequiresContextConsumption(strategy);
+  const consumption = readExitPolicyContextConsumption(strategy);
+  const refs = contextRefOptions(contexts);
+  const policies = exitPolicyPolicies(catalog);
+
+  if (!required) {
+    return (
+      <p className="composer-hint">
+        Profile-scoped exits are empty — exit policy does not consume strategy context.
+      </p>
+    );
+  }
+
+  return (
+    <div className="composer-block">
+      <h4 className="composer-subhead">Context consumption</h4>
+      <SectionErrors errors={errors} pathPrefix={pathPrefix} />
+      <label className="field">
+        <span>context_ref</span>
+        <ContextRefSelect
+          value={consumption?.context_ref ?? ""}
+          options={refs}
+          onChange={(contextRef) => {
+            if (!contextRef) {
+              onChange(null);
+              return;
+            }
+            onChange({
+              context_ref: contextRef,
+              policy: {
+                policy_id: consumption?.policy.policy_id ?? "",
+                params: consumption?.policy.params ?? {},
+              },
+            });
+          }}
+        />
+      </label>
+      <label className="field">
+        <span>policy_id</span>
+        <select
+          value={consumption?.policy.policy_id ?? ""}
+          onChange={(e) => {
+            const policyId = e.target.value;
+            if (!consumption?.context_ref) {
+              return;
+            }
+            if (!policyId) {
+              onChange({
+                context_ref: consumption.context_ref,
+                policy: { policy_id: "", params: {} },
+              });
+              return;
+            }
+            onChange({
+              context_ref: consumption.context_ref,
+              policy: { policy_id: policyId, params: consumption.policy.params ?? {} },
+            });
+          }}
+        >
+          <option value="">— select policy —</option>
+          {policies.map((policy: ContextConsumptionPolicySchema) => (
+            <option key={policy.policy_id} value={policy.policy_id}>
+              {policy.label}
+            </option>
+          ))}
+        </select>
+      </label>
+      {(() => {
+        const activePolicy = policies.find(
+          (p: ContextConsumptionPolicySchema) => p.policy_id === consumption?.policy.policy_id,
+        );
+        const paramsSchema = activePolicy?.params_schema;
+        if (!consumption?.context_ref || !paramsSchema || Object.keys(paramsSchema).length === 0) {
+          return null;
+        }
+        return (
+          <ParamFields
+            paramsSchema={paramsSchema}
+            value={(consumption.policy.params ?? {}) as JsonObject}
+            onChange={(params) =>
+              onChange({
+                context_ref: consumption.context_ref,
+                policy: { policy_id: consumption.policy.policy_id, params },
+              })
+            }
+          />
+        );
+      })()}
+    </div>
+  );
+}
+
 function SingletonComponentSection({
   compact = false,
   title,
   role,
   catalog,
+  strategy,
   value,
   pathPrefix,
   errors,
@@ -1508,6 +2000,7 @@ function SingletonComponentSection({
   title: string;
   role: ComponentSchema["role"];
   catalog: ComponentCatalog;
+  strategy: JsonObject;
   value: JsonObject;
   pathPrefix: string;
   errors: ValidationErrorItem[];
@@ -1538,6 +2031,15 @@ function SingletonComponentSection({
           onChange={onChange}
         />
       )}
+      <EntryContextConsumptionFields
+        catalog={catalog}
+        role={role}
+        strategy={strategy}
+        value={value}
+        pathPrefix={pathPrefix}
+        errors={errors}
+        onChange={onChange}
+      />
     </>
   );
 
@@ -1557,12 +2059,13 @@ function SingletonComponentSection({
   );
 }
 
-function ListComponentSection({
+export function ListComponentSection({
   compact = false,
   title,
   role,
   pathRole = role,
   catalog,
+  strategy,
   slots,
   instanceIndex,
   errors,
@@ -1581,6 +2084,7 @@ function ListComponentSection({
     | "countertrend_exits"
     | "neutral_exits";
   catalog: ComponentCatalog;
+  strategy?: JsonObject;
   slots: JsonObject[];
   instanceIndex: number;
   errors: ValidationErrorItem[];
@@ -1659,6 +2163,17 @@ function ListComponentSection({
               onChange={(next) => onChange(slotIndex, next)}
             />
           )}
+          {strategy && role === "blockers" ? (
+            <EntryContextConsumptionFields
+              catalog={catalog}
+              role="blockers"
+              strategy={strategy}
+              value={slot}
+              pathPrefix={path}
+              errors={errors}
+              onChange={(next) => onChange(slotIndex, next)}
+            />
+          ) : null}
         </div>
       </div>
     );

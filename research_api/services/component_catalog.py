@@ -6,6 +6,9 @@ from research_api.contracts.catalog import (
     ComponentCatalog,
     ComponentSchema,
     ComposerSectionSchema,
+    ContextConsumptionPolicySchema,
+    ContextConsumptionRoleSchema,
+    ContextProviderSchema,
     ParamFieldSchema,
 )
 
@@ -22,6 +25,22 @@ def _int_param(label: str, *, default: int, min_val: int = 1) -> ParamFieldSchem
 
 def _num_param(label: str, *, default: float) -> ParamFieldSchema:
     return ParamFieldSchema(type="number", label=label, default=default)
+
+
+_BLOCKER_HTF_STATE_GATE_POLICIES = [
+    ContextConsumptionPolicySchema(
+        policy_id="htf_state_gate",
+        label="HTF state gate",
+        params_schema={
+            "allowed_states": ParamFieldSchema(
+                type="array",
+                label="Allowed HTF states",
+                enum=["up", "down", "neutral"],
+                default=["up", "down", "neutral"],
+            ),
+        },
+    ),
+]
 
 
 def get_component_catalog(*, family: str = "ema_pullback") -> ComponentCatalog:
@@ -49,8 +68,12 @@ def get_component_catalog(*, family: str = "ema_pullback") -> ComponentCatalog:
             label="Trade management",
         ),
         ComposerSectionSchema(
-            section_id="exit_policy_context",
-            label="Exit policy context",
+            section_id="strategy_contexts",
+            label="Strategy contexts",
+        ),
+        ComposerSectionSchema(
+            section_id="exit_policy_consumption",
+            label="Exit policy context consumption",
         ),
         ComposerSectionSchema(
             section_id="exit_policy_always_on",
@@ -140,12 +163,16 @@ def get_component_catalog(*, family: str = "ema_pullback") -> ComponentCatalog:
             role="blockers",
             label="Counter candle blocker",
             list_slot=True,
+            supports_context_consumption=True,
+            context_consumption_policies=_BLOCKER_HTF_STATE_GATE_POLICIES,
         ),
         ComponentSchema(
             component_id="rsi_lookback_extreme_blocker",
             role="blockers",
             label="RSI lookback extreme blocker",
             list_slot=True,
+            supports_context_consumption=True,
+            context_consumption_policies=_BLOCKER_HTF_STATE_GATE_POLICIES,
             params_schema={
                 "rsi.timeframe": _tf_param("RSI timeframe", default="5m"),
                 "rsi.period": _int_param("RSI period", default=14),
@@ -243,9 +270,54 @@ def get_component_catalog(*, family: str = "ema_pullback") -> ComponentCatalog:
         ),
     ]
 
+    context_providers = [
+        ContextProviderSchema(
+            component_id="htf_context",
+            label="HTF EMA stack context",
+            description="Higher-timeframe EMA stack state (up / down / neutral).",
+            params_schema={
+                "timeframe": _tf_param("timeframe", default="4h"),
+                "source": ParamFieldSchema(
+                    type="string",
+                    label="source",
+                    enum=["close"],
+                    default="close",
+                ),
+                "fast_period": _int_param("fast_period", default=100),
+                "anchor_period": _int_param("anchor_period", default=200),
+                "slow_period": _int_param("slow_period", default=1000),
+            },
+        ),
+    ]
+
+    context_consumption_roles = [
+        ContextConsumptionRoleSchema(
+            role="exit_policy",
+            label="Exit policy",
+            policies=[
+                ContextConsumptionPolicySchema(
+                    policy_id="exit_profile_by_htf_state",
+                    label="Profile by HTF state",
+                ),
+            ],
+        ),
+        ContextConsumptionRoleSchema(
+            role="blockers",
+            label="Blockers",
+            policies=[
+                ContextConsumptionPolicySchema(
+                    policy_id="htf_state_gate",
+                    label="HTF state gate",
+                ),
+            ],
+        ),
+    ]
+
     return ComponentCatalog(
         family=family,
         schema_version=1,
         sections=sections,
         components=components,
+        context_providers=context_providers,
+        context_consumption_roles=context_consumption_roles,
     )

@@ -1,6 +1,7 @@
 import type { AnchorStackPeriods, JsonObject } from "@/api/types";
 import type { IndicatorPoint, SignalTraceBundle } from "@/api/types";
 import { CHART_OVERLAY_EMA_KIND } from "@/api/types";
+import { readContextProvider } from "@/features/chart/strategyContexts";
 import { readExitPolicy } from "@/features/chart/exitPolicyForTrade";
 import { readEmaRuleParams } from "@/features/chart/exitPolicyEmaParams";
 
@@ -60,6 +61,7 @@ export function collectAuxEmaSpecs(
   strategySpec: JsonObject,
   chartTimeframe: string,
   anchorStack: AnchorStackPeriods,
+  contextOverlayRef: string | null,
 ): AuxEmaSpec[] {
   const specs: AuxEmaSpec[] = [];
   const seen = new Set<string>();
@@ -68,27 +70,31 @@ export function collectAuxEmaSpecs(
   const exitPolicy = readExitPolicy(strategySpec);
   if (!exitPolicy) return specs;
 
-  const context = asObject(exitPolicy.context);
-  if (context) {
-    const htfTf = resolveComponentTimeframe(context.timeframe, chartTimeframe) ?? String(context.timeframe ?? "htf");
-    for (const [role, periodKey] of [
-      ["fast", "fast_period"],
-      ["anchor", "anchor_period"],
-      ["slow", "slow_period"],
-    ] as const) {
-      const period = readHtfPeriod(context, periodKey);
-      if (period === null) continue;
-      const id = `htf_${role}`;
-      if (seen.has(id)) continue;
-      seen.add(id);
-      specs.push({
-        id,
-        label: `HTF ${role} ${period}/${htfTf}`,
-        period,
-        timeframe: htfTf,
-        source: "htf_trace",
-        htfRole: role,
-      });
+  if (contextOverlayRef) {
+    const context = readContextProvider(strategySpec, contextOverlayRef);
+    if (context) {
+      const htfTf =
+        resolveComponentTimeframe(context.timeframe, chartTimeframe) ??
+        String(context.timeframe ?? "htf");
+      for (const [role, periodKey] of [
+        ["fast", "fast_period"],
+        ["anchor", "anchor_period"],
+        ["slow", "slow_period"],
+      ] as const) {
+        const period = readHtfPeriod(context, periodKey);
+        if (period === null) continue;
+        const id = `htf_${role}`;
+        if (seen.has(id)) continue;
+        seen.add(id);
+        specs.push({
+          id,
+          label: `${period}/${htfTf}`,
+          period,
+          timeframe: htfTf,
+          source: "htf_trace",
+          htfRole: role,
+        });
+      }
     }
   }
 

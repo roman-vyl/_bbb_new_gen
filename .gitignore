@@ -86,6 +86,10 @@ frontend/test-results/
 # Playwright / agent screenshots (repo root, e.g. npx playwright screenshot)
 /screenshot.png
 /screenshot-*.png
+/workbench-*.png
+
+# Playwright MCP (page snapshots, console logs from browser automation)
+.playwright-mcp/
 
 # Local repo snapshots
 repo_snapshot.zip

@@ -107,6 +107,48 @@ def test_strategy_spec_roundtrip_from_report_dict() -> None:
     assert len(restored.components.blockers) == len(spec.components.blockers)
 
 
+def test_strategy_spec_roundtrip_preserves_named_contexts() -> None:
+    from research.strategies.ema_pullback.component_builders import exit_rsi, trade_management
+    from tests.ema_pullback_context_helpers import exit_policy_htf_consumption, htf_strategy_contexts
+
+    spec = make_ema_pullback_strategy_spec(
+        contexts=htf_strategy_contexts(context_ref="htf_1"),
+        trade_management_spec=trade_management(
+            exit_policy_spec=exit_policy_htf_consumption(
+                context_ref="htf_1",
+                aligned=(exit_rsi(instance_id="rsi_profile"),),
+            ),
+        ),
+    )
+    wire = strategy_spec_to_dict(spec)
+    assert isinstance(wire["contexts"], dict)
+    assert "htf_1" in wire["contexts"]
+    restored = strategy_spec_from_report_dict(wire)
+    assert "htf_1" in restored.contexts_by_ref()
+    consumption = restored.trade_management.exit_policy.context_consumption
+    assert consumption is not None
+    assert consumption.context_ref == "htf_1"
+
+
+def test_strategy_spec_from_report_dict_accepts_legacy_contexts_list() -> None:
+    from dataclasses import asdict
+    from research.strategies.ema_pullback.component_builders import exit_rsi, trade_management
+    from tests.ema_pullback_context_helpers import exit_policy_htf_consumption, htf_strategy_contexts
+
+    spec = make_ema_pullback_strategy_spec(
+        contexts=htf_strategy_contexts(context_ref="htf_1"),
+        trade_management_spec=trade_management(
+            exit_policy_spec=exit_policy_htf_consumption(
+                context_ref="htf_1",
+                aligned=(exit_rsi(instance_id="rsi_profile"),),
+            ),
+        ),
+    )
+    legacy_wire = asdict(spec)
+    restored = strategy_spec_from_report_dict(legacy_wire)
+    assert "htf_1" in restored.contexts_by_ref()
+
+
 def test_signal_trace_after_strategy_spec_report_roundtrip() -> None:
     spec = make_ema_pullback_strategy_spec(trigger_lookback=2)
     restored = strategy_spec_from_report_dict(strategy_spec_to_dict(spec))
@@ -144,12 +186,98 @@ def test_slice_signal_trace_respects_window() -> None:
     assert sliced.long.direction_ok == full.long.direction_ok[10:21]
 
 
+def test_slice_signal_trace_empty_htf_with_consumption_trace() -> None:
+    """Chart loads trace before overlay ref: htf_context empty, consumption trace full-length."""
+    from research.strategies.ema_pullback.component_builders import (
+        component_stack,
+        direction_ema_anchor_stack,
+        exit_rsi,
+        risk_no_filter,
+        setup_untouched_anchor,
+        trade_management,
+        trigger_reclaim_anchor,
+    )
+    from tests.ema_pullback_context_helpers import (
+        blocker_htf_state_gate,
+        exit_policy_htf_consumption,
+        htf_strategy_contexts,
+    )
+
+    spec = make_ema_pullback_strategy_spec(
+        contexts=htf_strategy_contexts(context_ref="htf_1"),
+        components=component_stack(
+            direction=direction_ema_anchor_stack(),
+            blockers=(blocker_htf_state_gate(context_ref="htf_1"),),
+            setup=setup_untouched_anchor(),
+            trigger=trigger_reclaim_anchor(),
+            risk=risk_no_filter(),
+        ),
+        trade_management_spec=trade_management(
+            exit_policy_spec=exit_policy_htf_consumption(
+                context_ref="htf_1",
+                aligned=(exit_rsi(instance_id="rsi_profile"),),
+            ),
+        ),
+    )
+    plan = build_feature_plan_from_strategy_spec(spec)
+    df = add_feature_columns_from_plan(_ohlcv(periods=40), plan)
+    full = build_signal_trace_from_spec(df, spec, plan, context_overlay_ref=None)
+    assert full.htf_context["state"] == []
+    assert len(full.context_consumption_trace) >= 1
+
+    sliced = slice_signal_trace(
+        full,
+        from_time_sec=full.times[10],
+        to_time_sec=full.times[20],
+        max_bars=5000,
+    )
+    assert len(sliced.times) == 11
+    assert sliced.htf_context["state"] == []
+    blocker = next(r for r in sliced.context_consumption_trace if r["role"] == "blockers")
+    assert len(blocker["context_applied"]) == 11
+
+
+def test_slice_signal_trace_with_htf_overlay() -> None:
+    from research.strategies.ema_pullback.component_builders import exit_rsi, trade_management
+    from tests.ema_pullback_context_helpers import exit_policy_htf_consumption, htf_strategy_contexts
+
+    spec = make_ema_pullback_strategy_spec(
+        contexts=htf_strategy_contexts(context_ref="htf_1"),
+        trade_management_spec=trade_management(
+            exit_policy_spec=exit_policy_htf_consumption(
+                context_ref="htf_1",
+                aligned=(exit_rsi(instance_id="rsi_profile"),),
+            ),
+        ),
+    )
+    plan = build_feature_plan_from_strategy_spec(spec)
+    df = add_feature_columns_from_plan(_ohlcv(periods=40), plan)
+    full = build_signal_trace_from_spec(df, spec, plan, context_overlay_ref="htf_1")
+    assert len(full.htf_context["state"]) == len(full.times)
+
+    sliced = slice_signal_trace(
+        full,
+        from_time_sec=full.times[5],
+        to_time_sec=full.times[15],
+        max_bars=5000,
+    )
+    assert len(sliced.htf_context["state"]) == len(sliced.times) == 11
+    assert sliced.htf_context["state"] == full.htf_context["state"][5:16]
+
+
 def test_signal_trace_uses_side_specific_stop_ready(monkeypatch: pytest.MonkeyPatch) -> None:
     spec = make_ema_pullback_strategy_spec(enabled_sides=("long", "short"))
     plan = build_feature_plan_from_strategy_spec(spec)
     df = add_feature_columns_from_plan(_ohlcv(periods=12), plan)
 
-    def fake_exits(df_local: pd.DataFrame, _spec: object, _plan: object) -> PortfolioExitOutputs:
+    def fake_exits(
+        df_local: pd.DataFrame,
+        _spec: object,
+        _plan: object,
+        *,
+        context_bundle: object | None = None,
+    ) -> PortfolioExitOutputs:
+        _ = context_bundle
         idx = df_local.index
         false_s = pd.Series(False, index=idx, dtype=bool)
         nan_s = pd.Series(float("nan"), index=idx, dtype=float)

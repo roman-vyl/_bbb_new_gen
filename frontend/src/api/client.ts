@@ -84,12 +84,16 @@ export async function fetchSignalTrace(params: {
   variant: string;
   fromMs: number;
   toOpenTimeMs: number;
+  contextOverlayRef?: string | null;
 }): Promise<SignalTraceBundle> {
   const qs = new URLSearchParams({
     variant: params.variant,
     from: String(params.fromMs),
     to_open_time_ms: String(params.toOpenTimeMs),
   });
+  if (params.contextOverlayRef) {
+    qs.set("context_overlay_ref", params.contextOverlayRef);
+  }
   return requestJson<SignalTraceBundle>(
     `/api/research/runs/${encodeURIComponent(params.runId)}/signal-trace?${qs.toString()}`,
   );

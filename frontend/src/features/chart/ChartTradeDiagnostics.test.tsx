@@ -4,10 +4,15 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 
-import type { TradeRecord } from "@/api/types";
+import type { SideSignalTrace, SignalTraceBundle, TradeRecord } from "@/api/types";
 import { ChartTradeDiagnostics } from "@/features/chart/ChartTradeDiagnostics";
 
 afterEach(() => cleanup());
+
+const traceDefaults = {
+  signalTrace: null as SignalTraceBundle | null,
+  signalTraceStatus: "idle" as const,
+};
 
 const trade: TradeRecord = {
   trade_id: 2,
@@ -75,6 +80,7 @@ describe("ChartTradeDiagnostics", () => {
         strategySpec={strategySpec}
         chartEmaOverlays={[]}
         focusWarning={null}
+        {...traceDefaults}
       />,
     );
     expect(screen.getByTestId("chart-trade-diagnostics")).toBeTruthy();
@@ -88,8 +94,130 @@ describe("ChartTradeDiagnostics", () => {
     expect(result.textContent).toContain("100.00");
     expect(result.className).toContain("pnl-positive");
     expect(screen.queryByText("trade_id")).toBeNull();
-    expect(screen.getByText("active_exit_profile")).toBeTruthy();
+    expect(screen.getByText("Exit profile")).toBeTruthy();
     expect(screen.getAllByText("aligned").length).toBeGreaterThan(0);
+  });
+
+  it("renders v5 entry and exit context consumption attribution", () => {
+    render(
+      <ChartTradeDiagnostics
+        trade={{
+          ...trade,
+          entry_context_state: "up",
+          entry_context_consumption: {
+            role: "blockers",
+            component_id: "counter_candle_blocker",
+            context_ref: "htf",
+            policy_id: "htf_state_gate",
+            applied: true,
+            instance_id: "blocker_main",
+          },
+          exit_context_consumption: {
+            role: "exit_policy",
+            component_id: "exit_policy",
+            context_ref: "htf",
+            policy_id: "exit_profile_by_htf_state",
+            applied: true,
+          },
+        }}
+        selectedTradeId={2}
+        strategySpec={strategySpec}
+        chartEmaOverlays={[]}
+        focusWarning={null}
+        {...traceDefaults}
+      />,
+    );
+
+    expect(screen.getByText("HTF state at entry")).toBeTruthy();
+    expect(screen.getByText("Raw context provider state on the entry bar")).toBeTruthy();
+    expect(screen.getByText("up")).toBeTruthy();
+
+    expect(
+      screen.getByRole("heading", { level: 4, name: "Entry context consumption (configured)" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("heading", { level: 4, name: "Exit context consumption (configured)" }),
+    ).toBeTruthy();
+    expect(screen.getByTestId("chart-trade-entry-causal-empty")).toBeTruthy();
+
+    const contextRefs = screen.getAllByText("htf");
+    expect(contextRefs.length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByText("htf_state_gate")).toBeTruthy();
+    expect(screen.getByText("exit_profile_by_htf_state")).toBeTruthy();
+    expect(screen.getAllByText("yes").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByText("blocker_main")).toBeTruthy();
+  });
+
+  it("renders entry bar causal gate from signal trace", () => {
+    const entryMs = 1_714_561_400_000;
+    const side: SideSignalTrace = {
+      direction_ok: [true],
+      blockers_ok: [true],
+      setup_ok: [true],
+      trigger_ok: [true],
+      risk_ok: [true],
+      signal_entry: [false],
+      stop_ready: [true],
+      portfolio_entry: [false],
+      internals: {},
+    };
+    const trace: SignalTraceBundle = {
+      times: [Math.floor(entryMs / 1000)],
+      meta: {
+        variant: "default",
+        component_ids: { direction: "d", setup: "s", trigger: "t", risk: "r" },
+        setup_params: { lookback: 50, active_bars: 3 },
+        blocker_instances: [{ instance_id: "blocker_main", component_id: "counter_candle_blocker" }],
+      },
+      htf_context: {
+        state: ["down"],
+        fast: [1],
+        anchor: [1],
+        slow: [1],
+        meta: { context_ref: "htf" },
+      },
+      context_consumption_trace: [
+        {
+          role: "blockers",
+          component_id: "counter_candle_blocker",
+          context_ref: "htf",
+          policy_id: "htf_state_gate",
+          context_applied: [false],
+          instance_id: "blocker_main",
+          outcome: { state_at_bar: ["down"], allowed_states: ["up"] },
+        },
+      ],
+      long: side,
+      short: side,
+    };
+
+    render(
+      <ChartTradeDiagnostics
+        trade={{
+          ...trade,
+          entry_time_ms: entryMs,
+          entry_context_consumption: {
+            role: "blockers",
+            component_id: "counter_candle_blocker",
+            context_ref: "htf",
+            policy_id: "htf_state_gate",
+            applied: false,
+            instance_id: "blocker_main",
+          },
+        }}
+        selectedTradeId={2}
+        strategySpec={strategySpec}
+        chartEmaOverlays={[]}
+        focusWarning={null}
+        signalTrace={trace}
+        signalTraceStatus="ready"
+      />,
+    );
+
+    expect(screen.getByRole("heading", { level: 4, name: "Entry bar decision" })).toBeTruthy();
+    expect(screen.getByText("block")).toBeTruthy();
+    expect(screen.getAllByText("down").length).toBeGreaterThan(0);
+    expect(screen.getByText("up")).toBeTruthy();
   });
 
   it("renders v5 trade quality diagnostics", () => {
@@ -110,6 +238,7 @@ describe("ChartTradeDiagnostics", () => {
         strategySpec={strategySpec}
         chartEmaOverlays={[]}
         focusWarning={null}
+        {...traceDefaults}
       />,
     );
 
@@ -142,6 +271,7 @@ describe("ChartTradeDiagnostics", () => {
         strategySpec={strategySpec}
         chartEmaOverlays={[]}
         focusWarning={null}
+        {...traceDefaults}
       />,
     );
     const result = screen.getByTestId("chart-trade-result");
@@ -158,6 +288,7 @@ describe("ChartTradeDiagnostics", () => {
         strategySpec={strategySpec}
         chartEmaOverlays={[]}
         focusWarning={null}
+        {...traceDefaults}
       />,
     );
     expect(screen.getByTestId("closing-exit-component")).toBeTruthy();
@@ -171,6 +302,7 @@ describe("ChartTradeDiagnostics", () => {
         strategySpec={strategySpec}
         chartEmaOverlays={[]}
         focusWarning="Trade #99 not found in variant trade_records."
+        {...traceDefaults}
       />,
     );
     expect(screen.getByTestId("chart-trade-diagnostics-stale")).toBeTruthy();

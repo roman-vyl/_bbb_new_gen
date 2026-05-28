@@ -107,6 +107,17 @@ export type TradeRecord = TradeOverlay & {
   giveback_atr?: number | null;
   bars_from_mfe_to_exit?: number | null;
   quality_flags?: string[] | null;
+  entry_context_consumption?: ContextConsumptionAttribution | null;
+  exit_context_consumption?: ContextConsumptionAttribution | null;
+};
+
+export type ContextConsumptionAttribution = {
+  role: string;
+  component_id: string;
+  context_ref: string;
+  policy_id: string;
+  applied: boolean;
+  instance_id?: string | null;
 };
 
 export type DiagnosticBucketMetrics = {
@@ -259,12 +270,31 @@ export type StrategyInstanceDraft = {
 };
 
 export type ParamFieldSchema = {
-  type: "integer" | "number" | "string" | "boolean";
+  type: "integer" | "number" | "string" | "boolean" | "array";
   label?: string | null;
   min?: number | null;
   max?: number | null;
   enum?: string[] | null;
   default?: unknown;
+};
+
+export type ContextConsumptionPolicySchema = {
+  policy_id: string;
+  label: string;
+  params_schema?: Record<string, ParamFieldSchema>;
+};
+
+export type ContextConsumptionRoleSchema = {
+  role: string;
+  label: string;
+  policies: ContextConsumptionPolicySchema[];
+};
+
+export type ContextProviderSchema = {
+  component_id: string;
+  label: string;
+  description?: string | null;
+  params_schema?: Record<string, ParamFieldSchema>;
 };
 
 export type ComponentSchema = {
@@ -274,6 +304,8 @@ export type ComponentSchema = {
   description?: string | null;
   params_schema?: Record<string, ParamFieldSchema>;
   list_slot?: boolean;
+  supports_context_consumption?: boolean;
+  context_consumption_policies?: ContextConsumptionPolicySchema[];
 };
 
 export type ComposerSectionSchema = {
@@ -288,6 +320,8 @@ export type ComponentCatalog = {
   schema_version: number;
   sections: ComposerSectionSchema[];
   components: ComponentSchema[];
+  context_providers?: ContextProviderSchema[];
+  context_consumption_roles?: ContextConsumptionRoleSchema[];
 };
 
 export type ValidationErrorItem = {
@@ -380,10 +414,21 @@ export type HtfContextTrace = {
   meta: Record<string, unknown>;
 };
 
+export type ContextConsumptionTraceRecord = {
+  role: string;
+  component_id: string;
+  context_ref: string;
+  policy_id: string;
+  context_applied: boolean[];
+  instance_id?: string | null;
+  outcome?: Record<string, unknown> | null;
+};
+
 export type SignalTraceBundle = {
   times: number[];
   meta: SignalTraceMeta;
   htf_context?: HtfContextTrace;
+  context_consumption_trace?: ContextConsumptionTraceRecord[];
   long: SideSignalTrace;
   short: SideSignalTrace;
 };

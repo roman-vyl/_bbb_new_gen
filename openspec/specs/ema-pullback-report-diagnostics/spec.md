@@ -1,3 +1,7 @@
+## Purpose
+
+Specify closed-trade diagnostic fields, variant metric breakdowns, context consumption attribution, and report schema versioning for ema_pullback research runs consumed by Workbench Reports and Chart.
+## Requirements
 ### Requirement: Closed trade records include entry and exit diagnostics
 
 For each `trade_records` row with `status == "closed"`, the research report SHALL include profile, context, exit attribution, fee split, and hold duration fields. Open trades MAY omit closed-only fields or set them to `null`.
@@ -94,9 +98,108 @@ New ema_pullback research run payloads SHALL set `report_schema_version` to `4`.
 
 ### Requirement: Diagnostics do not alter strategy behavior
 
-Implementation of report diagnostics MUST NOT change signal generation, exit compilation, portfolio simulation parameters, or component registry. Only serialization and post-hoc aggregation of existing simulation outputs may change.
+Implementation of report diagnostics and context consumption trace serialization MUST NOT change signal generation, exit compilation, portfolio simulation parameters, or component registry beyond the explicitly scoped context architecture changes in `strategy-level-contexts-v1`. Serialization and post-hoc aggregation of simulation outputs MAY add fields.
 
-#### Scenario: Exit and signal trace regressions unchanged
+#### Scenario: Phase 4 trace-only change preserves masks when tracing disabled
 
-- **WHEN** existing exit attribution and signal trace tests run after the diagnostics change
-- **THEN** they pass without modified golden expectations for trading outputs (only report JSON shape may differ)
+- **WHEN** trace emission is disabled for a run configuration
+- **THEN** entry and exit masks match the same run with tracing enabled (excluding trace payload size)
+
+#### Scenario: Equivalence uses target JSON shape not dual-read
+
+- **WHEN** Phase 1 equivalence tests run with instance JSON in target shape (`strategy.contexts` + `exit_policy.context_consumption`) migrated from baseline fixtures offline
+- **THEN** golden backtest trade counts and profile locks match pre-change baseline within tolerance
+
+### Requirement: Context consumption trace records per consumer role
+
+Signal trace and diagnostic payloads for ema_pullback runs SHALL include a `context_consumption_trace` array with one record per consumer that applied context on each traced index. Each record MUST include: `role`, `component_id`, `context_ref`, `policy_id`, `context_applied` (per-bar boolean series), and policy-specific `outcome` when applicable.
+
+For `htf_state_gate` blocker records, `context_applied[i]` MUST equal the gate allow result on bar *i* (true = allow, false = block).
+
+For `exit_policy` records, `context_applied` MUST NOT be interpreted as HTF gate semantics; profile selection causality is carried in `outcome.profile_long` / `outcome.profile_short` when present.
+
+#### Scenario: Blocker gate trace matches runtime mask
+
+- **WHEN** trace is built for a run with `htf_state_gate` on a blocker
+- **THEN** `context_applied` on that record matches the blocker mask derived from the same gate function used in execution
+
+#### Scenario: Exit policy trace includes profile outcome
+
+- **WHEN** exit policy has `context_consumption` and trace is built
+- **THEN** the exit_policy record includes `outcome.profile_long` and `outcome.profile_short` series aligned to the trace index
+
+#### Scenario: Consumer without consumption omitted from trace
+
+- **WHEN** setup has no `context_consumption`
+- **THEN** no setup-role record appears in `context_consumption_trace` for that run
+
+### Requirement: Entry and exit context attribution are separated in trade records
+
+When report schema version 5 is enabled, closed trade records SHALL support separate `entry_context_consumption` and `exit_context_consumption` objects. These objects document **which consumer and policy were configured** for the trade (wiring attribution).
+
+For entry-side `htf_state_gate` blockers, `entry_context_consumption.applied` MUST reflect whether the gate **allowed** context on the **entry bar** (`entry_idx`), using the same gate series as `context_consumption_trace` for that consumer. It MUST NOT be hardcoded to `true` when the gate blocked on the entry bar.
+
+`entry_context_state` MUST continue to represent raw HTF provider state at entry for analytics. It MUST NOT be overloaded to encode gate allow/block or exit policy `policy_id`.
+
+Causal per-bar allow/block and profile selection remain authoritative in `signal_trace.context_consumption_trace` (and related `htf_context` / `outcome` fields), not duplicated as a full time series on each trade row.
+
+#### Scenario: Entry gate blocked on entry bar
+
+- **WHEN** a closed trade's `entry_idx` fails `htf_state_gate` for the configured blocker consumption
+- **THEN** `entry_context_consumption.applied` is `false`
+- **AND** `entry_context_state` may still be populated with the raw HTF state at that bar
+
+#### Scenario: Entry gate allowed on entry bar
+
+- **WHEN** the gate allows on `entry_idx`
+- **THEN** `entry_context_consumption.applied` is `true`
+
+#### Scenario: Trade wiring vs trace causal remain distinct
+
+- **WHEN** a consumer inspects both trade record and signal trace for the same run
+- **THEN** trade `*_context_consumption` identifies configured `context_ref` and `policy_id`
+- **AND** trace `context_applied[i]` explains bar *i* gate outcome for blockers
+
+#### Scenario: Exit-only consumption leaves entry consumption null
+
+- **WHEN** only exit policy consumes context
+- **THEN** `exit_context_consumption` is populated and `entry_context_consumption` is null or absent
+
+### Requirement: Report schema version 5 is additive with v4 compatibility
+
+New runs that emit per-consumer context attribution SHALL set `report_schema_version` to `5`. Loaders MUST accept `report_schema_version` `4` and `3` without requiring v5 fields. v5-only fields MUST be absent on older artifacts.
+
+#### Scenario: New run writes schema v5 when attribution enabled
+
+- **WHEN** Phase 4 reporting is enabled for a backtest
+- **THEN** `report_schema_version` is `5`
+
+#### Scenario: Historical v4 report loads unchanged
+
+- **WHEN** results_reader loads a persisted v4 report
+- **THEN** the API returns the payload without error and without `entry_context_consumption`
+
+### Requirement: Historical reports readable without old config authoring
+
+Reading a historical report (v3/v4) or a run whose embedded `strategy_spec` still contains legacy `exit_policy.context` MUST NOT imply that Composer or validate API support authoring or validating that old config shape. Report display MAY surface legacy fields for forensics only.
+
+#### Scenario: Old report loads without requiring new strategy shape in API
+
+- **WHEN** results_reader loads a v4 report from before this change
+- **THEN** the API returns the report successfully as a historical artifact
+
+#### Scenario: Validate rejects old exit_policy.context for new drafts
+
+- **WHEN** validate receives a new draft containing `trade_management.exit_policy.context`
+- **THEN** validation fails even if a historical report on disk still embeds the legacy shape
+
+### Requirement: Optional gate forensics in trace outcome
+
+When trace enrichment is enabled for `htf_state_gate`, blocker trace records MUST include an `outcome` object with per-bar `state_at_bar` (HTF state labels) and the configured `allowed_states` list for display and forensics. Correctness of `context_applied` MUST NOT depend on this enrichment.
+
+#### Scenario: Enriched trace exposes allowed states
+
+- **WHEN** trace enrichment is enabled for `htf_state_gate`
+- **THEN** the blocker trace record `outcome.allowed_states` matches the policy params on the strategy spec
+- **AND** `outcome.state_at_bar[i]` matches `htf_context` state at index *i* for the consumed `context_ref`
+
