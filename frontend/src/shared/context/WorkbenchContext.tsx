@@ -182,6 +182,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
   const [signalTraceStatus, setSignalTraceStatus] = useState<SignalTraceLoadStatus>("idle");
   const [signalTraceError, setSignalTraceError] = useState<string | null>(null);
   const [loadedTraceWindowKey, setLoadedTraceWindowKey] = useState<string | null>(null);
+  const [contextOverlayRef, setContextOverlayRef] = useState<string | null>(null);
   const loadingTraceWindowKeyRef = useRef<string | null>(null);
   const inFlightTraceRequestRef = useRef<SignalTraceRequest | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
