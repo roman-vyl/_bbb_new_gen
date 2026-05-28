@@ -7,6 +7,7 @@ import { formatMoney, formatReturnPct } from "@/features/reports/formatDiagnosti
 import { TradeDirectionChip } from "@/features/reports/TradeDirectionChip";
 import { TradeStatusChip } from "@/features/reports/TradeStatusChip";
 import {
+  buildContextConsumptionDiagnosticFields,
   buildTradeDiagnosticFields,
   EM_DASH,
   type TradeDiagnosticField,
@@ -168,6 +169,24 @@ export function ChartTradeDiagnostics({
       ) : (
         <p className="chart-trade-diagnostics__hint">Schema v4 diagnostics not present on this trade.</p>
       )}
+      {trade.entry_context_consumption ? (
+        <DiagnosticDl
+          title="Entry context consumption"
+          fields={buildContextConsumptionDiagnosticFields(
+            trade.entry_context_consumption,
+            "entry",
+          )}
+        />
+      ) : null}
+      {trade.exit_context_consumption ? (
+        <DiagnosticDl
+          title="Exit context consumption"
+          fields={buildContextConsumptionDiagnosticFields(
+            trade.exit_context_consumption,
+            "exit",
+          )}
+        />
+      ) : null}
       <h4 className="trade-detail__subtitle">Active exit components</h4>
       <ActiveExitComponentsList rows={rowsWithEma} warning={warning} />
       {anchorStack && rowsWithEma.length === 0 && (

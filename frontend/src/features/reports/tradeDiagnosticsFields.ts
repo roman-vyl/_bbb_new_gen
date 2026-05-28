@@ -1,4 +1,4 @@
-import type { TradeRecord } from "@/api/types";
+import type { ContextConsumptionAttribution, TradeRecord } from "@/api/types";
 import { EM_DASH, formatMoney, formatReturnPct } from "@/features/reports/formatDiagnostics";
 import {
   chartMetricHint,
@@ -36,6 +36,47 @@ export function hasTradeDiagnostics(trade: TradeRecord): boolean {
     trade.mfe_pct !== undefined ||
     trade.quality_flags !== undefined
   );
+}
+
+export function hasTradeContextConsumption(trade: TradeRecord): boolean {
+  return trade.entry_context_consumption != null || trade.exit_context_consumption != null;
+}
+
+function formatConsumptionApplied(attribution: ContextConsumptionAttribution): string {
+  if (attribution.applied !== undefined) {
+    return attribution.applied ? "yes" : "no";
+  }
+  const legacy = (attribution as { context_applied?: boolean }).context_applied;
+  if (legacy !== undefined) {
+    return legacy ? "yes" : "no";
+  }
+  return EM_DASH;
+}
+
+/** v5 per-trade context consumption attribution (Chart trade diagnostics). */
+export function buildContextConsumptionDiagnosticFields(
+  attribution: ContextConsumptionAttribution,
+  side: "entry" | "exit",
+): TradeDiagnosticField[] {
+  const prefix = side === "entry" ? "entry_context_consumption" : "exit_context_consumption";
+  const sectionHint =
+    side === "entry"
+      ? "Which entry-side consumer applied a context policy (not raw HTF state at entry)"
+      : "Which exit policy consumed strategy context for this trade";
+
+  const fields: TradeDiagnosticField[] = [
+    field(`${prefix}.context_ref`, "context_ref", attribution.context_ref, sectionHint),
+    field(`${prefix}.policy_id`, "policy_id", attribution.policy_id),
+    field(`${prefix}.applied`, "applied", formatConsumptionApplied(attribution)),
+    field(`${prefix}.role`, "role", attribution.role),
+    field(`${prefix}.component_id`, "component_id", attribution.component_id),
+  ];
+  if (attribution.instance_id) {
+    fields.push(
+      field(`${prefix}.instance_id`, "instance_id", String(attribution.instance_id)),
+    );
+  }
+  return fields;
 }
 
 export type TradeDiagnosticField = {
@@ -85,9 +126,19 @@ export function buildTradeDiagnosticFields(trade: TradeRecord): {
   }
 
   const diagnostics: TradeDiagnosticField[] = [
-    field("entry_profile", "entry_profile", trade.entry_profile ?? EM_DASH),
-    field("entry_context_state", "entry_context_state", trade.entry_context_state ?? EM_DASH),
-    field("active_exit_profile", "active_exit_profile", trade.active_exit_profile ?? EM_DASH),
+    field("entry_profile", "Entry profile", trade.entry_profile ?? EM_DASH),
+    field(
+      "entry_context_state",
+      "HTF state at entry",
+      trade.entry_context_state ?? EM_DASH,
+      "Raw context provider state on the entry bar",
+    ),
+    field(
+      "active_exit_profile",
+      "Exit profile",
+      trade.active_exit_profile ?? EM_DASH,
+      "Selected exit regime/profile for this trade",
+    ),
     field("exit_group", "exit_group", trade.exit_group ?? EM_DASH),
     field("exit_profile", "exit_profile", trade.exit_profile ?? EM_DASH),
     field("exit_kind", "exit_kind", trade.exit_kind ?? EM_DASH),
