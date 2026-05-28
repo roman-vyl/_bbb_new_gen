@@ -142,6 +142,83 @@ def test_trade_records_include_separate_entry_and_exit_consumption() -> None:
     assert "exit_context_consumption" not in records[0]
 
 
+def test_trade_entry_consumption_uses_last_consuming_blocker_in_spec_order() -> None:
+    pytest.importorskip("pandas")
+    import pandas as pd
+
+    from research.strategies.ema_pullback.component_builders import blocker_counter_candle, context_consumption
+    from research.strategies.ema_pullback.context.policies import HTF_STATE_GATE_POLICY
+
+    from research.strategies.ema_pullback.component_builders import context_provider, strategy_contexts
+
+    spec = make_ema_pullback_strategy_spec(
+        contexts=strategy_contexts(
+            (
+                ("htf", context_provider(timeframe="4h", fast_period=100, anchor_period=200, slow_period=1000)),
+                ("macro_htf", context_provider(timeframe="1d", fast_period=50, anchor_period=100, slow_period=500)),
+            ),
+        ),
+        components=component_stack(
+            direction=direction_ema_anchor_stack(),
+            blockers=(
+                blocker_htf_state_gate(context_ref="htf", instance_id="blocker_first"),
+                blocker_counter_candle(
+                    instance_id="blocker_second",
+                    context_consumption=context_consumption(
+                        context_ref="macro_htf",
+                        policy_id=HTF_STATE_GATE_POLICY,
+                        params=(("allowed_states", ["up"]),),
+                    ),
+                ),
+            ),
+            setup=setup_untouched_anchor(),
+            trigger=trigger_reclaim_anchor(),
+            risk=risk_no_filter(),
+        ),
+    )
+    plan = build_feature_plan_from_strategy_spec(spec)
+    idx = pd.date_range("2024-01-01", periods=1, freq="h", tz="UTC")
+    close = pd.Series([100.0], index=idx)
+    ohlcv = pd.DataFrame(
+        {"close": close, "open": close, "high": close, "low": close, "volume": 1.0},
+        index=idx,
+    )
+    df = add_feature_columns_from_plan(ohlcv, plan)
+    bundle = context_bundle_for_spec(spec, df, plan)
+
+    records_df = pd.DataFrame(
+        [
+            {
+                "direction": 0,
+                "status": 1,
+                "entry_idx": 0,
+                "exit_idx": 0,
+                "entry_price": 100.0,
+                "exit_price": 101.0,
+                "size": 1.0,
+                "pnl": 1.0,
+                "return": 0.01,
+            }
+        ]
+    )
+
+    class _Trades:
+        records = records_df
+
+    class _Pf:
+        trades = _Trades()
+
+    records = extract_trade_records(
+        _Pf(),
+        close,
+        strategy_spec=spec,
+        context_bundle=bundle,
+    )
+    entry_cc = records[0]["entry_context_consumption"]
+    assert entry_cc["instance_id"] == "blocker_second"
+    assert entry_cc["context_ref"] == "macro_htf"
+
+
 def test_trade_entry_consumption_applied_false_when_gate_blocks() -> None:
     pytest.importorskip("pandas")
     import pandas as pd

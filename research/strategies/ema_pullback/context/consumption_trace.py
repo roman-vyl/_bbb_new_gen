@@ -130,11 +130,16 @@ def consumption_attribution_for_trade(
     """
 
     _ = direction
+    consuming_blockers = [
+        rule for rule in spec.components.blockers if rule.context_consumption is not None
+    ]
     entry_consumption: dict[str, Any] | None = None
-    for rule in spec.components.blockers:
+    if consuming_blockers:
+        # Same order as signal pipeline / trace: last consuming blocker in spec wins when
+        # multiple exist (AND chain); avoids silently attributing to the first only.
+        rule = consuming_blockers[-1]
         consumption = rule.context_consumption
-        if consumption is None:
-            continue
+        assert consumption is not None
         applied = True
         if (
             consumption.policy.policy_id == HTF_STATE_GATE_POLICY
@@ -155,7 +160,6 @@ def consumption_attribution_for_trade(
             "policy_id": consumption.policy.policy_id,
             "applied": applied,
         }
-        break
 
     exit_consumption = spec.trade_management.exit_policy.context_consumption
     exit_attribution: dict[str, Any] | None = None

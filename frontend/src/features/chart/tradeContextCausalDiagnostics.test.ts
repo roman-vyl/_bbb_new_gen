@@ -5,6 +5,7 @@ import {
   buildEntryBarCausalDiagnostics,
   formatGateDecision,
   formatGateDecisionLabel,
+  matchesConsumptionRecord,
   tradeBarIndex,
 } from "@/features/chart/tradeContextCausalDiagnostics";
 
@@ -106,6 +107,79 @@ describe("tradeContextCausalDiagnostics", () => {
   it("reports trace not loaded", () => {
     const status = buildEntryBarCausalDiagnostics(trade, null, "idle", undefined);
     expect(status.kind).toBe("trace_not_loaded");
+  });
+
+  it("matches consumption record by context_ref and instance_id", () => {
+    const a = {
+      role: "blockers",
+      component_id: "counter_candle_blocker",
+      context_ref: "htf",
+      policy_id: "htf_state_gate",
+      context_applied: [true],
+      instance_id: "blocker_a",
+    };
+    const b = {
+      role: "blockers",
+      component_id: "counter_candle_blocker",
+      context_ref: "macro_htf",
+      policy_id: "htf_state_gate",
+      context_applied: [false],
+      instance_id: "blocker_b",
+    };
+    const wired = {
+      role: "blockers",
+      component_id: "counter_candle_blocker",
+      context_ref: "macro_htf",
+      policy_id: "htf_state_gate",
+      applied: false,
+      instance_id: "blocker_b",
+    };
+    expect(matchesConsumptionRecord(a, wired)).toBe(false);
+    expect(matchesConsumptionRecord(b, wired)).toBe(true);
+  });
+
+  it("picks the wired blocker trace row when multiple consumers exist", () => {
+    const trace: SignalTraceBundle = {
+      ...traceFixture(),
+      context_consumption_trace: [
+        {
+          role: "blockers",
+          component_id: "counter_candle_blocker",
+          context_ref: "htf",
+          policy_id: "htf_state_gate",
+          context_applied: [true],
+          instance_id: "blocker_a",
+        },
+        {
+          role: "blockers",
+          component_id: "counter_candle_blocker",
+          context_ref: "macro_htf",
+          policy_id: "htf_state_gate",
+          context_applied: [false],
+          instance_id: "blocker_b",
+          outcome: { state_at_bar: ["down"], allowed_states: ["up"] },
+        },
+      ],
+    };
+    const wiredTrade: TradeRecord = {
+      ...trade,
+      entry_context_consumption: {
+        role: "blockers",
+        component_id: "counter_candle_blocker",
+        context_ref: "macro_htf",
+        policy_id: "htf_state_gate",
+        applied: false,
+        instance_id: "blocker_b",
+      },
+    };
+    const status = buildEntryBarCausalDiagnostics(wiredTrade, trace, "ready", undefined);
+    expect(status.kind).toBe("ready");
+    if (status.kind !== "ready") {
+      return;
+    }
+    expect(status.fields.find((f) => f.key === "entry_causal.gate")?.value).toBe("block");
+    expect(status.fields.find((f) => f.key === "entry_causal.context_ref")?.value).toBe("macro_htf");
+    expect(status.fields.find((f) => f.key === "entry_causal.instance_id")?.value).toBe("blocker_b");
   });
 
   it("reports bar outside trace window", () => {

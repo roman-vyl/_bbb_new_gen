@@ -1,4 +1,5 @@
 import type {
+  ContextConsumptionAttribution,
   ContextConsumptionTraceRecord,
   JsonObject,
   SignalTraceBundle,
@@ -72,30 +73,54 @@ function htfStateAtIndex(trace: SignalTraceBundle, index: number, contextRef: st
   return String(trace.htf_context.state[index] ?? EM_DASH);
 }
 
+export type ConsumptionIdentity = Pick<
+  ContextConsumptionAttribution,
+  "role" | "component_id" | "policy_id" | "context_ref" | "instance_id"
+>;
+
+/** Match trace consumer row to trade wiring (v5 attribution identity). */
+export function matchesConsumptionRecord(
+  record: ContextConsumptionTraceRecord,
+  wired: ConsumptionIdentity,
+): boolean {
+  if (record.role !== wired.role) {
+    return false;
+  }
+  if (record.component_id !== wired.component_id) {
+    return false;
+  }
+  if (record.policy_id !== wired.policy_id) {
+    return false;
+  }
+  if (record.context_ref !== wired.context_ref) {
+    return false;
+  }
+  if (wired.instance_id != null && wired.instance_id !== "") {
+    return record.instance_id === wired.instance_id;
+  }
+  return true;
+}
+
 function findBlockerTraceRecord(
   trace: SignalTraceBundle,
   trade: TradeRecord,
 ): ContextConsumptionTraceRecord | undefined {
-  const records = trace.context_consumption_trace ?? [];
   const wired = trade.entry_context_consumption;
-  if (wired) {
-    const match = records.find(
-      (r) =>
-        r.role === "blockers" &&
-        r.component_id === wired.component_id &&
-        r.policy_id === wired.policy_id,
-    );
-    if (match) {
-      return match;
-    }
+  if (!wired) {
+    return undefined;
   }
-  return records.find((r) => r.role === "blockers" && r.policy_id === "htf_state_gate");
+  return (trace.context_consumption_trace ?? []).find((r) => matchesConsumptionRecord(r, wired));
 }
 
 function findExitPolicyTraceRecord(
   trace: SignalTraceBundle,
+  trade: TradeRecord,
 ): ContextConsumptionTraceRecord | undefined {
-  return (trace.context_consumption_trace ?? []).find((r) => r.role === "exit_policy");
+  const wired = trade.exit_context_consumption;
+  if (!wired) {
+    return undefined;
+  }
+  return (trace.context_consumption_trace ?? []).find((r) => matchesConsumptionRecord(r, wired));
 }
 
 function allowedStatesFromTraceOutcome(
@@ -213,7 +238,7 @@ export function buildExitBarCausalDiagnostics(
     return { kind: "bar_outside_window", barLabel: "exit" };
   }
 
-  const record = findExitPolicyTraceRecord(trace);
+  const record = findExitPolicyTraceRecord(trace, trade);
   if (!record) {
     return { kind: "no_consumer_trace" };
   }
