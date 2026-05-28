@@ -1,5 +1,8 @@
-## ADDED Requirements
+# workbench-chart-trade-diagnostics Specification
 
+## Purpose
+TBD - created by archiving change trade-context-causal-diagnostics-v1. Update Purpose after archive.
+## Requirements
 ### Requirement: Chart trade diagnostics distinguish wiring from causal context decisions
 
 When the Chart tab displays a selected trade with schema v5 context fields, the diagnostics panel SHALL present **two separate sections** for context:
@@ -51,8 +54,6 @@ Chart trade causal sections MUST read only from API-provided `signal_trace` and 
 - **WHEN** causal sections are rendered
 - **THEN** `context_applied` and `htf_context.state` values are taken from the trace payload at the resolved bar index only
 
-## MODIFIED Requirements
-
 ### Requirement: Chart trade diagnostics panel
 
 When `selectedTradeId` is set, the Chart tab SHALL show a trade diagnostics panel listing the selected trade's fields:
@@ -80,3 +81,14 @@ The panel SHALL use the same field semantics as Reports trade detail and [`opens
 - **WHEN** the selected trade has no `entry_context_consumption` or `exit_context_consumption`
 - **THEN** wiring sections are omitted
 - **AND** causal sections still appear when trace data exists for entry/exit bars
+
+#### Scenario: No trade selected hides panel
+
+- **WHEN** `selectedTradeId` is not set
+- **THEN** the Chart trade diagnostics panel is not shown (or shows only an instruction to select a trade)
+
+#### Scenario: Unknown trade id shows empty state
+
+- **WHEN** `selectedTradeId` is set but the trade is not found in the current variant's `trade_records`
+- **THEN** the Chart trade diagnostics panel shows a neutral empty state (e.g. trade not found for current variant)
+

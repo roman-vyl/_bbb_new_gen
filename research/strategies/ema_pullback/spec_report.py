@@ -236,28 +236,43 @@ def strategy_spec_from_report_dict(payload: Mapping[str, Any]) -> EmaPullbackStr
     )
 
 
+def _provider_from_report_mapping(
+    context_ref: str,
+    provider_raw: Any,
+) -> tuple[str, ContextProviderSpec]:
+    provider = _require_mapping(f"contexts.{context_ref}", provider_raw)
+    return (
+        str(context_ref),
+        ContextProviderSpec(
+            component_id=str(provider["component_id"]),
+            timeframe=str(provider["timeframe"]),
+            source=str(provider.get("source", "close")),
+            fast_period=int(provider["fast_period"]),
+            anchor_period=int(provider["anchor_period"]),
+            slow_period=int(provider["slow_period"]),
+        ),
+    )
+
+
 def _parse_report_contexts(
     contexts_raw: Any,
     legacy_context: Any,
 ) -> tuple[tuple[str, ContextProviderSpec], ...]:
     if isinstance(contexts_raw, Mapping) and contexts_raw:
+        return tuple(
+            _provider_from_report_mapping(context_ref, provider_raw)
+            for context_ref, provider_raw in contexts_raw.items()
+        )
+    # Legacy reports: dataclasses.asdict serializes contexts as [(ref, provider_dict), ...].
+    if isinstance(contexts_raw, (list, tuple)) and contexts_raw:
         providers: list[tuple[str, ContextProviderSpec]] = []
-        for context_ref, provider_raw in contexts_raw.items():
-            provider = _require_mapping(f"contexts.{context_ref}", provider_raw)
-            providers.append(
-                (
-                    str(context_ref),
-                    ContextProviderSpec(
-                        component_id=str(provider["component_id"]),
-                        timeframe=str(provider["timeframe"]),
-                        source=str(provider.get("source", "close")),
-                        fast_period=int(provider["fast_period"]),
-                        anchor_period=int(provider["anchor_period"]),
-                        slow_period=int(provider["slow_period"]),
-                    ),
-                )
-            )
-        return tuple(providers)
+        for item in contexts_raw:
+            if not isinstance(item, (list, tuple)) or len(item) != 2:
+                continue
+            context_ref, provider_raw = item[0], item[1]
+            providers.append(_provider_from_report_mapping(str(context_ref), provider_raw))
+        if providers:
+            return tuple(providers)
     if isinstance(legacy_context, Mapping):
         return (
             (

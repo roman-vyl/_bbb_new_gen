@@ -2,7 +2,7 @@
 
 ### Requirement: Entry and exit context attribution are separated in trade records
 
-When report schema version 5 is enabled, closed trade records MAY include `entry_context_consumption` and `exit_context_consumption` objects separately. These objects document **which consumer and policy were configured** for the trade (wiring attribution).
+When report schema version 5 is enabled, closed trade records SHALL support separate `entry_context_consumption` and `exit_context_consumption` objects. These objects document **which consumer and policy were configured** for the trade (wiring attribution).
 
 For entry-side `htf_state_gate` blockers, `entry_context_consumption.applied` MUST reflect whether the gate **allowed** context on the **entry bar** (`entry_idx`), using the same gate series as `context_consumption_trace` for that consumer. It MUST NOT be hardcoded to `true` when the gate blocked on the entry bar.
 
@@ -59,7 +59,7 @@ For `exit_policy` records, `context_applied` MUST NOT be interpreted as HTF gate
 
 ### Requirement: Optional gate forensics in trace outcome
 
-When implemented, `htf_state_gate` blocker trace records MAY include an `outcome` object with per-bar `state_at_bar` (HTF state labels) and the configured `allowed_states` list for display and forensics. This is optional enrichment; correctness of `context_applied` does not depend on it.
+When trace enrichment is enabled for `htf_state_gate`, blocker trace records MUST include an `outcome` object with per-bar `state_at_bar` (HTF state labels) and the configured `allowed_states` list for display and forensics. Correctness of `context_applied` MUST NOT depend on this enrichment.
 
 #### Scenario: Enriched trace exposes allowed states
 

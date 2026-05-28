@@ -444,7 +444,15 @@ class EmaPullbackStrategySpec:
 
 
 def strategy_spec_to_dict(spec: EmaPullbackStrategySpec) -> dict[str, Any]:
-    return asdict(spec)
+    payload = asdict(spec)
+    # Wire format for reports / API: contexts as {ref: provider}, not asdict's tuple-of-tuples.
+    if spec.contexts:
+        payload["contexts"] = {
+            context_ref: asdict(provider) for context_ref, provider in spec.contexts
+        }
+    else:
+        payload.pop("contexts", None)
+    return payload
 
 
 def strategy_spec_config_id(spec: EmaPullbackStrategySpec) -> str:

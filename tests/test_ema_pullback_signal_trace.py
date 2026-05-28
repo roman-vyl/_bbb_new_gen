@@ -107,6 +107,48 @@ def test_strategy_spec_roundtrip_from_report_dict() -> None:
     assert len(restored.components.blockers) == len(spec.components.blockers)
 
 
+def test_strategy_spec_roundtrip_preserves_named_contexts() -> None:
+    from research.strategies.ema_pullback.component_builders import exit_rsi, trade_management
+    from tests.ema_pullback_context_helpers import exit_policy_htf_consumption, htf_strategy_contexts
+
+    spec = make_ema_pullback_strategy_spec(
+        contexts=htf_strategy_contexts(context_ref="htf_1"),
+        trade_management_spec=trade_management(
+            exit_policy_spec=exit_policy_htf_consumption(
+                context_ref="htf_1",
+                aligned=(exit_rsi(instance_id="rsi_profile"),),
+            ),
+        ),
+    )
+    wire = strategy_spec_to_dict(spec)
+    assert isinstance(wire["contexts"], dict)
+    assert "htf_1" in wire["contexts"]
+    restored = strategy_spec_from_report_dict(wire)
+    assert "htf_1" in restored.contexts_by_ref()
+    consumption = restored.trade_management.exit_policy.context_consumption
+    assert consumption is not None
+    assert consumption.context_ref == "htf_1"
+
+
+def test_strategy_spec_from_report_dict_accepts_legacy_contexts_list() -> None:
+    from dataclasses import asdict
+    from research.strategies.ema_pullback.component_builders import exit_rsi, trade_management
+    from tests.ema_pullback_context_helpers import exit_policy_htf_consumption, htf_strategy_contexts
+
+    spec = make_ema_pullback_strategy_spec(
+        contexts=htf_strategy_contexts(context_ref="htf_1"),
+        trade_management_spec=trade_management(
+            exit_policy_spec=exit_policy_htf_consumption(
+                context_ref="htf_1",
+                aligned=(exit_rsi(instance_id="rsi_profile"),),
+            ),
+        ),
+    )
+    legacy_wire = asdict(spec)
+    restored = strategy_spec_from_report_dict(legacy_wire)
+    assert "htf_1" in restored.contexts_by_ref()
+
+
 def test_signal_trace_after_strategy_spec_report_roundtrip() -> None:
     spec = make_ema_pullback_strategy_spec(trigger_lookback=2)
     restored = strategy_spec_from_report_dict(strategy_spec_to_dict(spec))
