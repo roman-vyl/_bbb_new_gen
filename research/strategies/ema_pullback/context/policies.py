@@ -12,7 +12,6 @@ HTF_STATE_GATE_POLICY = "htf_state_gate"
 HTF_REGIME_GATE_POLICY = "htf_regime_gate"
 
 _STATE_ORDER = ("up", "down", "neutral")
-_REGIME_ORDER = ("aligned", "countertrend", "neutral")
 
 
 def resolve_htf_regime(raw_state: str, side: TradeSide) -> str:
@@ -31,10 +30,6 @@ def resolve_htf_regime(raw_state: str, side: TradeSide) -> str:
     if raw_state == "up":
         return "countertrend"
     return "neutral"
-
-
-def _active_rule_group_for_side(*, side: TradeSide, context_state: str) -> str:
-    return resolve_htf_regime(context_state, side)
 
 
 def apply_exit_profile_by_htf_state(
@@ -86,16 +81,3 @@ def apply_htf_state_gate(
     allowed_states = _allowed_states_from_policy(policy)
     context_state = output.state_series().reindex(index).fillna("neutral")
     return context_state.isin(allowed_states).astype(bool)
-
-
-def apply_htf_regime_gate(
-    output: ContextOutput,
-    *,
-    policy: ContextConsumptionPolicySpec,
-    index: pd.Index,
-    side: TradeSide,
-) -> pd.Series:
-    allowed_regimes = _allowed_regimes_from_policy(policy)
-    context_state = output.state_series().reindex(index).fillna("neutral")
-    resolved = context_state.map(lambda state: resolve_htf_regime(state, side))
-    return resolved.isin(list(allowed_regimes)).astype(bool)

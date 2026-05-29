@@ -120,8 +120,8 @@ def build_context_consumption_trace(
             if record is not None:
                 records.append(record)
 
-    if context_overlay_ref:
-        _ = context_bundle.get(context_overlay_ref)
+    if context_overlay_ref and not context_bundle.has(context_overlay_ref):
+        raise KeyError(f"unknown context_ref {context_overlay_ref!r}")
 
     return records
 
