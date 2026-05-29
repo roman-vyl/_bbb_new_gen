@@ -491,6 +491,9 @@ export function ChartPanel() {
 
       ro.disconnect();
 
+      // chart.remove() destroys all series; do not call removeSeries afterward.
+      auxEmaSeriesRef.current.clear();
+
       chart.remove();
 
       chartRef.current = null;
@@ -498,10 +501,6 @@ export function ChartPanel() {
       seriesRef.current = null;
 
       emaSeriesByRoleRef.current = {};
-
-      auxEmaSeriesRef.current.forEach((lineSeries) => chart.removeSeries(lineSeries));
-
-      auxEmaSeriesRef.current.clear();
 
       markersRef.current = null;
 

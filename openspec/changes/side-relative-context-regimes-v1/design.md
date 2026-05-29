@@ -1,83 +1,143 @@
-## Context
+## Контекст
 
-`strategy-level-contexts-v1` established provider vs consumer separation: providers emit raw HTF state; consumers own `context_consumption.policy`. Blocker reference policy `htf_state_gate` filters `allowed_states` against raw `up/down/neutral` without regard to evaluated side. Signal trace builds **per-side** `_build_side_trace(..., side=long|short)` but applies `apply_htf_state_gate(...)` without passing `side`, so `allowed_states: ["up"]` blocks shorts on raw up bars (countertrend for short) and allows longs (aligned) — opposite of author intent when thinking in regimes.
+`strategy-level-contexts-v1` зафиксировал разделение provider vs consumer: провайдеры отдают сырой HTF state; потребители владеют `context_consumption.policy`. `htf_regime_gate` не является blocker-specific feature: это generic side-aware context consumption policy для catalog-supported consumers/call sites, где есть explicit side-aware evaluation scope.
 
-Exit policy already maps raw state → aligned/countertrend/neutral via `exit_profile_by_htf_state` and `_active_rule_group_for_side` in `policies.py`. This change adds a **symmetric gate policy** for blockers/setup/trigger consumers without moving mapping into providers or Composer.
+Сегодня call sites (compile path, signal trace, consumption_trace, attribution) могут сами вызывать `context_bundle.get(context_ref)` и `apply_*`. Для side-relative режимов такой паттерн недопустим: маппинг размажется по компонентам и diagnostic call sites и будет расходиться с exit profile logic.
 
-## Goals / Non-Goals
+Exit-политика уже маппит raw state → aligned/countertrend/neutral через `exit_profile_by_htf_state` и `_active_rule_group_for_side` в `policies.py`, но старый отдельный exit context path больше недопустим. Это изменение добавляет generic side-aware gate-политику для всех catalog-supported side-aware context consumers и **централизует** всю policy-level работу с `ContextBundle` в shared context evaluation pipeline через `evaluate_context_consumption`.
 
-**Goals:**
+## Цели / Non-goals
 
-- Introduce `htf_regime_gate` with `allowed_regimes` and documented mapping table.
-- Extend consumer policy evaluation contract to pass **evaluated trade side** into regime gate handlers.
-- Enrich diagnostics so forensics show raw state, side, resolved regime, and pass/fail.
-- Keep `htf_state_gate` for authors who explicitly want raw-state filtering.
+**Цели:**
 
-**Non-Goals:**
+- Ввести generic `htf_regime_gate` с обязательным `allowed_regimes` и документированной таблицей маппинга.
+- Ввести **shared context policy evaluator** с `SideAwareEvaluationContext`.
+- Зафиксировать, что evaluated side приходит из direction layer / `DirectionOutput` / текущего strategy evaluation scope, а не из provider и не из hardcoded loop inside evaluator.
+- Запретить per-component raw-state-to-regime mapping.
+- Запретить прямой `ContextBundle.get(context_ref) + apply_*` / `_active_rule_group_for_side` во всех compile, diagnostics и exit policy paths.
+- Мигрировать exit policy / exit profile selection на `evaluate_context_consumption` и `ContextConsumptionResult`.
+- Обогатить диагностику: raw state, side, resolved regime, pass/fail.
+- Сохранить `htf_state_gate` для авторов, явно фильтрующих по raw state.
 
-- Changing provider components or `ContextOutput` shape.
-- Automatic migration tooling for existing instances.
-- Computing regimes in frontend or Composer as authoritative logic.
-- Removing or deprecating `htf_state_gate` in this change.
+**Non-goals:**
 
-## Decisions
+- Изменение provider-компонентов или формы `ContextOutput`.
+- Автоматическая миграция существующих инстансов.
+- Вычисление режимов во frontend или Composer как авторитетной логики.
+- Удаление или deprecation `htf_state_gate` в этом изменении.
+- Оставление старого отдельного exit context path.
 
-### D1 — Regime mapping lives in research policy module, not provider
+## Решения
 
-**Choice:** Implement `resolve_htf_regime(raw_state, side) -> aligned|countertrend|neutral` in `research/strategies/ema_pullback/context/policies.py` (reuse logic from `_active_rule_group_for_side`).
+### D1 — Side-relative маппинг только в общем слое политик
 
-**Rationale:** Single source of truth in consumer layer; provider stays market-only.
+**Выбор:** Единая функция `resolve_htf_regime(raw_state, side) -> aligned|countertrend|neutral` в `research/strategies/ema_pullback/context/policies.py` или выделенном policy module — **единственный** source of truth для таблицы маппинга. Существующий `_active_rule_group_for_side` не остаётся параллельным helper: его логика переносится в `resolve_htf_regime`, а `_active_rule_group_for_side` / `apply_exit_profile_by_htf_state` рефакторятся так, чтобы делегировать в `resolve_htf_regime` через shared evaluator. Mapping вызывается **только** из shared layer, не из components или diagnostic call sites напрямую.
 
-**Alternative considered:** Duplicate mapping in each blocker component — rejected (drift risk).
+**Обоснование:** Один источник истины; провайдер остаётся market-only; exit и `htf_regime_gate` не расходятся по таблице.
 
-### D2 — New policy id `htf_regime_gate`, params `allowed_regimes`
+**Отвергнуто:** «Переиспользовать `_active_rule_group_for_side` как есть» — оставляет второй независимый mapping path; дублирование маппинга в отдельных components / diagnostics — риск drift.
 
-**Choice:** Parallel to `htf_state_gate` / `allowed_states`; default when omitted: all three regimes allowed (mirror `htf_state_gate` defaulting to all raw states).
+### D2 — Единый shared context evaluation pipeline
 
-**Rationale:** Clear author intent; config reads as trading language.
+**Выбор:** Ввести единый shared context evaluation pipeline с верхнеуровневой точкой `evaluate_context_consumption`:
 
-### D3 — Extend policy handler signature with `side: TradeSide`
+```python
+evaluate_context_consumption(
+    consumption: ContextConsumptionSpec,
+    *,
+    eval_ctx: SideAwareEvaluationContext,  # side from direction/evaluation scope + ContextBundle + index
+) -> ContextConsumptionResult  # gate series, diagnostics fields
+```
 
-**Choice:** `apply_htf_regime_gate(output, *, policy, index, side)`; call sites in per-side compile/trace paths pass the side being evaluated.
+Все context-consuming components и exit policy / exit profile selection (`signals` compile path, exit profile compiler) делегируют policy-level context work в этот pipeline вместо прямого `bundle.get` + `apply_*` / `_active_rule_group_for_side`.
 
-**Rationale:** Minimal contract change; matches existing per-side signal trace structure.
+Diagnostic call sites (`consumption_trace`, `signal_trace`, `consumption_attribution_for_trade`, chart/report diagnostics) читают `ContextConsumptionResult` / recorded result, созданный этим pipeline. Если recorded result недоступен в конкретном diagnostic entry point, diagnostic call site вызывает тот же `evaluate_context_consumption`; он всё равно не имеет собственного context access / mapping path.
 
-**Alternative considered:** Pass pre-resolved regime series from compiler — rejected (hides policy params and complicates trace attribution).
+**Обоснование:** Выполняет требование «components, diagnostics и exit policy не fetch-ят raw state и direction самостоятельно»; единая точка для `htf_state_gate`, `htf_regime_gate` и exit profile selection.
 
-### D4 — Per-side trace records for `htf_regime_gate`
+**Отвергнуто:** Расширять только сигнатуру `apply_htf_regime_gate` или оставлять отдельный exit evaluator — call sites всё равно останутся разрозненными.
 
-**Choice:** When building `context_consumption_trace`, include `evaluated_side` on blocker records using `htf_regime_gate`; optionally split trace by side if one record cannot represent asymmetric outcomes (prefer side field + per-side `context_applied` lists already keyed under `signal_trace.long` / `short`).
+### D3 — Side comes from direction / evaluation scope
 
-**Rationale:** Same raw bar may pass for long and fail for short; diagnostics must not collapse to a single boolean without side context.
+**Выбор:** Явный тип (dataclass / TypedDict) `SideAwareEvaluationContext` строится из current strategy evaluation scope:
 
-### D5 — Catalog and validation parity
+| Поле | Тип | Назначение |
+|------|-----|------------|
+| `evaluated_side` | `TradeSide` | Сторона текущего прохода (`long` \| `short`) из direction layer / `DirectionOutput` |
+| `context_bundle` | `ContextBundle` | Уже построенный bundle провайдеров |
+| `index` | `pd.Index` | Индекс баров текущей оценки |
+| `direction_output` / `side_mask` | опционально | Side-indexed info, если текущая архитектура не делает физический per-side pass |
+| `regime_cache` | опционально | Per-pass cache для resolved regime series |
 
-**Choice:** Register `htf_regime_gate` in `research_api` component catalog alongside `htf_state_gate` for the same blocker roles; extend `consumption_validation.py` with `validate_htf_regime_gate_params`.
+Side-agnostic политики (`htf_state_gate`) игнорируют `evaluated_side`, но получают тот же `SideAwareEvaluationContext` для единообразия API.
 
-**Rationale:** Composer and API validate only catalog-listed policies.
+**Обоснование:** Side не приходит из provider и не hardcoded inside evaluator. Evaluator не делает `for side in ["long", "short"]`; он работает в переданном evaluation scope.
 
-### D6 — Do not change `exit_profile_by_htf_state`
+### D4 — Кэш серий режимов по `(context_ref, evaluated_side)`
 
-**Choice:** Exit profile selection keeps existing policy; `htf_regime_gate` is for gating consumers (blockers first), not exit bucket selection.
+**Выбор:** `SideAwareEvaluationContext` содержит опциональный memo dict, который использует shared evaluator:
 
-**Rationale:** Scope control; exit path already side-aware via profile long/short series.
+```python
+regime_cache: dict[tuple[str, TradeSide], pd.Series]  # context_ref -> resolved regime series
+```
 
-## Risks / Trade-offs
+Заполняется при первом обращении к `(context_ref, side)`; последующие потребители с тем же ref/side переиспользуют серию.
 
-| Risk | Mitigation |
-|------|------------|
-| Authors confuse `htf_state_gate` vs `htf_regime_gate` | Catalog labels + docs; keep both; examples in Composer use regimes for blockers |
-| Trace shape breaking chart diagnostics | Additive `outcome` fields; frontend displays new fields when present |
-| Missing `side` at a call site silently wrong | Type/signature requirement + tests for both sides on same bar |
-| Duplication with `_active_rule_group_for_side` | Extract shared `resolve_htf_regime` used by exit profile and regime gate |
+**Обоснование:** Несколько consumers / diagnostics с одним `context_ref` на одном side-pass не пересчитывают map; consistency гарантирована одним кодом.
 
-## Migration Plan
+**Ограничение:** Кэш живёт в рамках одного backtest/trace pass; не глобальный singleton.
 
-- **Deploy:** Additive policy registration; existing instances unchanged.
-- **Author migration:** Manual — replace raw `allowed_states` with `allowed_regimes` where intent is side-relative; no runtime auto-convert.
-- **Rollback:** Remove catalog entry and handler; instances using `htf_regime_gate` fail validation until reverted.
+### D5 — Новый policy id `htf_regime_gate`, required params `allowed_regimes`
 
-## Open Questions
+**Выбор:** Параллельно `htf_state_gate` / `allowed_states`, но `allowed_regimes` обязателен. Validation rejects missing param, empty list and unknown values. No permissive default for `htf_regime_gate`.
 
-- Should setup/trigger consumers get `htf_regime_gate` in the same slice as blockers, or blockers-only v1?
-- Should `context_consumption_trace` at strategy level duplicate per side or remain under per-side signal trace only?
+**Обоснование:** Явное намерение автора; конфиг на языке трейдинга.
+
+### D6 — Per-side trace records для `htf_regime_gate`
+
+**Выбор:** При построении `context_consumption_trace` / signal trace для `htf_regime_gate` включать `evaluated_side` в outcome; асимметричные исходы остаются под `signal_trace.long` / `short`.
+
+**Обоснование:** Один raw bar может pass для long и fail для short; diagnostics не сворачиваются в один boolean без side.
+
+### D7 — Catalog и validation parity
+
+**Выбор:** Регистрация `htf_regime_gate` в research_api component catalog для всех catalog-supported context consumers/call sites, которые могут предоставить explicit evaluated side в shared evaluator; `validate_htf_regime_gate_params` в `consumption_validation.py`.
+
+### D8 — Exit policy context usage тоже централизуется
+
+**Выбор:** `exit_profile_by_htf_state` сохраняет внешний config/API shape для совместимости, но её runtime path MUST использовать тот же shared context evaluation pipeline через `evaluate_context_consumption`. `ContextConsumptionResult` для exit profile selection MUST содержать side-specific resolved regime/profile series, нужные exit compiler. Старый отдельный путь `ContextBundle.get(context_ref) + apply_exit_profile_by_htf_state` / `_active_rule_group_for_side` вне shared layer недопустим.
+
+**Примечание:** `resolve_htf_regime` становится единым source of truth для `htf_regime_gate` и exit profile selection. Отдельный shared regime pipeline рядом с evaluator не вводится; exit path идёт через тот же evaluator и общий result contract.
+
+### D9 — Pre-implementation audit всех context-consuming paths
+
+**Выбор:** Перед implementation MUST быть выполнен audit всех мест, которые читают `ContextBundle` или применяют context policies. Каждое место классифицируется:
+
+1. side-aware context consumers -> MUST use `evaluate_context_consumption`;
+2. diagnostic call sites -> MUST read `ContextConsumptionResult` / recorded result from evaluator, or invoke `evaluate_context_consumption` when no recorded result exists;
+3. exit policy context usage -> MUST use `evaluate_context_consumption`;
+4. truly side-agnostic raw-state consumers -> keep `htf_state_gate` semantics, but MUST use `evaluate_context_consumption`.
+
+**Обоснование:** Change централизует весь старый context access path, не только новые `htf_regime_gate` consumers.
+
+## Риски / компромиссы
+
+| Риск | Митигация |
+|------|-----------|
+| Авторы путают `htf_state_gate` и `htf_regime_gate` | Labels в каталоге + docs; оба сохраняются; примеры в Composer с regimes |
+| Trace shape ломает chart diagnostics | Additive поля outcome; frontend показывает новые поля при наличии |
+| Call site забыл передать `evaluated_side` | Тип evaluation context + тесты both-side на одном bar |
+| Дублирование с `_active_rule_group_for_side` | Extract `resolve_htf_regime`; refactor `_active_rule_group_for_side` to delegate; exit и regime gate используют один helper |
+| Рефакторинг call sites шире «только новая политика» | В scope v1: audit и централизовать все context-consuming paths, включая exit policy |
+
+## План миграции
+
+- **Deploy:** Additive registration; существующие инстансы без изменений.
+- **Author migration:** Вручную — замена raw `allowed_states` на required `allowed_regimes` где нужен side-relative intent; без runtime auto-convert.
+- **Rollback:** Убрать catalog entry и handler; инстансы с `htf_regime_gate` fail validation до отката.
+
+## Закрытые решения для apply
+
+- Catalog exposes `htf_regime_gate` only for role/component_id entries that can pass explicit side context into `evaluate_context_consumption`; implementation audit determines the concrete list and updates catalog in the same change.
+- `context_consumption_trace` and other diagnostics use `ContextConsumptionResult` / recorded result from the evaluation path. If a diagnostic is built out of band, it calls `evaluate_context_consumption` and records the same result shape.
+- Exit profile selection uses `evaluate_context_consumption`; no separate direct or parallel exit context path is allowed.
