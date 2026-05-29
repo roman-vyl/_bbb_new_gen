@@ -222,7 +222,7 @@ describe("ChartTradeDiagnostics", () => {
     expect(screen.getByRole("heading", { level: 4, name: "Entry bar decision" })).toBeTruthy();
     expect(screen.getByText("block")).toBeTruthy();
     expect(screen.getAllByText("down").length).toBeGreaterThan(0);
-    expect(screen.getByText("aligned")).toBeTruthy();
+    expect(screen.getAllByText("aligned").length).toBeGreaterThan(0);
   });
 
   it("renders v5 trade quality diagnostics", () => {
