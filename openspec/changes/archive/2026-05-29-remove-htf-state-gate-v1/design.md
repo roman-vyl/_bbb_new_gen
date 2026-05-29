@@ -20,7 +20,7 @@
 ## Decisions
 
 1. **Provider unchanged** — `htf_context` continues emitting raw `up/down/neutral`; no long/short awareness in provider layer.
-2. **Single HTF blocker policy** — `htf_regime_gate` with mandatory non-empty `allowed_regimes`.
+2. **Single HTF context consumption policy** — `htf_regime_gate` with mandatory non-empty `allowed_regimes`.
 3. **Legacy unsupported** — loader/API validation reject `policy_id: htf_state_gate`; old reports may show missing/invalid policy in diagnostics.
 4. **No `allowed_states` in authoring** — param removed from catalog schema and saved payloads.
 

@@ -4,13 +4,7 @@
 
 **Reason**: Side-relative gating is fully expressed by `htf_regime_gate`; raw-state allowlist policy is removed.
 
-**Migration**: Recreate blocker `context_consumption` with `policy_id: htf_regime_gate` and explicit `allowed_regimes`. Map prior raw-state intent via `resolve_htf_regime` semantics (e.g. long + `up` → `aligned`).
-
-### Requirement: Side-agnostic политика игнорирует evaluated_side
-
-**Reason**: No side-agnostic HTF consumer policy remains; all HTF blocker gating is side-aware via `htf_regime_gate`.
-
-**Migration**: Use `htf_regime_gate` with `allowed_regimes` per side pass.
+**Migration**: Recreate `context_consumption` on affected catalog-supported HTF context consumers with `policy_id: htf_regime_gate` and explicit `allowed_regimes`. Map prior raw-state intent via `resolve_htf_regime` semantics (e.g. long + `up` → `aligned`).
 
 ## MODIFIED Requirements
 
@@ -30,6 +24,29 @@ No existing context-consuming path SHALL remain on direct `ContextBundle.get(con
 - **THEN** the call site is migrated to `evaluate_context_consumption` or `ContextConsumptionResult` / recorded result from evaluator before the change is complete
 - **AND** it is classified as side-aware consumer, diagnostic call site, or exit policy context usage
 
+### Requirement: Side-aware evaluation context
+
+Общий оценщик MUST принимать **SideAwareEvaluationContext**, построенный из direction layer / `DirectionOutput` / текущего strategy evaluation scope. Evaluator MUST NOT hardcode `for side in ["long", "short"]` и MUST NOT решать сам, какие стороны прогонять.
+
+- `evaluated_side`: `long` или `short` — сторона текущего прохода оценки маски или trace, пришедшая из direction/evaluation scope;
+- доступ к уже построенному `ContextBundle` (без повторной сборки провайдеров);
+- индекс баров текущей оценки.
+
+Потребляющий компонент MUST передавать свой `context_consumption` конфиг вместе с этим контекстом.
+
+#### Scenario: Evaluation context содержит сторону и bundle
+
+- **GIVEN** per-side signal trace pass для `short`
+- **WHEN** компонент запрашивает оценку `context_consumption`
+- **THEN** evaluation context включает `evaluated_side: short` и ссылку на тот же `ContextBundle`, что использовался при сборке сигналов
+
+#### Scenario: Evaluator не перебирает стороны самостоятельно
+
+- **GIVEN** direction layer уже построил evaluation scope для side `long`
+- **WHEN** общий оценщик вызывается для `htf_regime_gate`
+- **THEN** он использует side из переданного evaluation scope
+- **AND** не запускает внутренний hardcoded loop по `long` и `short`
+
 ### Requirement: Entry consumer policies gate without new component_id
 
 Phase 3 SHALL introduce at least one reference entry consumer (setup or blocker) that uses `context_consumption` with a catalog-listed entry policy. The reference MUST use an existing `component_id` (not `htf_gated_*`).
@@ -48,13 +65,13 @@ Research layer MUST NOT register, validate, or execute `htf_state_gate` as a `co
 
 #### Scenario: Legacy htf_state_gate config fails validation
 
-- **WHEN** validate or loader receives `policy_id: htf_state_gate` on a blocker
+- **WHEN** validate or loader receives `policy_id: htf_state_gate` on any catalog-supported HTF context consumer
 - **THEN** validation fails naming unsupported policy_id
 
 #### Scenario: Catalog omits htf_state_gate
 
 - **WHEN** component catalog is fetched for `ema_pullback`
-- **THEN** blocker consumption policies list includes `htf_regime_gate` and MUST NOT include `htf_state_gate`
+- **THEN** HTF context consumption policies in catalog include `htf_regime_gate` and MUST NOT include `htf_state_gate`
 
 #### Scenario: Raw provider state unchanged
 

@@ -93,9 +93,9 @@ If `trade_management.exit_policy.profiles` contains any non-empty `aligned`, `co
 
 Phase 3 SHALL introduce at least one reference entry consumer (setup or blocker) that uses `context_consumption` with a catalog-listed entry policy. The reference MUST use an existing `component_id` (not `htf_gated_*`).
 
-#### Scenario: Reference blocker gates entries by HTF state
+#### Scenario: Reference blocker gates entries by HTF regime
 
-- **GIVEN** a blocker with `context_consumption` and policy allowing only `up`, and HTF state `down` on a bar
+- **GIVEN** a blocker with `context_consumption` and `htf_regime_gate` allowing only `aligned`, raw HTF state `down`, evaluated side `long`
 - **WHEN** the blocker runs after bundle build
 - **THEN** the entry pipeline mask blocks entries on that bar
 
@@ -145,8 +145,7 @@ Before implementation, research layer SHALL audit all existing context-consuming
 
 1. side-aware context consumers -> MUST use shared evaluator;
 2. diagnostic call sites -> MUST use `ContextConsumptionResult` / recorded result from evaluator, or invoke `evaluate_context_consumption` when no recorded result exists;
-3. exit policy context usage -> MUST use `evaluate_context_consumption`;
-4. truly side-agnostic raw-state consumers -> MUST keep existing `htf_state_gate` semantics through `evaluate_context_consumption`.
+3. exit policy context usage -> MUST use `evaluate_context_consumption`.
 
 No existing context-consuming path SHALL remain on direct `ContextBundle.get(context_ref) + apply_*`.
 
@@ -154,7 +153,7 @@ No existing context-consuming path SHALL remain on direct `ContextBundle.get(con
 
 - **WHEN** implementation audit finds a call site that reads `ContextBundle` and applies a context policy directly
 - **THEN** the call site is migrated to `evaluate_context_consumption` or `ContextConsumptionResult` / recorded result from evaluator before the change is complete
-- **AND** it is classified as side-aware consumer, diagnostic call site, exit policy context usage, or side-agnostic raw-state consumer
+- **AND** it is classified as side-aware consumer, diagnostic call site, or exit policy context usage
 
 ### Requirement: Side-aware evaluation context
 
@@ -178,12 +177,6 @@ No existing context-consuming path SHALL remain on direct `ContextBundle.get(con
 - **WHEN** общий оценщик вызывается для `htf_regime_gate`
 - **THEN** он использует side из переданного evaluation scope
 - **AND** не запускает внутренний hardcoded loop по `long` и `short`
-
-#### Scenario: Side-agnostic политика игнорирует evaluated_side
-
-- **GIVEN** `htf_state_gate` с `allowed_states: ["up"]`
-- **WHEN** общий оценщик вызывается с `evaluated_side: long` или `short`
-- **THEN** результат зависит только от raw state, не от стороны
 
 ### Requirement: Опциональный кэш серий режимов
 
@@ -265,15 +258,22 @@ Diagnostic call sites (signal trace, consumption trace, attribution, chart/repor
 - **WHEN** signal trace строит diagnostic record для `htf_regime_gate`
 - **THEN** record `outcome` включает `evaluated_side`, `allowed_regimes`, per-bar `raw_state` и `resolved_regime`, согласованные с `context_applied`
 
-### Requirement: htf_state_gate остаётся доступным без изменений
+### Requirement: htf_state_gate removed as consumer policy
 
-Существующая политика `htf_state_gate` с `allowed_states` (`up`, `down`, `neutral`) MUST оставаться зарегистрированной и поведенчески эквивалентной для существующих конфигов. Это изменение MUST NOT удалять или auto-migrate инстансы `htf_state_gate`.
+Research layer MUST NOT register, validate, or execute `htf_state_gate` as a `context_consumption` policy. Raw provider output `htf_state` (`up`, `down`, `neutral`) MUST remain available from `ContextBundle` for policies that resolve regimes via shared evaluator.
 
-`htf_state_gate` remains a side-agnostic raw-state policy and MUST be evaluated through shared evaluator.
+#### Scenario: Legacy htf_state_gate config fails validation
 
-#### Scenario: Legacy raw-state gate unchanged
+- **WHEN** validate or loader receives `policy_id: htf_state_gate` on any catalog-supported HTF context consumer
+- **THEN** validation fails naming unsupported policy_id
 
-- **GIVEN** context consumer с `policy_id: htf_state_gate` и `allowed_states: ["up"]`
-- **WHEN** оценивается через общий слой без side-relative mapping
-- **THEN** allow/deny зависит только от raw state `up`, независимо от evaluated side
+#### Scenario: Catalog omits htf_state_gate
+
+- **WHEN** component catalog is fetched for `ema_pullback`
+- **THEN** HTF context consumption policies in catalog include `htf_regime_gate` and MUST NOT include `htf_state_gate`
+
+#### Scenario: Raw provider state unchanged
+
+- **WHEN** `htf_context` provider runs
+- **THEN** `ContextOutput` state series remains raw `up`, `down`, or `neutral` with no aligned/countertrend labels
 

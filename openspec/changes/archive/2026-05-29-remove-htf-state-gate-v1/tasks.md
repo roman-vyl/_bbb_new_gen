@@ -6,8 +6,8 @@
 ## 2. Backend / research
 
 - [x] 2.1 Remove `htf_state_gate` from policies, evaluation, validation, instance loader
-- [x] 2.2 Catalog: only `htf_regime_gate` for blocker HTF gating
-- [x] 2.3 Simplify consumption trace for regime-gate-only blockers
+- [x] 2.2 Catalog: only `htf_regime_gate` for catalog-supported HTF context consumers
+- [x] 2.3 Simplify consumption trace for regime-gate-only HTF context consumers
 
 ## 3. Frontend
 

@@ -100,15 +100,25 @@ context_consumption:
       allowed_regimes: ["aligned", "neutral"]
 ```
 
-Composer MUST NOT write `allowed_states`, raw `up`/`down`/`neutral`, or `resolved_regime` into strategy config. Composer MUST NOT compute side-relative mapping in the browser.
+Composer MUST NOT write `allowed_states`, raw `up`/`down`/`neutral`, or `resolved_regime` into strategy config. Composer MUST NOT compute side-relative mapping in the browser. Composer MUST NOT offer `htf_state_gate` or `allowed_states` for catalog-supported HTF context consumers.
 
 #### Scenario: User selects regime gate and allowed regimes
 
-- **GIVEN** catalog lists `htf_regime_gate` for the blocker `component_id`
+- **GIVEN** catalog lists `htf_regime_gate` for the HTF context consumer `component_id`
 - **AND** `strategy.contexts` defines `htf_4h`
 - **WHEN** the user enables context consumption, selects `context_ref: htf_4h`, policy `htf_regime_gate`, and checks `aligned` and `neutral`
 - **THEN** saved JSON contains `allowed_regimes: ["aligned", "neutral"]` under `policy.params`
 - **AND** does not contain `allowed_states`
+
+#### Scenario: HTF context consumption policy dropdown shows HTF regime gate only
+
+- **WHEN** user enables context consumption on a catalog-supported HTF context consumer
+- **THEN** policy dropdown lists `HTF regime gate` (`htf_regime_gate`) and does not list `HTF state gate`
+
+#### Scenario: Saved payload excludes allowed_states
+
+- **WHEN** user saves a catalog-supported HTF context consumer with `htf_regime_gate`
+- **THEN** serialized `context_consumption.policy.params` contains `allowed_regimes` only (no `allowed_states`)
 
 #### Scenario: Policy availability is catalog-driven
 
@@ -122,10 +132,15 @@ When `context_consumption` is enabled on a catalog-supported consumer, client-si
 
 #### Scenario: Loaded draft with unknown policy_id fails validation
 
-- **GIVEN** a blocker whose catalog lists only `htf_state_gate`
-- **AND** a loaded draft with `policy_id: htf_regime_gate`
+- **GIVEN** a catalog-supported HTF context consumer whose catalog lists only `htf_regime_gate`
+- **AND** a loaded draft with `policy_id: htf_state_gate`
 - **WHEN** client-side draft validation runs
 - **THEN** validation fails on `context_consumption.policy.policy_id` with a message that the policy is not supported for this component
+
+#### Scenario: Legacy htf_state_gate draft fails validation
+
+- **WHEN** a saved or pasted draft contains `policy_id: htf_state_gate` on any catalog-supported HTF context consumer
+- **THEN** validate returns an error for unsupported policy_id (no auto-migration)
 
 ### Requirement: Empty allowed_regimes blocks draft save
 
@@ -148,16 +163,6 @@ Composer MUST load existing backend configs with `htf_regime_gate` and restore `
 - **WHEN** the user reopens the draft in Composer
 - **THEN** the UI shows the same `context_ref`, policy, and selected regimes
 - **AND** a subsequent save emits the same policy shape
-
-### Requirement: Legacy htf_state_gate unchanged in Composer
-
-Composer MUST continue to support `htf_state_gate` with `params.allowed_states` (`up`, `down`, `neutral`). Composer MUST NOT auto-migrate loaded configs to `htf_regime_gate` on open or save.
-
-#### Scenario: State gate config roundtrips unchanged
-
-- **GIVEN** a blocker with `policy_id: htf_state_gate` and `allowed_states: ["up"]`
-- **WHEN** the user opens and saves without changing policy
-- **THEN** JSON still contains `htf_state_gate` and `allowed_states`, not `allowed_regimes`
 
 ### Requirement: Diagnostics display regime gate fields without recomputation
 
