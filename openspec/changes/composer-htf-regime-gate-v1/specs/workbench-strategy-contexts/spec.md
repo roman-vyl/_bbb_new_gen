@@ -10,7 +10,7 @@ context_consumption:
   policy:
     policy_id: htf_regime_gate
     params:
-      allowed_regimes: [<one or more of aligned, countertrend, neutral>]
+      allowed_regimes: ["aligned", "neutral"]
 ```
 
 Composer MUST NOT write `allowed_states`, raw `up`/`down`/`neutral`, or `resolved_regime` into strategy config. Composer MUST NOT compute side-relative mapping in the browser.
@@ -28,6 +28,17 @@ Composer MUST NOT write `allowed_states`, raw `up`/`down`/`neutral`, or `resolve
 - **GIVEN** catalog response for a component does not include `htf_regime_gate`
 - **WHEN** the user opens context consumption for that component
 - **THEN** `htf_regime_gate` is not offered in the policy selector
+
+### Requirement: policy_id must be listed for the component role
+
+When `context_consumption` is enabled on a catalog-supported consumer, client-side draft validation MUST reject `policy.policy_id` values that are not listed in `context_consumption_policies` for that `(role, component_id)`. The same rule applies to `exit_policy.context_consumption` against `context_consumption_roles` for `exit_policy`.
+
+#### Scenario: Loaded draft with unknown policy_id fails validation
+
+- **GIVEN** a blocker whose catalog lists only `htf_state_gate`
+- **AND** a loaded draft with `policy_id: htf_regime_gate`
+- **WHEN** client-side draft validation runs
+- **THEN** validation fails on `context_consumption.policy.policy_id` with a message that the policy is not supported for this component
 
 ### Requirement: Empty allowed_regimes blocks draft save
 

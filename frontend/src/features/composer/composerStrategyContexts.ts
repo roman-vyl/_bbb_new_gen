@@ -251,14 +251,44 @@ export function collectContextConsumptionPolicyParamErrors(
   return [];
 }
 
+const UNSUPPORTED_POLICY_ID_MESSAGE =
+  "context_consumption.policy.policy_id is not supported for this component";
+
+export function entryContextConsumptionPolicyIds(
+  catalog: ComponentCatalog | null,
+  role: string,
+  componentId: string,
+): string[] | null {
+  if (!catalog || !componentId) {
+    return null;
+  }
+  const component = catalog.components.find(
+    (c) => c.role === role && c.component_id === componentId,
+  );
+  if (component?.supports_context_consumption !== true) {
+    return null;
+  }
+  return (component.context_consumption_policies ?? []).map((policy) => policy.policy_id);
+}
+
+export function exitContextConsumptionPolicyIds(catalog: ComponentCatalog | null): string[] {
+  return exitPolicyPolicies(catalog).map((policy) => policy.policy_id);
+}
+
 export function collectEntryContextConsumptionErrors(
   strategy: JsonObject,
   pathPrefix: string,
+  catalog: ComponentCatalog | null = null,
 ): ValidationErrorItem[] {
   const errors: ValidationErrorItem[] = [];
 
-  const checkSlot = (block: unknown, slotPath: string) => {
-    const consumption = readContextConsumptionBlock(block);
+  const checkSlot = (
+    slot: JsonObject,
+    slotPath: string,
+    role: string,
+    componentId: string,
+  ) => {
+    const consumption = readContextConsumptionBlock(slot.context_consumption);
     if (!consumption) {
       return;
     }
@@ -275,6 +305,14 @@ export function collectEntryContextConsumptionErrors(
         path: `${slotPath}.policy.policy_id`,
         message: "policy_id is required when context consumption is enabled",
       });
+    } else if (catalog) {
+      const allowedPolicyIds = entryContextConsumptionPolicyIds(catalog, role, componentId);
+      if (allowedPolicyIds !== null && !allowedPolicyIds.includes(policyId)) {
+        errors.push({
+          path: `${slotPath}.policy.policy_id`,
+          message: UNSUPPORTED_POLICY_ID_MESSAGE,
+        });
+      }
     }
     errors.push(...collectContextConsumptionPolicyParamErrors(policyId, params, slotPath));
   };
@@ -284,12 +322,23 @@ export function collectEntryContextConsumptionErrors(
     if (!slot || typeof slot !== "object" || Array.isArray(slot)) {
       continue;
     }
-    checkSlot((slot as JsonObject).context_consumption, `${pathPrefix}.${role}.context_consumption`);
+    const slotObj = slot as JsonObject;
+    checkSlot(
+      slotObj,
+      `${pathPrefix}.${role}.context_consumption`,
+      role,
+      String(slotObj.component_id ?? ""),
+    );
   }
 
   const blockers = (strategy.blockers as JsonObject[] | undefined) ?? [];
   blockers.forEach((slot, index) => {
-    checkSlot(slot.context_consumption, `${pathPrefix}.blockers[${index}].context_consumption`);
+    checkSlot(
+      slot,
+      `${pathPrefix}.blockers[${index}].context_consumption`,
+      "blockers",
+      String(slot.component_id ?? ""),
+    );
   });
 
   return errors;
@@ -435,29 +484,40 @@ export function collectComposerStrategyErrors(
     });
   }
   errors.push(...collectUnsupportedEntryContextConsumptionErrors(strategy, pathPrefix, catalog));
-  errors.push(...collectEntryContextConsumptionErrors(strategy, pathPrefix));
+  errors.push(...collectEntryContextConsumptionErrors(strategy, pathPrefix, catalog));
+  const exitConsumptionPath = `${pathPrefix}.trade_management.exit_policy.context_consumption`;
+  const exitConsumption = readExitPolicyContextConsumption(strategy);
+  if (exitConsumption?.policy?.policy_id?.trim() && catalog) {
+    const exitPolicyId = exitConsumption.policy.policy_id.trim();
+    const allowedExitPolicies = exitContextConsumptionPolicyIds(catalog);
+    if (!allowedExitPolicies.includes(exitPolicyId)) {
+      errors.push({
+        path: `${exitConsumptionPath}.policy.policy_id`,
+        message: UNSUPPORTED_POLICY_ID_MESSAGE,
+      });
+    }
+  }
   if (!exitPolicyRequiresContextConsumption(strategy)) {
     return errors;
   }
-  const consumption = readExitPolicyContextConsumption(strategy);
-  if (!consumption?.context_ref?.trim()) {
+  if (!exitConsumption?.context_ref?.trim()) {
     errors.push({
-      path: `${pathPrefix}.trade_management.exit_policy.context_consumption.context_ref`,
+      path: `${exitConsumptionPath}.context_ref`,
       message: "context_ref is required when profile-scoped exits are configured",
     });
   }
-  if (!consumption?.policy?.policy_id?.trim()) {
+  if (!exitConsumption?.policy?.policy_id?.trim()) {
     errors.push({
-      path: `${pathPrefix}.trade_management.exit_policy.context_consumption.policy.policy_id`,
+      path: `${exitConsumptionPath}.policy.policy_id`,
       message: "policy_id is required when profile-scoped exits are configured",
     });
   }
-  if (consumption?.policy?.policy_id?.trim()) {
+  if (exitConsumption?.policy?.policy_id?.trim()) {
     errors.push(
       ...collectContextConsumptionPolicyParamErrors(
-        consumption.policy.policy_id.trim(),
-        consumption.policy.params ?? {},
-        `${pathPrefix}.trade_management.exit_policy.context_consumption`,
+        exitConsumption.policy.policy_id.trim(),
+        exitConsumption.policy.params ?? {},
+        exitConsumptionPath,
       ),
     );
   }

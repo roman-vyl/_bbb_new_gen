@@ -128,6 +128,58 @@ describe("htf_regime_gate composer validation", () => {
     expect(blocker.context_consumption.policy.params).not.toHaveProperty("allowed_states");
   });
 
+  it("rejects policy_id not listed in component context_consumption_policies", () => {
+    const catalogStateGateOnly: ComponentCatalog = {
+      ...catalog,
+      components: [
+        {
+          ...catalog.components[0]!,
+          context_consumption_policies: [
+            {
+              policy_id: HTF_STATE_GATE_POLICY_ID,
+              label: "HTF state gate",
+              params_schema: {
+                allowed_states: {
+                  type: "array",
+                  enum: ["up", "down", "neutral"],
+                  default: ["up"],
+                },
+              },
+            },
+          ],
+        },
+      ],
+    };
+    const strategy = {
+      ...baseStrategy,
+      blockers: [
+        {
+          instance_id: "b1",
+          component_id: "counter_candle_blocker",
+          context_consumption: {
+            context_ref: "htf_4h",
+            policy: {
+              policy_id: HTF_REGIME_GATE_POLICY_ID,
+              params: { allowed_regimes: ["aligned"] },
+            },
+          },
+        },
+      ],
+    };
+    const errors = collectComposerStrategyErrors(
+      strategy,
+      "instances[0].strategy",
+      catalogStateGateOnly,
+    );
+    expect(
+      errors.some(
+        (e) =>
+          e.path.includes("policy.policy_id") &&
+          e.message === "context_consumption.policy.policy_id is not supported for this component",
+      ),
+    ).toBe(true);
+  });
+
   it("does not rewrite htf_state_gate configs", () => {
     const strategy = {
       ...baseStrategy,
