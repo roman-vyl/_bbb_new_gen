@@ -27,10 +27,12 @@ from research.strategies.ema_pullback.components.registry import (
     resolve_component,
 )
 from research.strategies.ema_pullback.context.consumption_validation import (
+    validate_htf_regime_gate_params,
     validate_htf_state_gate_params,
 )
 from research.strategies.ema_pullback.context.policies import (
     EXIT_PROFILE_BY_HTF_STATE_POLICY,
+    HTF_REGIME_GATE_POLICY,
     HTF_STATE_GATE_POLICY,
 )
 from research.strategies.ema_pullback.spec import (
@@ -285,6 +287,11 @@ def _parse_context_consumption(
             validate_htf_state_gate_params(params_map, path=policy_path)
         except ValueError as exc:
             raise EmaPullbackInstanceValidationError(str(exc)) from exc
+    elif policy_id == HTF_REGIME_GATE_POLICY:
+        try:
+            validate_htf_regime_gate_params(params_map, path=policy_path)
+        except ValueError as exc:
+            raise EmaPullbackInstanceValidationError(str(exc)) from exc
     params = tuple(sorted(params_map.items(), key=lambda item: item[0]))
     return ContextConsumptionSpec(
         context_ref=_require_non_empty_str(payload, "context_ref"),
@@ -431,7 +438,7 @@ def _parse_blocker(index: int, value: Any) -> BlockerRuleSpec:
         context_consumption = _parse_context_consumption(
             payload.get("context_consumption"),
             path=f"blockers[{index}].context_consumption",
-            allowed_policy_ids=(HTF_STATE_GATE_POLICY,),
+            allowed_policy_ids=(HTF_STATE_GATE_POLICY, HTF_REGIME_GATE_POLICY),
         )
         return builders.blocker_counter_candle(
             instance_id=instance_id,

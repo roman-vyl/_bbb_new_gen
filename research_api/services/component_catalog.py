@@ -27,7 +27,7 @@ def _num_param(label: str, *, default: float) -> ParamFieldSchema:
     return ParamFieldSchema(type="number", label=label, default=default)
 
 
-_BLOCKER_HTF_STATE_GATE_POLICIES = [
+_BLOCKER_CONTEXT_POLICIES = [
     ContextConsumptionPolicySchema(
         policy_id="htf_state_gate",
         label="HTF state gate",
@@ -37,6 +37,17 @@ _BLOCKER_HTF_STATE_GATE_POLICIES = [
                 label="Allowed HTF states",
                 enum=["up", "down", "neutral"],
                 default=["up", "down", "neutral"],
+            ),
+        },
+    ),
+    ContextConsumptionPolicySchema(
+        policy_id="htf_regime_gate",
+        label="HTF regime gate",
+        params_schema={
+            "allowed_regimes": ParamFieldSchema(
+                type="array",
+                label="Allowed regimes",
+                enum=["aligned", "countertrend", "neutral"],
             ),
         },
     ),
@@ -164,7 +175,7 @@ def get_component_catalog(*, family: str = "ema_pullback") -> ComponentCatalog:
             label="Counter candle blocker",
             list_slot=True,
             supports_context_consumption=True,
-            context_consumption_policies=_BLOCKER_HTF_STATE_GATE_POLICIES,
+            context_consumption_policies=_BLOCKER_CONTEXT_POLICIES,
         ),
         ComponentSchema(
             component_id="rsi_lookback_extreme_blocker",
@@ -172,7 +183,7 @@ def get_component_catalog(*, family: str = "ema_pullback") -> ComponentCatalog:
             label="RSI lookback extreme blocker",
             list_slot=True,
             supports_context_consumption=True,
-            context_consumption_policies=_BLOCKER_HTF_STATE_GATE_POLICIES,
+            context_consumption_policies=_BLOCKER_CONTEXT_POLICIES,
             params_schema={
                 "rsi.timeframe": _tf_param("RSI timeframe", default="5m"),
                 "rsi.period": _int_param("RSI period", default=14),
@@ -308,6 +319,10 @@ def get_component_catalog(*, family: str = "ema_pullback") -> ComponentCatalog:
                 ContextConsumptionPolicySchema(
                     policy_id="htf_state_gate",
                     label="HTF state gate",
+                ),
+                ContextConsumptionPolicySchema(
+                    policy_id="htf_regime_gate",
+                    label="HTF regime gate",
                 ),
             ],
         ),

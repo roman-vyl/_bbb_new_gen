@@ -9,24 +9,32 @@ from research.strategies.ema_pullback.spec import ContextConsumptionPolicySpec, 
 
 EXIT_PROFILE_BY_HTF_STATE_POLICY = "exit_profile_by_htf_state"
 HTF_STATE_GATE_POLICY = "htf_state_gate"
+HTF_REGIME_GATE_POLICY = "htf_regime_gate"
 
 _STATE_ORDER = ("up", "down", "neutral")
+_REGIME_ORDER = ("aligned", "countertrend", "neutral")
+
+
+def resolve_htf_regime(raw_state: str, side: TradeSide) -> str:
+    """Single source of truth for raw HTF state + trade side -> regime."""
+
+    if raw_state not in _STATE_ORDER:
+        return "neutral"
+    if side == "long":
+        if raw_state == "up":
+            return "aligned"
+        if raw_state == "down":
+            return "countertrend"
+        return "neutral"
+    if raw_state == "down":
+        return "aligned"
+    if raw_state == "up":
+        return "countertrend"
+    return "neutral"
 
 
 def _active_rule_group_for_side(*, side: TradeSide, context_state: str) -> str:
-    if context_state not in _STATE_ORDER:
-        return "neutral"
-    if side == "long":
-        if context_state == "up":
-            return "aligned"
-        if context_state == "down":
-            return "countertrend"
-        return "neutral"
-    if context_state == "down":
-        return "aligned"
-    if context_state == "up":
-        return "countertrend"
-    return "neutral"
+    return resolve_htf_regime(context_state, side)
 
 
 def apply_exit_profile_by_htf_state(
@@ -39,10 +47,10 @@ def apply_exit_profile_by_htf_state(
     _ = policy
     context_state = output.state_series()
     profile_long = context_state.map(
-        lambda state: _active_rule_group_for_side(side="long", context_state=state)
+        lambda state: resolve_htf_regime(state, "long")
     ).astype("object")
     profile_short = context_state.map(
-        lambda state: _active_rule_group_for_side(side="short", context_state=state)
+        lambda state: resolve_htf_regime(state, "short")
     ).astype("object")
     if "long" not in sides:
         profile_long = pd.Series("neutral", index=index, dtype="object")
@@ -61,6 +69,14 @@ def _allowed_states_from_policy(policy: ContextConsumptionPolicySpec) -> frozens
     return frozenset(str(item) for item in raw)
 
 
+def _allowed_regimes_from_policy(policy: ContextConsumptionPolicySpec) -> frozenset[str]:
+    """Assumes loader/spec validation already checked allowed_regimes shape."""
+
+    params = dict(policy.params)
+    raw = params["allowed_regimes"]
+    return frozenset(str(item) for item in raw)
+
+
 def apply_htf_state_gate(
     output: ContextOutput,
     *,
@@ -70,3 +86,16 @@ def apply_htf_state_gate(
     allowed_states = _allowed_states_from_policy(policy)
     context_state = output.state_series().reindex(index).fillna("neutral")
     return context_state.isin(allowed_states).astype(bool)
+
+
+def apply_htf_regime_gate(
+    output: ContextOutput,
+    *,
+    policy: ContextConsumptionPolicySpec,
+    index: pd.Index,
+    side: TradeSide,
+) -> pd.Series:
+    allowed_regimes = _allowed_regimes_from_policy(policy)
+    context_state = output.state_series().reindex(index).fillna("neutral")
+    resolved = context_state.map(lambda state: resolve_htf_regime(state, side))
+    return resolved.isin(list(allowed_regimes)).astype(bool)

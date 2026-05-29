@@ -20,7 +20,7 @@ from research.strategies.ema_pullback.component_builders import (
 from research.strategies.ema_pullback.components.registry import NO_BLOCKERS_COMPONENT, resolve_component
 from research.strategies.ema_pullback.context.bundle import ContextBundle
 from research.strategies.ema_pullback.context.pipeline import build_context_bundle_for_spec
-from research.strategies.ema_pullback.context.policies import HTF_STATE_GATE_POLICY
+from research.strategies.ema_pullback.context.policies import HTF_REGIME_GATE_POLICY, HTF_STATE_GATE_POLICY
 from research.strategies.ema_pullback.execution.exits import build_exit_outputs_from_spec
 from research.strategies.ema_pullback.execution.signals import (
     _apply_blocker_context_gate,
@@ -261,10 +261,12 @@ def test_htf_state_gate_changes_blocker_mask_and_omitting_consumption_restores_b
     bundle = ContextBundle.build(spec, df, plan)
     assert bundle.get("htf").state_series().tolist() == ["up", "down", "neutral"]
 
-    gated_up = _apply_blocker_context_gate(base_mask, rule=rule_gate_up, bundle=bundle)
+    gated_up = _apply_blocker_context_gate(base_mask, rule=rule_gate_up, bundle=bundle, side="long")
     assert gated_up.tolist() == [True, False, False]
 
-    gated_up_down = _apply_blocker_context_gate(base_mask, rule=rule_gate_up_down, bundle=bundle)
+    gated_up_down = _apply_blocker_context_gate(
+        base_mask, rule=rule_gate_up_down, bundle=bundle, side="long"
+    )
     assert gated_up_down.tolist() == [True, True, False]
 
     assert base_mask.tolist() == fn(df, side="long").tolist()
@@ -379,6 +381,62 @@ def test_loader_rejects_allowed_states_string_type() -> None:
         },
     }
     with pytest.raises(EmaPullbackInstanceValidationError, match="allowed_states must be a list"):
+        load_ema_pullback_instance(instance)
+
+
+def test_loader_rejects_htf_regime_gate_without_allowed_regimes() -> None:
+    instance = {
+        "instance_id": "regime_gate",
+        "variant": "v",
+        "market": {"symbol": "BTCUSDT", "base_timeframe": "1h"},
+        "strategy": {
+            "trade_sides": ["long"],
+            "anchor_stack": {"source": "close", "timeframe": "base", "fast": 100, "anchor": 200, "slow": 1000},
+            "direction": {"component_id": "ema_anchor_stack_trend"},
+            "setup": {"component_id": "untouched_anchor_setup", "lookback": 50, "active_bars": 3},
+            "trigger": {"component_id": "reclaim_anchor"},
+            "blockers": [
+                {
+                    "instance_id": "ccb",
+                    "component_id": "counter_candle_blocker",
+                    "context_consumption": {
+                        "context_ref": "htf",
+                        "policy": {"policy_id": HTF_REGIME_GATE_POLICY, "params": {}},
+                    },
+                }
+            ],
+            "risk": {"component_id": "no_risk_filter"},
+            "contexts": {
+                "htf": {
+                    "component_id": "htf_context",
+                    "timeframe": "4h",
+                    "source": "close",
+                    "fast_period": 100,
+                    "anchor_period": 200,
+                    "slow_period": 1000,
+                }
+            },
+            "trade_management": {
+                "exit_policy": {
+                    "always_on": {
+                        "exits": [
+                            {
+                                "instance_id": "atr_sl",
+                                "component_id": "atr_stop_loss",
+                                "distance": {"timeframe": "base", "period": 14, "multiplier": 1.5},
+                            }
+                        ]
+                    },
+                    "profiles": {
+                        "aligned": {"exits": []},
+                        "countertrend": {"exits": []},
+                        "neutral": {"exits": []},
+                    },
+                }
+            },
+        },
+    }
+    with pytest.raises(EmaPullbackInstanceValidationError, match="allowed_regimes"):
         load_ema_pullback_instance(instance)
 
 

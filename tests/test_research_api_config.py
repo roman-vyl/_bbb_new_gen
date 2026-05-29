@@ -143,6 +143,23 @@ def test_component_catalog_strategy_contexts_section(client: TestClient) -> None
         c for c in body["components"] if c["component_id"] == "rsi_lookback_extreme_blocker"
     )
     assert rsi_blocker.get("supports_context_consumption") is True
+    blocker_roles = [r for r in body["context_consumption_roles"] if r["role"] == "blockers"]
+    assert len(blocker_roles) == 1
+    blocker_policy_ids = [p["policy_id"] for p in blocker_roles[0]["policies"]]
+    assert "htf_state_gate" in blocker_policy_ids
+    assert "htf_regime_gate" in blocker_policy_ids
+    counter_candle = next(c for c in body["components"] if c["component_id"] == "counter_candle_blocker")
+    policy_ids = [p["policy_id"] for p in counter_candle.get("context_consumption_policies") or []]
+    assert "htf_regime_gate" in policy_ids
+    regime_policy = next(
+        p for p in counter_candle["context_consumption_policies"] if p["policy_id"] == "htf_regime_gate"
+    )
+    assert "allowed_regimes" in regime_policy["params_schema"]
+    assert regime_policy["params_schema"]["allowed_regimes"]["enum"] == [
+        "aligned",
+        "countertrend",
+        "neutral",
+    ]
     no_blockers = next(c for c in body["components"] if c["component_id"] == "no_blockers")
     assert no_blockers.get("supports_context_consumption") is not True
 

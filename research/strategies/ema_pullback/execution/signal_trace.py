@@ -30,7 +30,10 @@ from research.strategies.ema_pullback.components.risk import no_risk_filter
 from research.strategies.ema_pullback.context.consumption_trace import build_context_consumption_trace
 from research.strategies.ema_pullback.context.bundle import ContextBundle
 from research.strategies.ema_pullback.context.pipeline import build_context_bundle_for_spec
-from research.strategies.ema_pullback.context.policies import HTF_STATE_GATE_POLICY, apply_htf_state_gate
+from research.strategies.ema_pullback.context.evaluation import (
+    SideAwareEvaluationContext,
+    evaluate_context_consumption,
+)
 from research.strategies.ema_pullback.execution.exits import build_exit_outputs_from_spec
 from research.strategies.ema_pullback.execution.signals import compose_blocker_signals, compose_final_signals
 from research.strategies.ema_pullback.features.plan import FeaturePlan
@@ -200,17 +203,20 @@ def _build_side_trace(
         allowed = trace["allowed"]
         consumption = rule.context_consumption
         if consumption is not None and context_bundle is not None:
-            if consumption.policy.policy_id != HTF_STATE_GATE_POLICY:
+            result = evaluate_context_consumption(
+                consumption,
+                SideAwareEvaluationContext(
+                    context_bundle=context_bundle,
+                    index=df.index,
+                    evaluated_side=side,
+                ),
+            )
+            gate = result.allowed_mask
+            if gate is None:
                 raise ValueError(
-                    "unsupported blocker context_consumption.policy_id: "
+                    "context consumption result missing allowed_mask for "
                     f"{consumption.policy.policy_id!r}"
                 )
-            context_output = context_bundle.get(consumption.context_ref)
-            gate = apply_htf_state_gate(
-                context_output,
-                policy=consumption.policy,
-                index=df.index,
-            )
             allowed = allowed & gate.fillna(False).astype(bool)
             trace = {**trace, "allowed": allowed, "htf_gate": gate}
         blocker_traces[rule.instance_id] = trace
