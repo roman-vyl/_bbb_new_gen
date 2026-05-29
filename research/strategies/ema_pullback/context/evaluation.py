@@ -11,11 +11,8 @@ from research.strategies.ema_pullback.context.bundle import ContextBundle
 from research.strategies.ema_pullback.context.policies import (
     EXIT_PROFILE_BY_HTF_STATE_POLICY,
     HTF_REGIME_GATE_POLICY,
-    HTF_STATE_GATE_POLICY,
     _allowed_regimes_from_policy,
-    _allowed_states_from_policy,
     apply_exit_profile_by_htf_state,
-    apply_htf_state_gate,
     resolve_htf_regime,
 )
 from research.strategies.ema_pullback.spec import ContextConsumptionSpec, TradeSide
@@ -75,23 +72,6 @@ def evaluate_context_consumption(
     context_output = eval_ctx.context_bundle.get(consumption.context_ref)
     index = eval_ctx.index
     raw_state = context_output.state_series().reindex(index).fillna("neutral")
-
-    if policy_id == HTF_STATE_GATE_POLICY:
-        allowed = apply_htf_state_gate(
-            context_output,
-            policy=consumption.policy,
-            index=index,
-        )
-        return ContextConsumptionResult(
-            policy_id=policy_id,
-            context_ref=consumption.context_ref,
-            allowed_mask=allowed,
-            raw_state_series=raw_state,
-            outcome={
-                "state_at_bar": raw_state.astype(str).tolist(),
-                "allowed_states": sorted(_allowed_states_from_policy(consumption.policy)),
-            },
-        )
 
     if policy_id == HTF_REGIME_GATE_POLICY:
         side = eval_ctx.evaluated_side

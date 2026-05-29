@@ -29,18 +29,6 @@ def _num_param(label: str, *, default: float) -> ParamFieldSchema:
 
 _BLOCKER_CONTEXT_POLICIES = [
     ContextConsumptionPolicySchema(
-        policy_id="htf_state_gate",
-        label="HTF state gate",
-        params_schema={
-            "allowed_states": ParamFieldSchema(
-                type="array",
-                label="Allowed HTF states",
-                enum=["up", "down", "neutral"],
-                default=["up", "down", "neutral"],
-            ),
-        },
-    ),
-    ContextConsumptionPolicySchema(
         policy_id="htf_regime_gate",
         label="HTF regime gate",
         params_schema={
@@ -316,10 +304,6 @@ def get_component_catalog(*, family: str = "ema_pullback") -> ComponentCatalog:
             role="blockers",
             label="Blockers",
             policies=[
-                ContextConsumptionPolicySchema(
-                    policy_id="htf_state_gate",
-                    label="HTF state gate",
-                ),
                 ContextConsumptionPolicySchema(
                     policy_id="htf_regime_gate",
                     label="HTF regime gate",

@@ -146,7 +146,7 @@ def test_component_catalog_strategy_contexts_section(client: TestClient) -> None
     blocker_roles = [r for r in body["context_consumption_roles"] if r["role"] == "blockers"]
     assert len(blocker_roles) == 1
     blocker_policy_ids = [p["policy_id"] for p in blocker_roles[0]["policies"]]
-    assert "htf_state_gate" in blocker_policy_ids
+    assert "htf_state_gate" not in blocker_policy_ids
     assert "htf_regime_gate" in blocker_policy_ids
     counter_candle = next(c for c in body["components"] if c["component_id"] == "counter_candle_blocker")
     policy_ids = [p["policy_id"] for p in counter_candle.get("context_consumption_policies") or []]
@@ -162,6 +162,45 @@ def test_component_catalog_strategy_contexts_section(client: TestClient) -> None
     ]
     no_blockers = next(c for c in body["components"] if c["component_id"] == "no_blockers")
     assert no_blockers.get("supports_context_consumption") is not True
+
+
+def test_validate_rejects_htf_state_gate_on_blocker(client: TestClient) -> None:
+    draft = _valid_draft()
+    instances = list(draft["instances"])  # type: ignore[index]
+    inst = dict(instances[0])  # type: ignore[arg-type]
+    strategy = dict(inst["strategy"])  # type: ignore[arg-type]
+    strategy["contexts"] = {
+        "htf": {
+            "component_id": "htf_context",
+            "timeframe": "4h",
+            "source": "close",
+            "fast_period": 100,
+            "anchor_period": 200,
+            "slow_period": 1000,
+        }
+    }
+    strategy["blockers"] = [
+        {
+            "instance_id": "ccb",
+            "component_id": "counter_candle_blocker",
+            "context_consumption": {
+                "context_ref": "htf",
+                "policy": {
+                    "policy_id": "htf_state_gate",
+                    "params": {"allowed_states": ["up"]},
+                },
+            },
+        }
+    ]
+    inst["strategy"] = strategy
+    instances[0] = inst
+    draft["instances"] = instances
+
+    res = client.post("/api/research/config/validate", json=draft)
+    assert res.status_code == 200
+    body = res.json()
+    assert body["ok"] is False
+    assert any("htf_state_gate" in (e.get("message") or "") for e in body["errors"])
 
 
 def test_validate_rejects_exit_policy_context(client: TestClient) -> None:

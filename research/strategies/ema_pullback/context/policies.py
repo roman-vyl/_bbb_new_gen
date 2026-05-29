@@ -4,11 +4,9 @@ from __future__ import annotations
 
 import pandas as pd
 
-from research.strategies.ema_pullback.context.bundle import ContextOutput
 from research.strategies.ema_pullback.spec import ContextConsumptionPolicySpec, TradeSide
 
 EXIT_PROFILE_BY_HTF_STATE_POLICY = "exit_profile_by_htf_state"
-HTF_STATE_GATE_POLICY = "htf_state_gate"
 HTF_REGIME_GATE_POLICY = "htf_regime_gate"
 
 _STATE_ORDER = ("up", "down", "neutral")
@@ -54,30 +52,9 @@ def apply_exit_profile_by_htf_state(
     return profile_long, profile_short
 
 
-def _allowed_states_from_policy(policy: ContextConsumptionPolicySpec) -> frozenset[str]:
-    """Assumes loader/spec validation already checked allowed_states shape."""
-
-    params = dict(policy.params)
-    raw = params.get("allowed_states")
-    if raw is None:
-        return frozenset(_STATE_ORDER)
-    return frozenset(str(item) for item in raw)
-
-
 def _allowed_regimes_from_policy(policy: ContextConsumptionPolicySpec) -> frozenset[str]:
     """Assumes loader/spec validation already checked allowed_regimes shape."""
 
     params = dict(policy.params)
     raw = params["allowed_regimes"]
     return frozenset(str(item) for item in raw)
-
-
-def apply_htf_state_gate(
-    output: ContextOutput,
-    *,
-    policy: ContextConsumptionPolicySpec,
-    index: pd.Index,
-) -> pd.Series:
-    allowed_states = _allowed_states_from_policy(policy)
-    context_state = output.state_series().reindex(index).fillna("neutral")
-    return context_state.isin(allowed_states).astype(bool)

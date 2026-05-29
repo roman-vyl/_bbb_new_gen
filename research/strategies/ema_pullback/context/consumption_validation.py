@@ -16,36 +16,12 @@ _BLOCKER_COMPONENTS_WITH_CONTEXT_CONSUMPTION = frozenset(
         RSI_LOOKBACK_EXTREME_BLOCKER_COMPONENT,
     }
 )
-from research.strategies.ema_pullback.context.policies import (
-    HTF_REGIME_GATE_POLICY,
-    HTF_STATE_GATE_POLICY,
-)
+from research.strategies.ema_pullback.context.policies import HTF_REGIME_GATE_POLICY
 from research.strategies.ema_pullback.spec import BlockerRuleSpec, ContextConsumptionPolicySpec
 
-HTF_STATE_VALUES = frozenset({"up", "down", "neutral"})
 HTF_REGIME_VALUES = frozenset({"aligned", "countertrend", "neutral"})
 
-_BLOCKER_CONTEXT_POLICIES = frozenset({HTF_STATE_GATE_POLICY, HTF_REGIME_GATE_POLICY})
-
-
-def validate_htf_state_gate_params(
-    params: dict[str, Any],
-    *,
-    path: str,
-) -> None:
-    if "allowed_states" not in params:
-        return
-    raw = params["allowed_states"]
-    if not isinstance(raw, list):
-        raise ValueError(f"{path}.params.allowed_states must be a list of strings")
-    if not raw:
-        raise ValueError(f"{path}.params.allowed_states must be a non-empty list")
-    states = [str(item) for item in raw]
-    unknown = set(states) - HTF_STATE_VALUES
-    if unknown:
-        raise ValueError(
-            f"{path}.params.allowed_states has invalid values: {sorted(unknown)}"
-        )
+_BLOCKER_CONTEXT_POLICIES = frozenset({HTF_REGIME_GATE_POLICY})
 
 
 def validate_htf_regime_gate_params(
@@ -88,13 +64,7 @@ def validate_blocker_context_consumption(rule: BlockerRuleSpec) -> None:
             f"{path}.policy.policy_id must be one of: {allowed}; "
             f"got {consumption.policy.policy_id!r}"
         )
-    if consumption.policy.policy_id == HTF_STATE_GATE_POLICY:
-        validate_htf_state_gate_params(
-            dict(consumption.policy.params),
-            path=f"{path}.policy",
-        )
-    else:
-        validate_htf_regime_gate_params(
-            dict(consumption.policy.params),
-            path=f"{path}.policy",
-        )
+    validate_htf_regime_gate_params(
+        dict(consumption.policy.params),
+        path=f"{path}.policy",
+    )

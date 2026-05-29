@@ -14,7 +14,6 @@ from research.strategies.ema_pullback.component_builders import (
 from research.strategies.ema_pullback.context.policies import (
     EXIT_PROFILE_BY_HTF_STATE_POLICY,
     HTF_REGIME_GATE_POLICY,
-    HTF_STATE_GATE_POLICY,
 )
 from research.strategies.ema_pullback.context.pipeline import build_context_bundle_for_spec
 from research.strategies.ema_pullback.execution.exits import build_exit_outputs_from_spec
@@ -114,21 +113,5 @@ def blocker_htf_regime_gate(
             context_ref=context_ref,
             policy_id=HTF_REGIME_GATE_POLICY,
             params=(("allowed_regimes", list(allowed_regimes)),),
-        ),
-    )
-
-
-def blocker_htf_state_gate(
-    *,
-    context_ref: str = "htf",
-    allowed_states: tuple[str, ...] = ("up",),
-    instance_id: str = "counter_candle_blocker",
-):
-    return blocker_counter_candle(
-        instance_id=instance_id,
-        context_consumption=context_consumption(
-            context_ref=context_ref,
-            policy_id=HTF_STATE_GATE_POLICY,
-            params=(("allowed_states", list(allowed_states)),),
         ),
     )

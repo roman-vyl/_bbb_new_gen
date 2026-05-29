@@ -29,18 +29,6 @@ const catalog: ComponentCatalog = {
       supports_context_consumption: true,
       context_consumption_policies: [
         {
-          policy_id: "htf_state_gate",
-          label: "HTF state gate",
-          params_schema: {
-            allowed_states: {
-              type: "array",
-              label: "Allowed HTF states",
-              enum: ["up", "down", "neutral"],
-              default: ["up"],
-            },
-          },
-        },
-        {
           policy_id: "htf_regime_gate",
           label: "HTF regime gate",
           params_schema: {
@@ -61,14 +49,13 @@ const catalog: ComponentCatalog = {
       supports_context_consumption: true,
       context_consumption_policies: [
         {
-          policy_id: "htf_state_gate",
-          label: "HTF state gate",
+          policy_id: "htf_regime_gate",
+          label: "HTF regime gate",
           params_schema: {
-            allowed_states: {
+            allowed_regimes: {
               type: "array",
-              label: "Allowed HTF states",
-              enum: ["up", "down", "neutral"],
-              default: ["up"],
+              label: "Allowed regimes",
+              enum: ["aligned", "countertrend", "neutral"],
             },
           },
         },
@@ -180,25 +167,18 @@ describe("ListComponentSection blockers context consumption", () => {
     expect(screen.getByText("neutral")).toBeTruthy();
   });
 
-  it("renders allowed_states as multiselect when consumption enabled", () => {
+  it("does not list HTF state gate in policy selector", () => {
     renderBlockers(
       [{ instance_id: "b1", component_id: "counter_candle_blocker" }],
       { contexts: { htf_1: { component_id: "htf_context" } } },
     );
     fireEvent.click(screen.getByRole("checkbox", { name: /Context consumption/i }));
-    const selects = screen.getAllByRole("combobox");
-    const contextSelect = selects.find((el) =>
-      Array.from(el.querySelectorAll("option")).some((o) => o.textContent === "htf_1"),
-    )!;
-    fireEvent.change(contextSelect, { target: { value: "htf_1" } });
-    const policySelect = selects.find((el) =>
-      Array.from(el.querySelectorAll("option")).some((o) => o.textContent === "HTF state gate"),
-    )!;
-    fireEvent.change(policySelect, { target: { value: "htf_state_gate" } });
-    expect(screen.getByText("Allowed HTF states")).toBeTruthy();
-    expect(screen.getByText("up")).toBeTruthy();
-    expect(screen.getByText("down")).toBeTruthy();
-    expect(screen.getByText("neutral")).toBeTruthy();
+    const policySelect = screen.getAllByRole("combobox").find((el) =>
+      Array.from(el.querySelectorAll("option")).some((o) => o.textContent === "HTF regime gate"),
+    );
+    expect(policySelect).toBeTruthy();
+    const options = Array.from(policySelect!.querySelectorAll("option")).map((o) => o.textContent);
+    expect(options).not.toContain("HTF state gate");
   });
 
   it("lists only defined context refs in selector", () => {

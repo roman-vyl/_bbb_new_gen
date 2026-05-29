@@ -47,8 +47,6 @@ def _blocker_trace_record(
     outcome: dict[str, Any] = dict(result.outcome)
     if consumption.policy.policy_id == HTF_REGIME_GATE_POLICY:
         outcome.setdefault("evaluated_side", evaluated_side)
-    elif "state_at_bar" not in outcome and result.raw_state_series is not None:
-        outcome["state_at_bar"] = result.raw_state_series.astype(str).tolist()
     return {
         "role": "blockers",
         "component_id": rule.component_id,
@@ -99,22 +97,12 @@ def build_context_consumption_trace(
         consumption = rule.context_consumption
         if consumption is None:
             continue
-        if consumption.policy.policy_id == HTF_REGIME_GATE_POLICY:
-            for side in spec.trade_sides.enabled:
-                record = _blocker_trace_record(
-                    rule,
-                    context_bundle=context_bundle,
-                    index=index,
-                    evaluated_side=side,
-                    regime_cache=regime_cache,
-                )
-                if record is not None:
-                    records.append(record)
-        else:
+        for side in spec.trade_sides.enabled:
             record = _blocker_trace_record(
                 rule,
                 context_bundle=context_bundle,
                 index=index,
+                evaluated_side=side,
                 regime_cache=regime_cache,
             )
             if record is not None:
@@ -139,7 +127,7 @@ def _entry_gate_applied_at_idx(
         return False
     if entry_idx < 0 or entry_idx >= len(index):
         return False
-    eval_side = trade_side if consumption.policy.policy_id == HTF_REGIME_GATE_POLICY else None
+    eval_side = trade_side
     result = evaluate_context_consumption(
         consumption,
         SideAwareEvaluationContext(

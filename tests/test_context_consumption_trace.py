@@ -17,7 +17,7 @@ from research.strategies.ema_pullback.features.calculations import add_feature_c
 from research.strategies.ema_pullback.features.plan import build_feature_plan_from_strategy_spec
 from research.strategies.ema_pullback.spec_instances import make_ema_pullback_strategy_spec
 from tests.ema_pullback_context_helpers import (
-    blocker_htf_state_gate,
+    blocker_htf_regime_gate,
     context_bundle_for_spec,
     exit_policy_htf_consumption,
     htf_strategy_contexts,
@@ -34,7 +34,7 @@ def test_signal_trace_emits_context_consumption_trace() -> None:
         contexts=htf_strategy_contexts(),
         components=component_stack(
             direction=direction_ema_anchor_stack(),
-            blockers=(blocker_htf_state_gate(allowed_states=("up",)),),
+            blockers=(blocker_htf_regime_gate(allowed_regimes=("aligned",)),),
             setup=setup_untouched_anchor(),
             trigger=trigger_reclaim_anchor(),
             risk=risk_no_filter(),
@@ -66,11 +66,16 @@ def test_signal_trace_emits_context_consumption_trace() -> None:
     assert exit_record["context_ref"] == "htf"
     assert exit_record["policy_id"] == "exit_profile_by_htf_state"
     assert exit_record["context_applied"] == [True, True, True]
-    blocker_record = next(r for r in trace.context_consumption_trace if r["role"] == "blockers")
-    assert blocker_record["policy_id"] == "htf_state_gate"
+    blocker_record = next(
+        r
+        for r in trace.context_consumption_trace
+        if r["role"] == "blockers" and r.get("outcome", {}).get("evaluated_side") == "long"
+    )
+    assert blocker_record["policy_id"] == "htf_regime_gate"
     assert blocker_record["context_applied"] == [True, False, False]
-    assert blocker_record["outcome"]["state_at_bar"] == ["up", "down", "neutral"]
-    assert blocker_record["outcome"]["allowed_states"] == ["up"]
+    assert blocker_record["outcome"]["raw_state"] == ["up", "down", "neutral"]
+    assert blocker_record["outcome"]["allowed_regimes"] == ["aligned"]
+    assert blocker_record["outcome"]["resolved_regime"] == ["aligned", "countertrend", "neutral"]
 
 
 def test_trade_records_include_separate_entry_and_exit_consumption() -> None:
@@ -81,7 +86,7 @@ def test_trade_records_include_separate_entry_and_exit_consumption() -> None:
         contexts=htf_strategy_contexts(),
         components=component_stack(
             direction=direction_ema_anchor_stack(),
-            blockers=(blocker_htf_state_gate(allowed_states=("up",)),),
+            blockers=(blocker_htf_regime_gate(allowed_regimes=("aligned",)),),
             setup=setup_untouched_anchor(),
             trigger=trigger_reclaim_anchor(),
             risk=risk_no_filter(),
@@ -137,7 +142,7 @@ def test_trade_records_include_separate_entry_and_exit_consumption() -> None:
     )
     assert len(records) == 1
     entry_cc = records[0]["entry_context_consumption"]
-    assert entry_cc["policy_id"] == "htf_state_gate"
+    assert entry_cc["policy_id"] == "htf_regime_gate"
     assert entry_cc["applied"] is True
     assert "exit_context_consumption" not in records[0]
 
@@ -147,7 +152,7 @@ def test_trade_entry_consumption_uses_last_consuming_blocker_in_spec_order() -> 
     import pandas as pd
 
     from research.strategies.ema_pullback.component_builders import blocker_counter_candle, context_consumption
-    from research.strategies.ema_pullback.context.policies import HTF_STATE_GATE_POLICY
+    from research.strategies.ema_pullback.context.policies import HTF_REGIME_GATE_POLICY
 
     from research.strategies.ema_pullback.component_builders import context_provider, strategy_contexts
 
@@ -161,13 +166,13 @@ def test_trade_entry_consumption_uses_last_consuming_blocker_in_spec_order() -> 
         components=component_stack(
             direction=direction_ema_anchor_stack(),
             blockers=(
-                blocker_htf_state_gate(context_ref="htf", instance_id="blocker_first"),
+                blocker_htf_regime_gate(context_ref="htf", instance_id="blocker_first"),
                 blocker_counter_candle(
                     instance_id="blocker_second",
                     context_consumption=context_consumption(
                         context_ref="macro_htf",
-                        policy_id=HTF_STATE_GATE_POLICY,
-                        params=(("allowed_states", ["up"]),),
+                        policy_id=HTF_REGIME_GATE_POLICY,
+                        params=(("allowed_regimes", ["aligned"]),),
                     ),
                 ),
             ),
@@ -227,7 +232,7 @@ def test_trade_entry_consumption_applied_false_when_gate_blocks() -> None:
         contexts=htf_strategy_contexts(),
         components=component_stack(
             direction=direction_ema_anchor_stack(),
-            blockers=(blocker_htf_state_gate(allowed_states=("up",)),),
+            blockers=(blocker_htf_regime_gate(allowed_regimes=("aligned",)),),
             setup=setup_untouched_anchor(),
             trigger=trigger_reclaim_anchor(),
             risk=risk_no_filter(),

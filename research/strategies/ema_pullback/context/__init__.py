@@ -9,7 +9,6 @@ from research.strategies.ema_pullback.context.evaluation import (
 from research.strategies.ema_pullback.context.policies import (
     EXIT_PROFILE_BY_HTF_STATE_POLICY,
     HTF_REGIME_GATE_POLICY,
-    HTF_STATE_GATE_POLICY,
 )
 
 __all__ = [
@@ -18,7 +17,6 @@ __all__ = [
     "ContextOutput",
     "EXIT_PROFILE_BY_HTF_STATE_POLICY",
     "HTF_REGIME_GATE_POLICY",
-    "HTF_STATE_GATE_POLICY",
     "SideAwareEvaluationContext",
     "evaluate_context_consumption",
 ]

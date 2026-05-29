@@ -207,7 +207,6 @@ function readContextConsumptionRef(block: unknown): string | null {
 }
 
 export const HTF_REGIME_GATE_POLICY_ID = "htf_regime_gate";
-export const HTF_STATE_GATE_POLICY_ID = "htf_state_gate";
 
 function readContextConsumptionBlock(block: unknown): JsonObject | null {
   if (!block || typeof block !== "object" || Array.isArray(block)) {

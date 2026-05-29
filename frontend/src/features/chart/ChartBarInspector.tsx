@@ -281,12 +281,6 @@ export function ChartBarInspector({
                       <dd>{traceOutcomeList(outcome, "allowed_regimes")}</dd>
                     </>
                   ) : null}
-                  {traceOutcomeList(outcome, "allowed_states") ? (
-                    <>
-                      <dt>allowed_states</dt>
-                      <dd>{traceOutcomeList(outcome, "allowed_states")}</dd>
-                    </>
-                  ) : null}
                   {traceOutcomeAtBar(outcome, "raw_state", index) ? (
                     <>
                       <dt>raw_state</dt>

@@ -138,16 +138,6 @@ function stringAtIndex(series: unknown, index: number): string | null {
   return value === null || value === undefined ? null : String(value);
 }
 
-function allowedStatesFromTraceOutcome(
-  record: ContextConsumptionTraceRecord,
-): string | null {
-  const outcome = record.outcome;
-  if (!outcome || !Array.isArray(outcome.allowed_states)) {
-    return null;
-  }
-  return joinList(outcome.allowed_states as unknown[]);
-}
-
 function allowedRegimesFromTraceOutcome(
   record: ContextConsumptionTraceRecord,
 ): string | null {
@@ -191,16 +181,6 @@ function policyParamsFromSpec(
   return null;
 }
 
-function allowedStatesFromSpec(
-  strategySpec: JsonObject | undefined,
-  contextRef: string,
-  policyId: string,
-): string | null {
-  const params = policyParamsFromSpec(strategySpec, contextRef, policyId);
-  const raw = params?.allowed_states;
-  return Array.isArray(raw) ? joinList(raw as unknown[]) : null;
-}
-
 function allowedRegimesFromSpec(
   strategySpec: JsonObject | undefined,
   contextRef: string,
@@ -232,7 +212,6 @@ export function buildEntryBarCausalDiagnostics(
   }
 
   const applied = record.context_applied[index] ?? false;
-  const isRegimeGate = record.policy_id === "htf_regime_gate";
   const outcome = record.outcome ?? {};
   const rawState =
     stringAtIndex(outcome.raw_state, index) ??
@@ -241,14 +220,17 @@ export function buildEntryBarCausalDiagnostics(
   const evaluatedSide =
     typeof outcome.evaluated_side === "string" ? outcome.evaluated_side : null;
 
+  const allowedRegimes =
+    allowedRegimesFromTraceOutcome(record) ??
+    allowedRegimesFromSpec(strategySpec, record.context_ref, record.policy_id) ??
+    EM_DASH;
+
   const fields: TradeDiagnosticField[] = [
     field(
       "entry_causal.gate",
       "gate",
       formatGateDecisionLabel(applied),
-      isRegimeGate
-        ? "htf_regime_gate allow/block on the entry bar (from signal trace)"
-        : "htf_state_gate allow/block on the entry bar (from signal trace)",
+      "htf_regime_gate allow/block on the entry bar (from signal trace)",
     ),
     field(
       "entry_causal.raw_state",
@@ -259,26 +241,14 @@ export function buildEntryBarCausalDiagnostics(
     field("entry_causal.context_ref", "context_ref", record.context_ref),
     field("entry_causal.policy_id", "policy_id", record.policy_id),
     field("entry_causal.component_id", "component_id", record.component_id),
+    field("entry_causal.allowed_regimes", "allowed_regimes", allowedRegimes),
   ];
 
-  if (isRegimeGate) {
-    const allowedRegimes =
-      allowedRegimesFromTraceOutcome(record) ??
-      allowedRegimesFromSpec(strategySpec, record.context_ref, record.policy_id) ??
-      EM_DASH;
-    fields.push(field("entry_causal.allowed_regimes", "allowed_regimes", allowedRegimes));
-    if (evaluatedSide) {
-      fields.push(field("entry_causal.evaluated_side", "evaluated_side", evaluatedSide));
-    }
-    if (resolvedRegime) {
-      fields.push(field("entry_causal.resolved_regime", "resolved_regime", resolvedRegime));
-    }
-  } else {
-    const allowedStates =
-      allowedStatesFromTraceOutcome(record) ??
-      allowedStatesFromSpec(strategySpec, record.context_ref, record.policy_id) ??
-      EM_DASH;
-    fields.push(field("entry_causal.allowed_states", "allowed_states", allowedStates));
+  if (evaluatedSide) {
+    fields.push(field("entry_causal.evaluated_side", "evaluated_side", evaluatedSide));
+  }
+  if (resolvedRegime) {
+    fields.push(field("entry_causal.resolved_regime", "resolved_regime", resolvedRegime));
   }
   if (record.instance_id) {
     fields.push(field("entry_causal.instance_id", "instance_id", record.instance_id));

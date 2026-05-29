@@ -252,7 +252,7 @@ def test_slice_signal_trace_empty_htf_with_consumption_trace() -> None:
         trigger_reclaim_anchor,
     )
     from tests.ema_pullback_context_helpers import (
-        blocker_htf_state_gate,
+        blocker_htf_regime_gate,
         exit_policy_htf_consumption,
         htf_strategy_contexts,
     )
@@ -261,7 +261,7 @@ def test_slice_signal_trace_empty_htf_with_consumption_trace() -> None:
         contexts=htf_strategy_contexts(context_ref="htf_1"),
         components=component_stack(
             direction=direction_ema_anchor_stack(),
-            blockers=(blocker_htf_state_gate(context_ref="htf_1"),),
+            blockers=(blocker_htf_regime_gate(context_ref="htf_1"),),
             setup=setup_untouched_anchor(),
             trigger=trigger_reclaim_anchor(),
             risk=risk_no_filter(),
