@@ -121,12 +121,15 @@ def evaluate_context_consumption(
         )
 
     if policy_id == EXIT_PROFILE_BY_HTF_STATE_POLICY:
-        sides = eval_ctx.enabled_sides or ("long", "short")
+        if eval_ctx.enabled_sides is None:
+            raise ValueError(
+                "exit_profile_by_htf_state requires enabled_sides from evaluation scope"
+            )
         profile_long, profile_short = apply_exit_profile_by_htf_state(
-            context_output,
+            raw_state,
             policy=consumption.policy,
             index=index,
-            sides=sides,
+            sides=eval_ctx.enabled_sides,
         )
         return ContextConsumptionResult(
             policy_id=policy_id,

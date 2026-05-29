@@ -452,9 +452,15 @@ def _parse_blocker(index: int, value: Any) -> BlockerRuleSpec:
             "lookback",
             "long_block_above",
             "short_block_below",
+            "context_consumption",
         }
         _reject_unknown_fields(f"blockers[{index}]", payload, allowed)
         rsi = _parse_rsi_payload(payload)
+        context_consumption = _parse_context_consumption(
+            payload.get("context_consumption"),
+            path=f"blockers[{index}].context_consumption",
+            allowed_policy_ids=(HTF_STATE_GATE_POLICY, HTF_REGIME_GATE_POLICY),
+        )
         return builders.blocker_extreme_rsi(
             instance_id=instance_id,
             timeframe=rsi["timeframe"],
@@ -462,6 +468,7 @@ def _parse_blocker(index: int, value: Any) -> BlockerRuleSpec:
             lookback=_optional_positive_int(payload, "lookback", default=20),
             long_block_above=_optional_number(payload, "long_block_above", default=80.0),
             short_block_below=_optional_number(payload, "short_block_below", default=20.0),
+            context_consumption=context_consumption,
         )
     raise EmaPullbackInstanceValidationError(f"unsupported blocker component_id {component_id!r}")
 

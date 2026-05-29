@@ -440,6 +440,71 @@ def test_loader_rejects_htf_regime_gate_without_allowed_regimes() -> None:
         load_ema_pullback_instance(instance)
 
 
+def test_loader_accepts_rsi_blocker_with_htf_regime_gate() -> None:
+    instance = {
+        "instance_id": "rsi_regime_gate",
+        "variant": "v",
+        "market": {"symbol": "BTCUSDT", "base_timeframe": "1h"},
+        "strategy": {
+            "trade_sides": ["long"],
+            "anchor_stack": {"source": "close", "timeframe": "base", "fast": 100, "anchor": 200, "slow": 1000},
+            "direction": {"component_id": "ema_anchor_stack_trend"},
+            "setup": {"component_id": "untouched_anchor_setup", "lookback": 50, "active_bars": 3},
+            "trigger": {"component_id": "reclaim_anchor"},
+            "blockers": [
+                {
+                    "instance_id": "rsi_block",
+                    "component_id": "rsi_lookback_extreme_blocker",
+                    "timeframe": "base",
+                    "period": 14,
+                    "context_consumption": {
+                        "context_ref": "htf",
+                        "policy": {
+                            "policy_id": HTF_REGIME_GATE_POLICY,
+                            "params": {"allowed_regimes": ["aligned", "neutral"]},
+                        },
+                    },
+                }
+            ],
+            "risk": {"component_id": "no_risk_filter"},
+            "contexts": {
+                "htf": {
+                    "component_id": "htf_context",
+                    "timeframe": "4h",
+                    "source": "close",
+                    "fast_period": 100,
+                    "anchor_period": 200,
+                    "slow_period": 1000,
+                }
+            },
+            "trade_management": {
+                "exit_policy": {
+                    "always_on": {
+                        "exits": [
+                            {
+                                "instance_id": "atr_sl",
+                                "component_id": "atr_stop_loss",
+                                "distance": {"timeframe": "base", "period": 14, "multiplier": 1.5},
+                            }
+                        ]
+                    },
+                    "profiles": {
+                        "aligned": {"exits": []},
+                        "countertrend": {"exits": []},
+                        "neutral": {"exits": []},
+                    },
+                }
+            },
+        },
+    }
+    spec = load_ema_pullback_instance(instance)
+    rule = spec.components.blockers[0]
+    assert rule.context_consumption is not None
+    assert rule.context_consumption.policy.policy_id == HTF_REGIME_GATE_POLICY
+    params = dict(rule.context_consumption.policy.params)
+    assert list(params["allowed_regimes"]) == ["aligned", "neutral"]
+
+
 def test_signals_and_exits_require_shared_injected_context_bundle(monkeypatch) -> None:
     pytest.importorskip("pandas")
     import pandas as pd

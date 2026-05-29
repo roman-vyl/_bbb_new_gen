@@ -353,8 +353,7 @@ def build_exit_outputs_from_spec(
         )
         context_state = result.raw_state_series
         if context_state is None:
-            context_output = context_bundle.get(consumption.context_ref)
-            context_state = context_output.state_series()
+            raise ValueError("exit_profile_by_htf_state result missing raw_state_series")
         profile_long = result.profile_long
         profile_short = result.profile_short
         assert profile_long is not None and profile_short is not None

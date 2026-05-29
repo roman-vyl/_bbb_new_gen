@@ -19,7 +19,12 @@ from research.strategies.ema_pullback.context.evaluation import (
     SideAwareEvaluationContext,
     evaluate_context_consumption,
 )
-from research.strategies.ema_pullback.context.policies import HTF_REGIME_GATE_POLICY, resolve_htf_regime
+from research.strategies.ema_pullback.context.policies import (
+    EXIT_PROFILE_BY_HTF_STATE_POLICY,
+    HTF_REGIME_GATE_POLICY,
+    apply_exit_profile_by_htf_state,
+    resolve_htf_regime,
+)
 from research.strategies.ema_pullback.features.calculations import add_feature_columns_from_plan
 from research.strategies.ema_pullback.features.plan import build_feature_plan_from_strategy_spec
 from research.strategies.ema_pullback.spec_instances import make_ema_pullback_strategy_spec
@@ -155,3 +160,73 @@ def test_validate_htf_regime_gate_params() -> None:
         validate_htf_regime_gate_params({"allowed_regimes": []}, path="policy")
     with pytest.raises(ValueError, match="invalid values"):
         validate_htf_regime_gate_params({"allowed_regimes": ["bullish"]}, path="policy")
+
+
+def test_exit_profile_requires_enabled_sides() -> None:
+    pytest.importorskip("pandas")
+    import pandas as pd
+
+    from research.strategies.ema_pullback.component_builders import exit_rsi, trade_management
+    from tests.ema_pullback_context_helpers import exit_policy_htf_consumption
+
+    spec = make_ema_pullback_strategy_spec(
+        contexts=htf_strategy_contexts(),
+        components=component_stack(
+            direction=direction_ema_anchor_stack(),
+            blockers=(blocker_htf_regime_gate(),),
+            setup=setup_untouched_anchor(),
+            trigger=trigger_reclaim_anchor(),
+            risk=risk_no_filter(),
+        ),
+        trade_management_spec=trade_management(
+            exit_policy_spec=exit_policy_htf_consumption(
+                always_on=make_ema_pullback_strategy_spec().trade_management.exit_policy.always_on.exits,
+                aligned=(exit_rsi(instance_id="profile_exit"),),
+            ),
+        ),
+    )
+    plan = build_feature_plan_from_strategy_spec(spec)
+    idx = pd.date_range("2024-01-01", periods=1, freq="h", tz="UTC")
+    close = pd.Series([100.0], index=idx)
+    ohlcv = pd.DataFrame(
+        {"close": close, "open": close, "high": close, "low": close, "volume": 1.0},
+        index=idx,
+    )
+    df = add_feature_columns_from_plan(ohlcv, plan)
+    cols = plan.htf_context_columns_for("htf")
+    df[cols["fast"]] = [103.0]
+    df[cols["anchor"]] = [102.0]
+    df[cols["slow"]] = [101.0]
+    bundle = context_bundle_for_spec(spec, df, plan)
+    consumption = spec.trade_management.exit_policy.context_consumption
+    assert consumption is not None
+
+    with pytest.raises(ValueError, match="enabled_sides"):
+        evaluate_context_consumption(
+            consumption,
+            SideAwareEvaluationContext(context_bundle=bundle, index=idx),
+        )
+
+
+def test_exit_profile_profiles_use_reindexed_raw_state() -> None:
+    pytest.importorskip("pandas")
+    import pandas as pd
+
+    full_idx = pd.date_range("2024-01-01", periods=3, freq="h", tz="UTC")
+    subset_idx = full_idx[:2]
+    raw_state = pd.Series(["up", "down"], index=subset_idx)
+    policy = context_consumption(
+        context_ref="htf",
+        policy_id=EXIT_PROFILE_BY_HTF_STATE_POLICY,
+    ).policy
+
+    profile_long, profile_short = apply_exit_profile_by_htf_state(
+        raw_state,
+        policy=policy,
+        index=full_idx,
+        sides=("long", "short"),
+    )
+
+    assert profile_long.index.equals(full_idx)
+    assert profile_long.tolist() == ["aligned", "countertrend", "neutral"]
+    assert profile_short.tolist() == ["countertrend", "aligned", "neutral"]

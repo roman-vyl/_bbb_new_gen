@@ -38,14 +38,14 @@ def _active_rule_group_for_side(*, side: TradeSide, context_state: str) -> str:
 
 
 def apply_exit_profile_by_htf_state(
-    output: ContextOutput,
+    raw_state: pd.Series,
     *,
     policy: ContextConsumptionPolicySpec,
     index: pd.Index,
     sides: tuple[TradeSide, ...],
 ) -> tuple[pd.Series, pd.Series]:
     _ = policy
-    context_state = output.state_series()
+    context_state = raw_state.reindex(index).fillna("neutral")
     profile_long = context_state.map(
         lambda state: resolve_htf_regime(state, "long")
     ).astype("object")
