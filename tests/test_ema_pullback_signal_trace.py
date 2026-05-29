@@ -107,6 +107,60 @@ def test_strategy_spec_roundtrip_from_report_dict() -> None:
     assert len(restored.components.blockers) == len(spec.components.blockers)
 
 
+def test_strategy_spec_roundtrip_preserves_blocker_htf_regime_gate_params() -> None:
+    from dataclasses import asdict
+    from tests.ema_pullback_context_helpers import (
+        blocker_htf_regime_gate,
+        htf_strategy_contexts,
+    )
+
+    base = make_ema_pullback_strategy_spec(contexts=htf_strategy_contexts(context_ref="htf_1"))
+    spec = replace(
+        base,
+        components=replace(
+            base.components,
+            blockers=(blocker_htf_regime_gate(context_ref="htf_1", allowed_regimes=("aligned", "neutral")),),
+        ),
+    )
+    wire = strategy_spec_to_dict(spec)
+    blocker = wire["components"]["blockers"][0]
+    assert blocker["context_consumption"]["policy"]["params"] == {
+        "allowed_regimes": ["aligned", "neutral"],
+    }
+    restored = strategy_spec_from_report_dict(wire)
+    consumption = restored.components.blockers[0].context_consumption
+    assert consumption is not None
+    assert dict(consumption.policy.params) == {"allowed_regimes": ["aligned", "neutral"]}
+
+    legacy_wire = asdict(spec)
+    restored_legacy = strategy_spec_from_report_dict(legacy_wire)
+    legacy_consumption = restored_legacy.components.blockers[0].context_consumption
+    assert legacy_consumption is not None
+    assert dict(legacy_consumption.policy.params) == {"allowed_regimes": ["aligned", "neutral"]}
+
+
+def test_signal_trace_after_htf_regime_gate_report_roundtrip() -> None:
+    from tests.ema_pullback_context_helpers import (
+        blocker_htf_regime_gate,
+        htf_strategy_contexts,
+    )
+
+    base = make_ema_pullback_strategy_spec(contexts=htf_strategy_contexts(context_ref="htf_1"))
+    spec = replace(
+        base,
+        components=replace(
+            base.components,
+            blockers=(blocker_htf_regime_gate(context_ref="htf_1", allowed_regimes=("aligned", "neutral")),),
+        ),
+    )
+    restored = strategy_spec_from_report_dict(strategy_spec_to_dict(spec))
+    plan = build_feature_plan_from_strategy_spec(restored)
+    df = add_feature_columns_from_plan(_ohlcv(periods=30), plan)
+    trace = build_signal_trace_from_spec(df, restored, plan, context_overlay_ref="htf_1")
+    assert len(trace.times) == len(df)
+    assert any(record.get("policy_id") == "htf_regime_gate" for record in trace.context_consumption_trace)
+
+
 def test_strategy_spec_roundtrip_preserves_named_contexts() -> None:
     from research.strategies.ema_pullback.component_builders import exit_rsi, trade_management
     from tests.ema_pullback_context_helpers import exit_policy_htf_consumption, htf_strategy_contexts

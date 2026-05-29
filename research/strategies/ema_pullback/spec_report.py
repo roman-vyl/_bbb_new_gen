@@ -59,20 +59,34 @@ def _rsi_spec(payload: Mapping[str, Any] | None) -> RsiFeatureSpec | None:
     )
 
 
+def _parse_policy_params(name: str, value: Any) -> tuple[tuple[str, Any], ...]:
+    """Accept JSON object or legacy ``asdict`` list of ``[key, value]`` pairs."""
+    if value is None:
+        return ()
+    if isinstance(value, Mapping):
+        return tuple(sorted(value.items(), key=lambda item: item[0]))
+    if isinstance(value, (list, tuple)):
+        pairs: list[tuple[str, Any]] = []
+        for item in value:
+            if isinstance(item, (list, tuple)) and len(item) == 2:
+                pairs.append((str(item[0]), item[1]))
+            else:
+                raise StrategySpecReportParseError(
+                    f"{name} must be an object or list of [key, value] pairs"
+                )
+        return tuple(sorted(pairs, key=lambda pair: pair[0]))
+    raise StrategySpecReportParseError(f"{name} must be an object")
+
+
 def _parse_blocker_context_consumption(value: Any) -> ContextConsumptionSpec | None:
     if value is None:
         return None
     consumption = _require_mapping("blocker.context_consumption", value)
     policy = _require_mapping("blocker.context_consumption.policy", consumption.get("policy"))
-    params_raw = policy.get("params", {})
-    if params_raw is None:
-        params: tuple[tuple[str, Any], ...] = ()
-    elif isinstance(params_raw, Mapping):
-        params = tuple(sorted(params_raw.items(), key=lambda item: item[0]))
-    else:
-        raise StrategySpecReportParseError(
-            "blocker.context_consumption.policy.params must be an object"
-        )
+    params = _parse_policy_params(
+        "blocker.context_consumption.policy.params",
+        policy.get("params", {}),
+    )
     return ContextConsumptionSpec(
         context_ref=str(consumption["context_ref"]),
         policy=ContextConsumptionPolicySpec(
@@ -298,11 +312,15 @@ def _parse_report_context_consumption(
 ) -> ContextConsumptionSpec | None:
     if isinstance(consumption_raw, Mapping):
         policy_raw = _require_mapping("context_consumption.policy", consumption_raw.get("policy"))
+        params = _parse_policy_params(
+            "context_consumption.policy.params",
+            policy_raw.get("params", {}),
+        )
         return ContextConsumptionSpec(
             context_ref=str(consumption_raw["context_ref"]),
             policy=ContextConsumptionPolicySpec(
                 policy_id=str(policy_raw["policy_id"]),
-                params=tuple(),
+                params=params,
             ),
         )
     if has_profile_exits and isinstance(legacy_context, Mapping):

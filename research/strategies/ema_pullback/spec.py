@@ -443,6 +443,24 @@ class EmaPullbackStrategySpec:
                 )
 
 
+def _normalize_policy_params_wire(params: Any) -> dict[str, Any]:
+    if params is None:
+        return {}
+    if isinstance(params, dict):
+        return params
+    if isinstance(params, (list, tuple)):
+        return dict(params)
+    return {}
+
+
+def _normalize_context_consumption_wire(block: Any) -> None:
+    if not isinstance(block, dict):
+        return
+    policy = block.get("policy")
+    if isinstance(policy, dict) and "params" in policy:
+        policy["params"] = _normalize_policy_params_wire(policy["params"])
+
+
 def strategy_spec_to_dict(spec: EmaPullbackStrategySpec) -> dict[str, Any]:
     payload = asdict(spec)
     # Wire format for reports / API: contexts as {ref: provider}, not asdict's tuple-of-tuples.
@@ -452,6 +470,18 @@ def strategy_spec_to_dict(spec: EmaPullbackStrategySpec) -> dict[str, Any]:
         }
     else:
         payload.pop("contexts", None)
+    components = payload.get("components")
+    if isinstance(components, dict):
+        blockers = components.get("blockers")
+        if isinstance(blockers, (list, tuple)):
+            for blocker in blockers:
+                if isinstance(blocker, dict):
+                    _normalize_context_consumption_wire(blocker.get("context_consumption"))
+    trade_management = payload.get("trade_management")
+    if isinstance(trade_management, dict):
+        exit_policy = trade_management.get("exit_policy")
+        if isinstance(exit_policy, dict):
+            _normalize_context_consumption_wire(exit_policy.get("context_consumption"))
     return payload
 
 
