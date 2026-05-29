@@ -12,9 +12,9 @@ from research.strategies.ema_pullback.components.registry import (
 )
 from research.strategies.ema_pullback.context.bundle import ContextBundle
 from research.strategies.ema_pullback.context.pipeline import require_context_bundle
-from research.strategies.ema_pullback.context.policies import (
-    HTF_STATE_GATE_POLICY,
-    apply_htf_state_gate,
+from research.strategies.ema_pullback.context.evaluation import (
+    SideAwareEvaluationContext,
+    evaluate_context_consumption,
 )
 from research.strategies.ema_pullback.spec import BlockerRuleSpec
 from research.strategies.ema_pullback.features.plan import FeaturePlan
@@ -71,21 +71,25 @@ def _apply_blocker_context_gate(
     *,
     rule: BlockerRuleSpec,
     bundle: ContextBundle,
+    side: TradeSide,
 ) -> pd.Series:
     consumption = rule.context_consumption
     if consumption is None:
         return signal
-    if consumption.policy.policy_id != HTF_STATE_GATE_POLICY:
+    result = evaluate_context_consumption(
+        consumption,
+        SideAwareEvaluationContext(
+            context_bundle=bundle,
+            index=signal.index,
+            evaluated_side=side,
+        ),
+    )
+    gate = result.allowed_mask
+    if gate is None:
         raise ValueError(
-            "unsupported blocker context_consumption.policy_id: "
+            "context consumption result missing allowed_mask for "
             f"{consumption.policy.policy_id!r}"
         )
-    context_output = bundle.get(consumption.context_ref)
-    gate = apply_htf_state_gate(
-        context_output,
-        policy=consumption.policy,
-        index=signal.index,
-    )
     return signal & gate.fillna(False).astype(bool)
 
 
@@ -126,7 +130,7 @@ def _build_side_signals(
         )
         if rule.context_consumption is not None:
             assert bundle is not None
-            signal = _apply_blocker_context_gate(signal, rule=rule, bundle=bundle)
+            signal = _apply_blocker_context_gate(signal, rule=rule, bundle=bundle, side=side)
         blocker_signals_list.append(signal)
     blocker_signals = tuple(blocker_signals_list)
     blocker_counters = tuple(

@@ -1553,38 +1553,42 @@ function ContextProviderFields({
           onChange={(e) => patch("component_id", e.target.value)}
         />
       </label>
-      <label className="field">
-        <span>timeframe</span>
-        <input value={String(value.timeframe ?? "4h")} onChange={(e) => patch("timeframe", e.target.value)} />
-      </label>
-      <label className="field">
-        <span>source</span>
-        <input value={String(value.source ?? "close")} onChange={(e) => patch("source", e.target.value)} />
-      </label>
-      <label className="field">
-        <span>fast_period</span>
-        <input
-          type="number"
-          value={Number(value.fast_period ?? 100)}
-          onChange={(e) => patch("fast_period", Number(e.target.value))}
-        />
-      </label>
-      <label className="field">
-        <span>anchor_period</span>
-        <input
-          type="number"
-          value={Number(value.anchor_period ?? 200)}
-          onChange={(e) => patch("anchor_period", Number(e.target.value))}
-        />
-      </label>
-      <label className="field">
-        <span>slow_period</span>
-        <input
-          type="number"
-          value={Number(value.slow_period ?? 1000)}
-          onChange={(e) => patch("slow_period", Number(e.target.value))}
-        />
-      </label>
+      <div className="composer-field-row">
+        <label className="field">
+          <span>timeframe</span>
+          <input value={String(value.timeframe ?? "4h")} onChange={(e) => patch("timeframe", e.target.value)} />
+        </label>
+        <label className="field">
+          <span>source</span>
+          <input value={String(value.source ?? "close")} onChange={(e) => patch("source", e.target.value)} />
+        </label>
+      </div>
+      <div className="composer-field-row composer-field-row--periods">
+        <label className="field">
+          <span>fast_period</span>
+          <input
+            type="number"
+            value={Number(value.fast_period ?? 100)}
+            onChange={(e) => patch("fast_period", Number(e.target.value))}
+          />
+        </label>
+        <label className="field">
+          <span>anchor_period</span>
+          <input
+            type="number"
+            value={Number(value.anchor_period ?? 200)}
+            onChange={(e) => patch("anchor_period", Number(e.target.value))}
+          />
+        </label>
+        <label className="field">
+          <span>slow_period</span>
+          <input
+            type="number"
+            value={Number(value.slow_period ?? 1000)}
+            onChange={(e) => patch("slow_period", Number(e.target.value))}
+          />
+        </label>
+      </div>
     </div>
   );
 }
@@ -1698,16 +1702,13 @@ function StrategyContextsSection({
           Add context
         </button>
       </div>
-      <p className="composer-hint">
-        Adds a provider under strategy.contexts with catalog defaults. Consumers are not auto-linked.
-      </p>
       {refs.length === 0 ? (
         <p className="composer-hint">No strategy-level context providers.</p>
       ) : null}
       {refs.map((ref) => (
         <div key={ref} className="composer-slot">
-          <div className="composer-row">
-            <label className="field field--inline">
+          <div className="composer-row composer-context-ref-row">
+            <label className="field">
               <span>context_ref</span>
               <input
                 value={renameDraft[ref] ?? ref}
@@ -1717,7 +1718,11 @@ function StrategyContextsSection({
                 onBlur={() => commitRename(ref)}
               />
             </label>
-            <button type="button" className="composer-btn composer-btn--danger" onClick={() => removeContext(ref)}>
+            <button
+              type="button"
+              className="composer-btn composer-btn--danger"
+              onClick={() => removeContext(ref)}
+            >
               Remove
             </button>
           </div>

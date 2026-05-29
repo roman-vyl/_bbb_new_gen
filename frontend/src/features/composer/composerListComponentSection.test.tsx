@@ -29,14 +29,13 @@ const catalog: ComponentCatalog = {
       supports_context_consumption: true,
       context_consumption_policies: [
         {
-          policy_id: "htf_state_gate",
-          label: "HTF state gate",
+          policy_id: "htf_regime_gate",
+          label: "HTF regime gate",
           params_schema: {
-            allowed_states: {
+            allowed_regimes: {
               type: "array",
-              label: "Allowed HTF states",
-              enum: ["up", "down", "neutral"],
-              default: ["up"],
+              label: "Allowed regimes",
+              enum: ["aligned", "countertrend", "neutral"],
             },
           },
         },
@@ -50,14 +49,13 @@ const catalog: ComponentCatalog = {
       supports_context_consumption: true,
       context_consumption_policies: [
         {
-          policy_id: "htf_state_gate",
-          label: "HTF state gate",
+          policy_id: "htf_regime_gate",
+          label: "HTF regime gate",
           params_schema: {
-            allowed_states: {
+            allowed_regimes: {
               type: "array",
-              label: "Allowed HTF states",
-              enum: ["up", "down", "neutral"],
-              default: ["up"],
+              label: "Allowed regimes",
+              enum: ["aligned", "countertrend", "neutral"],
             },
           },
         },
@@ -136,7 +134,19 @@ describe("ListComponentSection blockers context consumption", () => {
     expect(screen.getByText("Add a strategy context first")).toBeTruthy();
   });
 
-  it("renders allowed_states as multiselect when consumption enabled", () => {
+  it("lists htf_regime_gate in policy selector from catalog", () => {
+    renderBlockers(
+      [{ instance_id: "b1", component_id: "counter_candle_blocker" }],
+      { contexts: { htf_1: { component_id: "htf_context" } } },
+    );
+    fireEvent.click(screen.getByRole("checkbox", { name: /Context consumption/i }));
+    const policySelect = screen.getAllByRole("combobox").find((el) =>
+      Array.from(el.querySelectorAll("option")).some((o) => o.textContent === "HTF regime gate"),
+    );
+    expect(policySelect).toBeTruthy();
+  });
+
+  it("renders allowed_regimes multiselect for htf_regime_gate", () => {
     renderBlockers(
       [{ instance_id: "b1", component_id: "counter_candle_blocker" }],
       { contexts: { htf_1: { component_id: "htf_context" } } },
@@ -148,13 +158,27 @@ describe("ListComponentSection blockers context consumption", () => {
     )!;
     fireEvent.change(contextSelect, { target: { value: "htf_1" } });
     const policySelect = selects.find((el) =>
-      Array.from(el.querySelectorAll("option")).some((o) => o.textContent === "HTF state gate"),
+      Array.from(el.querySelectorAll("option")).some((o) => o.textContent === "HTF regime gate"),
     )!;
-    fireEvent.change(policySelect, { target: { value: "htf_state_gate" } });
-    expect(screen.getByText("Allowed HTF states")).toBeTruthy();
-    expect(screen.getByText("up")).toBeTruthy();
-    expect(screen.getByText("down")).toBeTruthy();
+    fireEvent.change(policySelect, { target: { value: "htf_regime_gate" } });
+    expect(screen.getByText("Allowed regimes")).toBeTruthy();
+    expect(screen.getByText("aligned")).toBeTruthy();
+    expect(screen.getByText("countertrend")).toBeTruthy();
     expect(screen.getByText("neutral")).toBeTruthy();
+  });
+
+  it("does not list HTF state gate in policy selector", () => {
+    renderBlockers(
+      [{ instance_id: "b1", component_id: "counter_candle_blocker" }],
+      { contexts: { htf_1: { component_id: "htf_context" } } },
+    );
+    fireEvent.click(screen.getByRole("checkbox", { name: /Context consumption/i }));
+    const policySelect = screen.getAllByRole("combobox").find((el) =>
+      Array.from(el.querySelectorAll("option")).some((o) => o.textContent === "HTF regime gate"),
+    );
+    expect(policySelect).toBeTruthy();
+    const options = Array.from(policySelect!.querySelectorAll("option")).map((o) => o.textContent);
+    expect(options).not.toContain("HTF state gate");
   });
 
   it("lists only defined context refs in selector", () => {

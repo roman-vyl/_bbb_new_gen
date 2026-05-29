@@ -27,11 +27,11 @@ from research.strategies.ema_pullback.components.registry import (
     resolve_component,
 )
 from research.strategies.ema_pullback.context.consumption_validation import (
-    validate_htf_state_gate_params,
+    validate_htf_regime_gate_params,
 )
 from research.strategies.ema_pullback.context.policies import (
     EXIT_PROFILE_BY_HTF_STATE_POLICY,
-    HTF_STATE_GATE_POLICY,
+    HTF_REGIME_GATE_POLICY,
 )
 from research.strategies.ema_pullback.spec import (
     BlockerRuleSpec,
@@ -280,9 +280,9 @@ def _parse_context_consumption(
         params_map: dict[str, Any] = {}
     else:
         params_map = _require_mapping(f"{policy_path}.params", params_raw)
-    if policy_id == HTF_STATE_GATE_POLICY:
+    if policy_id == HTF_REGIME_GATE_POLICY:
         try:
-            validate_htf_state_gate_params(params_map, path=policy_path)
+            validate_htf_regime_gate_params(params_map, path=policy_path)
         except ValueError as exc:
             raise EmaPullbackInstanceValidationError(str(exc)) from exc
     params = tuple(sorted(params_map.items(), key=lambda item: item[0]))
@@ -431,7 +431,7 @@ def _parse_blocker(index: int, value: Any) -> BlockerRuleSpec:
         context_consumption = _parse_context_consumption(
             payload.get("context_consumption"),
             path=f"blockers[{index}].context_consumption",
-            allowed_policy_ids=(HTF_STATE_GATE_POLICY,),
+            allowed_policy_ids=(HTF_REGIME_GATE_POLICY,),
         )
         return builders.blocker_counter_candle(
             instance_id=instance_id,
@@ -445,9 +445,15 @@ def _parse_blocker(index: int, value: Any) -> BlockerRuleSpec:
             "lookback",
             "long_block_above",
             "short_block_below",
+            "context_consumption",
         }
         _reject_unknown_fields(f"blockers[{index}]", payload, allowed)
         rsi = _parse_rsi_payload(payload)
+        context_consumption = _parse_context_consumption(
+            payload.get("context_consumption"),
+            path=f"blockers[{index}].context_consumption",
+            allowed_policy_ids=(HTF_REGIME_GATE_POLICY,),
+        )
         return builders.blocker_extreme_rsi(
             instance_id=instance_id,
             timeframe=rsi["timeframe"],
@@ -455,6 +461,7 @@ def _parse_blocker(index: int, value: Any) -> BlockerRuleSpec:
             lookback=_optional_positive_int(payload, "lookback", default=20),
             long_block_above=_optional_number(payload, "long_block_above", default=80.0),
             short_block_below=_optional_number(payload, "short_block_below", default=20.0),
+            context_consumption=context_consumption,
         )
     raise EmaPullbackInstanceValidationError(f"unsupported blocker component_id {component_id!r}")
 

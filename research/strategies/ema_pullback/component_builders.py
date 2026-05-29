@@ -150,6 +150,7 @@ def blocker_extreme_rsi(
     lookback: int = 20,
     long_block_above: float = 80.0,
     short_block_below: float = 20.0,
+    context_consumption: ContextConsumptionSpec | None = None,
 ) -> BlockerRuleSpec:
     return blocker_rule(
         RSI_LOOKBACK_EXTREME_BLOCKER_COMPONENT,
@@ -158,6 +159,7 @@ def blocker_extreme_rsi(
         lookback=lookback,
         long_block_above=long_block_above,
         short_block_below=short_block_below,
+        context_consumption=context_consumption,
     )
 
 

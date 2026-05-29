@@ -25,10 +25,10 @@ const catalog: ComponentCatalog = {
       supports_context_consumption: true,
       context_consumption_policies: [
         {
-          policy_id: "htf_state_gate",
-          label: "HTF state gate",
+          policy_id: "htf_regime_gate",
+          label: "HTF regime gate",
           params_schema: {
-            allowed_states: { type: "array", default: ["up"] },
+            allowed_regimes: { type: "array", enum: ["aligned", "countertrend", "neutral"] },
           },
         },
       ],
@@ -156,7 +156,7 @@ describe("strategy context authoring helpers", () => {
           component_id: "counter_candle_blocker",
           context_consumption: {
             context_ref: "htf_1",
-            policy: { policy_id: "htf_state_gate", params: { allowed_states: ["up"] } },
+            policy: { policy_id: "htf_regime_gate", params: { allowed_regimes: ["aligned"] } },
           },
         },
       ],

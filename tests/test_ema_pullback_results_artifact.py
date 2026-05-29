@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from research.strategies.ema_pullback.execution.backtest import build_trade_side_metrics
-from research.strategies.ema_pullback.execution.exits import _active_rule_group_for_side
+from research.strategies.ema_pullback.context.policies import resolve_htf_regime
 from research.strategies.ema_pullback.execution.results import (
     build_exit_reason_breakdown,
     build_fee_diagnostics,
@@ -303,10 +303,10 @@ def _both_sides_closed_fixture() -> list[dict[str, object]]:
 
 
 def test_active_rule_group_side_aware_short() -> None:
-    assert _active_rule_group_for_side(side="short", context_state="up") == "countertrend"
-    assert _active_rule_group_for_side(side="short", context_state="down") == "aligned"
-    assert _active_rule_group_for_side(side="long", context_state="up") == "aligned"
-    assert _active_rule_group_for_side(side="long", context_state="down") == "countertrend"
+    assert resolve_htf_regime("up", "short") == "countertrend"
+    assert resolve_htf_regime("down", "short") == "aligned"
+    assert resolve_htf_regime("up", "long") == "aligned"
+    assert resolve_htf_regime("down", "long") == "countertrend"
 
 
 def test_profile_side_breakdown_long_only() -> None:

@@ -10,10 +10,11 @@ import pandas as pd
 from research.strategies.ema_pullback.components.registry import resolve_component
 from research.strategies.ema_pullback.context.bundle import ContextBundle
 from research.strategies.ema_pullback.context.pipeline import require_context_bundle
-from research.strategies.ema_pullback.context.policies import (
-    EXIT_PROFILE_BY_HTF_STATE_POLICY,
-    apply_exit_profile_by_htf_state,
+from research.strategies.ema_pullback.context.evaluation import (
+    SideAwareEvaluationContext,
+    evaluate_context_consumption,
 )
+from research.strategies.ema_pullback.context.policies import EXIT_PROFILE_BY_HTF_STATE_POLICY
 from research.strategies.ema_pullback.execution.exit_attribution import ExitAttributionContext
 from research.strategies.ema_pullback.features.plan import FeaturePlan
 from research.strategies.ema_pullback.spec import (
@@ -116,22 +117,6 @@ def _signal_series_for_side(
         slow_col=slow_col,
     )
     return s.fillna(False).astype(bool)
-
-
-def _active_rule_group_for_side(*, side: TradeSide, context_state: str) -> str:
-    if context_state not in STATE_ORDER:
-        return "neutral"
-    if side == "long":
-        if context_state == "up":
-            return "aligned"
-        if context_state == "down":
-            return "countertrend"
-        return "neutral"
-    if context_state == "down":
-        return "aligned"
-    if context_state == "up":
-        return "countertrend"
-    return "neutral"
 
 
 def _compile_signal_series(
@@ -358,14 +343,20 @@ def build_exit_outputs_from_spec(
                 f"{consumption.policy.policy_id!r}"
             )
         assert context_bundle is not None
-        context_output = context_bundle.get(consumption.context_ref)
-        context_state = context_output.state_series()
-        profile_long, profile_short = apply_exit_profile_by_htf_state(
-            context_output,
-            policy=consumption.policy,
-            index=index,
-            sides=spec.trade_sides.enabled,
+        result = evaluate_context_consumption(
+            consumption,
+            SideAwareEvaluationContext(
+                context_bundle=context_bundle,
+                index=index,
+                enabled_sides=spec.trade_sides.enabled,
+            ),
         )
+        context_state = result.raw_state_series
+        if context_state is None:
+            raise ValueError("exit_profile_by_htf_state result missing raw_state_series")
+        profile_long = result.profile_long
+        profile_short = result.profile_short
+        assert profile_long is not None and profile_short is not None
     else:
         context_state = pd.Series("neutral", index=index, dtype="object")
         profile_long = pd.Series("neutral", index=index, dtype="object")

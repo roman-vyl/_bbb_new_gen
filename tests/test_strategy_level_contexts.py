@@ -20,7 +20,7 @@ from research.strategies.ema_pullback.component_builders import (
 from research.strategies.ema_pullback.components.registry import NO_BLOCKERS_COMPONENT, resolve_component
 from research.strategies.ema_pullback.context.bundle import ContextBundle
 from research.strategies.ema_pullback.context.pipeline import build_context_bundle_for_spec
-from research.strategies.ema_pullback.context.policies import HTF_STATE_GATE_POLICY
+from research.strategies.ema_pullback.context.policies import HTF_REGIME_GATE_POLICY
 from research.strategies.ema_pullback.execution.exits import build_exit_outputs_from_spec
 from research.strategies.ema_pullback.execution.signals import (
     _apply_blocker_context_gate,
@@ -36,8 +36,7 @@ from research.strategies.ema_pullback.instance_loader import (
 from research.strategies.ema_pullback.spec import ContextConsumptionSpec, ExitPolicySpec
 from research.strategies.ema_pullback.spec_instances import make_ema_pullback_strategy_spec
 from tests.ema_pullback_context_helpers import (
-    blocker_htf_state_gate,
-    context_consumption,
+    blocker_htf_regime_gate,
     exit_policy_htf_consumption,
     htf_strategy_contexts,
 )
@@ -175,8 +174,8 @@ def test_loader_rejects_blocker_unknown_context_ref() -> None:
                     "context_consumption": {
                         "context_ref": "missing",
                         "policy": {
-                            "policy_id": HTF_STATE_GATE_POLICY,
-                            "params": {"allowed_states": ["up"]},
+                            "policy_id": HTF_REGIME_GATE_POLICY,
+                            "params": {"allowed_regimes": ["aligned"]},
                         },
                     },
                 }
@@ -216,7 +215,7 @@ def test_loader_rejects_blocker_unknown_context_ref() -> None:
         load_ema_pullback_instance(instance)
 
 
-def test_htf_state_gate_changes_blocker_mask_and_omitting_consumption_restores_baseline() -> None:
+def test_htf_regime_gate_changes_blocker_mask_and_omitting_consumption_restores_baseline() -> None:
     pytest.importorskip("pandas")
     import pandas as pd
 
@@ -233,14 +232,16 @@ def test_htf_state_gate_changes_blocker_mask_and_omitting_consumption_restores_b
     )
 
     rule_baseline = blocker_counter_candle()
-    rule_gate_up = blocker_htf_state_gate(allowed_states=("up",))
-    rule_gate_up_down = blocker_htf_state_gate(allowed_states=("up", "down"))
+    rule_gate_aligned = blocker_htf_regime_gate(allowed_regimes=("aligned",))
+    rule_gate_aligned_counter = blocker_htf_regime_gate(
+        allowed_regimes=("aligned", "countertrend"),
+    )
 
     spec = make_ema_pullback_strategy_spec(
         contexts=htf_strategy_contexts(),
         components=component_stack(
             direction=direction_ema_anchor_stack(),
-            blockers=(rule_gate_up,),
+            blockers=(rule_gate_aligned,),
             setup=setup_untouched_anchor(),
             trigger=trigger_reclaim_anchor(),
             risk=risk_no_filter(),
@@ -261,11 +262,13 @@ def test_htf_state_gate_changes_blocker_mask_and_omitting_consumption_restores_b
     bundle = ContextBundle.build(spec, df, plan)
     assert bundle.get("htf").state_series().tolist() == ["up", "down", "neutral"]
 
-    gated_up = _apply_blocker_context_gate(base_mask, rule=rule_gate_up, bundle=bundle)
-    assert gated_up.tolist() == [True, False, False]
+    gated_aligned = _apply_blocker_context_gate(base_mask, rule=rule_gate_aligned, bundle=bundle, side="long")
+    assert gated_aligned.tolist() == [True, False, False]
 
-    gated_up_down = _apply_blocker_context_gate(base_mask, rule=rule_gate_up_down, bundle=bundle)
-    assert gated_up_down.tolist() == [True, True, False]
+    gated_aligned_counter = _apply_blocker_context_gate(
+        base_mask, rule=rule_gate_aligned_counter, bundle=bundle, side="long"
+    )
+    assert gated_aligned_counter.tolist() == [True, True, False]
 
     assert base_mask.tolist() == fn(df, side="long").tolist()
 
@@ -279,10 +282,10 @@ def test_builder_rejects_no_blockers_with_context_consumption() -> None:
                     blocker_rule(
                         NO_BLOCKERS_COMPONENT,
                         instance_id="no_blockers",
-                        context_consumption=context_consumption(
+                        context_consumption=                        context_consumption(
                             context_ref="htf",
-                            policy_id=HTF_STATE_GATE_POLICY,
-                            params=(("allowed_states", ["up"]),),
+                            policy_id=HTF_REGIME_GATE_POLICY,
+                            params=(("allowed_regimes", ["aligned"]),),
                         ),
                     ),
                 ),
@@ -307,9 +310,10 @@ def test_builder_accepts_rsi_blocker_with_context_consumption() -> None:
                     RSI_LOOKBACK_EXTREME_BLOCKER_COMPONENT,
                     instance_id="rsi_block",
                     rsi=rsi_feature(timeframe="base", period=14),
-                    context_consumption=context_consumption(
+                    context_consumption=                    context_consumption(
                         context_ref="htf",
-                        policy_id=HTF_STATE_GATE_POLICY,
+                        policy_id=HTF_REGIME_GATE_POLICY,
+                        params=(("allowed_regimes", ["aligned"]),),
                     ),
                 ),
             ),
@@ -320,10 +324,10 @@ def test_builder_accepts_rsi_blocker_with_context_consumption() -> None:
     )
     rule = spec.components.blockers[0]
     assert rule.context_consumption is not None
-    assert rule.context_consumption.policy.policy_id == HTF_STATE_GATE_POLICY
+    assert rule.context_consumption.policy.policy_id == HTF_REGIME_GATE_POLICY
 
 
-def test_loader_rejects_allowed_states_string_type() -> None:
+def test_loader_rejects_htf_state_gate_policy() -> None:
     instance = {
         "instance_id": "gate",
         "variant": "v",
@@ -341,8 +345,8 @@ def test_loader_rejects_allowed_states_string_type() -> None:
                     "context_consumption": {
                         "context_ref": "htf",
                         "policy": {
-                            "policy_id": HTF_STATE_GATE_POLICY,
-                            "params": {"allowed_states": "up"},
+                            "policy_id": "htf_state_gate",
+                            "params": {"allowed_states": ["up"]},
                         },
                     },
                 }
@@ -378,8 +382,129 @@ def test_loader_rejects_allowed_states_string_type() -> None:
             },
         },
     }
-    with pytest.raises(EmaPullbackInstanceValidationError, match="allowed_states must be a list"):
+    with pytest.raises(EmaPullbackInstanceValidationError, match="htf_state_gate"):
         load_ema_pullback_instance(instance)
+
+
+def test_loader_rejects_htf_regime_gate_without_allowed_regimes() -> None:
+    instance = {
+        "instance_id": "regime_gate",
+        "variant": "v",
+        "market": {"symbol": "BTCUSDT", "base_timeframe": "1h"},
+        "strategy": {
+            "trade_sides": ["long"],
+            "anchor_stack": {"source": "close", "timeframe": "base", "fast": 100, "anchor": 200, "slow": 1000},
+            "direction": {"component_id": "ema_anchor_stack_trend"},
+            "setup": {"component_id": "untouched_anchor_setup", "lookback": 50, "active_bars": 3},
+            "trigger": {"component_id": "reclaim_anchor"},
+            "blockers": [
+                {
+                    "instance_id": "ccb",
+                    "component_id": "counter_candle_blocker",
+                    "context_consumption": {
+                        "context_ref": "htf",
+                        "policy": {"policy_id": HTF_REGIME_GATE_POLICY, "params": {}},
+                    },
+                }
+            ],
+            "risk": {"component_id": "no_risk_filter"},
+            "contexts": {
+                "htf": {
+                    "component_id": "htf_context",
+                    "timeframe": "4h",
+                    "source": "close",
+                    "fast_period": 100,
+                    "anchor_period": 200,
+                    "slow_period": 1000,
+                }
+            },
+            "trade_management": {
+                "exit_policy": {
+                    "always_on": {
+                        "exits": [
+                            {
+                                "instance_id": "atr_sl",
+                                "component_id": "atr_stop_loss",
+                                "distance": {"timeframe": "base", "period": 14, "multiplier": 1.5},
+                            }
+                        ]
+                    },
+                    "profiles": {
+                        "aligned": {"exits": []},
+                        "countertrend": {"exits": []},
+                        "neutral": {"exits": []},
+                    },
+                }
+            },
+        },
+    }
+    with pytest.raises(EmaPullbackInstanceValidationError, match="allowed_regimes"):
+        load_ema_pullback_instance(instance)
+
+
+def test_loader_accepts_rsi_blocker_with_htf_regime_gate() -> None:
+    instance = {
+        "instance_id": "rsi_regime_gate",
+        "variant": "v",
+        "market": {"symbol": "BTCUSDT", "base_timeframe": "1h"},
+        "strategy": {
+            "trade_sides": ["long"],
+            "anchor_stack": {"source": "close", "timeframe": "base", "fast": 100, "anchor": 200, "slow": 1000},
+            "direction": {"component_id": "ema_anchor_stack_trend"},
+            "setup": {"component_id": "untouched_anchor_setup", "lookback": 50, "active_bars": 3},
+            "trigger": {"component_id": "reclaim_anchor"},
+            "blockers": [
+                {
+                    "instance_id": "rsi_block",
+                    "component_id": "rsi_lookback_extreme_blocker",
+                    "timeframe": "base",
+                    "period": 14,
+                    "context_consumption": {
+                        "context_ref": "htf",
+                        "policy": {
+                            "policy_id": HTF_REGIME_GATE_POLICY,
+                            "params": {"allowed_regimes": ["aligned", "neutral"]},
+                        },
+                    },
+                }
+            ],
+            "risk": {"component_id": "no_risk_filter"},
+            "contexts": {
+                "htf": {
+                    "component_id": "htf_context",
+                    "timeframe": "4h",
+                    "source": "close",
+                    "fast_period": 100,
+                    "anchor_period": 200,
+                    "slow_period": 1000,
+                }
+            },
+            "trade_management": {
+                "exit_policy": {
+                    "always_on": {
+                        "exits": [
+                            {
+                                "instance_id": "atr_sl",
+                                "component_id": "atr_stop_loss",
+                                "distance": {"timeframe": "base", "period": 14, "multiplier": 1.5},
+                            }
+                        ]
+                    },
+                    "profiles": {
+                        "aligned": {"exits": []},
+                        "countertrend": {"exits": []},
+                        "neutral": {"exits": []},
+                    },
+                }
+            },
+        },
+    }
+    spec = load_ema_pullback_instance(instance)
+    rule = spec.components.blockers[0]
+    assert rule.context_consumption is not None
+    assert rule.context_consumption.policy.policy_id == HTF_REGIME_GATE_POLICY
+    params = dict(rule.context_consumption.policy.params)
+    assert list(params["allowed_regimes"]) == ["aligned", "neutral"]
 
 
 def test_signals_and_exits_require_shared_injected_context_bundle(monkeypatch) -> None:

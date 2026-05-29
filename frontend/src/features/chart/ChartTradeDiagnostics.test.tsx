@@ -108,7 +108,7 @@ describe("ChartTradeDiagnostics", () => {
             role: "blockers",
             component_id: "counter_candle_blocker",
             context_ref: "htf",
-            policy_id: "htf_state_gate",
+            policy_id: "htf_regime_gate",
             applied: true,
             instance_id: "blocker_main",
           },
@@ -142,7 +142,7 @@ describe("ChartTradeDiagnostics", () => {
 
     const contextRefs = screen.getAllByText("htf");
     expect(contextRefs.length).toBeGreaterThanOrEqual(2);
-    expect(screen.getByText("htf_state_gate")).toBeTruthy();
+    expect(screen.getByText("htf_regime_gate")).toBeTruthy();
     expect(screen.getByText("exit_profile_by_htf_state")).toBeTruthy();
     expect(screen.getAllByText("yes").length).toBeGreaterThanOrEqual(2);
     expect(screen.getByText("blocker_main")).toBeTruthy();
@@ -181,10 +181,15 @@ describe("ChartTradeDiagnostics", () => {
           role: "blockers",
           component_id: "counter_candle_blocker",
           context_ref: "htf",
-          policy_id: "htf_state_gate",
+          policy_id: "htf_regime_gate",
           context_applied: [false],
           instance_id: "blocker_main",
-          outcome: { state_at_bar: ["down"], allowed_states: ["up"] },
+          outcome: {
+            allowed_regimes: ["aligned"],
+            evaluated_side: "long",
+            raw_state: ["down"],
+            resolved_regime: ["countertrend"],
+          },
         },
       ],
       long: side,
@@ -200,7 +205,7 @@ describe("ChartTradeDiagnostics", () => {
             role: "blockers",
             component_id: "counter_candle_blocker",
             context_ref: "htf",
-            policy_id: "htf_state_gate",
+            policy_id: "htf_regime_gate",
             applied: false,
             instance_id: "blocker_main",
           },
@@ -217,7 +222,7 @@ describe("ChartTradeDiagnostics", () => {
     expect(screen.getByRole("heading", { level: 4, name: "Entry bar decision" })).toBeTruthy();
     expect(screen.getByText("block")).toBeTruthy();
     expect(screen.getAllByText("down").length).toBeGreaterThan(0);
-    expect(screen.getByText("up")).toBeTruthy();
+    expect(screen.getAllByText("aligned").length).toBeGreaterThan(0);
   });
 
   it("renders v5 trade quality diagnostics", () => {

@@ -22,7 +22,7 @@
 
 | Layer | Where | Answers |
 |-------|--------|---------|
-| **Wiring** | `trade_records.entry_context_consumption` / `exit_context_consumption` | Which consumer and `policy_id` were configured; entry `applied` = `htf_state_gate` allow on **entry bar** (when bundle available at extract) |
+| **Wiring** | `trade_records.entry_context_consumption` / `exit_context_consumption` | Which consumer and `policy_id` were configured; entry `applied` = `htf_regime_gate` allow on **entry bar** (when bundle available at extract) |
 | **Causal** | `signal_trace.context_consumption_trace` + `htf_context.state[]` | Per-bar `context_applied` (gate allow/block), HTF `state`, exit `outcome.profile_*` |
 
 Chart **trade diagnostics** show both: configured consumer + **Entry/Exit bar decision** from loaded signal trace. Bar Inspector remains per-click bar. See `openspec/changes/trade-context-causal-diagnostics-v1/`.
