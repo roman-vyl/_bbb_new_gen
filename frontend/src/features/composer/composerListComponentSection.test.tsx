@@ -40,6 +40,17 @@ const catalog: ComponentCatalog = {
             },
           },
         },
+        {
+          policy_id: "htf_regime_gate",
+          label: "HTF regime gate",
+          params_schema: {
+            allowed_regimes: {
+              type: "array",
+              label: "Allowed regimes",
+              enum: ["aligned", "countertrend", "neutral"],
+            },
+          },
+        },
       ],
     },
     {
@@ -134,6 +145,39 @@ describe("ListComponentSection blockers context consumption", () => {
     });
     fireEvent.click(screen.getByRole("checkbox", { name: /Context consumption/i }));
     expect(screen.getByText("Add a strategy context first")).toBeTruthy();
+  });
+
+  it("lists htf_regime_gate in policy selector from catalog", () => {
+    renderBlockers(
+      [{ instance_id: "b1", component_id: "counter_candle_blocker" }],
+      { contexts: { htf_1: { component_id: "htf_context" } } },
+    );
+    fireEvent.click(screen.getByRole("checkbox", { name: /Context consumption/i }));
+    const policySelect = screen.getAllByRole("combobox").find((el) =>
+      Array.from(el.querySelectorAll("option")).some((o) => o.textContent === "HTF regime gate"),
+    );
+    expect(policySelect).toBeTruthy();
+  });
+
+  it("renders allowed_regimes multiselect for htf_regime_gate", () => {
+    renderBlockers(
+      [{ instance_id: "b1", component_id: "counter_candle_blocker" }],
+      { contexts: { htf_1: { component_id: "htf_context" } } },
+    );
+    fireEvent.click(screen.getByRole("checkbox", { name: /Context consumption/i }));
+    const selects = screen.getAllByRole("combobox");
+    const contextSelect = selects.find((el) =>
+      Array.from(el.querySelectorAll("option")).some((o) => o.textContent === "htf_1"),
+    )!;
+    fireEvent.change(contextSelect, { target: { value: "htf_1" } });
+    const policySelect = selects.find((el) =>
+      Array.from(el.querySelectorAll("option")).some((o) => o.textContent === "HTF regime gate"),
+    )!;
+    fireEvent.change(policySelect, { target: { value: "htf_regime_gate" } });
+    expect(screen.getByText("Allowed regimes")).toBeTruthy();
+    expect(screen.getByText("aligned")).toBeTruthy();
+    expect(screen.getByText("countertrend")).toBeTruthy();
+    expect(screen.getByText("neutral")).toBeTruthy();
   });
 
   it("renders allowed_states as multiselect when consumption enabled", () => {

@@ -1100,6 +1100,28 @@ select {
   display: flex;
   flex-direction: column;
   gap: 0.65rem;
+  --composer-field-max-width: var(--composer-component-width, 20rem);
+}
+
+/* Scalar fields (experiment settings, context add row, etc.) — not full viewport width */
+.composer-form > .composer-section--collapsible > .field,
+.composer-block > .field,
+.composer-collapsible-inner > .field:not(.field--inline),
+.composer-block > .composer-list-add,
+.composer-collapsible-inner > .composer-list-add {
+  width: min(100%, var(--composer-field-max-width));
+  max-width: var(--composer-field-max-width);
+}
+
+.composer-form > .composer-section--collapsible > .field input,
+.composer-form > .composer-section--collapsible > .field select,
+.composer-block > .field input,
+.composer-block > .field select,
+.composer-collapsible-inner > .field:not(.field--inline) input,
+.composer-collapsible-inner > .field:not(.field--inline) select {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 .composer-section--collapsible > summary {

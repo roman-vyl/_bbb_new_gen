@@ -100,8 +100,54 @@ describe("tradeContextCausalDiagnostics", () => {
     }
     const gate = status.fields.find((f) => f.key === "entry_causal.gate");
     expect(gate?.value).toBe("block");
-    expect(status.fields.find((f) => f.key === "entry_causal.state")?.value).toBe("down");
+    expect(status.fields.find((f) => f.key === "entry_causal.raw_state")?.value).toBe("down");
     expect(status.fields.find((f) => f.key === "entry_causal.allowed_states")?.value).toBe("up");
+  });
+
+  it("builds entry causal fields for htf_regime_gate from trace outcome", () => {
+    const trace: SignalTraceBundle = {
+      ...traceFixture(),
+      context_consumption_trace: [
+        {
+          role: "blockers",
+          component_id: "counter_candle_blocker",
+          context_ref: "htf",
+          policy_id: "htf_regime_gate",
+          context_applied: [true],
+          instance_id: "blocker_main",
+          outcome: {
+            allowed_regimes: ["aligned", "neutral"],
+            evaluated_side: "long",
+            raw_state: ["up"],
+            resolved_regime: ["aligned"],
+          },
+        },
+      ],
+    };
+    const regimeTrade: TradeRecord = {
+      ...trade,
+      entry_context_consumption: {
+        role: "blockers",
+        component_id: "counter_candle_blocker",
+        context_ref: "htf",
+        policy_id: "htf_regime_gate",
+        applied: true,
+        instance_id: "blocker_main",
+      },
+    };
+    const status = buildEntryBarCausalDiagnostics(regimeTrade, trace, "ready", undefined);
+    expect(status.kind).toBe("ready");
+    if (status.kind !== "ready") {
+      return;
+    }
+    expect(status.fields.find((f) => f.key === "entry_causal.allowed_regimes")?.value).toBe(
+      "aligned, neutral",
+    );
+    expect(status.fields.find((f) => f.key === "entry_causal.resolved_regime")?.value).toBe(
+      "aligned",
+    );
+    expect(status.fields.find((f) => f.key === "entry_causal.evaluated_side")?.value).toBe("long");
+    expect(status.fields.find((f) => f.key === "entry_causal.allowed_states")).toBeUndefined();
   });
 
   it("reports trace not loaded", () => {

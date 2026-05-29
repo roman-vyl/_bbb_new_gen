@@ -123,6 +123,21 @@ function findExitPolicyTraceRecord(
   return (trace.context_consumption_trace ?? []).find((r) => matchesConsumptionRecord(r, wired));
 }
 
+function joinList(values: unknown[] | undefined): string | null {
+  if (!values?.length) {
+    return null;
+  }
+  return values.map(String).join(", ");
+}
+
+function stringAtIndex(series: unknown, index: number): string | null {
+  if (!Array.isArray(series) || index < 0 || index >= series.length) {
+    return null;
+  }
+  const value = series[index];
+  return value === null || value === undefined ? null : String(value);
+}
+
 function allowedStatesFromTraceOutcome(
   record: ContextConsumptionTraceRecord,
 ): string | null {
@@ -130,14 +145,24 @@ function allowedStatesFromTraceOutcome(
   if (!outcome || !Array.isArray(outcome.allowed_states)) {
     return null;
   }
-  return (outcome.allowed_states as unknown[]).map(String).join(", ");
+  return joinList(outcome.allowed_states as unknown[]);
 }
 
-function allowedStatesFromSpec(
+function allowedRegimesFromTraceOutcome(
+  record: ContextConsumptionTraceRecord,
+): string | null {
+  const outcome = record.outcome;
+  if (!outcome || !Array.isArray(outcome.allowed_regimes)) {
+    return null;
+  }
+  return joinList(outcome.allowed_regimes as unknown[]);
+}
+
+function policyParamsFromSpec(
   strategySpec: JsonObject | undefined,
   contextRef: string,
   policyId: string,
-): string | null {
+): JsonObject | null {
   if (!strategySpec) {
     return null;
   }
@@ -151,23 +176,39 @@ function allowedStatesFromSpec(
       continue;
     }
     const consumption = (rule as JsonObject).context_consumption as JsonObject | undefined;
-    if (!consumption) {
-      continue;
-    }
-    if (consumption.context_ref !== contextRef) {
+    if (!consumption || consumption.context_ref !== contextRef) {
       continue;
     }
     const policy = consumption.policy as JsonObject | undefined;
     if (policy?.policy_id !== policyId) {
       continue;
     }
-    const params = policy.params as JsonObject | undefined;
-    const raw = params?.allowed_states;
-    if (Array.isArray(raw)) {
-      return raw.map(String).join(", ");
+    const params = policy.params;
+    if (params && typeof params === "object" && !Array.isArray(params)) {
+      return params as JsonObject;
     }
   }
   return null;
+}
+
+function allowedStatesFromSpec(
+  strategySpec: JsonObject | undefined,
+  contextRef: string,
+  policyId: string,
+): string | null {
+  const params = policyParamsFromSpec(strategySpec, contextRef, policyId);
+  const raw = params?.allowed_states;
+  return Array.isArray(raw) ? joinList(raw as unknown[]) : null;
+}
+
+function allowedRegimesFromSpec(
+  strategySpec: JsonObject | undefined,
+  contextRef: string,
+  policyId: string,
+): string | null {
+  const params = policyParamsFromSpec(strategySpec, contextRef, policyId);
+  const raw = params?.allowed_regimes;
+  return Array.isArray(raw) ? joinList(raw as unknown[]) : null;
 }
 
 export function buildEntryBarCausalDiagnostics(
@@ -191,29 +232,54 @@ export function buildEntryBarCausalDiagnostics(
   }
 
   const applied = record.context_applied[index] ?? false;
-  const allowed =
-    allowedStatesFromTraceOutcome(record) ??
-    allowedStatesFromSpec(strategySpec, record.context_ref, record.policy_id) ??
-    EM_DASH;
+  const isRegimeGate = record.policy_id === "htf_regime_gate";
+  const outcome = record.outcome ?? {};
+  const rawState =
+    stringAtIndex(outcome.raw_state, index) ??
+    htfStateAtIndex(trace, index, record.context_ref);
+  const resolvedRegime = stringAtIndex(outcome.resolved_regime, index);
+  const evaluatedSide =
+    typeof outcome.evaluated_side === "string" ? outcome.evaluated_side : null;
 
   const fields: TradeDiagnosticField[] = [
     field(
       "entry_causal.gate",
       "gate",
       formatGateDecisionLabel(applied),
-      "htf_state_gate allow/block on the entry bar (from signal trace)",
+      isRegimeGate
+        ? "htf_regime_gate allow/block on the entry bar (from signal trace)"
+        : "htf_state_gate allow/block on the entry bar (from signal trace)",
     ),
     field(
-      "entry_causal.state",
-      "state",
-      htfStateAtIndex(trace, index, record.context_ref),
+      "entry_causal.raw_state",
+      "raw_state",
+      rawState,
       "Raw HTF provider state on the entry bar",
     ),
-    field("entry_causal.allowed_states", "allowed_states", allowed),
     field("entry_causal.context_ref", "context_ref", record.context_ref),
     field("entry_causal.policy_id", "policy_id", record.policy_id),
     field("entry_causal.component_id", "component_id", record.component_id),
   ];
+
+  if (isRegimeGate) {
+    const allowedRegimes =
+      allowedRegimesFromTraceOutcome(record) ??
+      allowedRegimesFromSpec(strategySpec, record.context_ref, record.policy_id) ??
+      EM_DASH;
+    fields.push(field("entry_causal.allowed_regimes", "allowed_regimes", allowedRegimes));
+    if (evaluatedSide) {
+      fields.push(field("entry_causal.evaluated_side", "evaluated_side", evaluatedSide));
+    }
+    if (resolvedRegime) {
+      fields.push(field("entry_causal.resolved_regime", "resolved_regime", resolvedRegime));
+    }
+  } else {
+    const allowedStates =
+      allowedStatesFromTraceOutcome(record) ??
+      allowedStatesFromSpec(strategySpec, record.context_ref, record.policy_id) ??
+      EM_DASH;
+    fields.push(field("entry_causal.allowed_states", "allowed_states", allowedStates));
+  }
   if (record.instance_id) {
     fields.push(field("entry_causal.instance_id", "instance_id", record.instance_id));
   }

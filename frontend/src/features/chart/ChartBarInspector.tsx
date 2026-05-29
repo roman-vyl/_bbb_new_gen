@@ -10,6 +10,23 @@ import {
 } from "@/features/chart/signalTraceLookup";
 import { formatGateDecisionLabel } from "@/features/chart/tradeContextCausalDiagnostics";
 
+function traceOutcomeAtBar(outcome: Record<string, unknown> | null | undefined, key: string, index: number): string | null {
+  const series = outcome?.[key];
+  if (!Array.isArray(series) || index < 0 || index >= series.length) {
+    return null;
+  }
+  const value = series[index];
+  return value === null || value === undefined ? null : String(value);
+}
+
+function traceOutcomeList(outcome: Record<string, unknown> | null | undefined, key: string): string | null {
+  const raw = outcome?.[key];
+  if (!Array.isArray(raw) || raw.length === 0) {
+    return null;
+  }
+  return raw.map(String).join(", ");
+}
+
 type ChartBarInspectorProps = {
   selectedBarTimeSec: number | null;
   candles: ChartBar[];
@@ -228,8 +245,15 @@ export function ChartBarInspector({
           {(signalTrace.context_consumption_trace ?? []).length > 0 && (
             <>
               <h4 className="bar-inspector__section">Context consumption</h4>
-              {(signalTrace.context_consumption_trace ?? []).map((record) => (
-                <dl key={`${record.role}:${record.component_id}:${record.context_ref}`} className="bar-inspector__dl">
+              {(signalTrace.context_consumption_trace ?? []).map((record) => {
+                const outcome = record.outcome ?? undefined;
+                const evaluatedSide =
+                  typeof outcome?.evaluated_side === "string" ? outcome.evaluated_side : null;
+                return (
+                <dl
+                  key={`${record.role}:${record.component_id}:${record.context_ref}:${record.policy_id}:${evaluatedSide ?? ""}:${record.instance_id ?? ""}`}
+                  className="bar-inspector__dl"
+                >
                   <dt>{record.role}</dt>
                   <dd>
                     {record.component_id}
@@ -239,12 +263,42 @@ export function ChartBarInspector({
                   <dd>{record.context_ref}</dd>
                   <dt>policy_id</dt>
                   <dd>{record.policy_id}</dd>
+                  {evaluatedSide ? (
+                    <>
+                      <dt>evaluated_side</dt>
+                      <dd>{evaluatedSide}</dd>
+                    </>
+                  ) : null}
                   <dt>gate</dt>
                   <dd>
                     {record.role === "exit_policy"
                       ? "—"
                       : formatGateDecisionLabel(record.context_applied[index] ?? false)}
                   </dd>
+                  {traceOutcomeList(outcome, "allowed_regimes") ? (
+                    <>
+                      <dt>allowed_regimes</dt>
+                      <dd>{traceOutcomeList(outcome, "allowed_regimes")}</dd>
+                    </>
+                  ) : null}
+                  {traceOutcomeList(outcome, "allowed_states") ? (
+                    <>
+                      <dt>allowed_states</dt>
+                      <dd>{traceOutcomeList(outcome, "allowed_states")}</dd>
+                    </>
+                  ) : null}
+                  {traceOutcomeAtBar(outcome, "raw_state", index) ? (
+                    <>
+                      <dt>raw_state</dt>
+                      <dd>{traceOutcomeAtBar(outcome, "raw_state", index)}</dd>
+                    </>
+                  ) : null}
+                  {traceOutcomeAtBar(outcome, "resolved_regime", index) ? (
+                    <>
+                      <dt>resolved_regime</dt>
+                      <dd>{traceOutcomeAtBar(outcome, "resolved_regime", index)}</dd>
+                    </>
+                  ) : null}
                   {record.role === "exit_policy" ? (
                     <>
                       <dt>context_applied</dt>
@@ -252,7 +306,8 @@ export function ChartBarInspector({
                     </>
                   ) : null}
                 </dl>
-              ))}
+              );
+              })}
             </>
           )}
           <h4 className="bar-inspector__section">Final entry</h4>

@@ -206,6 +206,95 @@ function readContextConsumptionRef(block: unknown): string | null {
   return typeof ref === "string" ? ref : null;
 }
 
+export const HTF_REGIME_GATE_POLICY_ID = "htf_regime_gate";
+export const HTF_STATE_GATE_POLICY_ID = "htf_state_gate";
+
+function readContextConsumptionBlock(block: unknown): JsonObject | null {
+  if (!block || typeof block !== "object" || Array.isArray(block)) {
+    return null;
+  }
+  return block as JsonObject;
+}
+
+function readPolicyFromConsumption(block: JsonObject): { policyId: string; params: JsonObject } {
+  const policyRaw = block.policy;
+  if (!policyRaw || typeof policyRaw !== "object" || Array.isArray(policyRaw)) {
+    return { policyId: "", params: {} };
+  }
+  const policyObj = policyRaw as JsonObject;
+  const policyId =
+    typeof policyObj.policy_id === "string" ? policyObj.policy_id.trim() : "";
+  const paramsRaw = policyObj.params;
+  const params =
+    paramsRaw && typeof paramsRaw === "object" && !Array.isArray(paramsRaw)
+      ? (paramsRaw as JsonObject)
+      : {};
+  return { policyId, params };
+}
+
+export function collectContextConsumptionPolicyParamErrors(
+  policyId: string,
+  params: JsonObject,
+  pathPrefix: string,
+): ValidationErrorItem[] {
+  if (policyId === HTF_REGIME_GATE_POLICY_ID) {
+    const raw = params.allowed_regimes;
+    if (!Array.isArray(raw) || raw.length === 0) {
+      return [
+        {
+          path: `${pathPrefix}.policy.params.allowed_regimes`,
+          message: "allowed_regimes is required and must be a non-empty list for htf_regime_gate",
+        },
+      ];
+    }
+  }
+  return [];
+}
+
+export function collectEntryContextConsumptionErrors(
+  strategy: JsonObject,
+  pathPrefix: string,
+): ValidationErrorItem[] {
+  const errors: ValidationErrorItem[] = [];
+
+  const checkSlot = (block: unknown, slotPath: string) => {
+    const consumption = readContextConsumptionBlock(block);
+    if (!consumption) {
+      return;
+    }
+    const contextRef = readContextConsumptionRef(consumption);
+    if (!contextRef?.trim()) {
+      errors.push({
+        path: `${slotPath}.context_ref`,
+        message: "context_ref is required when context consumption is enabled",
+      });
+    }
+    const { policyId, params } = readPolicyFromConsumption(consumption);
+    if (!policyId) {
+      errors.push({
+        path: `${slotPath}.policy.policy_id`,
+        message: "policy_id is required when context consumption is enabled",
+      });
+    }
+    errors.push(...collectContextConsumptionPolicyParamErrors(policyId, params, slotPath));
+  };
+
+  for (const role of ["direction", "setup", "trigger"] as const) {
+    const slot = strategy[role];
+    if (!slot || typeof slot !== "object" || Array.isArray(slot)) {
+      continue;
+    }
+    checkSlot((slot as JsonObject).context_consumption, `${pathPrefix}.${role}.context_consumption`);
+  }
+
+  const blockers = (strategy.blockers as JsonObject[] | undefined) ?? [];
+  blockers.forEach((slot, index) => {
+    checkSlot(slot.context_consumption, `${pathPrefix}.blockers[${index}].context_consumption`);
+  });
+
+  return errors;
+}
+
 export function collectUndefinedConsumerContextRefErrors(
   strategy: JsonObject,
   pathPrefix: string,
@@ -346,6 +435,7 @@ export function collectComposerStrategyErrors(
     });
   }
   errors.push(...collectUnsupportedEntryContextConsumptionErrors(strategy, pathPrefix, catalog));
+  errors.push(...collectEntryContextConsumptionErrors(strategy, pathPrefix));
   if (!exitPolicyRequiresContextConsumption(strategy)) {
     return errors;
   }
@@ -361,6 +451,15 @@ export function collectComposerStrategyErrors(
       path: `${pathPrefix}.trade_management.exit_policy.context_consumption.policy.policy_id`,
       message: "policy_id is required when profile-scoped exits are configured",
     });
+  }
+  if (consumption?.policy?.policy_id?.trim()) {
+    errors.push(
+      ...collectContextConsumptionPolicyParamErrors(
+        consumption.policy.policy_id.trim(),
+        consumption.policy.params ?? {},
+        `${pathPrefix}.trade_management.exit_policy.context_consumption`,
+      ),
+    );
   }
   errors.push(...collectUndefinedConsumerContextRefErrors(strategy, pathPrefix));
   return errors;
