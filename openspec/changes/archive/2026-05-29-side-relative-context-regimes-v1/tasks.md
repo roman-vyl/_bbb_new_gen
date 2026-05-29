@@ -1,7 +1,7 @@
 ## 1. Согласование proposal
 
-- [ ] 1.1 Согласовать таблицу маппинга и non-goals с автором стратегии
-- [ ] 1.2 Зафиксировать concrete catalog-supported consumers/call sites с explicit side-aware evaluation scope по результатам audit
+- [x] 1.1 Согласовать таблицу маппинга и non-goals с автором стратегии
+- [x] 1.2 Зафиксировать concrete catalog-supported consumers/call sites с explicit side-aware evaluation scope по результатам audit
 - [x] 1.3 Зафиксировать, что exit profile selection использует `evaluate_context_consumption` и `ContextConsumptionResult`, без отдельного exit context path
 
 ## 2. Audit существующих context-consuming paths
