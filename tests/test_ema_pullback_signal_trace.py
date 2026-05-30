@@ -107,6 +107,48 @@ def test_strategy_spec_roundtrip_from_report_dict() -> None:
     assert len(restored.components.blockers) == len(spec.components.blockers)
 
 
+def test_strategy_spec_roundtrip_preserves_ema_bounce_counter_nested_params() -> None:
+    from dataclasses import replace
+
+    from research.strategies.ema_pullback.component_builders import (
+        ema_bounce_counter_setup_spec,
+        setup_rule,
+    )
+    from research.strategies.ema_pullback.spec import EmaBounceCounterSetupSpec
+
+    params = ema_bounce_counter_setup_spec(
+        fast_ema=60,
+        anchor_ema=200,
+        slow_ema=600,
+        max_bounces=7,
+        touch_lookback_bars=13,
+    )
+    spec = replace(
+        make_ema_pullback_strategy_spec(),
+        setups=(
+            setup_rule(
+                instance_id="bc",
+                component_id="ema_bounce_counter_setup",
+                params=params,
+            ),
+        ),
+    )
+    wire = strategy_spec_to_dict(spec)
+    setup_wire = wire["setups"][0]
+    assert setup_wire["params"]["max_bounces"] == 7
+    assert setup_wire["params"]["touch_lookback_bars"] == 13
+
+    restored = strategy_spec_from_report_dict(wire)
+    assert len(restored.setups) == 1
+    restored_params = restored.setups[0].params
+    assert isinstance(restored_params, EmaBounceCounterSetupSpec)
+    assert restored_params.fast_ema.period == 60
+    assert restored_params.anchor_ema.period == 200
+    assert restored_params.slow_ema.period == 600
+    assert restored_params.max_bounces == 7
+    assert restored_params.touch_lookback_bars == 13
+
+
 def test_strategy_spec_roundtrip_preserves_blocker_htf_regime_gate_params() -> None:
     from dataclasses import asdict
     from tests.ema_pullback_context_helpers import (

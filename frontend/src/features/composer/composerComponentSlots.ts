@@ -117,8 +117,7 @@ function migrateLegacySetupToSetups(strategy: JsonObject): JsonObject {
   const legacy = strategy.setup;
   if (Array.isArray(setups) && setups.length > 0) {
     if (legacy !== undefined && legacy !== null) {
-      const { setup: _removed, ...rest } = strategy;
-      return rest;
+      return strategy;
     }
     return strategy;
   }

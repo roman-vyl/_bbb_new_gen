@@ -192,26 +192,36 @@ def _parse_report_setups(raw: list[Any]) -> tuple[SetupRuleSpec, ...]:
     return tuple(rules)
 
 
+def _setup_params_payload(payload: Mapping[str, Any]) -> Mapping[str, Any]:
+    """Wire setups may store catalog params under nested ``params`` (asdict / API shape)."""
+
+    nested = payload.get("params")
+    if isinstance(nested, Mapping):
+        return nested
+    return payload
+
+
 def _setup_spec(component_id: str, payload: Mapping[str, Any]) -> UntouchedAnchorSetupSpec | EmaBounceCounterSetupSpec:
+    source = _setup_params_payload(payload)
     if component_id == EMA_BOUNCE_COUNTER_SETUP_COMPONENT:
         return EmaBounceCounterSetupSpec(
-            fast_ema=_setup_ema_spec("setup.fast_ema", payload.get("fast_ema"), default_period=50),
-            anchor_ema=_setup_ema_spec("setup.anchor_ema", payload.get("anchor_ema"), default_period=200),
-            slow_ema=_setup_ema_spec("setup.slow_ema", payload.get("slow_ema"), default_period=500),
-            max_bounces=int(payload.get("max_bounces", 3)),
-            raw_touch_mode=str(payload.get("raw_touch_mode", "range_cross")),
-            touch_lookback_bars=int(payload.get("touch_lookback_bars", 10)),
-            trend_start_confirmation_bars=int(payload.get("trend_start_confirmation_bars", 1)),
-            trend_break_confirmation_bars=int(payload.get("trend_break_confirmation_bars", 1)),
+            fast_ema=_setup_ema_spec("setup.fast_ema", source.get("fast_ema"), default_period=50),
+            anchor_ema=_setup_ema_spec("setup.anchor_ema", source.get("anchor_ema"), default_period=200),
+            slow_ema=_setup_ema_spec("setup.slow_ema", source.get("slow_ema"), default_period=500),
+            max_bounces=int(source.get("max_bounces", 3)),
+            raw_touch_mode=str(source.get("raw_touch_mode", "range_cross")),
+            touch_lookback_bars=int(source.get("touch_lookback_bars", 10)),
+            trend_start_confirmation_bars=int(source.get("trend_start_confirmation_bars", 1)),
+            trend_break_confirmation_bars=int(source.get("trend_break_confirmation_bars", 1)),
         )
     if component_id == UNTOUCHED_ANCHOR_SETUP_COMPONENT:
         return UntouchedAnchorSetupSpec(
-            lookback=int(payload.get("lookback", 50)),
-            active_bars=int(payload.get("active_bars", 3)),
+            lookback=int(source.get("lookback", 50)),
+            active_bars=int(source.get("active_bars", 3)),
         )
     return UntouchedAnchorSetupSpec(
-        lookback=int(payload.get("lookback", 50)),
-        active_bars=int(payload.get("active_bars", 3)),
+        lookback=int(source.get("lookback", 50)),
+        active_bars=int(source.get("active_bars", 3)),
     )
 
 

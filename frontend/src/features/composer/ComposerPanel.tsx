@@ -109,8 +109,12 @@ function firstPipelineSectionFromErrors(errors: ValidationErrorItem[]): string |
     if (key === "contexts") {
       return "strategy_contexts";
     }
+    if (key === "setups") {
+      return "setup";
+    }
     if (
       key === "direction" ||
+      key === "setup" ||
       key === "trigger" ||
       key === "blockers" ||
       key === "risk" ||
