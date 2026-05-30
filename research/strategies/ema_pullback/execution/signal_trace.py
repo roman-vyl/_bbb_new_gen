@@ -17,6 +17,7 @@ from research.strategies.ema_pullback.components.registry import (
     COUNTER_CANDLE_BLOCKER_COMPONENT,
     NO_BLOCKERS_COMPONENT,
     RSI_LOOKBACK_EXTREME_BLOCKER_COMPONENT,
+    RSI_SIGNAL_EXIT_COMPONENT,
     TOUCH_ANCHOR_COMPONENT,
     UNTOUCHED_ANCHOR_SETUP_COMPONENT,
 )
@@ -26,6 +27,7 @@ from research.strategies.ema_pullback.components.triggers import (
     strong_reclaim_anchor_trace,
     touch_anchor_trace,
 )
+from research.strategies.ema_pullback.components.exits import rsi_signal_exit_trace
 from research.strategies.ema_pullback.components.risk import no_risk_filter
 from research.strategies.ema_pullback.context.consumption_trace import build_context_consumption_trace
 from research.strategies.ema_pullback.context.bundle import ContextBundle
@@ -38,7 +40,9 @@ from research.strategies.ema_pullback.execution.exits import build_exit_outputs_
 from research.strategies.ema_pullback.execution.signals import compose_blocker_signals, compose_final_signals
 from research.strategies.ema_pullback.features.plan import FeaturePlan
 from research.strategies.ema_pullback.spec import (
+    BlockerRuleSpec,
     EmaPullbackStrategySpec,
+    ExitRuleSpec,
     ReclaimTriggerSpec,
     StrongReclaimTriggerSpec,
     RsiFeatureSpec,
@@ -130,11 +134,29 @@ class SideSignalTrace:
 
 
 @dataclass(frozen=True)
+class ComponentEventData:
+    time: int
+    event_type: str
+    role: str
+    side: str
+    component_id: str
+    instance_id: str
+    label: str
+    tooltip: str | None = None
+    span_id: str | None = None
+    feature_family: str | None = None
+    source_timeframe: str | None = None
+    base_timeframe: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class SignalTraceBundleData:
     times: list[int]
     meta: dict[str, Any]
     htf_context: dict[str, Any]
     context_consumption_trace: list[dict[str, Any]]
+    component_events: list[ComponentEventData]
     long: SideSignalTrace
     short: SideSignalTrace
 
@@ -276,6 +298,355 @@ def _build_side_trace(
     )
 
 
+def _resolve_feature_timeframe(raw: str, base_timeframe: str) -> str:
+    token = raw.strip()
+    if token == "base":
+        return base_timeframe
+    return token
+
+
+def _rising_edge_indices(values: list[bool]) -> list[int]:
+    out: list[int] = []
+    for i, active in enumerate(values):
+        if active and (i == 0 or not values[i - 1]):
+            out.append(i)
+    return out
+
+
+def _contiguous_blocked_runs(blocked: list[bool]) -> list[tuple[int, int]]:
+    """Inclusive (start, end) indices where blocked is True."""
+
+    runs: list[tuple[int, int]] = []
+    i = 0
+    n = len(blocked)
+    while i < n:
+        if not blocked[i]:
+            i += 1
+            continue
+        start = i
+        while i < n and blocked[i]:
+            i += 1
+        runs.append((start, i - 1))
+    return runs
+
+
+def _span_id(instance_id: str, side: TradeSide, span_start_time: int) -> str:
+    return f"{instance_id}:{side}:{span_start_time}"
+
+
+def _span_id_for_source_index(
+    source_idx: int,
+    blocked_runs: list[tuple[int, int]],
+    times: list[int],
+    instance_id: str,
+    side: TradeSide,
+) -> str | None:
+    for start, end in blocked_runs:
+        if start <= source_idx <= end:
+            return _span_id(instance_id, side, times[start])
+    for start, _end in blocked_runs:
+        if source_idx <= start:
+            return _span_id(instance_id, side, times[start])
+    return None
+
+
+def _event_label(event_type: str, role: str, side: TradeSide) -> str:
+    if event_type == "source":
+        return "Src"
+    if event_type == "span_start":
+        return "Block▶"
+    if event_type == "span_end":
+        return "Block■"
+    if role == "exit_signal":
+        return "Exit↓" if side == "long" else "Exit↑"
+    return event_type
+
+
+def _event_tooltip(
+    *,
+    event_type: str,
+    role: str,
+    component_id: str,
+    instance_id: str,
+    source_timeframe: str | None,
+    base_timeframe: str | None,
+    metadata: dict[str, Any],
+) -> str:
+    rsi_value = metadata.get("rsi_value")
+    condition = metadata.get("condition", "")
+    rsi_text = "—" if rsi_value is None else f"{rsi_value:.2f}"
+    tf_text = (
+        f"{source_timeframe}→{base_timeframe}"
+        if source_timeframe and base_timeframe
+        else ""
+    )
+    parts = [event_type, role, component_id, instance_id]
+    if rsi_value is not None or condition:
+        parts.append(f"RSI {rsi_text} · {condition}")
+    if tf_text:
+        parts.append(tf_text)
+    return " · ".join(part for part in parts if part)
+
+
+def _raw_rsi_threshold_series(
+    df: pd.DataFrame,
+    *,
+    side: TradeSide,
+    rule: BlockerRuleSpec,
+    rsi_col: str,
+) -> pd.Series:
+    rsi = df[rsi_col].astype(float)
+    if side == "long":
+        if rule.long_block_above is None:
+            raise ValueError(
+                "rsi_lookback_extreme_blocker requires long_block_above for long side"
+            )
+        raw = rsi > float(rule.long_block_above)
+    elif side == "short":
+        if rule.short_block_below is None:
+            raise ValueError(
+                "rsi_lookback_extreme_blocker requires short_block_below for short side"
+            )
+        raw = rsi < float(rule.short_block_below)
+    else:
+        raise ValueError("side must be 'long' or 'short'")
+    return raw.fillna(False).astype(bool)
+
+
+def _sides_for_spec(spec: EmaPullbackStrategySpec) -> tuple[TradeSide, ...]:
+    sides: list[TradeSide] = []
+    if spec.trade_sides.includes("long"):
+        sides.append("long")
+    if spec.trade_sides.includes("short"):
+        sides.append("short")
+    return tuple(sides)
+
+
+def _collect_rsi_exit_rules(spec: EmaPullbackStrategySpec) -> list[tuple[str, ExitRuleSpec]]:
+    policy = spec.trade_management.exit_policy
+    groups: list[tuple[str, tuple[ExitRuleSpec, ...]]] = [
+        ("always_on", policy.always_on.exits),
+        ("aligned", policy.profiles.aligned.exits),
+        ("countertrend", policy.profiles.countertrend.exits),
+        ("neutral", policy.profiles.neutral.exits),
+    ]
+    out: list[tuple[str, ExitRuleSpec]] = []
+    seen: set[str] = set()
+    for profile, rules in groups:
+        for rule in rules:
+            if rule.component_id != RSI_SIGNAL_EXIT_COMPONENT:
+                continue
+            if rule.instance_id in seen:
+                continue
+            seen.add(rule.instance_id)
+            out.append((profile, rule))
+    return out
+
+
+def _rsi_blocker_threshold(rule: BlockerRuleSpec, side: TradeSide) -> float | None:
+    if side == "long":
+        return float(rule.long_block_above) if rule.long_block_above is not None else None
+    if side == "short":
+        return float(rule.short_block_below) if rule.short_block_below is not None else None
+    raise ValueError("side must be 'long' or 'short'")
+
+
+def build_component_events(
+    df: pd.DataFrame,
+    spec: EmaPullbackStrategySpec,
+    plan: FeaturePlan,
+    times: list[int],
+) -> list[ComponentEventData]:
+    """Semantic emitters: rsi_lookback_extreme_blocker, rsi_signal_exit only."""
+
+    if len(times) != len(df):
+        raise ValueError("component_events requires times aligned with df index")
+
+    base_timeframe = spec.base_timeframe
+    events: list[ComponentEventData] = []
+
+    for rule in spec.components.blockers:
+        if rule.component_id != RSI_LOOKBACK_EXTREME_BLOCKER_COMPONENT:
+            continue
+        if rule.rsi is None:
+            continue
+        rsi_col = _rsi_column(plan, rule.rsi)
+        if rsi_col is None:
+            continue
+        source_timeframe = _resolve_feature_timeframe(rule.rsi.timeframe, base_timeframe)
+        for side in _sides_for_spec(spec):
+            threshold = _rsi_blocker_threshold(rule, side)
+            trace = rsi_lookback_extreme_blocker_trace(
+                df,
+                side=side,
+                rule=rule,
+                rsi_col=rsi_col,
+            )
+            allowed = trace["allowed"].fillna(True).astype(bool)
+            rsi_series = trace["rsi"]
+            raw = _raw_rsi_threshold_series(df, side=side, rule=rule, rsi_col=rsi_col)
+            blocked = (~allowed).to_list()
+            blocked_runs = _contiguous_blocked_runs(blocked)
+
+            for source_idx in _rising_edge_indices(raw.to_list()):
+                rsi_value = rsi_series.iloc[source_idx]
+                rsi_float = None if pd.isna(rsi_value) else float(rsi_value)
+                metadata = {
+                    "rsi_value": rsi_float,
+                    "condition": "threshold_cross",
+                    "threshold": threshold,
+                    "lookback": int(rule.lookback),
+                    "period": int(rule.rsi.period),
+                }
+                span_id = _span_id_for_source_index(
+                    source_idx,
+                    blocked_runs,
+                    times,
+                    rule.instance_id,
+                    side,
+                )
+                events.append(
+                    ComponentEventData(
+                        time=times[source_idx],
+                        event_type="source",
+                        role="entry_block",
+                        side=side,
+                        component_id=rule.component_id,
+                        instance_id=rule.instance_id,
+                        label=_event_label("source", "entry_block", side),
+                        tooltip=_event_tooltip(
+                            event_type="source",
+                            role="entry_block",
+                            component_id=rule.component_id,
+                            instance_id=rule.instance_id,
+                            source_timeframe=source_timeframe,
+                            base_timeframe=base_timeframe,
+                            metadata=metadata,
+                        ),
+                        span_id=span_id,
+                        feature_family="rsi",
+                        source_timeframe=source_timeframe,
+                        base_timeframe=base_timeframe,
+                        metadata=metadata,
+                    )
+                )
+
+            for start, end in blocked_runs:
+                span_start_time = times[start]
+                run_span_id = _span_id(rule.instance_id, side, span_start_time)
+                start_rsi = rsi_series.iloc[start]
+                end_rsi = rsi_series.iloc[end]
+                start_metadata = {
+                    "rsi_value": None if pd.isna(start_rsi) else float(start_rsi),
+                    "condition": "block_start",
+                    "threshold": threshold,
+                    "lookback": int(rule.lookback),
+                    "period": int(rule.rsi.period),
+                }
+                end_metadata = {
+                    "rsi_value": None if pd.isna(end_rsi) else float(end_rsi),
+                    "condition": "block_end",
+                    "threshold": threshold,
+                    "lookback": int(rule.lookback),
+                    "period": int(rule.rsi.period),
+                }
+                for event_type, idx, metadata in (
+                    ("span_start", start, start_metadata),
+                    ("span_end", end, end_metadata),
+                ):
+                    events.append(
+                        ComponentEventData(
+                            time=times[idx],
+                            event_type=event_type,
+                            role="entry_block",
+                            side=side,
+                            component_id=rule.component_id,
+                            instance_id=rule.instance_id,
+                            label=_event_label(event_type, "entry_block", side),
+                            tooltip=_event_tooltip(
+                                event_type=event_type,
+                                role="entry_block",
+                                component_id=rule.component_id,
+                                instance_id=rule.instance_id,
+                                source_timeframe=source_timeframe,
+                                base_timeframe=base_timeframe,
+                                metadata=metadata,
+                            ),
+                            span_id=run_span_id,
+                            feature_family="rsi",
+                            source_timeframe=source_timeframe,
+                            base_timeframe=base_timeframe,
+                            metadata=metadata,
+                        )
+                    )
+
+    for profile, rule in _collect_rsi_exit_rules(spec):
+        if rule.rsi is None:
+            continue
+        rsi_col = _rsi_column(plan, rule.rsi)
+        if rsi_col is None:
+            continue
+        source_timeframe = _resolve_feature_timeframe(rule.rsi.timeframe, base_timeframe)
+        for side in _sides_for_spec(spec):
+            trace = rsi_signal_exit_trace(
+                df,
+                side=side,
+                rule=rule,
+                rsi_col=rsi_col,
+            )
+            exit_fired = trace["exit_fired"].fillna(False).astype(bool)
+            rsi_series = trace["rsi"]
+            condition = str(trace["condition"].iloc[0]) if len(trace["condition"]) else "exit"
+            threshold = float(trace["threshold"].iloc[0]) if len(trace["threshold"]) else None
+            for i, active in enumerate(exit_fired.to_list()):
+                if not active:
+                    continue
+                rsi_value = rsi_series.iloc[i]
+                rsi_float = None if pd.isna(rsi_value) else float(rsi_value)
+                metadata = {
+                    "rsi_value": rsi_float,
+                    "condition": condition,
+                    "threshold": threshold,
+                    "profile": profile,
+                    "period": int(rule.rsi.period),
+                }
+                events.append(
+                    ComponentEventData(
+                        time=times[i],
+                        event_type="point",
+                        role="exit_signal",
+                        side=side,
+                        component_id=rule.component_id,
+                        instance_id=rule.instance_id,
+                        label=_event_label("point", "exit_signal", side),
+                        tooltip=_event_tooltip(
+                            event_type="point",
+                            role="exit_signal",
+                            component_id=rule.component_id,
+                            instance_id=rule.instance_id,
+                            source_timeframe=source_timeframe,
+                            base_timeframe=base_timeframe,
+                            metadata=metadata,
+                        ),
+                        feature_family="rsi",
+                        source_timeframe=source_timeframe,
+                        base_timeframe=base_timeframe,
+                        metadata=metadata,
+                    )
+                )
+
+    events.sort(
+        key=lambda event: (
+            event.time,
+            event.event_type,
+            event.role,
+            event.side,
+            event.instance_id,
+        )
+    )
+    return events
+
+
 def build_signal_trace_from_spec(
     df: pd.DataFrame,
     spec: EmaPullbackStrategySpec,
@@ -390,6 +761,12 @@ def build_signal_trace_from_spec(
         meta=meta,
         htf_context=htf_payload,
         context_consumption_trace=consumption_trace,
+        component_events=build_component_events(
+            df,
+            spec,
+            plan,
+            _index_to_times_sec(df.index),
+        ),
         long=long_trace,
         short=short_trace,
     )
@@ -483,6 +860,7 @@ def slice_signal_trace(
 
     htf = trace.htf_context
     times = [trace.times[i] for i in indices]
+    allowed_times = set(times)
     return SignalTraceBundleData(
         times=times,
         meta=trace.meta,
@@ -510,6 +888,11 @@ def slice_signal_trace(
             "meta": htf.get("meta") or {},
         },
         context_consumption_trace=_slice_consumption_trace(trace.context_consumption_trace),
+        component_events=[
+            event
+            for event in trace.component_events
+            if event.time in allowed_times
+        ],
         long=_slice_side(trace.long),
         short=_slice_side(trace.short),
     )

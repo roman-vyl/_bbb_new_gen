@@ -33,6 +33,7 @@ import {
   type RunVariant,
   type TradeRecord,
   type SignalTraceBundle,
+  type ComponentEvent,
   type StrategyConfigDraft,
   type WorkbenchTab,
 } from "@/api/types";
@@ -52,6 +53,7 @@ import {
   strategyContextRefOptions,
 } from "@/features/chart/strategyContexts";
 import { candleRangeMs } from "@/features/chart/chartMarkers";
+import { filterComponentEventsToTimeRange } from "@/features/chart/chartComponentEvents";
 import {
   defaultClosedTradeSelection,
   deriveSelectedVariant,
@@ -100,6 +102,12 @@ type WorkbenchState = {
   chartAuxEmaOverlays: ChartAuxEmaOverlay[];
   chartDisplayAuxEmaOverlays: ChartAuxEmaOverlay[];
   htfAuxEmaOverlayStale: boolean;
+  chartDisplayComponentEvents: ComponentEvent[];
+  componentEventsStale: boolean;
+  chartShowEntryBlockMarkers: boolean;
+  setChartShowEntryBlockMarkers: (show: boolean) => void;
+  chartShowExitSignalMarkers: boolean;
+  setChartShowExitSignalMarkers: (show: boolean) => void;
   chartViewMode: ChartViewMode;
   chartViewCenterTimeSec: number | null;
   chartViewFirstTimeSec: number | null;
@@ -175,6 +183,9 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
   const [marketCacheKey, setMarketCacheKey] = useState<MarketCacheKey | null>(null);
   const [auxEmaOverlays, setAuxEmaOverlays] = useState<ChartAuxEmaOverlay[]>([]);
   const lastSlicedHtfOverlaysRef = useRef<ChartAuxEmaOverlay[]>([]);
+  const lastSlicedComponentEventsRef = useRef<ComponentEvent[]>([]);
+  const [chartShowEntryBlockMarkers, setChartShowEntryBlockMarkers] = useState(true);
+  const [chartShowExitSignalMarkers, setChartShowExitSignalMarkers] = useState(true);
   const [runs, setRuns] = useState<RunSummary[]>([]);
   const [selectedRunId, setSelectedRunIdState] = useState<string | null>(null);
   const [report, setReport] = useState<RunReport | null>(null);
@@ -722,6 +733,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     lastSlicedHtfOverlaysRef.current = [];
+    lastSlicedComponentEventsRef.current = [];
   }, [selectedRunId, selectedVariantKey]);
 
   const chartWindowKey = useMemo(() => {
@@ -766,6 +778,42 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
 
     return [...bffOverlays, ...htfDisplay];
   }, [chartView.auxEmaOverlays, traceMatchesWindow]);
+
+  const chartDisplayComponentEvents = useMemo(() => {
+    if (chartView.candles.length === 0) {
+      return [];
+    }
+    const fromSec = chartView.candles[0]!.time;
+    const toSec = chartView.candles[chartView.candles.length - 1]!.time;
+    const source = signalTrace?.component_events ?? [];
+    const sliced = filterComponentEventsToTimeRange(source, fromSec, toSec);
+
+    if (traceMatchesWindow) {
+      if (sliced.length > 0 || source.length === 0) {
+        lastSlicedComponentEventsRef.current = sliced;
+      }
+      return sliced;
+    }
+
+    if (lastSlicedComponentEventsRef.current.length > 0) {
+      return lastSlicedComponentEventsRef.current;
+    }
+
+    return sliced;
+  }, [chartView.candles, signalTrace?.component_events, traceMatchesWindow]);
+
+  const componentEventsStale = useMemo(() => {
+    const hasEvents =
+      (signalTrace?.component_events?.length ?? 0) > 0 ||
+      chartDisplayComponentEvents.length > 0;
+    if (!hasEvents) {
+      return false;
+    }
+    if (traceMatchesWindow) {
+      return false;
+    }
+    return true;
+  }, [signalTrace?.component_events, chartDisplayComponentEvents, traceMatchesWindow]);
 
   const fullCandleRange = useMemo(
     () => (cachedBundle ? candleRangeMs(cachedBundle.candles) : null),
@@ -925,6 +973,12 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       chartAuxEmaOverlays: chartView.auxEmaOverlays,
       chartDisplayAuxEmaOverlays,
       htfAuxEmaOverlayStale,
+      chartDisplayComponentEvents,
+      componentEventsStale,
+      chartShowEntryBlockMarkers,
+      setChartShowEntryBlockMarkers,
+      chartShowExitSignalMarkers,
+      setChartShowExitSignalMarkers,
       chartViewMode: chartView.mode,
       chartViewCenterTimeSec: chartView.centerTimeSec,
       chartViewFirstTimeSec: chartView.firstTimeSec,
@@ -978,6 +1032,10 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       chartView.emaOverlays,
       chartDisplayAuxEmaOverlays,
       htfAuxEmaOverlayStale,
+      chartDisplayComponentEvents,
+      componentEventsStale,
+      chartShowEntryBlockMarkers,
+      chartShowExitSignalMarkers,
       chartView.mode,
       chartView.centerTimeSec,
       chartView.firstTimeSec,
