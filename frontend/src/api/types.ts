@@ -71,6 +71,14 @@ export type TradeOverlay = {
 
 export type ExitProfileLabel = "aligned" | "countertrend" | "neutral";
 
+/** Per setup instance_id at entry bar (schema v5+ setup stack). */
+export type SetupEntryDiagnostics = {
+  trend_episode_id?: number | null;
+  effective_bounce_number?: number | null;
+  completed_bounce_count?: number | null;
+  side?: "long" | "short" | null;
+};
+
 export type TradeRecord = TradeOverlay & {
   size: number | null;
   pnl: number | null;
@@ -109,10 +117,8 @@ export type TradeRecord = TradeOverlay & {
   quality_flags?: string[] | null;
   entry_context_consumption?: ContextConsumptionAttribution | null;
   exit_context_consumption?: ContextConsumptionAttribution | null;
-  entry_trend_episode_id?: number | null;
-  entry_effective_bounce_number?: number | null;
-  entry_completed_bounce_count?: number | null;
-  entry_bounce_counter_side?: "long" | "short" | null;
+  /** Namespaced setup diagnostics keyed by setup instance_id. */
+  entry_setup_diagnostics?: Record<string, SetupEntryDiagnostics>;
 };
 
 export type ContextConsumptionAttribution = {
