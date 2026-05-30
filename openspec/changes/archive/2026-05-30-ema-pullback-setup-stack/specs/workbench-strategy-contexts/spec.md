@@ -45,7 +45,7 @@ When a draft or loaded config contains legacy `strategy.setup` object and no `st
 
 ## MODIFIED Requirements
 
-### Requirement: Unsupported setup hides consumption UI
+### Requirement: Context consumption UI is catalog-driven per component
 
 For component forms where catalog `supports_context_consumption` is true, Composer SHALL show an optional **Context consumption** subsection with: enable/disable (where optional), `context_ref` selector populated from **defined** `strategy.contexts` keys, `policy_id` selector filtered by catalog, and dynamic params from `params_schema`. Exit policy with non-empty profile exit groups MUST require consumption fields (mirror loader validation). For **setup list** instances, consumption controls apply per list item when the selected setup component supports consumption.
 

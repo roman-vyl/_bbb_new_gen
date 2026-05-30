@@ -1,3 +1,11 @@
+# ema-trend-exit-catalog Specification
+
+## Purpose
+
+Component catalog entries for `ema_close_loss_exit` and `ema_cross_loss_exit`: list slots, nested EMA param bindings, `confirm_bars` defaults, and Composer field paths consistent with `distance` / `rsi` patterns.
+
+## Requirements
+
 ### Requirement: Catalog exposes trend EMA exits for any exit slot
 
 The catalog SHALL list `ema_close_loss_exit` and `ema_cross_loss_exit` with `role="exits"` and `list_slot=True` for all exit list slots, without profile restrictions.

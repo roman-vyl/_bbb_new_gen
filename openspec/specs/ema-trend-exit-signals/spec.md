@@ -1,3 +1,11 @@
+# ema-trend-exit-signals Specification
+
+## Purpose
+
+Atomic trend EMA signal exits for `ema_pullback`: `ema_close_loss_exit` and `ema_cross_loss_exit` evaluated on the base OHLCV index with base-bar `confirm_bars`, nested EMA instance payloads, and validation contracts per component_id.
+
+## Requirements
+
 ### Requirement: v1 evaluates exits on base index with base-bar confirmation
 
 In v1, `ema.timeframe`, `fast_ema.timeframe`, and `slow_ema.timeframe` define the **indicator calculation timeframe**. The exit signal MUST be evaluated on the strategy **base OHLCV index**. `confirm_bars` MUST count **consecutive base bars** after indicator values are aligned from their calculation timeframe to base bars.
