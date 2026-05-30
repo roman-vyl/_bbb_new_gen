@@ -443,6 +443,14 @@ def _collect_rsi_exit_rules(spec: EmaPullbackStrategySpec) -> list[tuple[str, Ex
     return out
 
 
+def _rsi_blocker_threshold(rule: BlockerRuleSpec, side: TradeSide) -> float | None:
+    if side == "long":
+        return float(rule.long_block_above) if rule.long_block_above is not None else None
+    if side == "short":
+        return float(rule.short_block_below) if rule.short_block_below is not None else None
+    raise ValueError("side must be 'long' or 'short'")
+
+
 def build_component_events(
     df: pd.DataFrame,
     spec: EmaPullbackStrategySpec,
@@ -466,14 +474,8 @@ def build_component_events(
         if rsi_col is None:
             continue
         source_timeframe = _resolve_feature_timeframe(rule.rsi.timeframe, base_timeframe)
-        threshold = (
-            float(rule.long_block_above)
-            if rule.long_block_above is not None
-            else float(rule.short_block_below)
-            if rule.short_block_below is not None
-            else None
-        )
         for side in _sides_for_spec(spec):
+            threshold = _rsi_blocker_threshold(rule, side)
             trace = rsi_lookback_extreme_blocker_trace(
                 df,
                 side=side,
