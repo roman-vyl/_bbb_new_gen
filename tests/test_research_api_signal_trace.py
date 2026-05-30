@@ -52,6 +52,23 @@ def test_signal_trace_endpoint_returns_bundle(monkeypatch: pytest.MonkeyPatch) -
             "portfolio_entry": [False, False],
             "internals": {},
         },
+        component_event_markers=[
+            {
+                "time": 1,
+                "role": "entry_block",
+                "side": "long",
+                "component_id": "rsi_lookback_extreme_blocker",
+                "instance_id": "rsi1",
+                "feature_family": "rsi",
+                "source_timeframe": "1h",
+                "base_timeframe": "5m",
+                "rsi_value": 85.0,
+                "condition": "extreme_seen",
+                "params": {"threshold": 80.0},
+                "label": "X-RSI",
+                "tooltip": None,
+            }
+        ],
     )
 
     def _fake_fetch(**_: object) -> SignalTraceBundle:
@@ -71,6 +88,8 @@ def test_signal_trace_endpoint_returns_bundle(monkeypatch: pytest.MonkeyPatch) -
     body = res.json()
     assert body["times"] == [1, 2]
     assert body["long"]["setup_ok"] == [False, True]
+    assert body["component_event_markers"][0]["role"] == "entry_block"
+    assert body["component_event_markers"][0]["feature_family"] == "rsi"
 
 
 def test_signal_trace_warmup_ignores_htf_without_context_consumption() -> None:

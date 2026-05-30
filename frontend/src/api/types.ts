@@ -424,11 +424,30 @@ export type ContextConsumptionTraceRecord = {
   outcome?: Record<string, unknown> | null;
 };
 
+export type ComponentEventMarkerRole = "entry_block" | "exit_signal";
+
+export type ComponentEventMarker = {
+  time: number;
+  role: ComponentEventMarkerRole;
+  side: "long" | "short";
+  component_id: string;
+  instance_id: string;
+  feature_family: string;
+  source_timeframe: string;
+  base_timeframe: string;
+  rsi_value: number | null;
+  condition: string;
+  params: Record<string, unknown>;
+  label: string;
+  tooltip?: string | null;
+};
+
 export type SignalTraceBundle = {
   times: number[];
   meta: SignalTraceMeta;
   htf_context?: HtfContextTrace;
   context_consumption_trace?: ContextConsumptionTraceRecord[];
+  component_event_markers?: ComponentEventMarker[];
   long: SideSignalTrace;
   short: SideSignalTrace;
 };

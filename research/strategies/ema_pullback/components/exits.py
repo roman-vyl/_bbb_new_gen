@@ -66,6 +66,44 @@ def rsi_signal_exit(
     return out.fillna(False).astype(bool)
 
 
+def rsi_signal_exit_trace(
+    df: pd.DataFrame,
+    anchor_col: str | None = None,
+    side: TradeSide = "long",
+    *,
+    rule: ExitRuleSpec,
+    rsi_col: str | None = None,
+    **kwargs: object,
+) -> dict[str, pd.Series]:
+    """Internals for rsi_signal_exit (aligned base-index series)."""
+
+    _ = anchor_col
+    _ = kwargs
+    if rule.rsi is None or rsi_col is None:
+        raise ValueError("rsi_signal_exit requires rule.rsi and rsi_col")
+    rsi = df[rsi_col].astype(float)
+    if side == "long":
+        if rule.long_exit_above is None:
+            raise ValueError("rsi_signal_exit requires long_exit_above for long side")
+        exit_fired = rsi > float(rule.long_exit_above)
+        condition_key = "exit_above"
+        threshold = float(rule.long_exit_above)
+    elif side == "short":
+        if rule.short_exit_below is None:
+            raise ValueError("rsi_signal_exit requires short_exit_below for short side")
+        exit_fired = rsi < float(rule.short_exit_below)
+        condition_key = "exit_below"
+        threshold = float(rule.short_exit_below)
+    else:
+        raise ValueError("side must be 'long' or 'short'")
+    return {
+        "rsi": rsi,
+        "exit_fired": exit_fired.fillna(False).astype(bool),
+        "condition": pd.Series(condition_key, index=df.index, dtype=object),
+        "threshold": pd.Series(threshold, index=df.index, dtype=float),
+    }
+
+
 def ema_close_loss_exit(
     df: pd.DataFrame,
     anchor_col: str | None = None,

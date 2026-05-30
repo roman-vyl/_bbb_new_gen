@@ -359,3 +359,162 @@ def test_signal_trace_uses_side_specific_stop_ready(monkeypatch: pytest.MonkeyPa
     trace = build_signal_trace_from_spec(df, spec, plan)
     assert all(trace.long.stop_ready)
     assert not any(trace.short.stop_ready)
+
+
+def _ohlcv_5m(*, periods: int = 12, start: str = "2024-01-01 10:00") -> pd.DataFrame:
+    idx = pd.date_range(start, periods=periods, freq="5min", tz="UTC")
+    close = pd.Series(100.0, index=idx, dtype=float)
+    return pd.DataFrame(
+        {
+            "open": close - 0.5,
+            "high": close + 1.0,
+            "low": close - 1.0,
+            "close": close,
+            "volume": 1.0,
+        },
+        index=idx,
+    )
+
+
+def test_component_event_markers_empty_without_v1_components() -> None:
+    spec = make_ema_pullback_strategy_spec()
+    plan = build_feature_plan_from_strategy_spec(spec)
+    df = add_feature_columns_from_plan(_ohlcv(), plan)
+    trace = build_signal_trace_from_spec(df, spec, plan)
+    assert trace.component_event_markers == []
+
+
+def test_component_event_markers_htf_blocker_emits_per_base_bar() -> None:
+    from dataclasses import replace
+
+    from research.strategies.ema_pullback.component_builders import (
+        blocker_extreme_rsi,
+        component_stack,
+        direction_ema_anchor_stack,
+        setup_untouched_anchor,
+        trigger_reclaim_anchor,
+    )
+
+    base = make_ema_pullback_strategy_spec(base_timeframe="5m")
+    spec = replace(
+        base,
+        components=component_stack(
+            direction=direction_ema_anchor_stack(),
+            blockers=(
+                blocker_extreme_rsi(
+                    instance_id="rsi_1h",
+                    timeframe="1h",
+                    lookback=1,
+                    long_block_above=80.0,
+                ),
+            ),
+            setup=setup_untouched_anchor(),
+            trigger=trigger_reclaim_anchor(),
+        ),
+    )
+    plan = build_feature_plan_from_strategy_spec(spec)
+    df = _ohlcv_5m(periods=12)
+    enriched = add_feature_columns_from_plan(df, plan)
+    rsi_col = plan.rsi_columns[("1h", 14)]
+    enriched[rsi_col] = 90.0
+    trace = build_signal_trace_from_spec(enriched, spec, plan)
+    entry_blocks = [m for m in trace.component_event_markers if m.role == "entry_block"]
+    assert len(entry_blocks) == 12
+    assert {m.time for m in entry_blocks} == set(trace.times)
+    first = entry_blocks[0]
+    assert first.feature_family == "rsi"
+    assert first.source_timeframe == "1h"
+    assert first.base_timeframe == "5m"
+    assert first.condition == "extreme_seen"
+    assert first.component_id == "rsi_lookback_extreme_blocker"
+
+
+def test_component_event_markers_rsi_exit_signal() -> None:
+    from research.strategies.ema_pullback.component_builders import exit_policy, exit_rsi, trade_management
+
+    spec = make_ema_pullback_strategy_spec(
+        trade_management_spec=trade_management(
+            exit_policy_spec=exit_policy(
+                always_on=(exit_rsi(instance_id="rsi_exit"),),
+                aligned=(),
+                countertrend=(),
+                neutral=(),
+            ),
+        ),
+    )
+    plan = build_feature_plan_from_strategy_spec(spec)
+    enriched = add_feature_columns_from_plan(_ohlcv(periods=20), plan)
+    rsi_col = plan.rsi_columns[("base", 14)]
+    enriched[rsi_col] = 75.0
+    trace = build_signal_trace_from_spec(enriched, spec, plan)
+    exit_markers = [m for m in trace.component_event_markers if m.role == "exit_signal"]
+    assert len(exit_markers) == len(trace.times)
+    sample = exit_markers[0]
+    assert sample.component_id == "rsi_signal_exit"
+    assert sample.role == "exit_signal"
+    assert sample.condition == "exit_above"
+    assert sample.label == "RSI↓"
+
+
+def test_component_event_markers_counter_candle_only_is_empty() -> None:
+    from dataclasses import replace
+
+    from research.strategies.ema_pullback.component_builders import (
+        blocker_counter_candle,
+        component_stack,
+        direction_ema_anchor_stack,
+        setup_untouched_anchor,
+        trigger_reclaim_anchor,
+    )
+
+    base = make_ema_pullback_strategy_spec()
+    spec = replace(
+        base,
+        components=component_stack(
+            direction=direction_ema_anchor_stack(),
+            blockers=(blocker_counter_candle(),),
+            setup=setup_untouched_anchor(),
+            trigger=trigger_reclaim_anchor(),
+        ),
+    )
+    plan = build_feature_plan_from_strategy_spec(spec)
+    enriched = add_feature_columns_from_plan(_ohlcv(periods=20), plan)
+    trace = build_signal_trace_from_spec(enriched, spec, plan)
+    assert trace.component_event_markers == []
+
+
+def test_slice_signal_trace_preserves_component_event_markers() -> None:
+    from dataclasses import replace
+
+    from research.strategies.ema_pullback.component_builders import (
+        blocker_extreme_rsi,
+        component_stack,
+        direction_ema_anchor_stack,
+        setup_untouched_anchor,
+        trigger_reclaim_anchor,
+    )
+
+    base = make_ema_pullback_strategy_spec(base_timeframe="5m")
+    spec = replace(
+        base,
+        components=component_stack(
+            direction=direction_ema_anchor_stack(),
+            blockers=(
+                blocker_extreme_rsi(instance_id="rsi1", timeframe="1h", lookback=1),
+            ),
+            setup=setup_untouched_anchor(),
+            trigger=trigger_reclaim_anchor(),
+        ),
+    )
+    plan = build_feature_plan_from_strategy_spec(spec)
+    enriched = add_feature_columns_from_plan(_ohlcv_5m(periods=12), plan)
+    rsi_col = plan.rsi_columns[("1h", 14)]
+    enriched[rsi_col] = 90.0
+    full = build_signal_trace_from_spec(enriched, spec, plan)
+    assert len(full.component_event_markers) == 12
+    sliced = slice_signal_trace(
+        full,
+        from_time_sec=full.times[6],
+        to_time_sec=full.times[-1],
+    )
+    assert len(sliced.component_event_markers) == 6

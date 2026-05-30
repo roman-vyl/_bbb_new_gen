@@ -25,6 +25,7 @@ from research.strategies.ema_pullback.spec_report import (
 
 from research_api.contracts.runs import RunReport, RunVariant
 from research_api.contracts.signal_trace import (
+    ComponentEventMarker,
     ContextConsumptionTraceRecord,
     HtfContextTrace,
     SignalTraceBundle,
@@ -111,6 +112,24 @@ def _to_contract(data: SignalTraceBundleData) -> SignalTraceBundle:
         htf_context=HtfContextTrace(**data.htf_context),
         context_consumption_trace=[
             ContextConsumptionTraceRecord(**record) for record in data.context_consumption_trace
+        ],
+        component_event_markers=[
+            ComponentEventMarker(
+                time=marker.time,
+                role=marker.role,
+                side=marker.side,
+                component_id=marker.component_id,
+                instance_id=marker.instance_id,
+                feature_family=marker.feature_family,
+                source_timeframe=marker.source_timeframe,
+                base_timeframe=marker.base_timeframe,
+                rsi_value=marker.rsi_value,
+                condition=marker.condition,
+                params=marker.params,
+                label=marker.label,
+                tooltip=marker.tooltip,
+            )
+            for marker in data.component_event_markers
         ],
         long=side(data.long),
         short=side(data.short),

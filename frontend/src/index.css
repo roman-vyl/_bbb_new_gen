@@ -229,6 +229,39 @@ select {
   color: #cbd5e1;
 }
 
+.chart-legend__chip--entry_block {
+  border-color: #fb923c;
+  color: #fdba74;
+}
+
+.chart-legend__chip--exit_signal {
+  border-color: #a78bfa;
+  color: #c4b5fd;
+}
+
+.chart-legend__group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  align-items: center;
+  margin-top: 0.35rem;
+}
+
+.chart-legend__subheading {
+  flex: 1 0 100%;
+  margin: 0;
+  font-size: 0.75rem;
+  color: #94a3b8;
+}
+
+.chart-legend__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.75rem;
+  color: #cbd5e1;
+}
+
 .chart-legend__text {
   white-space: nowrap;
 }

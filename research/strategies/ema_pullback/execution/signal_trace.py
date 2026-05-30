@@ -17,6 +17,7 @@ from research.strategies.ema_pullback.components.registry import (
     COUNTER_CANDLE_BLOCKER_COMPONENT,
     NO_BLOCKERS_COMPONENT,
     RSI_LOOKBACK_EXTREME_BLOCKER_COMPONENT,
+    RSI_SIGNAL_EXIT_COMPONENT,
     TOUCH_ANCHOR_COMPONENT,
     UNTOUCHED_ANCHOR_SETUP_COMPONENT,
 )
@@ -26,6 +27,7 @@ from research.strategies.ema_pullback.components.triggers import (
     strong_reclaim_anchor_trace,
     touch_anchor_trace,
 )
+from research.strategies.ema_pullback.components.exits import rsi_signal_exit_trace
 from research.strategies.ema_pullback.components.risk import no_risk_filter
 from research.strategies.ema_pullback.context.consumption_trace import build_context_consumption_trace
 from research.strategies.ema_pullback.context.bundle import ContextBundle
@@ -39,6 +41,7 @@ from research.strategies.ema_pullback.execution.signals import compose_blocker_s
 from research.strategies.ema_pullback.features.plan import FeaturePlan
 from research.strategies.ema_pullback.spec import (
     EmaPullbackStrategySpec,
+    ExitRuleSpec,
     ReclaimTriggerSpec,
     StrongReclaimTriggerSpec,
     RsiFeatureSpec,
@@ -130,11 +133,29 @@ class SideSignalTrace:
 
 
 @dataclass(frozen=True)
+class ComponentEventMarkerData:
+    time: int
+    role: str
+    side: str
+    component_id: str
+    instance_id: str
+    feature_family: str
+    source_timeframe: str
+    base_timeframe: str
+    rsi_value: float | None
+    condition: str
+    params: dict[str, Any]
+    label: str
+    tooltip: str | None = None
+
+
+@dataclass(frozen=True)
 class SignalTraceBundleData:
     times: list[int]
     meta: dict[str, Any]
     htf_context: dict[str, Any]
     context_consumption_trace: list[dict[str, Any]]
+    component_event_markers: list[ComponentEventMarkerData]
     long: SideSignalTrace
     short: SideSignalTrace
 
@@ -276,6 +297,197 @@ def _build_side_trace(
     )
 
 
+def _resolve_feature_timeframe(raw: str, base_timeframe: str) -> str:
+    token = raw.strip()
+    if token == "base":
+        return base_timeframe
+    return token
+
+
+def _marker_label(role: str, side: TradeSide) -> str:
+    if role == "entry_block":
+        return "X-RSI"
+    return "RSI↓" if side == "long" else "RSI↑"
+
+
+def _marker_tooltip(
+    *,
+    role: str,
+    component_id: str,
+    instance_id: str,
+    source_timeframe: str,
+    base_timeframe: str,
+    rsi_value: float | None,
+    condition: str,
+) -> str:
+    rsi_text = "—" if rsi_value is None else f"{rsi_value:.2f}"
+    return (
+        f"{role} · {component_id} · {instance_id} · "
+        f"RSI {rsi_text} · {condition} · {source_timeframe}→{base_timeframe}"
+    )
+
+
+def _sides_for_spec(spec: EmaPullbackStrategySpec) -> tuple[TradeSide, ...]:
+    sides: list[TradeSide] = []
+    if spec.trade_sides.includes("long"):
+        sides.append("long")
+    if spec.trade_sides.includes("short"):
+        sides.append("short")
+    return tuple(sides)
+
+
+def _collect_rsi_exit_rules(spec: EmaPullbackStrategySpec) -> list[tuple[str, ExitRuleSpec]]:
+    policy = spec.trade_management.exit_policy
+    groups: list[tuple[str, tuple[ExitRuleSpec, ...]]] = [
+        ("always_on", policy.always_on.exits),
+        ("aligned", policy.profiles.aligned.exits),
+        ("countertrend", policy.profiles.countertrend.exits),
+        ("neutral", policy.profiles.neutral.exits),
+    ]
+    out: list[tuple[str, ExitRuleSpec]] = []
+    seen: set[str] = set()
+    for profile, rules in groups:
+        for rule in rules:
+            if rule.component_id != RSI_SIGNAL_EXIT_COMPONENT:
+                continue
+            if rule.instance_id in seen:
+                continue
+            seen.add(rule.instance_id)
+            out.append((profile, rule))
+    return out
+
+
+def build_component_event_markers(
+    df: pd.DataFrame,
+    spec: EmaPullbackStrategySpec,
+    plan: FeaturePlan,
+    times: list[int],
+) -> list[ComponentEventMarkerData]:
+    """v1 emitters: rsi_lookback_extreme_blocker, rsi_signal_exit only."""
+
+    if len(times) != len(df):
+        raise ValueError("component_event_markers requires times aligned with df index")
+
+    base_timeframe = spec.base_timeframe
+    markers: list[ComponentEventMarkerData] = []
+
+    for rule in spec.components.blockers:
+        if rule.component_id != RSI_LOOKBACK_EXTREME_BLOCKER_COMPONENT:
+            continue
+        if rule.rsi is None:
+            continue
+        rsi_col = _rsi_column(plan, rule.rsi)
+        if rsi_col is None:
+            continue
+        source_timeframe = _resolve_feature_timeframe(rule.rsi.timeframe, base_timeframe)
+        for side in _sides_for_spec(spec):
+            trace = rsi_lookback_extreme_blocker_trace(
+                df,
+                side=side,
+                rule=rule,
+                rsi_col=rsi_col,
+            )
+            extreme_seen = trace["extreme_seen"].fillna(False).astype(bool)
+            rsi_series = trace["rsi"]
+            threshold = (
+                float(rule.long_block_above)
+                if side == "long"
+                else float(rule.short_block_below)
+                if rule.short_block_below is not None
+                else None
+            )
+            for i, active in enumerate(extreme_seen.to_list()):
+                if not active:
+                    continue
+                rsi_value = rsi_series.iloc[i]
+                rsi_float = None if pd.isna(rsi_value) else float(rsi_value)
+                markers.append(
+                    ComponentEventMarkerData(
+                        time=times[i],
+                        role="entry_block",
+                        side=side,
+                        component_id=rule.component_id,
+                        instance_id=rule.instance_id,
+                        feature_family="rsi",
+                        source_timeframe=source_timeframe,
+                        base_timeframe=base_timeframe,
+                        rsi_value=rsi_float,
+                        condition="extreme_seen",
+                        params={
+                            "lookback": int(rule.lookback),
+                            "threshold": threshold,
+                            "period": int(rule.rsi.period),
+                        },
+                        label=_marker_label("entry_block", side),
+                        tooltip=_marker_tooltip(
+                            role="entry_block",
+                            component_id=rule.component_id,
+                            instance_id=rule.instance_id,
+                            source_timeframe=source_timeframe,
+                            base_timeframe=base_timeframe,
+                            rsi_value=rsi_float,
+                            condition="extreme_seen",
+                        ),
+                    )
+                )
+
+    for profile, rule in _collect_rsi_exit_rules(spec):
+        if rule.rsi is None:
+            continue
+        rsi_col = _rsi_column(plan, rule.rsi)
+        if rsi_col is None:
+            continue
+        source_timeframe = _resolve_feature_timeframe(rule.rsi.timeframe, base_timeframe)
+        for side in _sides_for_spec(spec):
+            trace = rsi_signal_exit_trace(
+                df,
+                side=side,
+                rule=rule,
+                rsi_col=rsi_col,
+            )
+            exit_fired = trace["exit_fired"].fillna(False).astype(bool)
+            rsi_series = trace["rsi"]
+            condition = str(trace["condition"].iloc[0]) if len(trace["condition"]) else "exit"
+            threshold = float(trace["threshold"].iloc[0]) if len(trace["threshold"]) else None
+            for i, active in enumerate(exit_fired.to_list()):
+                if not active:
+                    continue
+                rsi_value = rsi_series.iloc[i]
+                rsi_float = None if pd.isna(rsi_value) else float(rsi_value)
+                markers.append(
+                    ComponentEventMarkerData(
+                        time=times[i],
+                        role="exit_signal",
+                        side=side,
+                        component_id=rule.component_id,
+                        instance_id=rule.instance_id,
+                        feature_family="rsi",
+                        source_timeframe=source_timeframe,
+                        base_timeframe=base_timeframe,
+                        rsi_value=rsi_float,
+                        condition=condition,
+                        params={
+                            "profile": profile,
+                            "threshold": threshold,
+                            "period": int(rule.rsi.period),
+                        },
+                        label=_marker_label("exit_signal", side),
+                        tooltip=_marker_tooltip(
+                            role="exit_signal",
+                            component_id=rule.component_id,
+                            instance_id=rule.instance_id,
+                            source_timeframe=source_timeframe,
+                            base_timeframe=base_timeframe,
+                            rsi_value=rsi_float,
+                            condition=condition,
+                        ),
+                    )
+                )
+
+    markers.sort(key=lambda marker: (marker.time, marker.role, marker.side, marker.instance_id))
+    return markers
+
+
 def build_signal_trace_from_spec(
     df: pd.DataFrame,
     spec: EmaPullbackStrategySpec,
@@ -390,6 +602,12 @@ def build_signal_trace_from_spec(
         meta=meta,
         htf_context=htf_payload,
         context_consumption_trace=consumption_trace,
+        component_event_markers=build_component_event_markers(
+            df,
+            spec,
+            plan,
+            _index_to_times_sec(df.index),
+        ),
         long=long_trace,
         short=short_trace,
     )
@@ -483,6 +701,7 @@ def slice_signal_trace(
 
     htf = trace.htf_context
     times = [trace.times[i] for i in indices]
+    allowed_times = set(times)
     return SignalTraceBundleData(
         times=times,
         meta=trace.meta,
@@ -510,6 +729,11 @@ def slice_signal_trace(
             "meta": htf.get("meta") or {},
         },
         context_consumption_trace=_slice_consumption_trace(trace.context_consumption_trace),
+        component_event_markers=[
+            marker
+            for marker in trace.component_event_markers
+            if marker.time in allowed_times
+        ],
         long=_slice_side(trace.long),
         short=_slice_side(trace.short),
     )
