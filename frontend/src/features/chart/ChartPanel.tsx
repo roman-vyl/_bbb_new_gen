@@ -52,9 +52,9 @@ import {
 
 } from "@/features/chart/chartMarkers";
 import {
-  buildComponentEventMarkersForView,
-  hasHtfAlignedComponentMarkers,
-} from "@/features/chart/chartComponentEventMarkers";
+  buildComponentEventsForView,
+  hasHtfAlignedComponentEvents,
+} from "@/features/chart/chartComponentEvents";
 
 import { buildChartDataKey } from "@/features/chart/chartDataKey";
 import { applyChartViewport } from "@/features/chart/chartViewport";
@@ -161,9 +161,9 @@ export function ChartPanel() {
 
     htfAuxEmaOverlayStale,
 
-    chartDisplayComponentEventMarkers,
+    chartDisplayComponentEvents,
 
-    componentEventMarkersStale,
+    componentEventsStale,
 
     chartShowEntryBlockMarkers,
 
@@ -337,21 +337,21 @@ export function ChartPanel() {
       ? " · HTF EMA may lag (signal trace reloading; stable BFF overlay planned)"
       : "";
 
-    const componentMarkerNote =
-      chartDisplayComponentEventMarkers.length > 0
-        ? ` · +${chartDisplayComponentEventMarkers.length} component markers (dense)`
+    const componentEventNote =
+      chartDisplayComponentEvents.length > 0
+        ? ` · +${chartDisplayComponentEvents.length} component events`
         : "";
 
-    const componentStaleNote = componentEventMarkersStale
-      ? " · component markers may lag (signal trace reloading)"
+    const componentStaleNote = componentEventsStale
+      ? " · component events may lag (signal trace reloading)"
       : "";
 
-    const htfAlignedMarkerNote =
-      hasHtfAlignedComponentMarkers(chartDisplayComponentEventMarkers) &&
-      chartDisplayComponentEventMarkers.some(
-        (marker) => marker.source_timeframe !== chartTimeframe,
+    const htfAlignedEventNote =
+      hasHtfAlignedComponentEvents(chartDisplayComponentEvents) &&
+      chartDisplayComponentEvents.some(
+        (event) => event.source_timeframe != null && event.source_timeframe !== chartTimeframe,
       )
-        ? " · HTF RSI markers aligned to chart bars"
+        ? " · HTF spans use backend-aligned base-bar boundaries"
         : "";
 
     const emaNote = stackPeriodsLabel
@@ -379,9 +379,9 @@ export function ChartPanel() {
       emaNote,
       "trade markers from report",
       traceNote,
-      componentMarkerNote,
+      componentEventNote,
       componentStaleNote,
-      htfAlignedMarkerNote,
+      htfAlignedEventNote,
     ].filter(Boolean);
 
     return parts.join(" · ");
@@ -408,9 +408,9 @@ export function ChartPanel() {
 
     htfAuxEmaOverlayStale,
 
-    chartDisplayComponentEventMarkers,
+    chartDisplayComponentEvents,
 
-    componentEventMarkersStale,
+    componentEventsStale,
 
     chartTimeframe,
 
@@ -740,7 +740,7 @@ export function ChartPanel() {
 
     );
 
-    const componentMarkers = buildComponentEventMarkersForView(chartDisplayComponentEventMarkers, {
+    const componentMarkers = buildComponentEventsForView(chartDisplayComponentEvents, {
       showEntryBlock: chartShowEntryBlockMarkers,
       showExitSignal: chartShowExitSignalMarkers,
       viewCandles: chartCandles,
@@ -754,7 +754,7 @@ export function ChartPanel() {
     chartCandles,
     selectedVariant,
     selectedTradeId,
-    chartDisplayComponentEventMarkers,
+    chartDisplayComponentEvents,
     chartShowEntryBlockMarkers,
     chartShowExitSignalMarkers,
   ]);
@@ -877,7 +877,7 @@ export function ChartPanel() {
         onShowEntryBlockMarkersChange={setChartShowEntryBlockMarkers}
         showExitSignalMarkers={chartShowExitSignalMarkers}
         onShowExitSignalMarkersChange={setChartShowExitSignalMarkers}
-        hasComponentEventMarkers={chartDisplayComponentEventMarkers.length > 0}
+        hasComponentEvents={chartDisplayComponentEvents.length > 0}
       />
 
       {chartTradeFocusWarning && (

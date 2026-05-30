@@ -239,6 +239,22 @@ select {
   color: #c4b5fd;
 }
 
+.chart-legend__chip--event-source {
+  border-color: #fbbf24;
+  color: #fde68a;
+}
+
+.chart-legend__chip--event-span_start,
+.chart-legend__chip--event-span_end {
+  border-color: #fb923c;
+  color: #fdba74;
+}
+
+.chart-legend__chip--event-point {
+  border-color: #a78bfa;
+  color: #c4b5fd;
+}
+
 .chart-legend__group {
   display: flex;
   flex-wrap: wrap;

@@ -52,21 +52,21 @@ def test_signal_trace_endpoint_returns_bundle(monkeypatch: pytest.MonkeyPatch) -
             "portfolio_entry": [False, False],
             "internals": {},
         },
-        component_event_markers=[
+        component_events=[
             {
                 "time": 1,
+                "event_type": "span_start",
                 "role": "entry_block",
                 "side": "long",
                 "component_id": "rsi_lookback_extreme_blocker",
                 "instance_id": "rsi1",
+                "label": "Block▶",
+                "tooltip": None,
+                "span_id": "rsi1:long:1",
                 "feature_family": "rsi",
                 "source_timeframe": "1h",
                 "base_timeframe": "5m",
-                "rsi_value": 85.0,
-                "condition": "extreme_seen",
-                "params": {"threshold": 80.0},
-                "label": "X-RSI",
-                "tooltip": None,
+                "metadata": {"rsi_value": 85.0, "condition": "block_start", "threshold": 80.0},
             }
         ],
     )
@@ -88,8 +88,10 @@ def test_signal_trace_endpoint_returns_bundle(monkeypatch: pytest.MonkeyPatch) -
     body = res.json()
     assert body["times"] == [1, 2]
     assert body["long"]["setup_ok"] == [False, True]
-    assert body["component_event_markers"][0]["role"] == "entry_block"
-    assert body["component_event_markers"][0]["feature_family"] == "rsi"
+    assert body["component_events"][0]["role"] == "entry_block"
+    assert body["component_events"][0]["event_type"] == "span_start"
+    assert body["component_events"][0]["feature_family"] == "rsi"
+    assert body["component_events"][0]["metadata"]["threshold"] == 80.0
 
 
 def test_signal_trace_warmup_ignores_htf_without_context_consumption() -> None:

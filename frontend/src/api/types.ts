@@ -424,22 +424,24 @@ export type ContextConsumptionTraceRecord = {
   outcome?: Record<string, unknown> | null;
 };
 
-export type ComponentEventMarkerRole = "entry_block" | "exit_signal";
+export type ComponentEventType = "point" | "span_start" | "span_end" | "source";
 
-export type ComponentEventMarker = {
+export type ComponentEventRole = "entry_block" | "exit_signal";
+
+export type ComponentEvent = {
   time: number;
-  role: ComponentEventMarkerRole;
+  event_type: ComponentEventType;
+  role: ComponentEventRole;
   side: "long" | "short";
   component_id: string;
   instance_id: string;
-  feature_family: string;
-  source_timeframe: string;
-  base_timeframe: string;
-  rsi_value: number | null;
-  condition: string;
-  params: Record<string, unknown>;
   label: string;
   tooltip?: string | null;
+  span_id?: string | null;
+  feature_family?: string | null;
+  source_timeframe?: string | null;
+  base_timeframe?: string | null;
+  metadata: Record<string, unknown>;
 };
 
 export type SignalTraceBundle = {
@@ -447,7 +449,7 @@ export type SignalTraceBundle = {
   meta: SignalTraceMeta;
   htf_context?: HtfContextTrace;
   context_consumption_trace?: ContextConsumptionTraceRecord[];
-  component_event_markers?: ComponentEventMarker[];
+  component_events?: ComponentEvent[];
   long: SideSignalTrace;
   short: SideSignalTrace;
 };

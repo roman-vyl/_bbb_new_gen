@@ -53,22 +53,22 @@ class HtfContextTrace(BaseModel):
     meta: dict[str, Any] = Field(default_factory=dict)
 
 
-class ComponentEventMarker(BaseModel):
+class ComponentEvent(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     time: int = Field(description="Chart/base bar unix seconds")
-    role: str = Field(description="entry_block | exit_signal")
+    event_type: str = Field(description="point | span_start | span_end | source")
+    role: str = Field(description="entry_block | exit_signal | …")
     side: str = Field(description="long | short")
     component_id: str
     instance_id: str
-    feature_family: str
-    source_timeframe: str
-    base_timeframe: str
-    rsi_value: float | None = None
-    condition: str
-    params: dict[str, Any] = Field(default_factory=dict)
     label: str
     tooltip: str | None = None
+    span_id: str | None = None
+    feature_family: str | None = None
+    source_timeframe: str | None = None
+    base_timeframe: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class SignalTraceBundle(BaseModel):
@@ -80,6 +80,6 @@ class SignalTraceBundle(BaseModel):
         default_factory=lambda: HtfContextTrace(state=[], fast=[], anchor=[], slow=[], meta={})
     )
     context_consumption_trace: list[ContextConsumptionTraceRecord] = Field(default_factory=list)
-    component_event_markers: list[ComponentEventMarker] = Field(default_factory=list)
+    component_events: list[ComponentEvent] = Field(default_factory=list)
     long: SideSignalTrace
     short: SideSignalTrace

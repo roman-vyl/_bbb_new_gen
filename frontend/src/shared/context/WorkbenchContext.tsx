@@ -33,7 +33,7 @@ import {
   type RunVariant,
   type TradeRecord,
   type SignalTraceBundle,
-  type ComponentEventMarker,
+  type ComponentEvent,
   type StrategyConfigDraft,
   type WorkbenchTab,
 } from "@/api/types";
@@ -53,7 +53,7 @@ import {
   strategyContextRefOptions,
 } from "@/features/chart/strategyContexts";
 import { candleRangeMs } from "@/features/chart/chartMarkers";
-import { filterComponentEventMarkersToTimeRange } from "@/features/chart/chartComponentEventMarkers";
+import { filterComponentEventsToTimeRange } from "@/features/chart/chartComponentEvents";
 import {
   defaultClosedTradeSelection,
   deriveSelectedVariant,
@@ -102,8 +102,8 @@ type WorkbenchState = {
   chartAuxEmaOverlays: ChartAuxEmaOverlay[];
   chartDisplayAuxEmaOverlays: ChartAuxEmaOverlay[];
   htfAuxEmaOverlayStale: boolean;
-  chartDisplayComponentEventMarkers: ComponentEventMarker[];
-  componentEventMarkersStale: boolean;
+  chartDisplayComponentEvents: ComponentEvent[];
+  componentEventsStale: boolean;
   chartShowEntryBlockMarkers: boolean;
   setChartShowEntryBlockMarkers: (show: boolean) => void;
   chartShowExitSignalMarkers: boolean;
@@ -183,7 +183,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
   const [marketCacheKey, setMarketCacheKey] = useState<MarketCacheKey | null>(null);
   const [auxEmaOverlays, setAuxEmaOverlays] = useState<ChartAuxEmaOverlay[]>([]);
   const lastSlicedHtfOverlaysRef = useRef<ChartAuxEmaOverlay[]>([]);
-  const lastSlicedComponentMarkersRef = useRef<ComponentEventMarker[]>([]);
+  const lastSlicedComponentEventsRef = useRef<ComponentEvent[]>([]);
   const [chartShowEntryBlockMarkers, setChartShowEntryBlockMarkers] = useState(true);
   const [chartShowExitSignalMarkers, setChartShowExitSignalMarkers] = useState(true);
   const [runs, setRuns] = useState<RunSummary[]>([]);
@@ -733,7 +733,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     lastSlicedHtfOverlaysRef.current = [];
-    lastSlicedComponentMarkersRef.current = [];
+    lastSlicedComponentEventsRef.current = [];
   }, [selectedRunId, selectedVariantKey]);
 
   const chartWindowKey = useMemo(() => {
@@ -779,41 +779,41 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     return [...bffOverlays, ...htfDisplay];
   }, [chartView.auxEmaOverlays, traceMatchesWindow]);
 
-  const chartDisplayComponentEventMarkers = useMemo(() => {
+  const chartDisplayComponentEvents = useMemo(() => {
     if (chartView.candles.length === 0) {
       return [];
     }
     const fromSec = chartView.candles[0]!.time;
     const toSec = chartView.candles[chartView.candles.length - 1]!.time;
-    const source = signalTrace?.component_event_markers ?? [];
-    const sliced = filterComponentEventMarkersToTimeRange(source, fromSec, toSec);
+    const source = signalTrace?.component_events ?? [];
+    const sliced = filterComponentEventsToTimeRange(source, fromSec, toSec);
 
     if (traceMatchesWindow) {
       if (sliced.length > 0 || source.length === 0) {
-        lastSlicedComponentMarkersRef.current = sliced;
+        lastSlicedComponentEventsRef.current = sliced;
       }
       return sliced;
     }
 
-    if (lastSlicedComponentMarkersRef.current.length > 0) {
-      return lastSlicedComponentMarkersRef.current;
+    if (lastSlicedComponentEventsRef.current.length > 0) {
+      return lastSlicedComponentEventsRef.current;
     }
 
     return sliced;
-  }, [chartView.candles, signalTrace?.component_event_markers, traceMatchesWindow]);
+  }, [chartView.candles, signalTrace?.component_events, traceMatchesWindow]);
 
-  const componentEventMarkersStale = useMemo(() => {
-    const hasMarkers =
-      (signalTrace?.component_event_markers?.length ?? 0) > 0 ||
-      chartDisplayComponentEventMarkers.length > 0;
-    if (!hasMarkers) {
+  const componentEventsStale = useMemo(() => {
+    const hasEvents =
+      (signalTrace?.component_events?.length ?? 0) > 0 ||
+      chartDisplayComponentEvents.length > 0;
+    if (!hasEvents) {
       return false;
     }
     if (traceMatchesWindow) {
       return false;
     }
     return true;
-  }, [signalTrace?.component_event_markers, chartDisplayComponentEventMarkers, traceMatchesWindow]);
+  }, [signalTrace?.component_events, chartDisplayComponentEvents, traceMatchesWindow]);
 
   const fullCandleRange = useMemo(
     () => (cachedBundle ? candleRangeMs(cachedBundle.candles) : null),
@@ -973,8 +973,8 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       chartAuxEmaOverlays: chartView.auxEmaOverlays,
       chartDisplayAuxEmaOverlays,
       htfAuxEmaOverlayStale,
-      chartDisplayComponentEventMarkers,
-      componentEventMarkersStale,
+      chartDisplayComponentEvents,
+      componentEventsStale,
       chartShowEntryBlockMarkers,
       setChartShowEntryBlockMarkers,
       chartShowExitSignalMarkers,
@@ -1032,8 +1032,8 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       chartView.emaOverlays,
       chartDisplayAuxEmaOverlays,
       htfAuxEmaOverlayStale,
-      chartDisplayComponentEventMarkers,
-      componentEventMarkersStale,
+      chartDisplayComponentEvents,
+      componentEventsStale,
       chartShowEntryBlockMarkers,
       chartShowExitSignalMarkers,
       chartView.mode,
