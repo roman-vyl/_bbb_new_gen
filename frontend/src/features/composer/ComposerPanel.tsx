@@ -35,6 +35,10 @@ import {
   strategyPath,
 } from "./composerDraft";
 import {
+  draftsEqualForEditing,
+  normalizeConfigDraftForEditing,
+} from "./composerComponentSlots";
+import {
   addStrategyContext,
   contextRefOptions,
   defaultHtfProvider,
@@ -342,6 +346,16 @@ export function ComposerPanel() {
     };
   }, [configDraft?.family]);
 
+  useEffect(() => {
+    if (!configDraft || !catalog) {
+      return;
+    }
+    const normalized = normalizeConfigDraftForEditing(configDraft, catalog);
+    if (!draftsEqualForEditing(configDraft, normalized)) {
+      setConfigDraft(normalized);
+    }
+  }, [catalog, configDraft, setConfigDraft]);
+
   const draftPreview = useMemo(
     () => (configDraft ? JSON.stringify(configDraft, null, 2) : ""),
     [configDraft],
@@ -422,8 +436,8 @@ export function ComposerPanel() {
     if (!configDraft) {
       return null;
     }
-    return prepareConfigDraftForApi(configDraft);
-  }, [configDraft]);
+    return prepareConfigDraftForApi(configDraft, catalog);
+  }, [catalog, configDraft]);
 
   const runValidate = useCallback(async () => {
     if (!configDraft || !apiDraft) return;
@@ -1989,7 +2003,7 @@ function ExitPolicyContextConsumptionSection({
   );
 }
 
-function SingletonComponentSection({
+export function SingletonComponentSection({
   compact = false,
   title,
   role,

@@ -313,6 +313,8 @@ export type ComponentSchema = {
   label: string;
   description?: string | null;
   params_schema?: Record<string, ParamFieldSchema>;
+  /** When "nested", Composer nests params_schema keys under setup.params on save. */
+  params_storage?: "flat" | "nested";
   list_slot?: boolean;
   supports_context_consumption?: boolean;
   context_consumption_policies?: ContextConsumptionPolicySchema[];

@@ -109,6 +109,7 @@ def test_component_catalog_returns_ema_pullback_components(client: TestClient) -
     }
     assert bounce_params["fast_ema"]["default"] == 50
     assert bounce_params["raw_touch_mode"]["enum"] == ["range_cross"]
+    assert setup_components[1].get("params_storage") == "nested"
     reclaim_components = [c for c in body["components"] if c.get("component_id") == "reclaim_anchor"]
     assert len(reclaim_components) == 1
     reclaim_params = reclaim_components[0]["params_schema"]

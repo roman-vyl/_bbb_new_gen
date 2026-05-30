@@ -1,5 +1,7 @@
 import type { ComponentCatalog, JsonObject, ValidationErrorItem } from "@/api/types";
 
+import { normalizeStrategySingletonsForApi } from "./composerComponentSlots";
+
 export type ContextProviderDraft = JsonObject & {
   component_id: string;
   timeframe?: string;
@@ -392,8 +394,14 @@ export function exitPolicyPolicies(catalog: ComponentCatalog | null) {
   return catalog?.context_consumption_roles?.find((r) => r.role === "exit_policy")?.policies ?? [];
 }
 
-export function prepareStrategyForApi(strategy: JsonObject): JsonObject {
+export function prepareStrategyForApi(
+  strategy: JsonObject,
+  catalog: ComponentCatalog | null = null,
+): JsonObject {
   let next = normalizeStrategyForTargetShape(strategy);
+  if (catalog) {
+    next = normalizeStrategySingletonsForApi(next, catalog);
+  }
   const contexts = readStrategyContexts(next);
   if (Object.keys(contexts).length === 0) {
     const { contexts: _removed, ...rest } = next;
@@ -406,12 +414,13 @@ export function prepareStrategyForApi(strategy: JsonObject): JsonObject {
 
 export function prepareConfigDraftForApi<T extends { instances: { strategy: JsonObject }[] }>(
   draft: T,
+  catalog: ComponentCatalog | null = null,
 ): T {
   return {
     ...draft,
     instances: draft.instances.map((inst) => ({
       ...inst,
-      strategy: prepareStrategyForApi(inst.strategy),
+      strategy: prepareStrategyForApi(inst.strategy, catalog),
     })),
   };
 }

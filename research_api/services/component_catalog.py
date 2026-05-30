@@ -132,6 +132,7 @@ def get_component_catalog(*, family: str = "ema_pullback") -> ComponentCatalog:
                 "Base timeframe EMA-stack market-state gate: allow entries until "
                 "anchor EMA bounce interactions exhaust max_bounces."
             ),
+            params_storage="nested",
             params_schema={
                 "fast_ema": _int_param("Fast EMA period (base)", default=50),
                 "anchor_ema": _int_param("Anchor EMA period (base)", default=200),
