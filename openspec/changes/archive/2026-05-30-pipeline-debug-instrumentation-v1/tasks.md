@@ -17,7 +17,7 @@
 ## 3. Verification
 
 - [x] 3.1 CLI run on BTCUSDT 1h — document double config load (`REPEAT` ×2) in design
-- [ ] 3.2 Manual Workbench run with `VITE_EMA_PIPELINE_DEBUG=true` — capture console table once
+- [x] 3.2 Manual Workbench run with `VITE_EMA_PIPELINE_DEBUG=true` — capture console table once
 - [ ] 3.3 `npm run build` in `frontend/` (ensure diagnostics imports typecheck)
 
 ## 4. Follow-ups (out of scope for this change)
