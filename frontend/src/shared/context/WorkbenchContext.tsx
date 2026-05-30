@@ -75,6 +75,7 @@ import {
   type SignalTraceLoadStatus,
   type SignalTraceRequest,
 } from "@/shared/context/signalTraceLoadPolicy";
+import { dbgFlush, dbgMark } from "@/shared/diagnostics/pipelineDebug";
 export type ReportLoadStatus = "loading" | "ready" | "error";
 export type ConfigLoadStatus = "loading" | "ready" | "empty" | "error";
 export type MarketLoadStatus = "idle" | "loading" | "ready" | "error";
@@ -455,6 +456,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       setMarketError(null);
 
       if (hasMarketCache(key)) {
+        dbgMark("wb.market_cache_hit", { key });
         if (marketLoadGenRef.current !== loadGen && intendedMarketCacheKeyRef.current !== key) {
           return;
         }
@@ -464,8 +466,10 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       }
 
       if (marketFetchInFlightKeyRef.current === key) {
+        dbgMark("wb.market_fetch_skip_in_flight", { key });
         return;
       }
+      dbgMark("wb.market_fetch_start", { key });
       marketFetchInFlightKeyRef.current = key;
 
       setMarketLoadStatus("loading");
@@ -887,6 +891,8 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       request,
     });
 
+    dbgMark("wb.signal_trace_decision", { action: decision.action, windowKey });
+
     if (
       decision.action === "skip_already_loaded" ||
       decision.action === "skip_already_loading" ||
@@ -916,6 +922,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
         setSignalTrace(bundle);
         setLoadedTraceWindowKey(windowKey);
         setSignalTraceStatus("ready");
+        dbgFlush("workbench-after-signal-trace");
       } catch (err) {
         if (cancelled) return;
         setSignalTrace(null);

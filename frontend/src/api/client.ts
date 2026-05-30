@@ -1,3 +1,4 @@
+import { dbgTimed } from "@/shared/diagnostics/pipelineDebug";
 import {
   assertSupportedReportSchema,
   type ChartBar,
@@ -71,11 +72,13 @@ export async function fetchLatestRunReport(): Promise<RunReport> {
 }
 
 export async function fetchRunReport(runId: string): Promise<RunReport> {
-  const report = await requestJson<RunReport>(
-    `/api/research/runs/${encodeURIComponent(runId)}`,
-  );
-  assertSupportedReportSchema(report.report_schema_version);
-  return report;
+  return dbgTimed("api.fetchRunReport", async () => {
+    const report = await requestJson<RunReport>(
+      `/api/research/runs/${encodeURIComponent(runId)}`,
+    );
+    assertSupportedReportSchema(report.report_schema_version);
+    return report;
+  });
 }
 
 /** Per-bar entry pipeline trace for Chart Bar Inspector (phase 5). */
@@ -94,8 +97,10 @@ export async function fetchSignalTrace(params: {
   if (params.contextOverlayRef) {
     qs.set("context_overlay_ref", params.contextOverlayRef);
   }
-  return requestJson<SignalTraceBundle>(
-    `/api/research/runs/${encodeURIComponent(params.runId)}/signal-trace?${qs.toString()}`,
+  return dbgTimed("api.fetchSignalTrace", () =>
+    requestJson<SignalTraceBundle>(
+      `/api/research/runs/${encodeURIComponent(params.runId)}/signal-trace?${qs.toString()}`,
+    ),
   );
 }
 
@@ -132,7 +137,9 @@ export async function fetchChartMarketBundle(params: {
   bundleQs.set("ema_fast", String(params.emaFast));
   bundleQs.set("ema_anchor", String(params.emaAnchor));
   bundleQs.set("ema_slow", String(params.emaSlow));
-  return requestJson<ChartMarketBundle>(`/api/market/chart-bundle?${bundleQs.toString()}`);
+  return dbgTimed("api.fetchChartMarketBundle", () =>
+    requestJson<ChartMarketBundle>(`/api/market/chart-bundle?${bundleQs.toString()}`),
+  );
 }
 
 export async function fetchCandles(params: {
@@ -218,5 +225,5 @@ export async function selectSavedConfig(
 export async function runBacktest(
   body: { draft: StrategyConfigDraft } | { config_path: string },
 ): Promise<BacktestResult> {
-  return postJson<BacktestResult>("/api/research/backtests", body);
+  return dbgTimed("api.runBacktest", () => postJson<BacktestResult>("/api/research/backtests", body));
 }

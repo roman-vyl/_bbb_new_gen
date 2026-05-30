@@ -8,6 +8,7 @@ import {
   serializeConfigDraft,
   validateConfigDraft,
 } from "@/api/client";
+import { dbgMark } from "@/shared/diagnostics/pipelineDebug";
 import type {
   ComponentCatalog,
   ComponentSchema,
@@ -524,6 +525,7 @@ export function ComposerPanel() {
 
   const runBacktestAction = useCallback(async () => {
     if (!configDraft || !apiDraft) return;
+    dbgMark("wb.backtest_click");
     setBusy("backtest");
     setActionError(null);
     setBacktestMessage(null);
