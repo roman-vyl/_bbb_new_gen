@@ -89,7 +89,7 @@ def _scalar_json_safe(value: Any) -> Any:
         return value
     if hasattr(value, "item") and callable(value.item):
         try:
-            value = value.item()
+            return _scalar_json_safe(value.item())
         except Exception:  # pragma: no cover - defensive
             pass
     if isinstance(value, float):
