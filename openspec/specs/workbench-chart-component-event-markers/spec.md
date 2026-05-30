@@ -2,202 +2,366 @@
 
 ## Purpose
 
-Chart component event markers derived from signal trace: generic `component_event_markers[]` contract, v1 RSI emitters (`rsi_lookback_extreme_blocker`, `rsi_signal_exit`), dense base-indexed rendering on aligned chart bars.
-
+Chart component semantic events derived from signal trace: generic `component_events[]` contract with `event_type` vocabulary (`point`, `span_start`, `span_end`, `source`), extensible `role`, top-level alignment fields, component-specific data in `metadata`. v1 RSI emitters (`rsi_lookback_extreme_blocker`, `rsi_signal_exit`); frontend renders by `event_type` + `role` + `side` only.
 ## Requirements
+### Requirement: Signal trace exposes component_events with event_type vocabulary
 
-### Requirement: Signal trace exposes generic component_event_markers array
+The signal trace payload returned to Workbench SHALL include `component_events`: a sparse, **component-agnostic** list of semantic events aligned with chart/base bar times (`trace.times`).
 
-The signal trace payload returned to Workbench SHALL include `component_event_markers`: a sparse, **component-agnostic** list of per-base-bar events aligned with `times`.
-
-Each marker record MUST include these generic fields:
+Each event record MUST include:
 
 - `time` — Unix seconds on the chart/base bar (`times[i]`)
-- `role` — `entry_block` or `exit_signal`
+- `event_type` — one of `point`, `span_start`, `span_end`, `source`
+- `role` — semantic category for styling and layer toggles (v1: `entry_block`, `exit_signal`)
 - `side` — `long` or `short`
-- `component_id` — catalog component id (provenance)
+- `component_id` — catalog component id (provenance only)
 - `instance_id` — rule instance id from strategy spec
-- `feature_family` — feature family label (v1 emitters use `rsi`)
-- `source_timeframe` — resolved RSI feature timeframe (e.g. `5m`, `1h`; not the literal `base` token)
-- `base_timeframe` — strategy/chart base timeframe
-- `rsi_value` — aligned RSI value at the bar, or null when unavailable
-- `condition` — stable condition key (e.g. `extreme_seen`, `exit_above`, `exit_below`)
-- `params` — threshold and rule metadata (object)
-- `label` — short text for chart marker rendering
-- `tooltip` — optional longer text for inspector/tooltip (MAY be omitted)
+- `label` — short text for chart rendering
+- `tooltip` — optional longer text (MAY be omitted)
+- `span_id` — optional string linking `source`, `span_start`, and `span_end` of the same run (MAY be null)
+- `feature_family` — optional generic label such as `rsi`, `ema`, `context` (MAY be null; not a render key)
+- `source_timeframe` — optional resolved feature timeframe (e.g. `5m`, `1h`; MAY be null)
+- `base_timeframe` — optional strategy/chart base timeframe (MAY be null)
+- `metadata` — object for **component-specific** fields only (MAY include `rsi_value`, `condition`, `params`, `threshold`, `lookback`, `profile`, `regime`, `ema_period`, …)
 
-Marker `time` MUST use the base/chart bar index only. HTF RSI MUST NOT be re-timestamped to HTF candle open times in this payload.
+Top-level MUST NOT include indicator values or rule thresholds (`rsi_value`, `threshold`, …). Frontend HTF alignment hints MUST read `source_timeframe` and `base_timeframe` from top-level fields, not from `metadata`.
 
-#### Scenario: Marker record includes generic contract fields
+Event `time` MUST use the base/chart bar index only. HTF features MUST NOT be re-timestamped to HTF candle open times in this payload.
 
-- **WHEN** signal trace includes any `component_event_markers` entry
-- **THEN** the record includes `time`, `role`, `side`, `component_id`, `instance_id`, `feature_family`, `source_timeframe`, `base_timeframe`, `label`, `condition`, and `params`
-- **AND** `feature_family` is `rsi` for v1 emitters
+#### Scenario: Event record includes generic contract fields
 
-#### Scenario: No markers when v1 emitters not configured
+- **WHEN** signal trace includes any `component_events` entry
+- **THEN** the record includes `time`, `event_type`, `role`, `side`, `component_id`, `instance_id`, `label`, and `metadata`
+- **AND** `event_type` is one of `point`, `span_start`, `span_end`, `source`
+- **AND** `span_id`, `feature_family`, `source_timeframe`, and `base_timeframe` are present as top-level fields (nullable when unused)
 
-- **GIVEN** a variant with no `rsi_lookback_extreme_blocker` and no `rsi_signal_exit` rules
+#### Scenario: Component-specific detail lives in metadata only
+
+- **WHEN** an RSI emitter serializes threshold and indicator values
+- **THEN** `rsi_value`, `threshold`, `lookback`, and similar keys appear under `metadata`
+- **AND** `source_timeframe` and `base_timeframe` appear at top level when the emitter knows them
+- **AND** a future EMA emitter MAY use the same top-level shape with EMA-specific keys only in `metadata`
+
+#### Scenario: span_id links span events at top level
+
+- **WHEN** an emitter emits `source`, `span_start`, and `span_end` for one blocked run
+- **THEN** all three records share the same non-null top-level `span_id`
+- **AND** `span_id` is not required under `metadata`
+
+#### Scenario: No events when no emitters configured for variant
+
+- **GIVEN** a variant with no configured component event emitters
 - **WHEN** signal trace is built
-- **THEN** `component_event_markers` is an empty list
+- **THEN** `component_events` is an empty list
+
+#### Scenario: event_type source marks causal bar
+
+- **WHEN** an emitter emits a causal triggering bar for a blocker span
+- **THEN** the record has `event_type: source`
+- **AND** `role` reflects the semantic category (e.g. `entry_block`)
+
+#### Scenario: event_type span_start and span_end bound a contiguous regime
+
+- **WHEN** a blocker or regime is active across a contiguous run of base bars from index `i0` through `i1`
+- **THEN** the trace includes one `span_start` at `times[i0]` (first active/blocked bar)
+- **AND** one `span_end` at `times[i1]` (**last active/blocked bar — NOT the first inactive bar after the run**)
+- **AND** both records share the same `role`, `side`, `instance_id`, and `span_id`
+
+#### Scenario: Source is one rising edge per raw threshold episode
+
+- **GIVEN** raw threshold booleans `F T T T F F T T` on consecutive base bars
+- **WHEN** the blocker emitter serializes `source` events from raw threshold **before** lookback rolling
+- **THEN** exactly two `source` events are emitted at the first `T` of each contiguous raw-true episode
+- **AND** no `source` is emitted on the second or third `T` of the same raw-true run
+
+#### Scenario: event_type point marks isolated events
+
+- **WHEN** an exit or one-shot condition fires on a single bar without a span
+- **THEN** the trace includes a record with `event_type: point`
+
+### Requirement: Extensible role axis for future non-RSI components
+
+`role` SHALL be a string semantic category used for styling and layer toggles. v1 uses `entry_block` and `exit_signal`. The contract MUST allow additional roles without breaking changes, including at minimum:
+
+- `setup`, `trigger` — one-shot detection/firing (`event_type: point`)
+- `context_regime` — HTF or strategy context spans (`span_start` / `span_end`)
+
+Research emitters for new catalog components MUST map to an existing or newly added `role`; they MUST NOT introduce frontend rendering keyed on `component_id`.
+
+#### Scenario: Counter-candle blocker uses entry_block role without RSI metadata
+
+- **GIVEN** a future emitter for `counter_candle_blocker`
+- **WHEN** a block span is serialized
+- **THEN** events use `role: entry_block` with `source`, `span_start`, and `span_end`
+- **AND** `metadata` describes the candle violation, not RSI fields
+- **AND** frontend styling matches other `entry_block` spans
+
+#### Scenario: Context gate uses context_regime role
+
+- **GIVEN** a future emitter for an HTF context gate
+- **WHEN** aligned regime spans base bars `i0`–`i1`
+- **THEN** events use `role: context_regime` with `span_start` and `span_end`
+- **AND** frontend renders from `role` and `event_type` without knowing the gate `component_id`
+
+### Requirement: Catalog components map to universal event_type patterns
+
+Research MAY add emitters for any catalog component in follow-up changes. Each emitter MUST map component semantics to the universal `event_type` set without changing frontend render keys:
+
+| Pattern | `event_type` sequence | Typical `role` |
+|---------|------------------------|----------------|
+| Blocker with cause + blocked range | `source`, `span_start`, `span_end` | `entry_block` |
+| Isolated exit / cross | `point` | `exit_signal` |
+| Setup / trigger fired | `point` | `setup` / `trigger` |
+| Regime gate | `span_start`, `span_end` (optional `source`) | `context_regime` |
+
+The frontend MUST remain unaware of catalog component ids for rendering.
+
+#### Scenario: EMA cross exit maps to point only
+
+- **GIVEN** a future emitter for an EMA cross exit component
+- **WHEN** the cross fires on base bar `i`
+- **THEN** the trace includes one `component_events` record with `event_type: point` and `role: exit_signal`
+- **AND** no `span_start` or `span_end` records are required for that component
+- **AND** `metadata` MAY include EMA periods, not RSI fields
+
+#### Scenario: Setup and trigger map to point events
+
+- **GIVEN** future emitters for setup and trigger components
+- **WHEN** setup is detected or trigger fires on base bar `i`
+- **THEN** each emits `event_type: point` with `role: setup` or `role: trigger` respectively
 
 ### Requirement: v1 research emitters are limited to two existing RSI components
 
-In v1, research MUST implement marker emitters only for these existing catalog components:
+Research MUST implement event emitters for these catalog components:
 
-- `rsi_lookback_extreme_blocker` → `role: entry_block`
-- `rsi_signal_exit` → `role: exit_signal`
+- `rsi_lookback_extreme_blocker` → `role: entry_block` with `source`, `span_start`, and `span_end` per blocked run
+- `rsi_signal_exit` → `role: exit_signal` with `event_type: point` when exit fires
+- `ema_bounce_counter_setup` → `role: setup` with `source` for bounce opportunity start, `span_start`/`span_end` for pending bounce windows, and optional `point` events for trend start/break
 
-Research MAY use component-specific trace code for those two emitters because backend owns component semantics.
+Research MUST use component-specific trace code per emitter because backend owns component semantics.
 
-Research MUST NOT add v1 emitters for other components (including future RSI variants, counter-candle blocker, EMA exits, or context gates).
+Research MUST NOT add emitters for other components until follow-up changes (counter-candle blocker, EMA exits, context gates, other setup/trigger components).
 
-Adding emitters for additional components is out of v1 scope but MUST reuse the same generic marker contract without breaking changes.
+Follow-up changes add emitters for additional components by reusing the same `component_events` contract without breaking changes.
 
-#### Scenario: rsi_lookback_extreme_blocker emits entry_block
+#### Scenario: rsi_lookback_extreme_blocker emits semantic block span
 
 - **GIVEN** a variant with `rsi_lookback_extreme_blocker`
-- **WHEN** aligned trace has `extreme_seen[i] == true` for the long side at base index `i`
-- **THEN** `component_event_markers` includes a record with `role: entry_block`, `side: long`, `component_id: rsi_lookback_extreme_blocker`, and `time == times[i]`
+- **AND** aligned trace has a contiguous blocked run for the long side from base index `i0` through `i1`
+- **WHEN** signal trace is built
+- **THEN** `component_events` includes `span_start` at `times[i0]` and `span_end` at `times[i1]` with `role: entry_block` and `side: long`
+- **AND** includes a `source` event at the bar where the RSI threshold crossing triggered the block episode
 
-#### Scenario: rsi_signal_exit emits exit_signal
+#### Scenario: rsi_signal_exit emits exit point
 
 - **GIVEN** a variant with `rsi_signal_exit` in an exit profile bucket
 - **WHEN** the long exit condition is true at base index `i` on the aligned RSI column
-- **THEN** `component_event_markers` includes a record with `role: exit_signal`, `side: long`, `component_id: rsi_signal_exit`, and `time == times[i]`
+- **THEN** `component_events` includes one record with `event_type: point`, `role: exit_signal`, `side: long`, and `time == times[i]`
 
-#### Scenario: Non-v1 component produces no marker in v1
+#### Scenario: ema_bounce_counter_setup emits setup bounce events
+
+- **GIVEN** a variant with `ema_bounce_counter_setup`
+- **AND** a raw touch opens a pending bounce window for the long side at base index `i0`
+- **AND** that pending bounce window completes at base index `i1`
+- **WHEN** signal trace is built
+- **THEN** `component_events` includes a `source` event at `times[i0]` with `role: setup`, `side: long`, and `component_id: ema_bounce_counter_setup`
+- **AND** includes `span_start` at `times[i0]` and `span_end` at `times[i1]` for the pending bounce window
+- **AND** the related `source`, `span_start`, and `span_end` events share a non-null `span_id`
+
+#### Scenario: Non-implemented component produces no events
 
 - **GIVEN** a variant whose only entry filter is `counter_candle_blocker`
-- **WHEN** signal trace is built
-- **THEN** `component_event_markers` is empty
-- **AND** no placeholder marker is emitted for unsupported components
+- **WHEN** signal trace is built before a counter-candle emitter exists
+- **THEN** `component_events` is empty
+- **AND** no placeholder event is emitted
 
-### Requirement: Component event data is always one record per blocked or active base bar
+### Requirement: EMA bounce counter setup events use generic chart event semantics
 
-The `component_event_markers` list is the authoritative per-base-bar event set. Research MUST NOT aggregate HTF block runs to a single HTF-period record.
+The `ema_bounce_counter_setup` event emitter SHALL derive Chart events from backend setup trace diagnostics and SHALL use the generic `component_events[]` contract. The emitter MUST use `role: setup`, `component_id: ema_bounce_counter_setup`, `feature_family: ema`, and the evaluated `side`.
 
-For a contiguous run of active events (same `side`, `instance_id`, `role`), trace MUST include **one record per base bar** in the run.
+The event mapping SHALL be:
 
-#### Scenario: HTF hour block produces twelve trace records on 5m
+- `source` for the eligible raw-touch bar that opens a bounce opportunity.
+- `span_start` for pending bounce window start.
+- `span_end` for pending bounce window end, placed on the last active pending/lookback bar. With `touch_lookback_bars = N` and a start index `i0`, this is index `i0 + N - 1`.
+- Optional `point` events for trend start and trend break.
 
-- **GIVEN** an 1h RSI block active across twelve consecutive 5m base bars
-- **WHEN** signal trace is built
-- **THEN** `component_event_markers` contains twelve `entry_block` records
-- **AND** the API response does not collapse them to one record for the hour
+Component-specific details SHALL live in `metadata`, including `event_name`, EMA periods, `trend_episode_id`, `completed_bounce_count`, `effective_bounce_number`, `max_bounces`, `touch_lookback_bars`, and `price_side_of_anchor` when available.
 
-#### Scenario: Slice preserves per-bar events in window
+#### Scenario: Bounce opportunity source event
 
-- **WHEN** `slice_signal_trace` returns a window covering six of twelve blocked 5m bars
-- **THEN** the sliced payload contains six marker records for those bars
-- **AND** no aggregation is applied during slice
+- **GIVEN** `ema_bounce_counter_setup` trace has `raw_touch: true`
+- **AND** that bar satisfies the conditions to open a new pending bounce
+- **WHEN** component events are serialized
+- **THEN** a `source` event is emitted at that bar's base time
+- **AND** the event has `role: setup`, `feature_family: ema`, and `metadata.event_name: bounce_opportunity_start`
 
-### Requirement: HTF RSI markers follow feature-pipeline base-bar alignment
+#### Scenario: Pending bounce span events
 
-When `source_timeframe` is higher than `base_timeframe`, marker emission MUST use aligned per-base-bar semantics:
+- **GIVEN** a pending bounce window starts at base index `i0`
+- **AND** `touch_lookback_bars` is `N`
+- **WHEN** component events are serialized
+- **THEN** `span_start` is emitted at `times[i0]`
+- **AND** `span_end` is emitted at `times[i0 + N - 1]`
+- **AND** `span_end` is not emitted at the first inactive bar after the window
 
-1. RSI columns from `add_feature_columns_from_plan` with `_align_completed_feature_to_base`.
-2. v1 emitter trace booleans computed on aligned base-index series.
-3. One marker per base index `i` where the condition is true (`time == times[i]`).
-4. One HTF blocking period MUST produce a contiguous run of base/chart markers (e.g. twelve 5m markers for one 1h block).
-5. Frontend MUST NOT expand HTF events; backend emits the full base-indexed run.
+#### Scenario: Final active lookback touch does not create a second span
 
-#### Scenario: HTF blocker spans all aligned 5m bars in the hour
+- **GIVEN** a pending bounce window starts at base index `i0`
+- **AND** `touch_lookback_bars` is `N`
+- **AND** `raw_touch` is also true on base index `i0 + N - 1`
+- **WHEN** component events are serialized
+- **THEN** the emitter produces `span_end` for the original window at `times[i0 + N - 1]`
+- **AND** it does not emit a new `source` or `span_start` for that final active lookback bar
+- **AND** a following pending bounce can only be emitted from index `i0 + N` or later
+
+#### Scenario: Trend point events are optional but generic
+
+- **GIVEN** trend point emission is enabled for `ema_bounce_counter_setup`
+- **WHEN** a trend episode starts or breaks
+- **THEN** the emitter serializes `event_type: point` with `role: setup`
+- **AND** `metadata.event_name` is `trend_start` or `trend_break`
+- **AND** frontend rendering does not require a branch on `component_id`
+
+#### Scenario: Frontend does not synthesize EMA setup events
+
+- **GIVEN** signal trace contains setup internals for `ema_bounce_counter_setup`
+- **WHEN** Chart renders component events
+- **THEN** Chart renders only events already present in `component_events[]`
+- **AND** Chart does not compute raw touches, pending windows, trend episodes, or bounce counts from candles or EMA values
+
+### Requirement: HTF aligned feature events follow base-bar semantics
+
+When top-level `source_timeframe` is higher than top-level `base_timeframe`, event emission MUST use aligned per-base-bar semantics (any feature family—RSI, EMA, context, etc.):
+
+1. Feature columns from `add_feature_columns_from_plan` with `_align_completed_feature_to_base`.
+2. Emitter trace booleans computed on aligned base-index series.
+3. Span boundaries use first/last base index where the aligned condition defines the blocked run.
+4. One HTF blocking period MUST produce one span pair (and associated `source`) on the base chart — not one event per HTF open.
+5. Frontend MUST NOT expand HTF events; backend emits semantic span boundaries on base index.
+
+#### Scenario: HTF blocker span covers aligned 5m run
 
 - **GIVEN** base timeframe `5m` and `rsi_lookback_extreme_blocker` with `source_timeframe: 1h`
 - **AND** aligned pipeline marks the block active on every 5m bar from 10:00 through 10:55 for the long side
 - **WHEN** signal trace is built
-- **THEN** `component_event_markers` includes twelve `entry_block` records at those `times`
-- **AND** no record uses a timestamp absent from `times`
+- **THEN** `component_events` includes `span_start` at 10:00 and `span_end` at 10:55 for that run
+- **AND** does not include twelve separate `span_start` records for each 5m bar
 
-#### Scenario: HTF emitter uses aligned RSI column
+#### Scenario: HTF emitter uses aligned feature column
 
-- **GIVEN** a blocker with `source_timeframe` higher than `base_timeframe`
-- **WHEN** the v1 emitter runs
-- **THEN** it reads RSI from `plan.rsi_columns` produced via `_align_completed_feature_to_base`
-- **AND** emits markers only from base-index booleans
+- **GIVEN** an emitter whose feature uses `source_timeframe` higher than `base_timeframe`
+- **WHEN** the emitter runs
+- **THEN** it reads aligned columns produced via `_align_completed_feature_to_base`
+- **AND** emits events only from base-index booleans
 
-### Requirement: Chart v1 uses dense rendering mode
+### Requirement: Chart renders events from event_type role and side without component_id branching
 
-In v1, Chart MUST render markers in **`dense`** mode: one visible chart marker per trace event in the visible window (1:1 after filters/toggles).
+The frontend MUST map `component_events` to chart markers using only:
 
-Future **`compressed`** rendering is out of v1 scope and MUST NOT alter trace data.
-
-#### Scenario: Dense mode shows marker on every blocked 5m bar
-
-- **GIVEN** twelve `entry_block` trace events for one 1h blocked hour on a 5m chart
-- **WHEN** entry-block layer is enabled and bars are visible
-- **THEN** the chart displays twelve markers
-
-#### Scenario: Compressed rendering mode is not in v1
-
-- **WHEN** Chart v1 renders component event markers
-- **THEN** there is no user-facing compressed mode that shows only the first bar of a segment
-
-### Requirement: Chart renders markers from generic fields without component_id branching
-
-The frontend MUST map `component_event_markers` to chart markers using only generic rendering inputs:
-
-- **`role`** — marker kind (layer toggle, default color/shape class)
-- **`side`** — marker position relative to bar
+- **`event_type`** — marker shape/size class (`source`, span boundary, `point`)
+- **`role`** — layer toggle and color family (`entry_block`, `exit_signal`)
+- **`side`** — marker position relative to bar (`long` / `short`)
 - **`time`** — bar placement
-- **`label`** and optional **`tooltip`** / metadata for text
+- **`label`** and optional **`tooltip`** / `metadata` for text
 
 The frontend MUST NOT use `component_id` as a hardcoded rendering branch (no `switch (component_id)` or equivalent for color, shape, or position).
 
 `component_id` MAY be shown in tooltip or metadata for forensics.
 
-The frontend MUST NOT compute RSI, blocker, or exit conditions from candles.
+The frontend MUST NOT compute component conditions (blockers, exits, regimes, indicators) from candles.
+
+The frontend MUST NOT branch on feature family or catalog ids (`component_id`, `rsi`, `ema`) for marker styling.
 
 The frontend MUST NOT expand, collapse, or re-time HTF events in trace data.
 
-#### Scenario: Entry block styling is role-based
+#### Scenario: Entry block styling is role and event_type based
 
-- **WHEN** the chart renders a marker with `role: entry_block` and `side: long`
-- **THEN** styling is determined by `role` and `side`
+- **WHEN** the chart renders an event with `role: entry_block`, `event_type: span_start`, and `side: long`
+- **THEN** styling is determined by `role`, `event_type`, and `side`
 - **AND** styling does not depend on `component_id`
 
-#### Scenario: Exit signal styling is role-based
+#### Scenario: Exit signal point styling is role based
 
-- **WHEN** the chart renders a marker with `role: exit_signal`
-- **THEN** styling is determined by `role` and `side` only
+- **WHEN** the chart renders an event with `event_type: point` and `role: exit_signal`
+- **THEN** styling is determined by `role`, `event_type`, and `side` only
 
 #### Scenario: component_id appears in tooltip only
 
-- **WHEN** the user inspects a component event marker with `component_id: rsi_lookback_extreme_blocker`
+- **WHEN** the user inspects a component event with `component_id: rsi_lookback_extreme_blocker`
 - **THEN** `component_id` MAY appear in tooltip or metadata
-- **AND** marker color/shape/position are unchanged if `component_id` were a different supported v1 value with the same `role`
+- **AND** marker color/shape/position are unchanged if `component_id` were a different supported value with the same `role` and `event_type`
 
 #### Scenario: Layer toggles filter by role
 
-- **WHEN** the user disables the entry-block marker toggle
-- **THEN** markers with `role: entry_block` are hidden
-- **AND** markers with `role: exit_signal` remain visible when that layer is enabled
+- **WHEN** the user disables the entry-block event layer
+- **THEN** events with `role: entry_block` are hidden
+- **AND** events with `role: exit_signal` remain visible when that layer is enabled
 
-#### Scenario: Trace not loaded hides component markers
+#### Scenario: Trace not loaded hides component events
 
 - **WHEN** signal trace status is `idle` or `error`
-- **THEN** component event markers are not rendered
+- **THEN** component events are not rendered
 - **AND** trade markers behavior is unchanged
 
-### Requirement: Chart provides legend and toggles for component event marker layers
+### Requirement: Chart provides legend and toggles for component event layers
 
 The Chart UI SHALL provide:
 
-- Legend entries keyed by **`role`** (`entry_block`, `exit_signal`)
-- Toggles to show/hide each role independently (default: both visible when trace is ready)
+- Legend entries keyed by **`role`** (v1: `entry_block`, `exit_signal`)
+- Toggles to show/hide each role independently (default: visible roles when trace is ready)
+- Legend copy describing **`event_type`** semantics (`source`, span start/end, `point`) — MUST NOT reference RSI or specific catalog components
 
-The legend or hint MUST state that HTF events use backend-aligned per-base-bar data (a blocking HTF period appears as consecutive chart-bar markers).
+#### Scenario: Semantic event types explained in UI
 
-#### Scenario: HTF alignment explained in UI
+- **WHEN** component events are visible on chart
+- **THEN** the chart hint or legend describes `source`, span start/end, and `point` markers
+- **AND** states HTF spans use backend-aligned base-bar boundaries
 
-- **WHEN** a visible marker has `source_timeframe` different from `base_timeframe`
-- **THEN** the chart hint or legend states markers repeat on each chart bar while the aligned HTF state persists
+### Requirement: Component events respect visible chart window
 
-### Requirement: Component event markers respect visible chart window
+Component events MUST be filtered to the same visible candle time range as trade markers and chart candles.
 
-Component event markers MUST be filtered to the same visible candle time range as trade markers and chart candles.
+Partial spans are acceptable: when the visible window intersects the middle or end of a blocked run, only `span_end` (or only `span_start`) MAY appear — this is expected and MUST NOT be treated as a data bug.
 
-#### Scenario: Markers outside view are omitted
+#### Scenario: Events outside view are omitted
 
-- **WHEN** a marker `time` is outside the first/last visible chart candle
-- **THEN** that marker is not passed to the chart marker plugin
+- **WHEN** an event `time` is outside the first/last visible chart candle
+- **THEN** that event is not passed to the chart marker plugin
+
+#### Scenario: Partial span visible at window start
+
+- **GIVEN** a blocked run whose `span_start` is before the first visible chart candle
+- **AND** `span_end` falls inside the visible range
+- **WHEN** component events are rendered
+- **THEN** only `span_end` (and any in-window `source` or mid-run events) are shown
+- **AND** the chart does not synthesize a fake `span_start` at the window edge
+
+### Requirement: Chart HTF hint uses top-level timeframes
+
+When any visible component event has top-level `source_timeframe` different from `base_timeframe`, the chart hint or legend MUST state that spans use backend-aligned base-bar boundaries. The frontend MUST NOT read timeframes from `metadata` for this hint.
+
+#### Scenario: HTF alignment hint from top-level fields
+
+- **WHEN** a visible event has `source_timeframe: 1h` and `base_timeframe: 5m` at top level
+- **THEN** the chart hint explains HTF-aligned base-bar span boundaries
+- **AND** the hint does not require `metadata.source_timeframe`
+
+### Requirement: Multiple setup instances disambiguate component events by instance_id
+
+When a report's `component_events[]` includes events with `role: setup` from more than one setup instance, each event MUST carry the emitting setup's `instance_id` in addition to `component_id`. The Chart marker layer MUST render setup events using existing generic rules (`event_type`, `role`, `side`) and MUST use `instance_id` only for labels/tooltips/metadata, not for component-specific rendering branches.
+
+#### Scenario: Two setup sources on one chart
+
+- **GIVEN** `component_events` contains setup events for `instance_id` `untouched_anchor` and `bounce_counter`
+- **WHEN** the Chart displays markers
+- **THEN** both event groups appear
+- **AND** tooltips distinguish `instance_id` values
+- **AND** no chart code branches on `component_id === "ema_bounce_counter_setup"`
+
+#### Scenario: Setup event tooltip shows instance
+
+- **GIVEN** a setup `span_start` event with `component_id`, `instance_id`, and `role: setup`
+- **WHEN** the user inspects the marker tooltip
+- **THEN** the tooltip includes `instance_id`
+

@@ -35,7 +35,6 @@ def test_signal_trace_emits_context_consumption_trace() -> None:
         components=component_stack(
             direction=direction_ema_anchor_stack(),
             blockers=(blocker_htf_regime_gate(allowed_regimes=("aligned",)),),
-            setup=setup_untouched_anchor(),
             trigger=trigger_reclaim_anchor(),
             risk=risk_no_filter(),
         ),
@@ -87,7 +86,6 @@ def test_trade_records_include_separate_entry_and_exit_consumption() -> None:
         components=component_stack(
             direction=direction_ema_anchor_stack(),
             blockers=(blocker_htf_regime_gate(allowed_regimes=("aligned",)),),
-            setup=setup_untouched_anchor(),
             trigger=trigger_reclaim_anchor(),
             risk=risk_no_filter(),
         ),
@@ -176,7 +174,6 @@ def test_trade_entry_consumption_uses_last_consuming_blocker_in_spec_order() -> 
                     ),
                 ),
             ),
-            setup=setup_untouched_anchor(),
             trigger=trigger_reclaim_anchor(),
             risk=risk_no_filter(),
         ),
@@ -233,7 +230,6 @@ def test_trade_entry_consumption_applied_false_when_gate_blocks() -> None:
         components=component_stack(
             direction=direction_ema_anchor_stack(),
             blockers=(blocker_htf_regime_gate(allowed_regimes=("aligned",)),),
-            setup=setup_untouched_anchor(),
             trigger=trigger_reclaim_anchor(),
             risk=risk_no_filter(),
         ),

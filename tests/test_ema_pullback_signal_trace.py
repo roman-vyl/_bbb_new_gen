@@ -100,11 +100,53 @@ def test_strategy_spec_roundtrip_from_report_dict() -> None:
     spec = make_ema_pullback_strategy_spec(variant="roundtrip_test", trigger_lookback=3)
     restored = strategy_spec_from_report_dict(strategy_spec_to_dict(spec))
     assert restored.variant == spec.variant
-    assert restored.components.setup == spec.components.setup
+    assert restored.setups[0].component_id == spec.setups[0].component_id
     assert restored.components.trigger.component_id == spec.components.trigger.component_id
     assert isinstance(restored.components.trigger, ReclaimTriggerSpec)
     assert restored.components.trigger.lookback == 3
     assert len(restored.components.blockers) == len(spec.components.blockers)
+
+
+def test_strategy_spec_roundtrip_preserves_ema_bounce_counter_nested_params() -> None:
+    from dataclasses import replace
+
+    from research.strategies.ema_pullback.component_builders import (
+        ema_bounce_counter_setup_spec,
+        setup_rule,
+    )
+    from research.strategies.ema_pullback.spec import EmaBounceCounterSetupSpec
+
+    params = ema_bounce_counter_setup_spec(
+        fast_ema=60,
+        anchor_ema=200,
+        slow_ema=600,
+        max_bounces=7,
+        touch_lookback_bars=13,
+    )
+    spec = replace(
+        make_ema_pullback_strategy_spec(),
+        setups=(
+            setup_rule(
+                instance_id="bc",
+                component_id="ema_bounce_counter_setup",
+                params=params,
+            ),
+        ),
+    )
+    wire = strategy_spec_to_dict(spec)
+    setup_wire = wire["setups"][0]
+    assert setup_wire["params"]["max_bounces"] == 7
+    assert setup_wire["params"]["touch_lookback_bars"] == 13
+
+    restored = strategy_spec_from_report_dict(wire)
+    assert len(restored.setups) == 1
+    restored_params = restored.setups[0].params
+    assert isinstance(restored_params, EmaBounceCounterSetupSpec)
+    assert restored_params.fast_ema.period == 60
+    assert restored_params.anchor_ema.period == 200
+    assert restored_params.slow_ema.period == 600
+    assert restored_params.max_bounces == 7
+    assert restored_params.touch_lookback_bars == 13
 
 
 def test_strategy_spec_roundtrip_preserves_blocker_htf_regime_gate_params() -> None:
@@ -262,7 +304,6 @@ def test_slice_signal_trace_empty_htf_with_consumption_trace() -> None:
         components=component_stack(
             direction=direction_ema_anchor_stack(),
             blockers=(blocker_htf_regime_gate(context_ref="htf_1"),),
-            setup=setup_untouched_anchor(),
             trigger=trigger_reclaim_anchor(),
             risk=risk_no_filter(),
         ),
@@ -384,6 +425,95 @@ def test_component_events_empty_without_emitters() -> None:
     assert trace.component_events == []
 
 
+def test_ema_bounce_counter_setup_trace_and_events() -> None:
+    from dataclasses import replace
+
+    from research.strategies.ema_pullback.component_builders import (
+        component_stack,
+        direction_ema_anchor_stack,
+        ema_bounce_counter_setup_spec,
+        risk_no_filter,
+        setup_rule,
+        trigger_reclaim_anchor,
+    )
+
+    base = make_ema_pullback_strategy_spec(enabled_sides=("long",))
+    spec = replace(
+        base,
+        components=component_stack(
+            direction=direction_ema_anchor_stack(),
+            trigger=trigger_reclaim_anchor(),
+            risk=risk_no_filter(),
+        ),
+        setups=(
+            setup_rule(
+                instance_id="bounce_counter",
+                component_id="ema_bounce_counter_setup",
+                params=ema_bounce_counter_setup_spec(
+                    fast_ema=50,
+                    anchor_ema=200,
+                    slow_ema=500,
+                    max_bounces=3,
+                    touch_lookback_bars=3,
+                ),
+            ),
+        ),
+    )
+    plan = build_feature_plan_from_strategy_spec(spec)
+    df = add_feature_columns_from_plan(_ohlcv(periods=8), plan)
+    df["close"] = 105.0
+    df["high"] = 106.0
+    df["low"] = [104.0, 99.0, 104.0, 99.0, 99.0, 104.0, 104.0, 104.0]
+    bounce_cols = plan.setup_columns_for("bounce_counter")
+    df[bounce_cols["fast"]] = 110.0
+    df[bounce_cols["anchor"]] = 100.0
+    df[bounce_cols["slow"]] = 90.0
+
+    trace = build_signal_trace_from_spec(df, spec, plan)
+
+    setup_internals = trace.long.internals["setups"]["bounce_counter"]
+    assert setup_internals["pending_bounce_start"] == [
+        False,
+        True,
+        False,
+        False,
+        True,
+        False,
+        False,
+        False,
+    ]
+    assert setup_internals["pending_bounce_end"][3] is True
+    assert setup_internals["completed_bounce_count"] == [0, 0, 0, 0, 1, 1, 1, 2]
+    assert trace.long.signal_entry == build_signals_from_spec(df, spec, plan).entries.tolist()
+
+    setup_events = [event for event in trace.component_events if event.role == "setup"]
+    bounce_events = [
+        event
+        for event in setup_events
+        if event.metadata.get("event_name") in {
+            "bounce_opportunity_start",
+            "pending_bounce_start",
+            "pending_bounce_end",
+        }
+    ]
+    assert len(bounce_events) == 6
+    first = [event for event in bounce_events if event.span_id == bounce_events[0].span_id]
+    by_type = {event.event_type: event for event in first}
+    assert by_type["source"].time == trace.times[1]
+    assert by_type["span_start"].time == trace.times[1]
+    assert by_type["span_end"].time == trace.times[3]
+    assert by_type["source"].feature_family == "ema"
+    assert by_type["source"].component_id == "ema_bounce_counter_setup"
+    assert "anchor_ema" in by_type["source"].metadata
+    # The raw touch at index 3 is the final active lookback bar; it closes the
+    # first span but does not emit another source/span_start.
+    assert [
+        event.time
+        for event in bounce_events
+        if event.event_type in {"source", "span_start"}
+    ].count(trace.times[3]) == 0
+
+
 def test_rising_edge_indices_synthetic_source() -> None:
     from research.strategies.ema_pullback.execution.signal_trace import _rising_edge_indices
 
@@ -422,7 +552,6 @@ def test_component_events_htf_blocker_emits_semantic_span() -> None:
                     long_block_above=80.0,
                 ),
             ),
-            setup=setup_untouched_anchor(),
             trigger=trigger_reclaim_anchor(),
         ),
     )
@@ -489,7 +618,6 @@ def test_component_events_counter_candle_only_is_empty() -> None:
         components=component_stack(
             direction=direction_ema_anchor_stack(),
             blockers=(blocker_counter_candle(),),
-            setup=setup_untouched_anchor(),
             trigger=trigger_reclaim_anchor(),
         ),
     )
@@ -518,7 +646,6 @@ def test_slice_signal_trace_partial_span_may_show_span_end_only() -> None:
             blockers=(
                 blocker_extreme_rsi(instance_id="rsi1", timeframe="1h", lookback=1),
             ),
-            setup=setup_untouched_anchor(),
             trigger=trigger_reclaim_anchor(),
         ),
     )

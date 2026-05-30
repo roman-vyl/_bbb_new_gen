@@ -62,6 +62,7 @@ class TradeRecord(TradeOverlay):
     giveback_atr: float | None = None
     bars_from_mfe_to_exit: int | None = None
     quality_flags: list[str] | None = None
+    entry_setup_diagnostics: dict[str, dict[str, Any]] = Field(default_factory=dict)
 
 
 class SideMetrics(BaseModel):

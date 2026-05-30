@@ -59,7 +59,6 @@ def test_htf_regime_gate_both_side_asymmetry_on_same_raw_bar() -> None:
         components=component_stack(
             direction=direction_ema_anchor_stack(),
             blockers=(blocker_htf_regime_gate(allowed_regimes=("aligned",)),),
-            setup=setup_untouched_anchor(),
             trigger=trigger_reclaim_anchor(),
             risk=risk_no_filter(),
         ),
@@ -110,7 +109,6 @@ def test_regime_cache_reused_for_same_context_ref_and_side() -> None:
         components=component_stack(
             direction=direction_ema_anchor_stack(),
             blockers=(blocker_htf_regime_gate(allowed_regimes=("aligned", "neutral")),),
-            setup=setup_untouched_anchor(),
             trigger=trigger_reclaim_anchor(),
             risk=risk_no_filter(),
         ),
@@ -174,7 +172,6 @@ def test_exit_profile_requires_enabled_sides() -> None:
         components=component_stack(
             direction=direction_ema_anchor_stack(),
             blockers=(blocker_htf_regime_gate(),),
-            setup=setup_untouched_anchor(),
             trigger=trigger_reclaim_anchor(),
             risk=risk_no_filter(),
         ),

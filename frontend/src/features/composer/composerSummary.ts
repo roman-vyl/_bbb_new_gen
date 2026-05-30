@@ -42,7 +42,7 @@ export function buildPipelineSteps(
   const exits = [...alwaysOn, ...aligned, ...countertrend, ...neutral];
 
   const directionId = readComponentId(strategy.direction as JsonObject);
-  const setupId = readComponentId(strategy.setup as JsonObject);
+  const setups = ((strategy.setups as JsonObject[] | undefined) ?? []) as JsonObject[];
   const triggerId = readComponentId(strategy.trigger as JsonObject);
   const riskId = readComponentId(strategy.risk as JsonObject);
 
@@ -55,7 +55,13 @@ export function buildPipelineSteps(
     {
       role: "setup",
       title: "Setup",
-      value: componentLabel(catalog, setupId) || "—",
+      value:
+        setups.length === 0
+          ? "none"
+          : setups
+              .map((s) => componentLabel(catalog, readComponentId(s)))
+              .filter(Boolean)
+              .join(", "),
     },
     {
       role: "trigger",

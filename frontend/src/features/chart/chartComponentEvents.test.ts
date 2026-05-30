@@ -82,6 +82,25 @@ describe("buildComponentEventChartMarkers", () => {
     expect(entryOnly).toHaveLength(1);
     expect(entryOnly[0]?.text).toBe("Block▶");
   });
+
+  it("renders setup events through generic role/event_type handling", () => {
+    const rendered = buildComponentEventChartMarkers(
+      [
+        sampleEvent({
+          event_type: "span_start",
+          role: "setup",
+          component_id: "ema_bounce_counter_setup",
+          instance_id: "ema_bounce_counter_setup",
+          label: "Setup▶",
+          metadata: { event_name: "pending_bounce_start" },
+        }),
+      ],
+      { showEntryBlock: false, showExitSignal: false },
+    );
+
+    expect(rendered).toHaveLength(1);
+    expect(rendered[0]?.text).toBe("Setup▶");
+  });
 });
 
 describe("buildComponentEventsForView", () => {

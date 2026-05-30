@@ -23,6 +23,7 @@ from research.strategies.ema_pullback.components.exits import (
 )
 from research.strategies.ema_pullback.components.risk import no_risk_filter
 from research.strategies.ema_pullback.components.setup import (
+    ema_bounce_counter_setup,
     untouched_anchor_setup,
 )
 from research.strategies.ema_pullback.components.triggers import (
@@ -46,6 +47,7 @@ NO_BLOCKERS_COMPONENT = "no_blockers"
 COUNTER_CANDLE_BLOCKER_COMPONENT = "counter_candle_blocker"
 RSI_LOOKBACK_EXTREME_BLOCKER_COMPONENT = "rsi_lookback_extreme_blocker"
 UNTOUCHED_ANCHOR_SETUP_COMPONENT = "untouched_anchor_setup"
+EMA_BOUNCE_COUNTER_SETUP_COMPONENT = "ema_bounce_counter_setup"
 RECLAIM_ANCHOR_COMPONENT = "reclaim_anchor"
 STRONG_RECLAIM_ANCHOR_COMPONENT = "strong_reclaim_anchor"
 TOUCH_ANCHOR_COMPONENT = "touch_anchor"
@@ -109,6 +111,15 @@ COMPONENT_REGISTRY: dict[str, dict[str, ComponentDefinition]] = {
             description=(
                 "Armed regime after anchor was untouched for lookback bars; "
                 "active through first touch and active_bars window."
+            ),
+        ),
+        EMA_BOUNCE_COUNTER_SETUP_COMPONENT: ComponentDefinition(
+            role="setup",
+            component_id=EMA_BOUNCE_COUNTER_SETUP_COMPONENT,
+            func=ema_bounce_counter_setup,
+            description=(
+                "Allow entries while anchor EMA bounce interactions inside a base "
+                "EMA-stack trend episode have not exhausted max_bounces."
             ),
         ),
     },
@@ -228,6 +239,7 @@ __all__ = [
     "ComponentDefinition",
     "COUNTER_CANDLE_BLOCKER_COMPONENT",
     "EMA_ANCHOR_STACK_TREND_COMPONENT",
+    "EMA_BOUNCE_COUNTER_SETUP_COMPONENT",
     "NO_BLOCKERS_COMPONENT",
     "NO_SIGNAL_EXIT_COMPONENT",
     "NO_RISK_FILTER_COMPONENT",

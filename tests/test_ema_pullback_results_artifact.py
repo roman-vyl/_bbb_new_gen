@@ -96,6 +96,17 @@ def test_json_safe_nan_becomes_null() -> None:
     assert json_safe({"x": float("inf")}) == {"x": None}
 
 
+def test_json_safe_numpy_scalar_int() -> None:
+    import numpy as np
+
+    from research.strategies.ema_pullback.execution.results import _scalar_json_safe
+
+    assert _scalar_json_safe(np.int64(7)) == 7
+    assert json_safe({"entry_setup_diagnostics": {"bc": {"completed_bounce_count": np.int32(2)}}}) == {
+        "entry_setup_diagnostics": {"bc": {"completed_bounce_count": 2}}
+    }
+
+
 def test_build_research_run_payload_top_level_keys() -> None:
     spec = make_ema_pullback_strategy_spec(
         symbol=_ARTIFACT_TEST_SYMBOL,

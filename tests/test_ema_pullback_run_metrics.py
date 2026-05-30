@@ -18,6 +18,7 @@ from research.strategies.ema_pullback.component_builders import (
 )
 from research.strategies.ema_pullback.execution import backtest
 from research.strategies.ema_pullback.execution.backtest import build_trade_side_metrics, ensure_finite_metric
+from research.strategies.ema_pullback.execution.results import build_bounce_counter_breakdown
 from research.strategies.ema_pullback.execution.exits import PortfolioExitOutputs
 from research.strategies.ema_pullback.execution.report_table import print_comparison_table
 from research.strategies.ema_pullback.execution.signals import PortfolioSignals
@@ -39,6 +40,47 @@ def test_ensure_finite_metric_rejects_nan() -> None:
 
 def test_ensure_finite_metric_rejects_inf() -> None:
     assert ensure_finite_metric("max_drawdown", float("inf")) == 0.0
+
+
+def test_bounce_counter_breakdown_groups_closed_trades_by_side_and_bounce() -> None:
+    records = [
+        {
+            "status": "closed",
+            "direction": "long",
+            "pnl": 10.0,
+            "gross_pnl": 11.0,
+            "fees_paid": 1.0,
+            "return_pct": 0.1,
+            "hold_bars": 2,
+            "entry_bounce_counter_side": "long",
+            "entry_effective_bounce_number": 1,
+        },
+        {
+            "status": "closed",
+            "direction": "long",
+            "pnl": -5.0,
+            "gross_pnl": -4.0,
+            "fees_paid": 1.0,
+            "return_pct": -0.05,
+            "hold_bars": 3,
+            "entry_bounce_counter_side": "long",
+            "entry_effective_bounce_number": 2,
+        },
+        {
+            "status": "open",
+            "direction": "short",
+            "entry_bounce_counter_side": "short",
+            "entry_effective_bounce_number": 1,
+        },
+    ]
+
+    breakdown = build_bounce_counter_breakdown(records)
+
+    assert breakdown is not None
+    assert breakdown["long"]["1"]["trades"] == 1
+    assert breakdown["long"]["2"]["trades"] == 1
+    assert breakdown["short"]["total"]["trades"] == 0
+    assert breakdown["total"]["trades"] == 2
 
 
 def test_comparison_table_includes_side_and_total_columns(capsys: pytest.CaptureFixture[str]) -> None:

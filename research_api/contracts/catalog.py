@@ -55,6 +55,7 @@ class ComponentSchema(BaseModel):
     label: str
     description: str | None = None
     params_schema: dict[str, ParamFieldSchema] = Field(default_factory=dict)
+    params_storage: Literal["flat", "nested"] = "flat"
     list_slot: bool = False
     supports_context_consumption: bool = False
     context_consumption_policies: list[ContextConsumptionPolicySchema] = Field(

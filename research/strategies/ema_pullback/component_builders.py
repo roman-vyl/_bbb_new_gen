@@ -14,6 +14,7 @@ from research.strategies.ema_pullback.components.registry import (
     CONSTANT_USD_TAKE_PROFIT_COMPONENT,
     COUNTER_CANDLE_BLOCKER_COMPONENT,
     EMA_ANCHOR_STACK_TREND_COMPONENT,
+    EMA_BOUNCE_COUNTER_SETUP_COMPONENT,
     NO_BLOCKERS_COMPONENT,
     NO_RISK_FILTER_COMPONENT,
     NO_SIGNAL_EXIT_COMPONENT,
@@ -30,6 +31,7 @@ from research.strategies.ema_pullback.spec import (
     AtrDistanceSpec,
     BlockerRuleSpec,
     ComponentStackSpec,
+    EmaBounceCounterSetupSpec,
     EmaSpec,
     ExitPolicyGroupSpec,
     ExitPolicyProfilesSpec,
@@ -42,6 +44,7 @@ from research.strategies.ema_pullback.spec import (
     TradeManagementSpec,
     UntouchedAnchorSetupSpec,
     RsiFeatureSpec,
+    SetupSpec,
     TradeSide,
     ReclaimTriggerSpec,
     StrongReclaimTriggerSpec,
@@ -99,6 +102,10 @@ def direction_ema_anchor_stack() -> str:
 
 def setup_untouched_anchor() -> str:
     return UNTOUCHED_ANCHOR_SETUP_COMPONENT
+
+
+def setup_ema_bounce_counter() -> str:
+    return EMA_BOUNCE_COUNTER_SETUP_COMPONENT
 
 
 def risk_no_filter() -> str:
@@ -416,11 +423,69 @@ def untouched_anchor_setup_spec(
     return UntouchedAnchorSetupSpec(lookback=lookback, active_bars=active_bars)
 
 
+def ema_bounce_counter_setup_spec(
+    *,
+    fast_ema: int | EmaSpec = 50,
+    anchor_ema: int | EmaSpec = 200,
+    slow_ema: int | EmaSpec = 500,
+    max_bounces: int = 3,
+    raw_touch_mode: str = "range_cross",
+    touch_lookback_bars: int = 10,
+    trend_start_confirmation_bars: int = 1,
+    trend_break_confirmation_bars: int = 1,
+) -> EmaBounceCounterSetupSpec:
+    def coerce(value: int | EmaSpec) -> EmaSpec:
+        if isinstance(value, EmaSpec):
+            return value
+        return ema(int(value), timeframe="base", source="close")
+
+    return EmaBounceCounterSetupSpec(
+        fast_ema=coerce(fast_ema),
+        anchor_ema=coerce(anchor_ema),
+        slow_ema=coerce(slow_ema),
+        max_bounces=max_bounces,
+        raw_touch_mode=raw_touch_mode,
+        touch_lookback_bars=touch_lookback_bars,
+        trend_start_confirmation_bars=trend_start_confirmation_bars,
+        trend_break_confirmation_bars=trend_break_confirmation_bars,
+    )
+
+
+def setup_rule(
+    *,
+    instance_id: str,
+    component_id: str,
+    params: SetupSpec,
+) -> SetupRuleSpec:
+    from research.strategies.ema_pullback.spec import SetupRuleSpec
+
+    return SetupRuleSpec(
+        instance_id=instance_id,
+        component_id=component_id,
+        params=params,
+    )
+
+
+def default_setups(
+    *,
+    lookback: int = 50,
+    active_bars: int = 3,
+) -> tuple[SetupRuleSpec, ...]:
+    from research.strategies.ema_pullback.spec import SetupRuleSpec
+
+    return (
+        SetupRuleSpec(
+            instance_id="setup",
+            component_id=setup_untouched_anchor(),
+            params=untouched_anchor_setup_spec(lookback=lookback, active_bars=active_bars),
+        ),
+    )
+
+
 def component_stack(
     *,
     direction: str | None = None,
     blockers: Sequence[BlockerRuleSpec] | None = None,
-    setup: str | None = None,
     trigger: TriggerSpec | None = None,
     risk: str | None = None,
 ) -> ComponentStackSpec:
@@ -432,7 +497,6 @@ def component_stack(
     return ComponentStackSpec(
         direction=direction_ema_anchor_stack() if direction is None else direction,
         blockers=normalized_blockers,
-        setup=setup_untouched_anchor() if setup is None else setup,
         trigger=trigger_reclaim_anchor() if trigger is None else trigger,
         risk=risk_no_filter() if risk is None else risk,
     )

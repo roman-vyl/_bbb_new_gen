@@ -5,7 +5,13 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
-from research.strategies.ema_pullback.spec import EmaPullbackStrategySpec, EmaSpec, ExitRuleSpec
+from research.strategies.ema_pullback.spec import (
+    EmaBounceCounterSetupSpec,
+    EmaPullbackStrategySpec,
+    EmaSpec,
+    ExitRuleSpec,
+    SetupRuleSpec,
+)
 
 
 @dataclass(frozen=True)
@@ -29,8 +35,16 @@ class FeaturePlan:
     anchor_columns: dict[str, str]
     exit_distance_columns: dict[str, str]
     rsi_columns: dict[tuple[str, int], str]
+    setup_columns_by_instance_id: dict[str, dict[str, str]] = field(default_factory=dict)
     ema_columns: dict[tuple[str, int], str] = field(default_factory=dict)
     htf_context_columns_by_ref: dict[str, dict[str, str]] = field(default_factory=dict)
+
+    def setup_columns_for(self, instance_id: str) -> dict[str, str]:
+        if instance_id not in self.setup_columns_by_instance_id:
+            raise KeyError(
+                f"setup columns not planned for instance_id={instance_id!r}"
+            )
+        return self.setup_columns_by_instance_id[instance_id]
 
     def htf_context_columns_for(self, context_ref: str) -> dict[str, str]:
         if context_ref not in self.htf_context_columns_by_ref:
@@ -85,6 +99,25 @@ def _add_ema_feature(
         )
     )
     ema_columns[(ema.timeframe, ema.period)] = _ema_feature_id(ema.timeframe, ema.period)
+
+
+def _add_setup_features(
+    add: Callable[[PlannedFeature], None],
+    rule: SetupRuleSpec,
+    ema_columns: dict[tuple[str, int], str],
+    setup_columns_by_instance_id: dict[str, dict[str, str]],
+) -> None:
+    if not isinstance(rule.params, EmaBounceCounterSetupSpec):
+        return
+    columns: dict[str, str] = {}
+    for name, ema in (
+        ("fast", rule.params.fast_ema),
+        ("anchor", rule.params.anchor_ema),
+        ("slow", rule.params.slow_ema),
+    ):
+        _add_ema_feature(add, ema, ema_columns)
+        columns[name] = _ema_feature_id(ema.timeframe, ema.period)
+    setup_columns_by_instance_id[rule.instance_id] = columns
 
 
 def _ema_specs_from_exit_rule(rule: ExitRuleSpec) -> list[EmaSpec]:
@@ -148,6 +181,16 @@ def build_feature_plan_from_strategy_spec(spec: EmaPullbackStrategySpec) -> Feat
     )
 
     exit_columns: dict[str, str] = {}
+    ema_columns: dict[tuple[str, int], str] = {}
+    setup_columns_by_instance_id: dict[str, dict[str, str]] = {}
+    for setup_rule in spec.setups:
+        _add_setup_features(
+            add,
+            setup_rule,
+            ema_columns,
+            setup_columns_by_instance_id,
+        )
+
     for rule in all_exit_rules:
         if rule.distance is None:
             continue
@@ -178,7 +221,6 @@ def build_feature_plan_from_strategy_spec(spec: EmaPullbackStrategySpec) -> Feat
         exit_columns[rule.instance_id] = distance_id
         exit_columns.setdefault(rule.exit_kind, distance_id)
 
-    ema_columns: dict[tuple[str, int], str] = {}
     rsi_columns: dict[tuple[str, int], str] = {}
     rsi_specs = []
     for rule in spec.components.blockers:
@@ -212,6 +254,7 @@ def build_feature_plan_from_strategy_spec(spec: EmaPullbackStrategySpec) -> Feat
             "anchor": _ema_feature_id(spec.anchor_stack.anchor.timeframe, spec.anchor_stack.anchor.period),
             "slow": _ema_feature_id(spec.anchor_stack.slow.timeframe, spec.anchor_stack.slow.period),
         },
+        setup_columns_by_instance_id=setup_columns_by_instance_id,
         htf_context_columns_by_ref=htf_context_columns_by_ref,
         exit_distance_columns=exit_columns,
         rsi_columns=rsi_columns,

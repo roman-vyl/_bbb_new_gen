@@ -38,12 +38,11 @@ class AnchorStackSpec:
 class ComponentStackSpec:
     direction: str
     blockers: tuple["BlockerRuleSpec", ...]
-    setup: str
     trigger: "TriggerSpec"
     risk: str
 
     def __post_init__(self) -> None:
-        for field_name in ("direction", "setup", "risk"):
+        for field_name in ("direction", "risk"):
             value = getattr(self, field_name)
             if not value.strip():
                 raise ValueError(f"components.{field_name} must be non-empty")
@@ -163,6 +162,66 @@ class UntouchedAnchorSetupSpec:
             raise ValueError("setup.lookback must be > 0")
         if self.active_bars <= 0:
             raise ValueError("setup.active_bars must be > 0")
+
+
+@dataclass(frozen=True)
+class EmaBounceCounterSetupSpec:
+    fast_ema: EmaSpec
+    anchor_ema: EmaSpec
+    slow_ema: EmaSpec
+    max_bounces: int = 3
+    raw_touch_mode: str = "range_cross"
+    touch_lookback_bars: int = 10
+    trend_start_confirmation_bars: int = 1
+    trend_break_confirmation_bars: int = 1
+
+    def __post_init__(self) -> None:
+        for field_name in ("fast_ema", "anchor_ema", "slow_ema"):
+            ema = getattr(self, field_name)
+            if ema.timeframe != "base":
+                raise ValueError(f"setup.{field_name}.timeframe must be 'base' for MVP")
+            if ema.source != "close":
+                raise ValueError(f"setup.{field_name}.source must be 'close'")
+        if not (self.fast_ema.period < self.anchor_ema.period < self.slow_ema.period):
+            raise ValueError("setup EMA periods must satisfy fast < anchor < slow")
+        if self.max_bounces <= 0:
+            raise ValueError("setup.max_bounces must be > 0")
+        if self.raw_touch_mode != "range_cross":
+            raise ValueError("setup.raw_touch_mode must be 'range_cross'")
+        if self.touch_lookback_bars <= 0:
+            raise ValueError("setup.touch_lookback_bars must be > 0")
+        if self.trend_start_confirmation_bars <= 0:
+            raise ValueError("setup.trend_start_confirmation_bars must be > 0")
+        if self.trend_break_confirmation_bars <= 0:
+            raise ValueError("setup.trend_break_confirmation_bars must be > 0")
+
+
+SetupSpec = UntouchedAnchorSetupSpec | EmaBounceCounterSetupSpec
+
+
+@dataclass(frozen=True)
+class SetupRuleSpec:
+    instance_id: str
+    component_id: str
+    params: SetupSpec
+
+    def __post_init__(self) -> None:
+        if not self.instance_id.strip():
+            raise ValueError("setup instance_id must be non-empty")
+        if not self.component_id.strip():
+            raise ValueError("setup component_id must be non-empty")
+        if self.component_id == "ema_bounce_counter_setup" and not isinstance(
+            self.params, EmaBounceCounterSetupSpec
+        ):
+            raise ValueError(
+                "setup params must be EmaBounceCounterSetupSpec for ema_bounce_counter_setup"
+            )
+        if self.component_id == "untouched_anchor_setup" and not isinstance(
+            self.params, UntouchedAnchorSetupSpec
+        ):
+            raise ValueError(
+                "setup params must be UntouchedAnchorSetupSpec for untouched_anchor_setup"
+            )
 
 
 @dataclass(frozen=True)
@@ -407,7 +466,7 @@ class EmaPullbackStrategySpec:
     anchor_stack: AnchorStackSpec
     components: ComponentStackSpec
     trade_sides: TradeSideSpec
-    setup: UntouchedAnchorSetupSpec
+    setups: tuple[SetupRuleSpec, ...]
     trade_management: TradeManagementSpec
     contexts: tuple[tuple[str, ContextProviderSpec], ...] = ()
 
@@ -421,6 +480,9 @@ class EmaPullbackStrategySpec:
             raise ValueError("symbol must be non-empty")
         if not self.base_timeframe.strip():
             raise ValueError("base_timeframe must be non-empty")
+        if not self.setups:
+            raise ValueError("setups must contain at least one rule")
+        _validate_unique_instance_ids("setups", self.setups)
         seen_refs: set[str] = set()
         for context_ref, _provider in self.contexts:
             if context_ref in seen_refs:

@@ -71,6 +71,14 @@ export type TradeOverlay = {
 
 export type ExitProfileLabel = "aligned" | "countertrend" | "neutral";
 
+/** Per setup instance_id at entry bar (schema v5+ setup stack). */
+export type SetupEntryDiagnostics = {
+  trend_episode_id?: number | null;
+  effective_bounce_number?: number | null;
+  completed_bounce_count?: number | null;
+  side?: "long" | "short" | null;
+};
+
 export type TradeRecord = TradeOverlay & {
   size: number | null;
   pnl: number | null;
@@ -109,6 +117,8 @@ export type TradeRecord = TradeOverlay & {
   quality_flags?: string[] | null;
   entry_context_consumption?: ContextConsumptionAttribution | null;
   exit_context_consumption?: ContextConsumptionAttribution | null;
+  /** Namespaced setup diagnostics keyed by setup instance_id. */
+  entry_setup_diagnostics?: Record<string, SetupEntryDiagnostics>;
 };
 
 export type ContextConsumptionAttribution = {
@@ -144,6 +154,11 @@ export type ProfileSideBreakdown = {
 };
 
 export type ExitReasonBucketMetrics = DiagnosticBucketMetrics;
+export type BounceCounterBreakdown = {
+  long: Record<string, DiagnosticBucketMetrics>;
+  short: Record<string, DiagnosticBucketMetrics>;
+  total: DiagnosticBucketMetrics;
+};
 
 export type FeeDiagnostics = {
   total_fees_paid: number;
@@ -213,6 +228,7 @@ export type VariantMetrics = {
   fee_diagnostics?: FeeDiagnostics;
   quality_flag_breakdown?: Record<string, QualityFlagBucketMetrics>;
   exit_component_quality_breakdown?: Record<string, ExitComponentQualityBucketMetrics>;
+  bounce_counter_breakdown?: BounceCounterBreakdown;
 };
 
 export type RunVariant = {
@@ -303,6 +319,8 @@ export type ComponentSchema = {
   label: string;
   description?: string | null;
   params_schema?: Record<string, ParamFieldSchema>;
+  /** When "nested", Composer nests params_schema keys under setup.params on save. */
+  params_storage?: "flat" | "nested";
   list_slot?: boolean;
   supports_context_consumption?: boolean;
   context_consumption_policies?: ContextConsumptionPolicySchema[];
@@ -389,7 +407,7 @@ export type SignalTraceMeta = {
     trigger: string;
     risk: string;
   };
-  setup_params: { lookback: number; active_bars: number };
+  setup_params: Record<string, number | string>;
   trigger_params?: { lookback: number };
   blocker_instances: { instance_id: string; component_id: string }[];
 };
@@ -426,7 +444,7 @@ export type ContextConsumptionTraceRecord = {
 
 export type ComponentEventType = "point" | "span_start" | "span_end" | "source";
 
-export type ComponentEventRole = "entry_block" | "exit_signal";
+export type ComponentEventRole = "entry_block" | "exit_signal" | "setup";
 
 export type ComponentEvent = {
   time: number;

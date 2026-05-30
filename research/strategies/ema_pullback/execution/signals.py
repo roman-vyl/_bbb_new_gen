@@ -18,6 +18,7 @@ from research.strategies.ema_pullback.context.evaluation import (
 )
 from research.strategies.ema_pullback.spec import BlockerRuleSpec
 from research.strategies.ema_pullback.features.plan import FeaturePlan
+from research.strategies.ema_pullback.setup_runtime import compose_setup_masks
 from research.strategies.ema_pullback.spec import EmaPullbackStrategySpec
 from research.strategies.ema_pullback.spec import ReclaimTriggerSpec, StrongReclaimTriggerSpec
 from research.strategies.ema_pullback.spec import RsiFeatureSpec
@@ -110,7 +111,6 @@ def _build_side_signals(
     slow_col: str,
     direction_fn: Callable[..., pd.Series],
     blockers_fns: tuple[Callable[..., pd.Series], ...],
-    setup_fn: Callable[..., pd.Series],
     trigger_fn: Callable[..., pd.Series],
     risk_fn: Callable[..., pd.Series],
     context_bundle: ContextBundle | None,
@@ -148,11 +148,11 @@ def _build_side_signals(
         for rule, signal in zip(spec.components.blockers, blocker_signals, strict=True)
     )
     blockers = compose_blocker_signals(blocker_signals)
-    setup = setup_fn(
+    setup = compose_setup_masks(
         df,
-        anchor_col,
-        spec.setup.lookback,
-        spec.setup.active_bars,
+        spec.setups,
+        plan,
+        anchor_col=anchor_col,
         side=side,
     )
     trigger_rule = spec.components.trigger
@@ -188,7 +188,6 @@ def build_signals_from_spec(
     blockers_fns = tuple(
         resolve_component("blockers", rule.component_id).func for rule in spec.components.blockers
     )
-    setup_fn = resolve_component("setup", spec.components.setup).func
     trigger_fn = resolve_component("trigger", spec.components.trigger.component_id).func
     risk_fn = resolve_component("risk", spec.components.risk).func
 
@@ -206,7 +205,6 @@ def build_signals_from_spec(
         slow_col=slow_col,
         direction_fn=direction_fn,
         blockers_fns=blockers_fns,
-        setup_fn=setup_fn,
         trigger_fn=trigger_fn,
         risk_fn=risk_fn,
         context_bundle=context_bundle,
@@ -221,7 +219,6 @@ def build_signals_from_spec(
         slow_col=slow_col,
         direction_fn=direction_fn,
         blockers_fns=blockers_fns,
-        setup_fn=setup_fn,
         trigger_fn=trigger_fn,
         risk_fn=risk_fn,
         context_bundle=context_bundle,

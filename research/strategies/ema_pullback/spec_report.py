@@ -5,8 +5,10 @@ from __future__ import annotations
 from typing import Any, Mapping
 
 from research.strategies.ema_pullback.components.registry import (
+    EMA_BOUNCE_COUNTER_SETUP_COMPONENT,
     RECLAIM_ANCHOR_COMPONENT,
     STRONG_RECLAIM_ANCHOR_COMPONENT,
+    UNTOUCHED_ANCHOR_SETUP_COMPONENT,
 )
 from research.strategies.ema_pullback.spec import (
     AnchorStackSpec,
@@ -14,6 +16,7 @@ from research.strategies.ema_pullback.spec import (
     BlockerRuleSpec,
     ComponentStackSpec,
     EmaPullbackStrategySpec,
+    EmaBounceCounterSetupSpec,
     EmaSpec,
     ExitPolicyGroupSpec,
     ExitPolicyProfilesSpec,
@@ -23,6 +26,7 @@ from research.strategies.ema_pullback.spec import (
     ExitPolicySpec,
     ExitRuleSpec,
     ReclaimTriggerSpec,
+    SetupRuleSpec,
     StrongReclaimTriggerSpec,
     RsiFeatureSpec,
     TradeManagementSpec,
@@ -157,6 +161,70 @@ def _trigger_spec(
     return TriggerSpec(component_id=component_id)
 
 
+def _setup_ema_spec(name: str, value: Any, *, default_period: int) -> EmaSpec:
+    if isinstance(value, Mapping):
+        return _optional_ema_spec(name, value) or EmaSpec(
+            source="close", timeframe="base", period=default_period
+        )
+    if value is None:
+        return EmaSpec(source="close", timeframe="base", period=default_period)
+    return EmaSpec(source="close", timeframe="base", period=int(value))
+
+
+def _parse_report_setups(raw: list[Any]) -> tuple[SetupRuleSpec, ...]:
+    rules: list[SetupRuleSpec] = []
+    for index, item in enumerate(raw):
+        payload = _require_mapping(f"setups[{index}]", item)
+        instance_id = str(payload.get("instance_id", "")).strip()
+        if not instance_id:
+            raise StrategySpecReportParseError(f"setups[{index}].instance_id must be non-empty")
+        component_id = str(payload.get("component_id", "")).strip()
+        if not component_id:
+            raise StrategySpecReportParseError(f"setups[{index}].component_id must be non-empty")
+        params = _setup_spec(component_id, payload)
+        rules.append(
+            SetupRuleSpec(
+                instance_id=instance_id,
+                component_id=component_id,
+                params=params,
+            )
+        )
+    return tuple(rules)
+
+
+def _setup_params_payload(payload: Mapping[str, Any]) -> Mapping[str, Any]:
+    """Wire setups may store catalog params under nested ``params`` (asdict / API shape)."""
+
+    nested = payload.get("params")
+    if isinstance(nested, Mapping):
+        return nested
+    return payload
+
+
+def _setup_spec(component_id: str, payload: Mapping[str, Any]) -> UntouchedAnchorSetupSpec | EmaBounceCounterSetupSpec:
+    source = _setup_params_payload(payload)
+    if component_id == EMA_BOUNCE_COUNTER_SETUP_COMPONENT:
+        return EmaBounceCounterSetupSpec(
+            fast_ema=_setup_ema_spec("setup.fast_ema", source.get("fast_ema"), default_period=50),
+            anchor_ema=_setup_ema_spec("setup.anchor_ema", source.get("anchor_ema"), default_period=200),
+            slow_ema=_setup_ema_spec("setup.slow_ema", source.get("slow_ema"), default_period=500),
+            max_bounces=int(source.get("max_bounces", 3)),
+            raw_touch_mode=str(source.get("raw_touch_mode", "range_cross")),
+            touch_lookback_bars=int(source.get("touch_lookback_bars", 10)),
+            trend_start_confirmation_bars=int(source.get("trend_start_confirmation_bars", 1)),
+            trend_break_confirmation_bars=int(source.get("trend_break_confirmation_bars", 1)),
+        )
+    if component_id == UNTOUCHED_ANCHOR_SETUP_COMPONENT:
+        return UntouchedAnchorSetupSpec(
+            lookback=int(source.get("lookback", 50)),
+            active_bars=int(source.get("active_bars", 3)),
+        )
+    return UntouchedAnchorSetupSpec(
+        lookback=int(source.get("lookback", 50)),
+        active_bars=int(source.get("active_bars", 3)),
+    )
+
+
 def _exit_policy_group(payload: Mapping[str, Any], *, name: str) -> ExitPolicyGroupSpec:
     exits_raw = payload.get("exits")
     if not isinstance(exits_raw, (list, tuple)):
@@ -171,7 +239,9 @@ def strategy_spec_from_report_dict(payload: Mapping[str, Any]) -> EmaPullbackStr
     stack_raw = _require_mapping("anchor_stack", root["anchor_stack"])
     components_raw = _require_mapping("components", root["components"])
     trade_sides_raw = _require_mapping("trade_sides", root["trade_sides"])
-    setup_raw = _require_mapping("setup", root["setup"])
+    setups_raw = root.get("setups")
+    if not isinstance(setups_raw, (list, tuple)) or not setups_raw:
+        raise StrategySpecReportParseError("setups must be a non-empty list")
 
     blockers_raw = components_raw.get("blockers")
     if not isinstance(blockers_raw, (list, tuple)):
@@ -236,15 +306,11 @@ def strategy_spec_from_report_dict(payload: Mapping[str, Any]) -> EmaPullbackStr
         components=ComponentStackSpec(
             direction=str(components_raw["direction"]),
             blockers=tuple(_blocker_rule(b) for b in blockers_raw),
-            setup=str(components_raw["setup"]),
             trigger=_trigger_spec(trigger_raw),
             risk=str(components_raw["risk"]),
         ),
         trade_sides=TradeSideSpec(enabled=tuple(enabled_raw)),
-        setup=UntouchedAnchorSetupSpec(
-            lookback=int(setup_raw.get("lookback", 50)),
-            active_bars=int(setup_raw.get("active_bars", 3)),
-        ),
+        setups=_parse_report_setups(setups_raw),
         trade_management=trade_management,
         contexts=contexts,
     )

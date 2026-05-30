@@ -1,4 +1,8 @@
-import type { ContextConsumptionAttribution, TradeRecord } from "@/api/types";
+import type {
+  ContextConsumptionAttribution,
+  SetupEntryDiagnostics,
+  TradeRecord,
+} from "@/api/types";
 import { EM_DASH, formatMoney, formatReturnPct } from "@/features/reports/formatDiagnostics";
 import {
   chartMetricHint,
@@ -28,14 +32,67 @@ export function formatNum(value: number | null | undefined, digits = 2): string 
   return value.toFixed(digits);
 }
 
+function setupDiagnosticsEntries(
+  trade: TradeRecord,
+): [string, SetupEntryDiagnostics][] {
+  const raw = trade.entry_setup_diagnostics;
+  if (!raw || typeof raw !== "object") {
+    return [];
+  }
+  return Object.entries(raw);
+}
+
 export function hasTradeDiagnostics(trade: TradeRecord): boolean {
   return (
     trade.entry_profile !== undefined ||
     trade.exit_kind !== undefined ||
     trade.gross_pnl !== undefined ||
     trade.mfe_pct !== undefined ||
-    trade.quality_flags !== undefined
+    trade.quality_flags !== undefined ||
+    setupDiagnosticsEntries(trade).length > 0
   );
+}
+
+function buildSetupDiagnosticFields(trade: TradeRecord): TradeDiagnosticField[] {
+  const out: TradeDiagnosticField[] = [];
+  for (const [instanceId, diag] of setupDiagnosticsEntries(trade)) {
+    const prefix = `entry_setup_diagnostics.${instanceId}`;
+    const sectionHint = `Setup gate "${instanceId}" at entry`;
+    if (diag.side !== undefined && diag.side !== null) {
+      out.push(field(`${prefix}.side`, "side", diag.side, sectionHint));
+    }
+    if (diag.trend_episode_id !== undefined && diag.trend_episode_id !== null) {
+      out.push(
+        field(
+          `${prefix}.trend_episode_id`,
+          "trend_episode_id",
+          String(diag.trend_episode_id),
+          sectionHint,
+        ),
+      );
+    }
+    if (diag.effective_bounce_number !== undefined && diag.effective_bounce_number !== null) {
+      out.push(
+        field(
+          `${prefix}.effective_bounce_number`,
+          "bounce_number",
+          String(diag.effective_bounce_number),
+          sectionHint,
+        ),
+      );
+    }
+    if (diag.completed_bounce_count !== undefined && diag.completed_bounce_count !== null) {
+      out.push(
+        field(
+          `${prefix}.completed_bounce_count`,
+          "completed_bounces",
+          String(diag.completed_bounce_count),
+          sectionHint,
+        ),
+      );
+    }
+  }
+  return out;
 }
 
 export function hasTradeContextConsumption(trade: TradeRecord): boolean {
@@ -144,6 +201,7 @@ export function buildTradeDiagnosticFields(trade: TradeRecord): {
     field("exit_kind", "exit_kind", trade.exit_kind ?? EM_DASH),
     field("exit_component_id", "exit_component_id", trade.exit_component_id ?? EM_DASH),
     field("exit_instance_id", "exit_instance_id", trade.exit_instance_id ?? EM_DASH),
+    ...buildSetupDiagnosticFields(trade),
     field("gross_pnl", "gross_pnl", formatMoney(trade.gross_pnl)),
     field("fees_paid", "fees_paid", formatMoney(trade.fees_paid)),
     field(

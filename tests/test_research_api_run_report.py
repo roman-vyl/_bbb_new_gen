@@ -97,3 +97,38 @@ def test_parse_run_report_rejects_prototype_trade_context_ref() -> None:
 def test_trade_record_model_forbids_context_ref() -> None:
     with pytest.raises(ValidationError, match="context_ref"):
         TradeRecord.model_validate(_minimal_trade(context_ref="htf"))
+
+
+def test_parse_run_report_accepts_entry_setup_diagnostics_namespaced() -> None:
+    payload = _minimal_report_payload(
+        trade_records=[
+            _minimal_trade(
+                entry_setup_diagnostics={
+                    "untouched_anchor": {
+                        "side": "long",
+                    },
+                    "bounce_counter": {
+                        "trend_episode_id": 7,
+                        "effective_bounce_number": 2,
+                        "completed_bounce_count": 1,
+                        "side": "long",
+                    },
+                },
+            ),
+        ],
+    )
+    report = parse_run_report(payload)
+    diag = report.variants[0].trade_records[0].entry_setup_diagnostics
+    assert set(diag.keys()) == {"untouched_anchor", "bounce_counter"}
+    assert diag["bounce_counter"]["trend_episode_id"] == 7
+    assert diag["bounce_counter"]["effective_bounce_number"] == 2
+
+
+def test_parse_run_report_defaults_missing_entry_setup_diagnostics() -> None:
+    report = parse_run_report(_minimal_report_payload())
+    assert report.variants[0].trade_records[0].entry_setup_diagnostics == {}
+
+
+def test_trade_record_rejects_flat_bounce_counter_entry_fields() -> None:
+    with pytest.raises(ValidationError, match="entry_trend_episode_id"):
+        TradeRecord.model_validate(_minimal_trade(entry_trend_episode_id=7))

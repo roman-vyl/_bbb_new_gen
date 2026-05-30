@@ -10,11 +10,11 @@ from research.strategies.ema_pullback.component_builders import (
     component_stack,
     context_consumption,
     context_provider,
+    default_setups,
     direction_ema_anchor_stack,
     exit_policy,
     exits_atr_default,
     risk_no_filter,
-    setup_untouched_anchor,
     strategy_contexts,
     trade_management,
     trade_sides,
@@ -25,6 +25,7 @@ from research.strategies.ema_pullback.spec import (
     ComponentStackSpec,
     ContextProviderSpec,
     EmaPullbackStrategySpec,
+    SetupRuleSpec,
     TradeManagementSpec,
     TradeSide,
 )
@@ -69,6 +70,7 @@ def make_ema_pullback_strategy_spec(
     htf_slow_period: int = 1000,
     enabled_sides: Sequence[TradeSide] = ("long",),
     components: ComponentStackSpec | None = None,
+    setups: tuple[SetupRuleSpec, ...] | None = None,
     trade_management_spec: TradeManagementSpec | None = None,
     contexts: Sequence[tuple[str, ContextProviderSpec]] | None = None,
 ) -> EmaPullbackStrategySpec:
@@ -76,12 +78,16 @@ def make_ema_pullback_strategy_spec(
         component_stack(
             direction=direction_ema_anchor_stack(),
             blockers=(blocker_none(),),
-            setup=setup_untouched_anchor(),
             trigger=trigger_reclaim_anchor(lookback=trigger_lookback),
             risk=risk_no_filter(),
         )
         if components is None
         else components
+    )
+    resolved_setups = (
+        default_setups(lookback=setup_lookback, active_bars=setup_active_bars)
+        if setups is None
+        else setups
     )
     default_sl, default_tp = exits_atr_default(
         atr_period=atr_period,
@@ -147,10 +153,7 @@ def make_ema_pullback_strategy_spec(
         ),
         components=resolved_components,
         trade_sides=trade_sides(enabled_sides),
-        setup=untouched_anchor_setup_spec(
-            lookback=setup_lookback,
-            active_bars=setup_active_bars,
-        ),
+        setups=resolved_setups,
         trade_management=trade_mgmt,
         contexts=resolved_contexts,
     )

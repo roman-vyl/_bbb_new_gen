@@ -125,6 +125,35 @@ def get_component_catalog(*, family: str = "ema_pullback") -> ComponentCatalog:
             },
         ),
         ComponentSchema(
+            component_id="ema_bounce_counter_setup",
+            role="setup",
+            label="EMA bounce counter setup",
+            description=(
+                "Base timeframe EMA-stack market-state gate: allow entries until "
+                "anchor EMA bounce interactions exhaust max_bounces."
+            ),
+            params_storage="nested",
+            params_schema={
+                "fast_ema": _int_param("Fast EMA period (base)", default=50),
+                "anchor_ema": _int_param("Anchor EMA period (base)", default=200),
+                "slow_ema": _int_param("Slow EMA period (base)", default=500),
+                "max_bounces": _int_param("Max completed bounces", default=3),
+                "raw_touch_mode": ParamFieldSchema(
+                    type="string",
+                    label="Raw touch mode",
+                    enum=["range_cross"],
+                    default="range_cross",
+                ),
+                "touch_lookback_bars": _int_param("Touch lookback bars", default=10),
+                "trend_start_confirmation_bars": _int_param(
+                    "Trend start confirmation bars", default=1
+                ),
+                "trend_break_confirmation_bars": _int_param(
+                    "Trend break confirmation bars", default=1
+                ),
+            },
+        ),
+        ComponentSchema(
             component_id="reclaim_anchor",
             role="trigger",
             label="Reclaim anchor",

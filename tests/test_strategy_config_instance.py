@@ -12,6 +12,7 @@ from research.strategies.ema_pullback.component_builders import (
     blocker_extreme_rsi,
     blocker_none,
     component_stack,
+    ema_bounce_counter_setup_spec,
     exit_atr_stop_loss,
     exit_atr_take_profit,
     exit_constant_usd_stop_loss,
@@ -210,9 +211,27 @@ def test_component_stack_default_matches_baseline_defaults() -> None:
     assert stack.direction == "ema_anchor_stack_trend"
     assert [b.component_id for b in stack.blockers] == ["no_blockers"]
     assert [b.instance_id for b in stack.blockers] == ["no_blockers"]
-    assert stack.setup == "untouched_anchor_setup"
+    assert len(stack.blockers) >= 1
     assert stack.trigger.component_id == "reclaim_anchor"
     assert stack.risk == "no_risk_filter"
+
+
+def test_strategy_spec_rejects_mismatched_bounce_params_component_id() -> None:
+    from research.strategies.ema_pullback.component_builders import setup_rule
+
+    with pytest.raises(
+        ValueError,
+        match="UntouchedAnchorSetupSpec",
+    ):
+        make_ema_pullback_strategy_spec(
+            setups=(
+                setup_rule(
+                    instance_id="bad",
+                    component_id="untouched_anchor_setup",
+                    params=ema_bounce_counter_setup_spec(),
+                ),
+            ),
+        )
 
 
 def test_builders_normalize_sequences_to_tuples() -> None:

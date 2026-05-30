@@ -58,6 +58,7 @@ class VariantMetrics:
     profile_side_breakdown: dict[str, Any] | None = None
     exit_reason_breakdown: dict[str, Any] | None = None
     fee_diagnostics: dict[str, Any] | None = None
+    bounce_counter_breakdown: dict[str, Any] | None = None
     quality_flag_breakdown: dict[str, Any] | None = None
     exit_component_quality_breakdown: dict[str, Any] | None = None
 
@@ -79,6 +80,8 @@ class VariantMetrics:
             payload["exit_reason_breakdown"] = self.exit_reason_breakdown
         if self.fee_diagnostics is not None:
             payload["fee_diagnostics"] = self.fee_diagnostics
+        if self.bounce_counter_breakdown is not None:
+            payload["bounce_counter_breakdown"] = self.bounce_counter_breakdown
         if self.quality_flag_breakdown is not None:
             payload["quality_flag_breakdown"] = self.quality_flag_breakdown
         if self.exit_component_quality_breakdown is not None:
