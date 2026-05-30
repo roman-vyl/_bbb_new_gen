@@ -21,7 +21,7 @@ The `ema_pullback` strategy family SHALL expose `ema_bounce_counter_setup` as a 
 
 ### Requirement: Setup configuration and feature inputs
 
-The component SHALL accept MVP params `fast_ema`, `anchor_ema`, `slow_ema`, `max_bounces`, `raw_touch_mode`, `touch_lookback_bars`, `trend_start_confirmation_bars`, and `trend_break_confirmation_bars`. `raw_touch_mode` MUST support `range_cross` for MVP. `max_bounces`, `touch_lookback_bars`, `trend_start_confirmation_bars`, and `trend_break_confirmation_bars` MUST be positive integers.
+The component SHALL accept MVP params `fast_ema`, `anchor_ema`, `slow_ema`, `max_bounces`, `raw_touch_mode`, `touch_lookback_bars`, `trend_start_confirmation_bars`, and `trend_break_confirmation_bars`. For MVP, `fast_ema`, `anchor_ema`, and `slow_ema` SHALL refer to base timeframe EMA periods only; HTF EMA-stack setup evaluation is out of scope. `raw_touch_mode` MUST support `range_cross` for MVP. `max_bounces`, `touch_lookback_bars`, `trend_start_confirmation_bars`, and `trend_break_confirmation_bars` MUST be positive integers.
 
 The component SHALL consume OHLC market data plus prepared `fast_ema`, `anchor_ema`, and `slow_ema` feature columns. It MUST request EMA features through the existing feature planning mechanism and MUST NOT compute EMA columns internally.
 
@@ -37,8 +37,16 @@ The component SHALL consume OHLC market data plus prepared `fast_ema`, `anchor_e
 
 - **GIVEN** a strategy config uses `ema_bounce_counter_setup` with fast, anchor, and slow EMA periods
 - **WHEN** the feature plan is built
-- **THEN** the plan includes EMA features for the configured fast, anchor, and slow periods
+- **THEN** the plan includes base timeframe EMA features for the configured fast, anchor, and slow periods
 - **AND** the setup component receives the corresponding prepared columns during execution
+
+#### Scenario: HTF EMA stack is rejected in MVP
+
+- **GIVEN** a setup config with `component_id: ema_bounce_counter_setup`
+- **AND** the setup attempts to specify a non-base EMA timeframe for the EMA stack
+- **WHEN** the strategy spec is loaded and validated
+- **THEN** validation rejects the setup config
+- **AND** the user must use base timeframe EMA periods for MVP
 
 #### Scenario: Setup does not compute EMA internally
 
@@ -110,6 +118,8 @@ For MVP `raw_touch_mode: range_cross`, `raw_touch` SHALL be `low <= anchor_ema <
 
 The component SHALL start a pending bounce window only when `trend_active`, `armed`, `raw_touch`, `not pending_bounce`, and `not in_touch_lookback` are all true. Starting a pending bounce SHALL set `pending_bounce` to `true` and initialize `touch_lookback_left` from `touch_lookback_bars`.
 
+`touch_lookback_bars` SHALL be inclusive of the raw-touch start bar. If a pending bounce starts at index `i0` with `touch_lookback_bars = N`, then the pending/lookback window is active on bars `i0` through `i0 + N - 1`. The final active lookback bar is `i0 + N - 1`; the next pending bounce MUST NOT start before bar `i0 + N`.
+
 While a pending/lookback window is active, additional `raw_touch` bars SHALL NOT start another pending bounce and SHALL NOT increment `completed_bounce_count`.
 
 #### Scenario: First eligible touch opens pending bounce
@@ -129,6 +139,15 @@ While a pending/lookback window is active, additional `raw_touch` bars SHALL NOT
 - **THEN** no additional pending bounce is started
 - **AND** `completed_bounce_count` remains unchanged until the original window completes
 
+#### Scenario: Final active lookback touch is ignored
+
+- **GIVEN** a pending bounce window starts at index `i0`
+- **AND** `touch_lookback_bars` is `N`
+- **WHEN** the final active lookback bar `i0 + N - 1` has `raw_touch: true`
+- **THEN** that raw touch is ignored for starting another pending bounce
+- **AND** no new pending bounce can start until the previous window has completed
+- **AND** the earliest bar that can start a next pending bounce is `i0 + N`
+
 #### Scenario: Unarmed raw touch does not open pending bounce
 
 - **GIVEN** a trend episode is active
@@ -139,17 +158,18 @@ While a pending/lookback window is active, additional `raw_touch` bars SHALL NOT
 
 ### Requirement: Bounce count increments only at window completion
 
-The component SHALL increment `completed_bounce_count` when the pending lookback window completes. The completion bar SHALL NOT require `raw_touch` to be true. After completion, `pending_bounce` SHALL become `false` and `touch_lookback_left` SHALL be `0`.
+The component SHALL complete a pending lookback window after its final active lookback bar. If a pending bounce starts at index `i0` with `touch_lookback_bars = N`, the final active lookback bar SHALL be `i0 + N - 1`; `completed_bounce_count` SHALL increase on the completion transition after that bar and be reflected from the next evaluated bar, `i0 + N`. The final active lookback bar SHALL NOT require `raw_touch` to be true. After completion, `pending_bounce` SHALL become `false` and `touch_lookback_left` SHALL be `0`.
 
 `completed_bounce_count` SHALL mean the number of completed pending bounce windows in the current trend episode.
 
-#### Scenario: Bounce completes without touch on final lookback bar
+#### Scenario: Bounce completes after final active lookback bar without touch
 
 - **GIVEN** a pending bounce started from a raw touch
 - **AND** subsequent bars move away from the anchor EMA
-- **WHEN** the configured lookback window completes on a bar where `raw_touch` is `false`
-- **THEN** `completed_bounce_count` increases by `1`
-- **AND** `pending_bounce` becomes `false`
+- **WHEN** the final active lookback bar is evaluated with `raw_touch: false`
+- **THEN** the window is completed after that final active lookback bar
+- **AND** `completed_bounce_count` increases by `1` from the next evaluated bar
+- **AND** `pending_bounce` becomes `false` from the next evaluated bar
 - **AND** `touch_lookback_left` is `0`
 
 #### Scenario: Count represents windows not entries

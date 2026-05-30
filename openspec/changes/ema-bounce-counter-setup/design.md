@@ -37,6 +37,7 @@ Likely touched modules:
 
 - No trigger, reclaim, strong reclaim, or buy/sell decision logic in this setup.
 - No EMA, ATR, tolerance-band, or zone calculation inside the component.
+- No HTF EMA-stack setup in MVP; the setup consumes base timeframe EMA columns only.
 - No trade-state coupling, position-state coupling, or entry-count semantics.
 - No Data Engine changes.
 - No frontend-side computation of the counter.
@@ -59,6 +60,14 @@ Rationale: the existing setup dataclass only has `lookback` and `active_bars`; r
 
 Alternative considered: encode the component as a plain string plus loose params. Rejected because existing research code benefits from typed validation and feature planning should know the exact EMA specs.
 
+### Decision: constrain MVP EMA inputs to base timeframe
+
+The MVP setup config should accept EMA periods for the base timeframe only. It should not accept a separate EMA timeframe or evaluate HTF EMA stacks. If later research needs HTF stack episodes, that should be a follow-up change because it changes feature alignment, event timestamp semantics, and Workbench diagnostics.
+
+Rationale: the component's first job is to validate the bounce-counter hypothesis on the same base chart used for entries. Keeping HTF out of MVP avoids mixing setup state with completed-HTF alignment rules.
+
+Alternative considered: reuse generic `EmaSpec` with arbitrary timeframe immediately. Rejected for MVP because the user-facing strategy semantics and Chart event boundaries would need a separate HTF design.
+
 ### Decision: keep setup output as a boolean gate and expose internals through trace helpers
 
 The runtime setup function should return `setup_allowed` as the setup mask used by final entry composition. A companion trace function should return the full diagnostic dictionary, including `setup_allowed` and counter internals.
@@ -78,9 +87,12 @@ Use a deterministic bar loop for long and short separately. On each bar:
 3. Compute continuous `armed` from close side of anchor.
 4. Compute `raw_touch` from `low <= anchor_ema <= high`.
 5. Advance an existing pending/lookback window; ignore additional touches while the window is active.
-6. Increment `completed_bounce_count` only when the pending window finishes.
-7. Start a new pending bounce only when `trend_active AND armed AND raw_touch AND not pending_bounce AND not in_touch_lookback`.
-8. Compute `setup_allowed` from the completed count and pending state.
+6. Treat `touch_lookback_bars` as inclusive of the raw-touch start bar: a window opened at index `i0` with `N` bars is active for `i0..i0+N-1`.
+7. Emit the pending-window `span_end` on `i0+N-1`, the last active lookback bar.
+8. Complete the window after that final active bar; the next pending bounce can start no earlier than `i0+N`.
+9. Increment `completed_bounce_count` on the completion transition, making the completed count and post-limit `setup_allowed` state visible from the next evaluated bar.
+10. Start a new pending bounce only when `trend_active AND armed AND raw_touch AND not pending_bounce AND not in_touch_lookback`.
+11. Compute `setup_allowed` from the completed count and pending state.
 
 Rationale: the semantics depend on ordered state transitions and on incrementing at the end of a window without requiring a raw touch on that final bar. A vectorized rolling implementation would be easier to misread and harder to test against edge cases.
 
@@ -118,7 +130,7 @@ When component events are emitted for `ema_bounce_counter_setup`, the backend sh
 
 - `source`: the eligible raw-touch bar that starts a bounce opportunity and opens a pending window.
 - `span_start`: the first bar of the pending bounce window, sharing `span_id` with the source event.
-- `span_end`: the last active bar of the pending bounce window, not the first inactive bar after it.
+- `span_end`: the last active bar of the pending bounce window (`i0+N-1`), not the first inactive bar after it.
 - `point`: optional `trend_start` and `trend_break` events.
 
 Use `role: setup`, `component_id: ema_bounce_counter_setup`, `feature_family: ema`, and component-specific fields under `metadata` only. Useful metadata includes EMA periods, `trend_episode_id`, `completed_bounce_count`, `effective_bounce_number`, `max_bounces`, `touch_lookback_bars`, `price_side_of_anchor`, and a semantic `event_name` such as `bounce_opportunity_start`, `pending_bounce_start`, `pending_bounce_end`, `trend_start`, or `trend_break`.
@@ -130,7 +142,7 @@ Alternative considered: expose only raw per-bar booleans and let the frontend sy
 ## Risks / Trade-offs
 
 - Confirmation bars can be off by one around trend starts/breaks. → Add focused unit tests for confirmation `1` and larger values, including immediate touch on the first confirmed trend bar.
-- Pending-window ordering can change whether the completion bar allows a new touch. → Specify and test that touches inside the active window are ignored and the completed count increments when the window expires, without requiring raw touch on that bar.
+- Pending-window ordering can change whether the final active lookback bar allows a new touch. → Specify and test inclusive timing: touches on `i0..i0+N-1` are ignored, `span_end` is `i0+N-1`, completion occurs after that bar, and a new pending can start only from `i0+N`.
 - New setup config shape may require loader/catalog changes beyond the current string setup field. → Keep loader validation explicit and ensure `component_id` plus params participate in strategy identity/config id.
 - Trace/report fields can increase payload size. → Keep the required trace fields scalar per bar and make trade-record diagnostics optional when the component is not configured.
 - The component can expose rich internals that frontend users might interpret as triggers. → Label fields as diagnostics and keep `setup_allowed` as the only setup gate consumed by final entry composition.

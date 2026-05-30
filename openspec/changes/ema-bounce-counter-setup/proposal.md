@@ -6,8 +6,9 @@
 
 - Add a new `ema_bounce_counter_setup` setup component for `ema_pullback`.
 - Register the component with `role: setup` and `component_id: ema_bounce_counter_setup`; it is not a trigger, blocker, or exit.
+- Keep MVP EMA-stack evaluation on the base timeframe only; HTF EMA-stack setup is out of scope.
 - Compute market state continuously bar-by-bar, independent of trade state, entries, exits, PnL, and vectorbt position state.
-- Track long/short EMA-stack trend episodes, continuous arming, raw anchor EMA range touches, pending bounce windows, lookback/cooldown state, completed bounce count, and setup permission.
+- Track long/short EMA-stack trend episodes, continuous arming, raw anchor EMA range touches, inclusive pending bounce windows, lookback/cooldown state, completed bounce count, and setup permission.
 - Gate entry composition through `setup_allowed`, while existing trigger components (`touch_anchor`, `reclaim_anchor`, `strong_reclaim_anchor`) remain responsible for concrete entry signals.
 - Expose diagnostic fields for signal trace/report consumers: `trend_active`, `trend_episode_id`, `armed`, `raw_touch`, `pending_bounce`, `in_touch_lookback`, `touch_lookback_left`, `completed_bounce_count`, `effective_bounce_number`, `setup_allowed`, and `price_side_of_anchor`.
 - Prepare setup diagnostics for Chart `component_events[]`: eligible raw-touch/bounce opportunity as `source`, pending bounce window as `span_start`/`span_end`, and optional trend start/break as `point`.
@@ -16,6 +17,7 @@
 **Non-goals (explicit)**
 
 - No EMA computation inside the component; EMA features must come from the existing feature planning mechanism.
+- MVP is base timeframe EMA only; HTF EMA stack evaluation is out of scope for this change.
 - No ATR bands, tolerance bands, zone model, or separation model in MVP; `raw_touch_mode: range_cross` uses exact `low <= anchor_ema <= high`.
 - No trigger semantics, reclaim semantics, or entry timing decisions inside this component.
 - No dependency on open/closed trade state, trade count, PnL, or vectorbt position state.

@@ -55,7 +55,7 @@ The event mapping SHALL be:
 
 - `source` for the eligible raw-touch bar that opens a bounce opportunity.
 - `span_start` for pending bounce window start.
-- `span_end` for pending bounce window end, placed on the last active pending/lookback bar.
+- `span_end` for pending bounce window end, placed on the last active pending/lookback bar. With `touch_lookback_bars = N` and a start index `i0`, this is index `i0 + N - 1`.
 - Optional `point` events for trend start and trend break.
 
 Component-specific details SHALL live in `metadata`, including `event_name`, EMA periods, `trend_episode_id`, `completed_bounce_count`, `effective_bounce_number`, `max_bounces`, `touch_lookback_bars`, and `price_side_of_anchor` when available.
@@ -70,11 +70,22 @@ Component-specific details SHALL live in `metadata`, including `event_name`, EMA
 
 #### Scenario: Pending bounce span events
 
-- **GIVEN** a pending bounce window starts at base index `i0` and ends at base index `i1`
+- **GIVEN** a pending bounce window starts at base index `i0`
+- **AND** `touch_lookback_bars` is `N`
 - **WHEN** component events are serialized
 - **THEN** `span_start` is emitted at `times[i0]`
-- **AND** `span_end` is emitted at `times[i1]`
+- **AND** `span_end` is emitted at `times[i0 + N - 1]`
 - **AND** `span_end` is not emitted at the first inactive bar after the window
+
+#### Scenario: Final active lookback touch does not create a second span
+
+- **GIVEN** a pending bounce window starts at base index `i0`
+- **AND** `touch_lookback_bars` is `N`
+- **AND** `raw_touch` is also true on base index `i0 + N - 1`
+- **WHEN** component events are serialized
+- **THEN** the emitter produces `span_end` for the original window at `times[i0 + N - 1]`
+- **AND** it does not emit a new `source` or `span_start` for that final active lookback bar
+- **AND** a following pending bounce can only be emitted from index `i0 + N` or later
 
 #### Scenario: Trend point events are optional but generic
 
