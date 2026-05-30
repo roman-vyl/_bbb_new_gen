@@ -13,7 +13,8 @@
 - активные правила на сделке: `always_on + profile(side + htf_context.state)`;
 - сигнальные exits внутри активной группы агрегируются через OR;
 - distance exits внутри активной группы агрегируются через min;
-- signal trace / Bar Inspector получают диагностику `htf_context` (`state`, `fast/anchor/slow`, `meta`) **только при явном `context_overlay_ref`** в Chart (не первый provider по умолчанию);
+- signal trace / Bar Inspector получают диагностику `htf_context` (`state`, `fast/anchor/slow`, `meta`) только когда BFF получает `context_overlay_ref` (Chart передаёт effective ref: picker, exit consumption ref, или единственный ключ в `strategy.contexts`);
+- Chart HTF EMA dashed lines (`htf_fast` / `htf_anchor` / `htf_slow`) — из `signal_trace.htf_context`, не из BFF `chart_overlay_ema`; полный контракт: `openspec/specs/workbench-chart-htf-context-overlays/spec.md`;
 - `context_consumption_trace` в signal trace: per-consumer `role`, `context_ref`, `policy_id`, `context_applied` (Phase 4);
 - новые run reports: `report_schema_version: 5` с `entry_context_consumption` / `exit_context_consumption` на closed trades (отдельно от `entry_context_state`);
 - v3/v4 reports остаются read-only; Composer не авторит `exit_policy.context` (только `strategy.contexts` + `context_consumption`).

@@ -7,12 +7,37 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 
 
+class SetupComponentRef(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    instance_id: str
+    component_id: str
+
+
+class SignalTraceComponentIds(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    direction: str
+    setups: list[SetupComponentRef]
+    trigger: str
+    risk: str
+
+
+class SetupParamsEntry(BaseModel):
+    """Per-setup params; component-specific fields allowed via extra."""
+
+    model_config = ConfigDict(extra="allow")
+
+    instance_id: str
+    component_id: str
+
+
 class SignalTraceMeta(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     variant: str
-    component_ids: dict[str, str]
-    setup_params: dict[str, Any]
+    component_ids: SignalTraceComponentIds
+    setup_params: list[SetupParamsEntry]
     trigger_params: dict[str, int] = Field(default_factory=dict)
     blocker_instances: list[dict[str, str]]
 

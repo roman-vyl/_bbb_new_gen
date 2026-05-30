@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 
 from research_api.contracts.signal_trace import SignalTraceBundle
 from research_api.main import app
-from research_api.services.signal_trace_service import _warmup_bars_ms
+from research_api.services.signal_trace_service import _cached_full_trace_key, _warmup_bars_ms
 from research.strategies.ema_pullback.component_builders import trade_management
 from research.strategies.ema_pullback.spec_instances import make_ema_pullback_strategy_spec
 from tests.ema_pullback_context_helpers import exit_policy_htf_consumption, htf_strategy_contexts
@@ -23,11 +23,23 @@ def test_signal_trace_endpoint_returns_bundle(monkeypatch: pytest.MonkeyPatch) -
             "variant": "v1",
             "component_ids": {
                 "direction": "ema_anchor_stack_trend",
-                "setup": "untouched_anchor_setup",
+                "setups": [
+                    {
+                        "instance_id": "setup",
+                        "component_id": "untouched_anchor_setup",
+                    }
+                ],
                 "trigger": "reclaim_anchor",
                 "risk": "no_risk_filter",
             },
-            "setup_params": {"lookback": 50, "active_bars": 3},
+            "setup_params": [
+                {
+                    "instance_id": "setup",
+                    "component_id": "untouched_anchor_setup",
+                    "lookback": 50,
+                    "active_bars": 3,
+                }
+            ],
             "blocker_instances": [{"instance_id": "no_blockers", "component_id": "no_blockers"}],
         },
         long={
@@ -109,7 +121,11 @@ def test_signal_trace_warmup_ignores_htf_without_context_consumption() -> None:
     assert warmup_ms < htf_slow_warmup_ms
 
 
-def test_signal_trace_warmup_accounts_for_htf_context() -> None:
+def test_signal_trace_cache_key_includes_context_overlay_ref() -> None:
+    base = _cached_full_trace_key("run", "v1", 1000, 2000)
+    with_ref = _cached_full_trace_key("run", "v1", 1000, 2000, "htf_1")
+    assert base != with_ref
+    assert with_ref.endswith(":htf_1")
     """Target shape: strategy.contexts.htf drives HTF warmup (via feature plan)."""
     from research.strategies.ema_pullback.component_builders import exit_rsi
 
@@ -134,3 +150,66 @@ def test_signal_trace_warmup_accounts_for_htf_context() -> None:
     assert len(spec.contexts) == 1
     warmup_ms = _warmup_bars_ms(spec, "5m")
     assert warmup_ms >= 200 * 4 * 60 * 60 * 1000
+
+
+def test_signal_trace_meta_validates_dual_setup_stack() -> None:
+    """Regression: stack-aware meta from build_signal_trace_from_spec passes SignalTraceMeta."""
+    from dataclasses import replace
+
+    import pandas as pd
+
+    from research.strategies.ema_pullback.component_builders import (
+        ema_bounce_counter_setup_spec,
+        setup_rule,
+    )
+    from research.strategies.ema_pullback.execution.signal_trace import build_signal_trace_from_spec
+    from research.strategies.ema_pullback.features.calculations import add_feature_columns_from_plan
+    from research.strategies.ema_pullback.features.plan import build_feature_plan_from_strategy_spec
+    from research.strategies.ema_pullback.spec_instances import make_ema_pullback_strategy_spec
+    from research_api.services.signal_trace_service import _to_contract
+
+    base = make_ema_pullback_strategy_spec(enabled_sides=("long",))
+    spec = replace(
+        base,
+        setups=(
+            setup_rule(
+                instance_id="untouched_anchor",
+                component_id="untouched_anchor_setup",
+                params=base.setups[0].params,
+            ),
+            setup_rule(
+                instance_id="bounce_counter",
+                component_id="ema_bounce_counter_setup",
+                params=ema_bounce_counter_setup_spec(max_bounces=1),
+            ),
+        ),
+    )
+    idx = pd.date_range("2024-01-01", periods=40, freq="h", tz="UTC")
+    close = pd.Series(range(100, 140), index=idx, dtype=float)
+    df = pd.DataFrame(
+        {
+            "open": close - 0.5,
+            "high": close + 1.0,
+            "low": close - 1.0,
+            "close": close,
+            "volume": 1.0,
+        },
+        index=idx,
+    )
+    plan = build_feature_plan_from_strategy_spec(spec)
+    enriched = add_feature_columns_from_plan(df, plan)
+    trace_data = build_signal_trace_from_spec(enriched, spec, plan)
+    bundle = _to_contract(trace_data)
+
+    setup_instance_ids = {entry.instance_id for entry in bundle.meta.setup_params}
+    assert setup_instance_ids == {"untouched_anchor", "bounce_counter"}
+    component_setup_ids = {ref.instance_id for ref in bundle.meta.component_ids.setups}
+    assert component_setup_ids == {"untouched_anchor", "bounce_counter"}
+    assert "untouched_anchor" in trace_data.long.internals["setups"]
+    assert "bounce_counter" in trace_data.long.internals["setups"]
+    setup_event_ids = {
+        event.instance_id
+        for event in bundle.component_events
+        if event.role == "setup"
+    }
+    assert "bounce_counter" in setup_event_ids

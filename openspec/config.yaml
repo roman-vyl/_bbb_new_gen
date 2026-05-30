@@ -29,6 +29,13 @@ context: |
   - Useful tests only when behavior is non-trivial; do not commit unless user asks.
   - Chart screenshots: follow .cursor/rules/workbench-chart-screenshots.mdc (60s wait for market data).
 
+  Regression-sensitive (read before Chart / signal trace / WorkbenchContext changes):
+  - openspec/specs/workbench-chart-htf-context-overlays/spec.md — HTF context EMA dashed lines
+    (signal_trace.htf_context ← feature plan; NOT BFF chart_overlay_ema; cache key includes
+    context_overlay_ref; effectiveContextOverlayRef before first trace fetch). Any proposal touching
+    WorkbenchContext, strategySpecAuxEma, signal_trace_service, or signal_trace.py MUST include
+    HTF overlay verification in tasks.md.
+
 rules:
   proposal:
     - Name the affected layer(s): data_engine | research | research_api | frontend
@@ -48,3 +55,5 @@ rules:
     - Order: contracts/types → backend/research → API → frontend when applicable
     - Include manual verification steps (CLI, Workbench, or pytest) where relevant
     - Do not add drive-by refactors or unrelated cleanup
+    - When changing Chart, signal trace, or WorkbenchContext — add task "Verify HTF context EMA
+      overlays (workbench-chart-htf-context-overlays)" on variant with strategy.contexts

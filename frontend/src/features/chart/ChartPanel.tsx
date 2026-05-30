@@ -213,9 +213,9 @@ export function ChartPanel() {
 
     signalTraceError,
 
-    contextOverlayRef,
-
     setContextOverlayRef,
+
+    effectiveContextOverlayRef,
 
     contextOverlayRefOptions,
 
@@ -813,7 +813,7 @@ export function ChartPanel() {
           <label className="field field--inline chart-panel__overlay-ref">
             <span>HTF overlay context</span>
             <select
-              value={contextOverlayRef ?? ""}
+              value={effectiveContextOverlayRef ?? ""}
               onChange={(e) => setContextOverlayRef(e.target.value || null)}
             >
               <option value="">— select context —</option>

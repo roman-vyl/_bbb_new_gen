@@ -399,15 +399,23 @@ export type SignalTraceGate =
   | "risk_ok"
   | "stop_ready";
 
+export type SetupComponentRef = {
+  instance_id: string;
+  component_id: string;
+};
+
+export type SetupParamsEntry = SetupComponentRef &
+  Record<string, number | string | boolean>;
+
 export type SignalTraceMeta = {
   variant: string;
   component_ids: {
     direction: string;
-    setup: string;
+    setups: SetupComponentRef[];
     trigger: string;
     risk: string;
   };
-  setup_params: Record<string, number | string>;
+  setup_params: SetupParamsEntry[];
   trigger_params?: { lookback: number };
   blocker_instances: { instance_id: string; component_id: string }[];
 };

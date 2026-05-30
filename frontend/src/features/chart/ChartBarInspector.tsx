@@ -74,7 +74,7 @@ function InternalsBlock({
 }
 
 function readInternals(side: SideSignalTrace): {
-  setup?: Record<string, boolean[] | (number | null)[]>;
+  setups?: Record<string, Record<string, boolean[] | (number | null)[]>>;
   trigger?: Record<string, boolean[] | (number | null)[]>;
   direction?: Record<string, boolean[] | (number | null)[]>;
   blockers?: Record<string, Record<string, boolean[] | (number | null)[]>>;
@@ -84,7 +84,7 @@ function readInternals(side: SideSignalTrace): {
     return {};
   }
   return root as {
-    setup?: Record<string, boolean[] | (number | null)[]>;
+    setups?: Record<string, Record<string, boolean[] | (number | null)[]>>;
     trigger?: Record<string, boolean[] | (number | null)[]>;
     direction?: Record<string, boolean[] | (number | null)[]>;
     blockers?: Record<string, Record<string, boolean[] | (number | null)[]>>;
@@ -103,8 +103,12 @@ function SideBlock({
   trace: SignalTraceBundle;
 }) {
   const blocker = firstBlockingGate(side, index);
-  const { setup: setupFields, trigger: triggerFields, direction: directionFields, blockers: blockersByInstance } =
-    readInternals(side);
+  const {
+    setups: setupsByInstance,
+    trigger: triggerFields,
+    direction: directionFields,
+    blockers: blockersByInstance,
+  } = readInternals(side);
 
   return (
     <div className="bar-inspector__side">
@@ -133,11 +137,15 @@ function SideBlock({
           No entry: <strong>{blocker.label}</strong>=false
         </p>
       )}
-      <InternalsBlock
-        title={`Setup (${trace.meta.component_ids.setup})`}
-        fields={setupFields}
-        index={index}
-      />
+      {setupsByInstance &&
+        Object.entries(setupsByInstance).map(([instanceId, fields]) => (
+          <InternalsBlock
+            key={instanceId}
+            title={`Setup ${instanceId}`}
+            fields={fields}
+            index={index}
+          />
+        ))}
       <InternalsBlock
         title={`Trigger (${trace.meta.component_ids.trigger})`}
         fields={triggerFields}

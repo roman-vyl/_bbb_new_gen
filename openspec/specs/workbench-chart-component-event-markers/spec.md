@@ -3,6 +3,8 @@
 ## Purpose
 
 Chart component semantic events derived from signal trace: generic `component_events[]` contract with `event_type` vocabulary (`point`, `span_start`, `span_end`, `source`), extensible `role`, top-level alignment fields, component-specific data in `metadata`. v1 RSI emitters (`rsi_lookback_extreme_blocker`, `rsi_signal_exit`); frontend renders by `event_type` + `role` + `side` only.
+
+**Same trace payload** also carries `htf_context` for HTF EMA dashed overlays — see `workbench-chart-htf-context-overlays`. Changes to signal trace loading or caching MUST regression-check both features.
 ## Requirements
 ### Requirement: Signal trace exposes component_events with event_type vocabulary
 

@@ -1,0 +1,18 @@
+Workbench pipeline debug verification (2026-05-30)
+==================================================
+Env: VITE_EMA_PIPELINE_DEBUG=true
+Dev server: http://127.0.0.1:5174/
+Flow: Strategy Composer → Validate → Run backtest
+
+Captured [pipeline] console entries:
+- api.fetchRunReport {count: 1, ms: 63.6}
+- wb.market_fetch_start
+- wb.market_fetch_skip_in_flight
+- wb.backtest_click {count: 1}
+- api.fetchChartMarketBundle {count: 1, ms: 119754.6}
+- wb.signal_trace_decision {action: load_start}
+
+Manual flush via window.__pipelineDebugFlush('manual-verify'): OK
+console.table emitted from pipelineDebug.ts (see workbench-pipeline-debug-console.log)
+
+Full console log: debug/reports/workbench-pipeline-debug-console.log

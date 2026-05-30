@@ -1,7 +1,8 @@
 # workbench-strategy-contexts Specification
 
 ## Purpose
-TBD - created by archiving change strategy-level-contexts-v1. Update Purpose after archive.
+
+Strategy-level HTF context providers (`strategy.contexts`) and Composer authoring/consumption UI. Chart **HTF EMA overlay rendering pipeline** (signal trace → dashed aux lines) is specified separately in **`workbench-chart-htf-context-overlays`** — read that spec before any Chart, signal trace, or WorkbenchContext change to avoid recurring HTF overlay regressions.
 ## Requirements
 ### Requirement: Composer exposes Strategy contexts section at instance level
 
@@ -63,19 +64,29 @@ The frontend MUST NOT calculate HTF EMA stacks, context state, or consumption ou
 - **WHEN** the user submits a draft with invalid `policy.params`
 - **THEN** errors originate from the validate API response, not client-side indicator code
 
-### Requirement: Chart HTF aux overlay uses explicit context_ref only
+### Requirement: Chart HTF aux overlay uses resolved context_ref
 
-Chart HTF auxiliary overlays (periods, timeframe labels) MUST be derived from an explicitly selected `context_ref` into `strategy.contexts`. Acceptable sources are: (a) user-selected chart display config field (e.g. `chart.context_overlay_ref`), (b) explicit picker listing `strategy.contexts` keys, or (c) the `context_ref` of the consumer being inspected (trade/bar diagnostics). The chart MUST NOT default to the first HTF provider or the only context entry.
+Chart HTF auxiliary overlays (periods, timeframe labels, EMA point series) MUST be derived from a **resolved** `context_ref` into `strategy.contexts`. Full pipeline: see **`workbench-chart-htf-context-overlays`**.
+
+Resolution sources (in order): (a) user-selected Chart picker value, (b) `exit_policy.context_consumption.context_ref` when present in `strategy.contexts`, (c) the sole key when `strategy.contexts` has exactly one entry. The chart MUST NOT pick an arbitrary first key when **multiple** contexts exist without (a) or (b).
+
+Composer `context_consumption` authoring MUST NOT auto-select the first context ref (see **No auto-select of first context_ref** above); that rule applies to Composer only, not Chart sole-context display resolution.
 
 #### Scenario: Overlay follows explicit chart display ref
 
-- **WHEN** chart display config sets `context_overlay_ref: macro_htf` and `contexts.macro_htf.slow_period` is `500`
+- **WHEN** user selects chart overlay ref `macro_htf` and `contexts.macro_htf.slow_period` is `500`
 - **THEN** chart HTF overlay legend or config reflects periods from `macro_htf`, not from another context ref
 
-#### Scenario: No first-provider default when multiple contexts exist
+#### Scenario: No implicit pick when multiple contexts exist
 
-- **WHEN** `strategy.contexts` defines both `htf` and `macro_htf` and no explicit chart overlay ref is set
+- **WHEN** `strategy.contexts` defines both `htf` and `macro_htf` and no exit consumption ref or user picker selection applies
 - **THEN** the chart does not render HTF aux overlay periods until the user selects a `context_ref`
+
+#### Scenario: Sole context resolves for chart display
+
+- **WHEN** `strategy.contexts` defines only `htf_1` and user has not changed the Chart picker
+- **THEN** effective overlay ref is `htf_1` without manual picker interaction
+- **AND** HTF aux EMA lines render after signal trace loads with `context_overlay_ref=htf_1`
 
 ### Requirement: Composer authors htf_regime_gate with allowed_regimes
 

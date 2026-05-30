@@ -67,11 +67,18 @@ const EMPTY_SIGNAL_TRACE: SignalTraceBundle = {
     variant: "exp_a",
     component_ids: {
       direction: "d",
-      setup: "s",
+      setups: [{ instance_id: "setup", component_id: "s" }],
       trigger: "t",
       risk: "r",
     },
-    setup_params: { lookback: 50, active_bars: 3 },
+    setup_params: [
+      {
+        instance_id: "setup",
+        component_id: "s",
+        lookback: 50,
+        active_bars: 3,
+      },
+    ],
     blocker_instances: [],
   },
   long: {

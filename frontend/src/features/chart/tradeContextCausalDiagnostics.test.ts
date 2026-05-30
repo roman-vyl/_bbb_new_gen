@@ -30,8 +30,20 @@ function traceFixture(): SignalTraceBundle {
     times: [1_714_561_400],
     meta: {
       variant: "default",
-      component_ids: { direction: "d", setup: "s", trigger: "t", risk: "r" },
-      setup_params: { lookback: 50, active_bars: 3 },
+      component_ids: {
+        direction: "d",
+        setups: [{ instance_id: "setup", component_id: "s" }],
+        trigger: "t",
+        risk: "r",
+      },
+      setup_params: [
+        {
+          instance_id: "setup",
+          component_id: "s",
+          lookback: 50,
+          active_bars: 3,
+        },
+      ],
       blocker_instances: [{ instance_id: "blocker_main", component_id: "counter_candle_blocker" }],
     },
     htf_context: {

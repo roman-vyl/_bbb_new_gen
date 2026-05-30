@@ -75,6 +75,7 @@ import {
   type SignalTraceLoadStatus,
   type SignalTraceRequest,
 } from "@/shared/context/signalTraceLoadPolicy";
+import { dbgFlush, dbgMark } from "@/shared/diagnostics/pipelineDebug";
 export type ReportLoadStatus = "loading" | "ready" | "error";
 export type ConfigLoadStatus = "loading" | "ready" | "empty" | "error";
 export type MarketLoadStatus = "idle" | "loading" | "ready" | "error";
@@ -138,6 +139,7 @@ type WorkbenchState = {
   signalTraceError: string | null;
   contextOverlayRef: string | null;
   setContextOverlayRef: (ref: string | null) => void;
+  effectiveContextOverlayRef: string | null;
   contextOverlayRefOptions: string[];
   selectedBarTimeSec: number | null;
   selectBar: (timeSec: number | null) => void;
@@ -455,6 +457,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       setMarketError(null);
 
       if (hasMarketCache(key)) {
+        dbgMark("wb.market_cache_hit", { key });
         if (marketLoadGenRef.current !== loadGen && intendedMarketCacheKeyRef.current !== key) {
           return;
         }
@@ -464,8 +467,10 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       }
 
       if (marketFetchInFlightKeyRef.current === key) {
+        dbgMark("wb.market_fetch_skip_in_flight", { key });
         return;
       }
+      dbgMark("wb.market_fetch_start", { key });
       marketFetchInFlightKeyRef.current = key;
 
       setMarketLoadStatus("loading");
@@ -595,6 +600,14 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     return strategyContextRefOptions(selectedVariant.strategy_spec);
   }, [selectedVariant]);
 
+  const defaultContextOverlayRef = useMemo(() => {
+    if (!selectedVariant) return null;
+    return defaultChartContextOverlayRef(selectedVariant.strategy_spec);
+  }, [selectedVariant]);
+
+  /** Resolved ref for trace + HTF overlays (avoids one-frame null before default effect runs). */
+  const effectiveContextOverlayRef = contextOverlayRef ?? defaultContextOverlayRef;
+
   useEffect(() => {
     if (contextOverlayRef !== null && !contextOverlayRefOptions.includes(contextOverlayRef)) {
       setContextOverlayRef(null);
@@ -618,12 +631,12 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
         selectedVariant.strategy_spec,
         chartTimeframe,
         periods,
-        contextOverlayRef,
+        effectiveContextOverlayRef,
       );
     } catch {
       return [];
     }
-  }, [selectedVariant, chartTimeframe, contextOverlayRef]);
+  }, [selectedVariant, chartTimeframe, effectiveContextOverlayRef]);
 
   useEffect(() => {
     if (marketLoadStatus !== "ready" || report === null || auxEmaSpecs.length === 0) {
@@ -742,9 +755,9 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     }
     const first = chartView.candles[0]!.time;
     const last = chartView.candles[chartView.candles.length - 1]!.time;
-    const overlay = contextOverlayRef ?? "";
+    const overlay = effectiveContextOverlayRef ?? "";
     return `${selectedRunId}:${selectedVariantKey}:${first}:${last}:${overlay}`;
-  }, [chartView.candles, selectedRunId, selectedVariantKey, contextOverlayRef]);
+  }, [chartView.candles, selectedRunId, selectedVariantKey, effectiveContextOverlayRef]);
 
   const traceMatchesWindow =
     signalTraceStatus === "ready" &&
@@ -887,6 +900,8 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       request,
     });
 
+    dbgMark("wb.signal_trace_decision", { action: decision.action, windowKey });
+
     if (
       decision.action === "skip_already_loaded" ||
       decision.action === "skip_already_loading" ||
@@ -910,12 +925,13 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
           variant: variantKey,
           fromMs,
           toOpenTimeMs,
-          contextOverlayRef,
+          contextOverlayRef: effectiveContextOverlayRef,
         });
         if (cancelled) return;
         setSignalTrace(bundle);
         setLoadedTraceWindowKey(windowKey);
         setSignalTraceStatus("ready");
+        dbgFlush("workbench-after-signal-trace");
       } catch (err) {
         if (cancelled) return;
         setSignalTrace(null);
@@ -945,7 +961,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     selectedVariant?.variant,
     chartWindowKey,
     marketLoadStatus,
-    contextOverlayRef,
+    effectiveContextOverlayRef,
   ]);
 
   const symbol = report?.symbol ?? "—";
@@ -1009,6 +1025,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       signalTraceError,
       contextOverlayRef,
       setContextOverlayRef,
+      effectiveContextOverlayRef,
       contextOverlayRefOptions,
       selectedBarTimeSec,
       selectBar,
@@ -1063,6 +1080,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       signalTraceStatus,
       signalTraceError,
       contextOverlayRef,
+      effectiveContextOverlayRef,
       contextOverlayRefOptions,
       selectedBarTimeSec,
       selectBar,

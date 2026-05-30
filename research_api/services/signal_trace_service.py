@@ -145,14 +145,15 @@ def _to_contract(data: SignalTraceBundleData) -> SignalTraceBundle:
     )
 
 
-@lru_cache(maxsize=16)
 def _cached_full_trace_key(
     run_id: str,
     variant_key: str,
     from_ms: int,
     to_ms: int,
+    context_overlay_ref: str | None = None,
 ) -> str:
-    return f"{run_id}:{variant_key}:{from_ms}:{to_ms}"
+    ref_token = context_overlay_ref or ""
+    return f"{run_id}:{variant_key}:{from_ms}:{to_ms}:{ref_token}"
 
 
 # Simple module-level cache for full-window traces before slice
@@ -171,6 +172,7 @@ def fetch_signal_trace_bundle(
     """Compute entry pipeline trace for ``[from_ms, to_ms]`` (chart view window)."""
 
     report = load_run_report(run_id=run_id)
+    # TODO(perf): load_run_report re-reads strategy config; dedupe with backtest preflight path.
     if report.family != "ema_pullback":
         raise UnsupportedSignalTraceFamilyError(
             f"signal trace supports family ema_pullback only, got {report.family!r}"
@@ -186,7 +188,9 @@ def fetch_signal_trace_bundle(
     from_sec = start_ms // 1000
     to_sec = end_ms // 1000
 
-    cache_key = _cached_full_trace_key(run_id, variant_key, start_ms, end_ms)
+    cache_key = _cached_full_trace_key(
+        run_id, variant_key, start_ms, end_ms, context_overlay_ref
+    )
     if cache_key in _TRACE_CACHE:
         return _TRACE_CACHE[cache_key]
 
