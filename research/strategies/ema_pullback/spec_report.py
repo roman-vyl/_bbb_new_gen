@@ -26,6 +26,7 @@ from research.strategies.ema_pullback.spec import (
     ExitPolicySpec,
     ExitRuleSpec,
     ReclaimTriggerSpec,
+    SetupRuleSpec,
     StrongReclaimTriggerSpec,
     RsiFeatureSpec,
     TradeManagementSpec,
@@ -170,6 +171,27 @@ def _setup_ema_spec(name: str, value: Any, *, default_period: int) -> EmaSpec:
     return EmaSpec(source="close", timeframe="base", period=int(value))
 
 
+def _parse_report_setups(raw: list[Any]) -> tuple[SetupRuleSpec, ...]:
+    rules: list[SetupRuleSpec] = []
+    for index, item in enumerate(raw):
+        payload = _require_mapping(f"setups[{index}]", item)
+        instance_id = str(payload.get("instance_id", "")).strip()
+        if not instance_id:
+            raise StrategySpecReportParseError(f"setups[{index}].instance_id must be non-empty")
+        component_id = str(payload.get("component_id", "")).strip()
+        if not component_id:
+            raise StrategySpecReportParseError(f"setups[{index}].component_id must be non-empty")
+        params = _setup_spec(component_id, payload)
+        rules.append(
+            SetupRuleSpec(
+                instance_id=instance_id,
+                component_id=component_id,
+                params=params,
+            )
+        )
+    return tuple(rules)
+
+
 def _setup_spec(component_id: str, payload: Mapping[str, Any]) -> UntouchedAnchorSetupSpec | EmaBounceCounterSetupSpec:
     if component_id == EMA_BOUNCE_COUNTER_SETUP_COMPONENT:
         return EmaBounceCounterSetupSpec(
@@ -207,7 +229,9 @@ def strategy_spec_from_report_dict(payload: Mapping[str, Any]) -> EmaPullbackStr
     stack_raw = _require_mapping("anchor_stack", root["anchor_stack"])
     components_raw = _require_mapping("components", root["components"])
     trade_sides_raw = _require_mapping("trade_sides", root["trade_sides"])
-    setup_raw = _require_mapping("setup", root["setup"])
+    setups_raw = root.get("setups")
+    if not isinstance(setups_raw, (list, tuple)) or not setups_raw:
+        raise StrategySpecReportParseError("setups must be a non-empty list")
 
     blockers_raw = components_raw.get("blockers")
     if not isinstance(blockers_raw, (list, tuple)):
@@ -272,12 +296,11 @@ def strategy_spec_from_report_dict(payload: Mapping[str, Any]) -> EmaPullbackStr
         components=ComponentStackSpec(
             direction=str(components_raw["direction"]),
             blockers=tuple(_blocker_rule(b) for b in blockers_raw),
-            setup=str(components_raw["setup"]),
             trigger=_trigger_spec(trigger_raw),
             risk=str(components_raw["risk"]),
         ),
         trade_sides=TradeSideSpec(enabled=tuple(enabled_raw)),
-        setup=_setup_spec(str(components_raw["setup"]), setup_raw),
+        setups=_parse_report_setups(setups_raw),
         trade_management=trade_management,
         contexts=contexts,
     )

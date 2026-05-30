@@ -36,11 +36,14 @@ def _valid_draft() -> dict[str, object]:
                         "slow": 1000,
                     },
                     "direction": {"component_id": "ema_anchor_stack_trend"},
-                    "setup": {
-                        "component_id": "untouched_anchor_setup",
-                        "lookback": 50,
-                        "active_bars": 3,
-                    },
+                    "setups": [
+                        {
+                            "instance_id": "setup",
+                            "component_id": "untouched_anchor_setup",
+                            "lookback": 50,
+                            "active_bars": 3,
+                        }
+                    ],
                     "trigger": {"component_id": "reclaim_anchor"},
                     "blockers": [{"instance_id": "no_blockers", "component_id": "no_blockers"}],
                     "risk": {"component_id": "no_risk_filter"},
@@ -292,12 +295,14 @@ def test_validate_setup_context_consumption_has_structured_path(client: TestClie
     instances = list(draft["instances"])  # type: ignore[index]
     inst = dict(instances[0])  # type: ignore[arg-type]
     strategy = dict(inst["strategy"])  # type: ignore[arg-type]
-    setup = dict(strategy["setup"])  # type: ignore[arg-type]
+    setups = list(strategy["setups"])  # type: ignore[arg-type]
+    setup = dict(setups[0])  # type: ignore[arg-type]
     setup["context_consumption"] = {
         "context_ref": "htf",
         "policy": {"policy_id": "htf_state_gate", "params": {}},
     }
-    strategy["setup"] = setup
+    setups[0] = setup
+    strategy["setups"] = setups
     inst["strategy"] = strategy
     instances[0] = inst
     draft["instances"] = instances
@@ -306,7 +311,7 @@ def test_validate_setup_context_consumption_has_structured_path(client: TestClie
     assert res.status_code == 200
     body = res.json()
     assert body["ok"] is False
-    assert any(e["path"] == "setup" for e in body["errors"])
+    assert any("setups" in (e.get("path") or "") for e in body["errors"])
 
 
 def test_validate_rejects_unknown_context_ref(client: TestClient) -> None:

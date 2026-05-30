@@ -46,6 +46,7 @@ from research.strategies.ema_pullback.spec import (
     ExitPolicyGroupSpec,
     TradeManagementSpec,
     ExitRuleSpec,
+    SetupRuleSpec,
     SetupSpec,
     TradeSide,
     UntouchedAnchorSetupSpec,
@@ -80,7 +81,7 @@ _STRATEGY_FIELDS = frozenset(
         "trade_sides",
         "anchor_stack",
         "direction",
-        "setup",
+        "setups",
         "trigger",
         "blockers",
         "risk",
@@ -112,7 +113,7 @@ def load_ema_pullback_instance(instance: Mapping[str, Any]) -> EmaPullbackStrate
     strategy = _parse_strategy(payload["strategy"])
     periods = _parse_anchor_stack(strategy["anchor_stack"])
     direction = _parse_direction(strategy["direction"])
-    setup_component, setup_params = _parse_setup(strategy["setup"])
+    setups = _parse_setups(strategy["setups"])
     trigger = _parse_trigger(strategy["trigger"])
     blockers = _parse_blockers(strategy["blockers"])
     risk = _parse_risk(strategy["risk"])
@@ -122,7 +123,6 @@ def load_ema_pullback_instance(instance: Mapping[str, Any]) -> EmaPullbackStrate
     components = builders.component_stack(
         direction=direction,
         blockers=blockers,
-        setup=setup_component,
         trigger=trigger,
         risk=risk,
     )
@@ -136,19 +136,9 @@ def load_ema_pullback_instance(instance: Mapping[str, Any]) -> EmaPullbackStrate
         slow_period=periods["slow"],
         anchor_source=periods["source"],
         anchor_timeframe=periods["timeframe"],
-        setup_lookback=(
-            setup_params.lookback
-            if isinstance(setup_params, UntouchedAnchorSetupSpec)
-            else 50
-        ),
-        setup_active_bars=(
-            setup_params.active_bars
-            if isinstance(setup_params, UntouchedAnchorSetupSpec)
-            else 3
-        ),
-        setup_spec=setup_params,
         enabled_sides=_parse_trade_sides(strategy["trade_sides"]),
         components=components,
+        setups=setups,
         trade_management_spec=trade_management_spec,
         contexts=contexts,
     )
@@ -201,6 +191,7 @@ def _parse_strategy(value: Any) -> Mapping[str, Any]:
         raise EmaPullbackInstanceValidationError(
             "strategy.exits is no longer supported; use strategy.trade_management.exit_policy"
         )
+    _migrate_legacy_setup_to_setups(payload)
     _reject_unknown_fields("strategy", payload, _STRATEGY_FIELDS)
     required = _STRATEGY_FIELDS - {"contexts"}
     for key in required:
@@ -376,11 +367,37 @@ def _parse_direction(value: Any) -> str:
     return builders.direction_ema_anchor_stack()
 
 
-def _parse_setup(value: Any) -> tuple[str, SetupSpec]:
+def _migrate_legacy_setup_to_setups(strategy: dict[str, Any]) -> None:
+    has_setups = "setups" in strategy and strategy["setups"] is not None
+    has_setup = "setup" in strategy and strategy["setup"] is not None
+    if has_setups and has_setup:
+        raise EmaPullbackInstanceValidationError(
+            "strategy must not contain both 'setup' and 'setups'"
+        )
+    if has_setups:
+        return
+    if not has_setup:
+        return
+    legacy = strategy.pop("setup")
+    migrated = _require_mapping("strategy.setup", legacy)
+    if "instance_id" not in migrated:
+        migrated = {**migrated, "instance_id": "setup"}
+    strategy["setups"] = [migrated]
+
+
+def _parse_setups(value: Any) -> tuple[SetupRuleSpec, ...]:
+    if not isinstance(value, list) or not value:
+        raise EmaPullbackInstanceValidationError("setups must be a non-empty list")
+    return tuple(_parse_setup_rule(index, item) for index, item in enumerate(value))
+
+
+def _parse_setup_rule(index: int, value: Any) -> SetupRuleSpec:
+    path = f"setups[{index}]"
     payload = _component_mapping(
-        "setup",
+        path,
         value,
         extra_fields={
+            "instance_id",
             "lookback",
             "active_bars",
             "params",
@@ -394,18 +411,23 @@ def _parse_setup(value: Any) -> tuple[str, SetupSpec]:
             "trend_break_confirmation_bars",
         },
     )
+    instance_id = _require_non_empty_str(payload, "instance_id")
     component_id = _require_non_empty_str(payload, "component_id")
     _assert_known_component("setup", component_id)
     if component_id == UNTOUCHED_ANCHOR_SETUP_COMPONENT:
         lookback = _optional_positive_int(payload, "lookback", default=50)
         active_bars = _optional_positive_int(payload, "active_bars", default=3)
-        return (
-            builders.setup_untouched_anchor(),
-            builders.untouched_anchor_setup_spec(lookback=lookback, active_bars=active_bars),
+        return SetupRuleSpec(
+            instance_id=instance_id,
+            component_id=component_id,
+            params=builders.untouched_anchor_setup_spec(
+                lookback=lookback,
+                active_bars=active_bars,
+            ),
         )
     if component_id == EMA_BOUNCE_COUNTER_SETUP_COMPONENT:
         params_raw = payload.get("params", {})
-        params = _require_mapping("setup.params", params_raw) if params_raw else {}
+        params = _require_mapping(f"{path}.params", params_raw) if params_raw else {}
         merged = {**payload, **params}
         raw_touch_mode = str(merged.get("raw_touch_mode", "range_cross"))
         try:
@@ -427,7 +449,11 @@ def _parse_setup(value: Any) -> tuple[str, SetupSpec]:
             )
         except ValueError as exc:
             raise EmaPullbackInstanceValidationError(str(exc)) from exc
-        return (builders.setup_ema_bounce_counter(), setup_spec)
+        return SetupRuleSpec(
+            instance_id=instance_id,
+            component_id=component_id,
+            params=setup_spec,
+        )
     raise EmaPullbackInstanceValidationError(f"unsupported setup component_id {component_id!r}")
 
 

@@ -63,11 +63,14 @@ def _instance(
                 "slow": slow,
             },
             "direction": {"component_id": "ema_anchor_stack_trend"},
-            "setup": {
-                "component_id": "untouched_anchor_setup",
-                "lookback": 50,
-                "active_bars": 3,
-            },
+            "setups": [
+                {
+                    "instance_id": "setup",
+                    "component_id": "untouched_anchor_setup",
+                    "lookback": 50,
+                    "active_bars": 3,
+                }
+            ],
             "trigger": {"component_id": "reclaim_anchor"},
             "blockers": [{"instance_id": "no_blockers", "component_id": "no_blockers"}],
             "risk": {"component_id": "no_risk_filter"},
@@ -176,26 +179,29 @@ def test_load_external_config_supports_ema_bounce_counter_setup() -> None:
     instance = _instance("bounce_counter")
     strategy = instance["strategy"]
     assert isinstance(strategy, dict)
-    strategy["setup"] = {
-        "component_id": "ema_bounce_counter_setup",
-        "params": {
-            "fast_ema": 50,
-            "anchor_ema": 200,
-            "slow_ema": 500,
-            "max_bounces": 3,
-            "raw_touch_mode": "range_cross",
-            "touch_lookback_bars": 10,
-            "trend_start_confirmation_bars": 1,
-            "trend_break_confirmation_bars": 1,
-        },
-    }
+    strategy["setups"] = [
+        {
+            "instance_id": "bounce_counter",
+            "component_id": "ema_bounce_counter_setup",
+            "params": {
+                "fast_ema": 50,
+                "anchor_ema": 200,
+                "slow_ema": 500,
+                "max_bounces": 3,
+                "raw_touch_mode": "range_cross",
+                "touch_lookback_bars": 10,
+                "trend_start_confirmation_bars": 1,
+                "trend_break_confirmation_bars": 1,
+            },
+        }
+    ]
 
     loaded = load_strategy_config(_bundle([instance]))
     spec = loaded.specs[0]
 
-    assert spec.components.setup == "ema_bounce_counter_setup"
-    assert spec.setup.max_bounces == 3
-    assert spec.setup.fast_ema.timeframe == "base"
+    assert spec.setups[0].component_id == "ema_bounce_counter_setup"
+    assert spec.setups[0].params.max_bounces == 3
+    assert spec.setups[0].params.fast_ema.timeframe == "base"
     assert loaded.entries[0].strategy_spec_config_id
 
 
@@ -203,14 +209,17 @@ def test_load_external_config_rejects_htf_ema_bounce_counter_setup() -> None:
     instance = _instance("bounce_counter_htf")
     strategy = instance["strategy"]
     assert isinstance(strategy, dict)
-    strategy["setup"] = {
-        "component_id": "ema_bounce_counter_setup",
-        "params": {
-            "fast_ema": {"source": "close", "timeframe": "4h", "period": 50},
-            "anchor_ema": 200,
-            "slow_ema": 500,
-        },
-    }
+    strategy["setups"] = [
+        {
+            "instance_id": "bounce_counter",
+            "component_id": "ema_bounce_counter_setup",
+            "params": {
+                "fast_ema": {"source": "close", "timeframe": "4h", "period": 50},
+                "anchor_ema": 200,
+                "slow_ema": 500,
+            },
+        }
+    ]
 
     with pytest.raises(EmaPullbackInstanceValidationError, match="fast_ema"):
         load_strategy_config(_bundle([instance]))
@@ -385,6 +394,7 @@ def test_load_external_config_rejects_pullback_to_anchor_setup_id() -> None:
     instance = _instance("setup_legacy")
     strategy = instance["strategy"]
     assert isinstance(strategy, dict)
+    strategy.pop("setups", None)
     strategy["setup"] = {
         "component_id": "pullback_to_anchor",
         "lookback": 50,

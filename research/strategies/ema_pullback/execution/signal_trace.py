@@ -43,12 +43,14 @@ from research.strategies.ema_pullback.context.evaluation import (
 from research.strategies.ema_pullback.execution.exits import build_exit_outputs_from_spec
 from research.strategies.ema_pullback.execution.signals import compose_blocker_signals, compose_final_signals
 from research.strategies.ema_pullback.features.plan import FeaturePlan
+from research.strategies.ema_pullback.setup_runtime import compose_setup_masks, run_setup_trace
 from research.strategies.ema_pullback.spec import (
     BlockerRuleSpec,
     EmaBounceCounterSetupSpec,
     EmaPullbackStrategySpec,
     ExitRuleSpec,
     ReclaimTriggerSpec,
+    SetupRuleSpec,
     StrongReclaimTriggerSpec,
     RsiFeatureSpec,
     TradeSide,
@@ -123,7 +125,7 @@ def _series_to_values(series: pd.Series) -> list[bool] | list[float | None] | li
 def _serialize_internals(internals: dict[str, Any]) -> dict[str, Any]:
     serialized: dict[str, Any] = {}
     for section, content in internals.items():
-        if section == "blockers":
+        if section in ("blockers", "setups"):
             serialized[section] = {
                 instance_id: {key: _series_to_values(series) for key, series in fields.items()}
                 for instance_id, fields in content.items()
@@ -210,11 +212,13 @@ def _build_side_trace(
             internals={},
         )
 
-    setup_id = spec.components.setup
     trigger_rule = spec.components.trigger
     trigger_id = trigger_rule.component_id
-    if setup_id not in _SETUP_TRACE:
-        raise UnsupportedTraceComponentError(f"setup trace not implemented: {setup_id!r}")
+    for setup_rule in spec.setups:
+        if setup_rule.component_id not in _SETUP_TRACE:
+            raise UnsupportedTraceComponentError(
+                f"setup trace not implemented: {setup_rule.component_id!r}"
+            )
     if (
         not isinstance(trigger_rule, ReclaimTriggerSpec | StrongReclaimTriggerSpec)
         and trigger_id not in _TRIGGER_TRACE
@@ -267,30 +271,22 @@ def _build_side_trace(
 
     blockers = compose_blocker_signals(tuple(blocker_signals))
 
-    if isinstance(spec.setup, EmaBounceCounterSetupSpec):
-        setup_trace = _SETUP_TRACE[setup_id](
+    setup_traces: dict[str, dict[str, pd.Series]] = {}
+    for setup_rule in spec.setups:
+        setup_traces[setup_rule.instance_id] = run_setup_trace(
             df,
-            plan.setup_columns["fast"],
-            plan.setup_columns["anchor"],
-            plan.setup_columns["slow"],
-            max_bounces=spec.setup.max_bounces,
-            raw_touch_mode=spec.setup.raw_touch_mode,
-            touch_lookback_bars=spec.setup.touch_lookback_bars,
-            trend_start_confirmation_bars=spec.setup.trend_start_confirmation_bars,
-            trend_break_confirmation_bars=spec.setup.trend_break_confirmation_bars,
+            setup_rule,
+            plan,
+            anchor_col=anchor_col,
             side=side,
         )
-    elif isinstance(spec.setup, UntouchedAnchorSetupSpec):
-        setup_trace = _SETUP_TRACE[setup_id](
-            df,
-            anchor_col,
-            spec.setup.lookback,
-            spec.setup.active_bars,
-            side=side,
-        )
-    else:
-        raise TypeError(f"unsupported setup spec type: {type(spec.setup).__name__}")
-    setup = setup_trace["setup"]
+    setup = compose_setup_masks(
+        df,
+        spec.setups,
+        plan,
+        anchor_col=anchor_col,
+        side=side,
+    )
 
     if isinstance(trigger_rule, ReclaimTriggerSpec):
         trigger_trace = reclaim_anchor_trace(
@@ -315,9 +311,9 @@ def _build_side_trace(
     )
     portfolio_entry = signal_entry & stop_ready
 
-    internals: dict[str, dict[str, pd.Series]] = {
+    internals: dict[str, Any] = {
         "direction": direction_trace,
-        "setup": setup_trace,
+        "setups": setup_traces,
         "trigger": trigger_trace,
         "blockers": blocker_traces,
     }
@@ -486,24 +482,32 @@ def _collect_rsi_exit_rules(spec: EmaPullbackStrategySpec) -> list[tuple[str, Ex
     return out
 
 
-def _setup_params_meta(spec: EmaPullbackStrategySpec) -> dict[str, Any]:
-    if isinstance(spec.setup, EmaBounceCounterSetupSpec):
+def _setup_params_meta_for_rule(rule: SetupRuleSpec) -> dict[str, Any]:
+    if isinstance(rule.params, EmaBounceCounterSetupSpec):
         return {
-            "fast_ema": spec.setup.fast_ema.period,
-            "anchor_ema": spec.setup.anchor_ema.period,
-            "slow_ema": spec.setup.slow_ema.period,
-            "max_bounces": spec.setup.max_bounces,
-            "raw_touch_mode": spec.setup.raw_touch_mode,
-            "touch_lookback_bars": spec.setup.touch_lookback_bars,
-            "trend_start_confirmation_bars": spec.setup.trend_start_confirmation_bars,
-            "trend_break_confirmation_bars": spec.setup.trend_break_confirmation_bars,
+            "instance_id": rule.instance_id,
+            "component_id": rule.component_id,
+            "fast_ema": rule.params.fast_ema.period,
+            "anchor_ema": rule.params.anchor_ema.period,
+            "slow_ema": rule.params.slow_ema.period,
+            "max_bounces": rule.params.max_bounces,
+            "raw_touch_mode": rule.params.raw_touch_mode,
+            "touch_lookback_bars": rule.params.touch_lookback_bars,
+            "trend_start_confirmation_bars": rule.params.trend_start_confirmation_bars,
+            "trend_break_confirmation_bars": rule.params.trend_break_confirmation_bars,
         }
-    if isinstance(spec.setup, UntouchedAnchorSetupSpec):
+    if isinstance(rule.params, UntouchedAnchorSetupSpec):
         return {
-            "lookback": spec.setup.lookback,
-            "active_bars": spec.setup.active_bars,
+            "instance_id": rule.instance_id,
+            "component_id": rule.component_id,
+            "lookback": rule.params.lookback,
+            "active_bars": rule.params.active_bars,
         }
-    return {}
+    return {"instance_id": rule.instance_id, "component_id": rule.component_id}
+
+
+def _setup_params_meta(spec: EmaPullbackStrategySpec) -> list[dict[str, Any]]:
+    return [_setup_params_meta_for_rule(rule) for rule in spec.setups]
 
 
 def _rsi_blocker_threshold(rule: BlockerRuleSpec, side: TradeSide) -> float | None:
@@ -515,24 +519,24 @@ def _rsi_blocker_threshold(rule: BlockerRuleSpec, side: TradeSide) -> float | No
 
 
 def _ema_bounce_metadata(
-    spec: EmaPullbackStrategySpec,
+    rule: SetupRuleSpec,
     trace: dict[str, pd.Series],
     idx: int,
     *,
     event_name: str,
 ) -> dict[str, Any]:
-    if not isinstance(spec.setup, EmaBounceCounterSetupSpec):
+    if not isinstance(rule.params, EmaBounceCounterSetupSpec):
         return {"event_name": event_name}
     return {
         "event_name": event_name,
-        "fast_ema": int(spec.setup.fast_ema.period),
-        "anchor_ema": int(spec.setup.anchor_ema.period),
-        "slow_ema": int(spec.setup.slow_ema.period),
+        "fast_ema": int(rule.params.fast_ema.period),
+        "anchor_ema": int(rule.params.anchor_ema.period),
+        "slow_ema": int(rule.params.slow_ema.period),
         "trend_episode_id": int(trace["trend_episode_id"].iloc[idx]),
         "completed_bounce_count": int(trace["completed_bounce_count"].iloc[idx]),
         "effective_bounce_number": int(trace["effective_bounce_number"].iloc[idx]),
-        "max_bounces": int(spec.setup.max_bounces),
-        "touch_lookback_bars": int(spec.setup.touch_lookback_bars),
+        "max_bounces": int(rule.params.max_bounces),
+        "touch_lookback_bars": int(rule.params.touch_lookback_bars),
         "price_side_of_anchor": str(trace["price_side_of_anchor"].iloc[idx]),
     }
 
@@ -546,127 +550,136 @@ def _append_ema_bounce_counter_events(
     times: list[int],
     base_timeframe: str,
 ) -> None:
-    if spec.components.setup != EMA_BOUNCE_COUNTER_SETUP_COMPONENT:
-        return
-    if not isinstance(spec.setup, EmaBounceCounterSetupSpec):
-        return
-    instance_id = EMA_BOUNCE_COUNTER_SETUP_COMPONENT
     source_timeframe = base_timeframe
-    for side in _sides_for_spec(spec):
-        trace = ema_bounce_counter_setup_trace(
-            df,
-            plan.setup_columns["fast"],
-            plan.setup_columns["anchor"],
-            plan.setup_columns["slow"],
-            max_bounces=spec.setup.max_bounces,
-            raw_touch_mode=spec.setup.raw_touch_mode,
-            touch_lookback_bars=spec.setup.touch_lookback_bars,
-            trend_start_confirmation_bars=spec.setup.trend_start_confirmation_bars,
-            trend_break_confirmation_bars=spec.setup.trend_break_confirmation_bars,
-            side=side,
-        )
-        starts = trace["pending_bounce_start"].fillna(False).astype(bool).to_list()
-        ends = trace["pending_bounce_end"].fillna(False).astype(bool).to_list()
-        for start_idx, active in enumerate(starts):
-            if not active:
-                continue
-            end_idx = min(start_idx + spec.setup.touch_lookback_bars - 1, len(times) - 1)
-            while end_idx < len(ends) and not ends[end_idx] and end_idx + 1 < len(ends):
-                end_idx += 1
-            run_span_id = _span_id(instance_id, side, times[start_idx])
-            source_metadata = _ema_bounce_metadata(
-                spec,
-                trace,
-                start_idx,
-                event_name="bounce_opportunity_start",
+    bounce_rules = [
+        rule
+        for rule in spec.setups
+        if rule.component_id == EMA_BOUNCE_COUNTER_SETUP_COMPONENT
+    ]
+    if not bounce_rules:
+        return
+    for rule in bounce_rules:
+        if not isinstance(rule.params, EmaBounceCounterSetupSpec):
+            continue
+        instance_id = rule.instance_id
+        for side in _sides_for_spec(spec):
+            trace = ema_bounce_counter_setup_trace(
+                df,
+                plan.setup_columns_for(instance_id)["fast"],
+                plan.setup_columns_for(instance_id)["anchor"],
+                plan.setup_columns_for(instance_id)["slow"],
+                max_bounces=rule.params.max_bounces,
+                raw_touch_mode=rule.params.raw_touch_mode,
+                touch_lookback_bars=rule.params.touch_lookback_bars,
+                trend_start_confirmation_bars=rule.params.trend_start_confirmation_bars,
+                trend_break_confirmation_bars=rule.params.trend_break_confirmation_bars,
+                side=side,
             )
-            events.append(
-                ComponentEventData(
-                    time=times[start_idx],
-                    event_type="source",
-                    role="setup",
-                    side=side,
-                    component_id=EMA_BOUNCE_COUNTER_SETUP_COMPONENT,
-                    instance_id=instance_id,
-                    label=_event_label("source", "setup", side),
-                    tooltip=_event_tooltip(
-                        event_type="source",
-                        role="setup",
-                        component_id=EMA_BOUNCE_COUNTER_SETUP_COMPONENT,
-                        instance_id=instance_id,
-                        source_timeframe=source_timeframe,
-                        base_timeframe=base_timeframe,
-                        metadata=source_metadata,
-                    ),
-                    span_id=run_span_id,
-                    feature_family="ema",
-                    source_timeframe=source_timeframe,
-                    base_timeframe=base_timeframe,
-                    metadata=source_metadata,
+            starts = trace["pending_bounce_start"].fillna(False).astype(bool).to_list()
+            ends = trace["pending_bounce_end"].fillna(False).astype(bool).to_list()
+            for start_idx, active in enumerate(starts):
+                if not active:
+                    continue
+                end_idx = min(
+                    start_idx + rule.params.touch_lookback_bars - 1,
+                    len(times) - 1,
                 )
-            )
-            for event_type, idx, event_name in (
-                ("span_start", start_idx, "pending_bounce_start"),
-                ("span_end", end_idx, "pending_bounce_end"),
-            ):
-                metadata = _ema_bounce_metadata(spec, trace, idx, event_name=event_name)
+                while end_idx < len(ends) and not ends[end_idx] and end_idx + 1 < len(ends):
+                    end_idx += 1
+                run_span_id = _span_id(instance_id, side, times[start_idx])
+                source_metadata = _ema_bounce_metadata(
+                    rule,
+                    trace,
+                    start_idx,
+                    event_name="bounce_opportunity_start",
+                )
                 events.append(
                     ComponentEventData(
-                        time=times[idx],
-                        event_type=event_type,
+                        time=times[start_idx],
+                        event_type="source",
                         role="setup",
                         side=side,
                         component_id=EMA_BOUNCE_COUNTER_SETUP_COMPONENT,
                         instance_id=instance_id,
-                        label=_event_label(event_type, "setup", side),
+                        label=_event_label("source", "setup", side),
                         tooltip=_event_tooltip(
-                            event_type=event_type,
+                            event_type="source",
                             role="setup",
                             component_id=EMA_BOUNCE_COUNTER_SETUP_COMPONENT,
                             instance_id=instance_id,
                             source_timeframe=source_timeframe,
                             base_timeframe=base_timeframe,
-                            metadata=metadata,
+                            metadata=source_metadata,
                         ),
                         span_id=run_span_id,
                         feature_family="ema",
                         source_timeframe=source_timeframe,
                         base_timeframe=base_timeframe,
-                        metadata=metadata,
+                        metadata=source_metadata,
                     )
                 )
-        for event_name, key in (
-            ("trend_start", "trend_start_event"),
-            ("trend_break", "trend_break_event"),
-        ):
-            for idx, active in enumerate(trace[key].fillna(False).astype(bool).to_list()):
-                if not active:
-                    continue
-                metadata = _ema_bounce_metadata(spec, trace, idx, event_name=event_name)
-                events.append(
-                    ComponentEventData(
-                        time=times[idx],
-                        event_type="point",
-                        role="setup",
-                        side=side,
-                        component_id=EMA_BOUNCE_COUNTER_SETUP_COMPONENT,
-                        instance_id=instance_id,
-                        label=_event_label("point", "setup", side),
-                        tooltip=_event_tooltip(
-                            event_type="point",
+                for event_type, idx, event_name in (
+                    ("span_start", start_idx, "pending_bounce_start"),
+                    ("span_end", end_idx, "pending_bounce_end"),
+                ):
+                    metadata = _ema_bounce_metadata(rule, trace, idx, event_name=event_name)
+                    events.append(
+                        ComponentEventData(
+                            time=times[idx],
+                            event_type=event_type,
                             role="setup",
+                            side=side,
                             component_id=EMA_BOUNCE_COUNTER_SETUP_COMPONENT,
                             instance_id=instance_id,
+                            label=_event_label(event_type, "setup", side),
+                            tooltip=_event_tooltip(
+                                event_type=event_type,
+                                role="setup",
+                                component_id=EMA_BOUNCE_COUNTER_SETUP_COMPONENT,
+                                instance_id=instance_id,
+                                source_timeframe=source_timeframe,
+                                base_timeframe=base_timeframe,
+                                metadata=metadata,
+                            ),
+                            span_id=run_span_id,
+                            feature_family="ema",
                             source_timeframe=source_timeframe,
                             base_timeframe=base_timeframe,
                             metadata=metadata,
-                        ),
-                        feature_family="ema",
-                        source_timeframe=source_timeframe,
-                        base_timeframe=base_timeframe,
-                        metadata=metadata,
+                        )
                     )
-                )
+            for event_name, key in (
+                ("trend_start", "trend_start_event"),
+                ("trend_break", "trend_break_event"),
+            ):
+                for idx, active in enumerate(trace[key].fillna(False).astype(bool).to_list()):
+                    if not active:
+                        continue
+                    metadata = _ema_bounce_metadata(rule, trace, idx, event_name=event_name)
+                    events.append(
+                        ComponentEventData(
+                            time=times[idx],
+                            event_type="point",
+                            role="setup",
+                            side=side,
+                            component_id=EMA_BOUNCE_COUNTER_SETUP_COMPONENT,
+                            instance_id=instance_id,
+                            label=_event_label("point", "setup", side),
+                            tooltip=_event_tooltip(
+                                event_type="point",
+                                role="setup",
+                                component_id=EMA_BOUNCE_COUNTER_SETUP_COMPONENT,
+                                instance_id=instance_id,
+                                source_timeframe=source_timeframe,
+                                base_timeframe=base_timeframe,
+                                metadata=metadata,
+                            ),
+                            feature_family="ema",
+                            source_timeframe=source_timeframe,
+                            base_timeframe=base_timeframe,
+                            metadata=metadata,
+                        )
+                    )
 
 
 def build_component_events(
@@ -964,7 +977,10 @@ def build_signal_trace_from_spec(
         "variant": spec.variant,
         "component_ids": {
             "direction": spec.components.direction,
-            "setup": spec.components.setup,
+            "setups": [
+                {"instance_id": rule.instance_id, "component_id": rule.component_id}
+                for rule in spec.setups
+            ],
             "trigger": spec.components.trigger.component_id,
             "risk": spec.components.risk,
         },
@@ -1032,7 +1048,7 @@ def slice_signal_trace(
         ) -> dict[str, Any]:
             out: dict[str, Any] = {}
             for section, content in raw.items():
-                if section == "blockers":
+                if section in ("blockers", "setups"):
                     out[section] = {
                         instance_id: {k: [v[j] for j in indices] for k, v in fields.items()}
                         for instance_id, fields in content.items()

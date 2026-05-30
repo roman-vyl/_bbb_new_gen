@@ -242,7 +242,6 @@ def test_htf_regime_gate_changes_blocker_mask_and_omitting_consumption_restores_
         components=component_stack(
             direction=direction_ema_anchor_stack(),
             blockers=(rule_gate_aligned,),
-            setup=setup_untouched_anchor(),
             trigger=trigger_reclaim_anchor(),
             risk=risk_no_filter(),
         ),
@@ -289,7 +288,6 @@ def test_builder_rejects_no_blockers_with_context_consumption() -> None:
                         ),
                     ),
                 ),
-                setup=setup_untouched_anchor(),
                 trigger=trigger_reclaim_anchor(),
                 risk=risk_no_filter(),
             ),
@@ -317,7 +315,6 @@ def test_builder_accepts_rsi_blocker_with_context_consumption() -> None:
                     ),
                 ),
             ),
-            setup=setup_untouched_anchor(),
             trigger=trigger_reclaim_anchor(),
             risk=risk_no_filter(),
         ),
@@ -525,7 +522,6 @@ def test_signals_and_exits_require_shared_injected_context_bundle(monkeypatch) -
         components=component_stack(
             direction=direction_ema_anchor_stack(),
             blockers=(blocker_counter_candle(),),
-            setup=setup_untouched_anchor(),
             trigger=trigger_reclaim_anchor(),
             risk=risk_no_filter(),
         ),

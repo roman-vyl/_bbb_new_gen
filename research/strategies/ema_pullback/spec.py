@@ -38,12 +38,11 @@ class AnchorStackSpec:
 class ComponentStackSpec:
     direction: str
     blockers: tuple["BlockerRuleSpec", ...]
-    setup: str
     trigger: "TriggerSpec"
     risk: str
 
     def __post_init__(self) -> None:
-        for field_name in ("direction", "setup", "risk"):
+        for field_name in ("direction", "risk"):
             value = getattr(self, field_name)
             if not value.strip():
                 raise ValueError(f"components.{field_name} must be non-empty")
@@ -200,22 +199,29 @@ class EmaBounceCounterSetupSpec:
 SetupSpec = UntouchedAnchorSetupSpec | EmaBounceCounterSetupSpec
 
 
-def _validate_setup_component_matches_spec(components: ComponentStackSpec, setup: SetupSpec) -> None:
-    if isinstance(setup, EmaBounceCounterSetupSpec):
-        if components.setup != "ema_bounce_counter_setup":
+@dataclass(frozen=True)
+class SetupRuleSpec:
+    instance_id: str
+    component_id: str
+    params: SetupSpec
+
+    def __post_init__(self) -> None:
+        if not self.instance_id.strip():
+            raise ValueError("setup instance_id must be non-empty")
+        if not self.component_id.strip():
+            raise ValueError("setup component_id must be non-empty")
+        if self.component_id == "ema_bounce_counter_setup" and not isinstance(
+            self.params, EmaBounceCounterSetupSpec
+        ):
             raise ValueError(
-                "components.setup must be 'ema_bounce_counter_setup' "
-                "when setup is EmaBounceCounterSetupSpec"
+                "setup params must be EmaBounceCounterSetupSpec for ema_bounce_counter_setup"
             )
-        return
-    if isinstance(setup, UntouchedAnchorSetupSpec):
-        if components.setup != "untouched_anchor_setup":
+        if self.component_id == "untouched_anchor_setup" and not isinstance(
+            self.params, UntouchedAnchorSetupSpec
+        ):
             raise ValueError(
-                "components.setup must be 'untouched_anchor_setup' "
-                "when setup is UntouchedAnchorSetupSpec"
+                "setup params must be UntouchedAnchorSetupSpec for untouched_anchor_setup"
             )
-        return
-    raise TypeError(f"unsupported setup spec type: {type(setup).__name__}")
 
 
 @dataclass(frozen=True)
@@ -460,7 +466,7 @@ class EmaPullbackStrategySpec:
     anchor_stack: AnchorStackSpec
     components: ComponentStackSpec
     trade_sides: TradeSideSpec
-    setup: SetupSpec
+    setups: tuple[SetupRuleSpec, ...]
     trade_management: TradeManagementSpec
     contexts: tuple[tuple[str, ContextProviderSpec], ...] = ()
 
@@ -474,7 +480,9 @@ class EmaPullbackStrategySpec:
             raise ValueError("symbol must be non-empty")
         if not self.base_timeframe.strip():
             raise ValueError("base_timeframe must be non-empty")
-        _validate_setup_component_matches_spec(self.components, self.setup)
+        if not self.setups:
+            raise ValueError("setups must contain at least one rule")
+        _validate_unique_instance_ids("setups", self.setups)
         seen_refs: set[str] = set()
         for context_ref, _provider in self.contexts:
             if context_ref in seen_refs:

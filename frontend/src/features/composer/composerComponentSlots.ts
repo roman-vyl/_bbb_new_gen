@@ -2,7 +2,7 @@ import type { ComponentCatalog, ComponentSchema, JsonObject, StrategyConfigDraft
 
 import { findComponentSchema } from "./composerDraft";
 
-const SINGLETON_ROLES = ["direction", "setup", "trigger", "risk"] as const;
+const SINGLETON_ROLES = ["direction", "trigger", "risk"] as const;
 
 type SingletonRole = (typeof SINGLETON_ROLES)[number];
 
@@ -112,11 +112,90 @@ function normalizeSingletonRoleForApi(
   return { ...strategy, [role]: normalized };
 }
 
+function migrateLegacySetupToSetups(strategy: JsonObject): JsonObject {
+  const setups = strategy.setups;
+  const legacy = strategy.setup;
+  if (Array.isArray(setups) && setups.length > 0) {
+    if (legacy !== undefined && legacy !== null) {
+      const { setup: _removed, ...rest } = strategy;
+      return rest;
+    }
+    return strategy;
+  }
+  if (!legacy || typeof legacy !== "object" || Array.isArray(legacy)) {
+    return strategy;
+  }
+  const legacyObj = legacy as JsonObject;
+  const migrated: JsonObject = {
+    instance_id: String(legacyObj.instance_id ?? "setup"),
+    component_id: legacyObj.component_id,
+  };
+  for (const [key, value] of Object.entries(legacyObj)) {
+    if (key === "component_id" || key === "instance_id") {
+      continue;
+    }
+    migrated[key] = value;
+  }
+  const { setup: _removed, ...rest } = strategy;
+  return { ...rest, setups: [migrated] };
+}
+
+function normalizeSetupsForEditing(
+  strategy: JsonObject,
+  catalog: ComponentCatalog,
+): JsonObject {
+  const migrated = migrateLegacySetupToSetups(strategy);
+  const setupsRaw = migrated.setups;
+  if (!Array.isArray(setupsRaw)) {
+    return migrated;
+  }
+  const setups = setupsRaw as JsonObject[];
+  let changed = false;
+  const normalized = setups.map((slot) => {
+    const slotObj = slot as JsonObject;
+    const schema = findComponentSchema(catalog, String(slotObj.component_id ?? ""));
+    const next = normalizeComponentSlotForEditing(slotObj, schema);
+    if (next !== slotObj) {
+      changed = true;
+    }
+    return next;
+  });
+  if (!changed && migrated === strategy) {
+    return migrated;
+  }
+  return { ...migrated, setups: normalized };
+}
+
+function normalizeSetupsForApi(
+  strategy: JsonObject,
+  catalog: ComponentCatalog,
+): JsonObject {
+  const setupsRaw = strategy.setups;
+  if (!Array.isArray(setupsRaw)) {
+    return strategy;
+  }
+  const setups = setupsRaw as JsonObject[];
+  let changed = false;
+  const normalized = setups.map((slot) => {
+    const slotObj = slot as JsonObject;
+    const schema = findComponentSchema(catalog, String(slotObj.component_id ?? ""));
+    const next = normalizeComponentSlotForApi(slotObj, schema);
+    if (next !== slotObj) {
+      changed = true;
+    }
+    return next;
+  });
+  if (!changed) {
+    return strategy;
+  }
+  return { ...strategy, setups: normalized };
+}
+
 export function normalizeStrategyForEditing(
   strategy: JsonObject,
   catalog: ComponentCatalog,
 ): JsonObject {
-  let next = strategy;
+  let next = normalizeSetupsForEditing(strategy, catalog);
   for (const role of SINGLETON_ROLES) {
     next = normalizeSingletonRoleForEditing(next, catalog, role);
   }
@@ -127,11 +206,12 @@ export function normalizeStrategySingletonsForApi(
   strategy: JsonObject,
   catalog: ComponentCatalog,
 ): JsonObject {
-  let next = strategy;
+  let next = normalizeSetupsForApi(strategy, catalog);
   for (const role of SINGLETON_ROLES) {
     next = normalizeSingletonRoleForApi(next, catalog, role);
   }
-  return next;
+  const { setup: _removed, ...withoutLegacy } = next;
+  return withoutLegacy;
 }
 
 export function normalizeConfigDraftForEditing(

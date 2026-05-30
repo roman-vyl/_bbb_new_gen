@@ -18,11 +18,10 @@ from research.strategies.ema_pullback.context.evaluation import (
 )
 from research.strategies.ema_pullback.spec import BlockerRuleSpec
 from research.strategies.ema_pullback.features.plan import FeaturePlan
+from research.strategies.ema_pullback.setup_runtime import compose_setup_masks
 from research.strategies.ema_pullback.spec import EmaPullbackStrategySpec
-from research.strategies.ema_pullback.spec import EmaBounceCounterSetupSpec
 from research.strategies.ema_pullback.spec import ReclaimTriggerSpec, StrongReclaimTriggerSpec
 from research.strategies.ema_pullback.spec import RsiFeatureSpec
-from research.strategies.ema_pullback.spec import UntouchedAnchorSetupSpec
 from research.strategies.ema_pullback.spec import TradeSide
 
 
@@ -112,7 +111,6 @@ def _build_side_signals(
     slow_col: str,
     direction_fn: Callable[..., pd.Series],
     blockers_fns: tuple[Callable[..., pd.Series], ...],
-    setup_fn: Callable[..., pd.Series],
     trigger_fn: Callable[..., pd.Series],
     risk_fn: Callable[..., pd.Series],
     context_bundle: ContextBundle | None,
@@ -150,29 +148,13 @@ def _build_side_signals(
         for rule, signal in zip(spec.components.blockers, blocker_signals, strict=True)
     )
     blockers = compose_blocker_signals(blocker_signals)
-    if isinstance(spec.setup, EmaBounceCounterSetupSpec):
-        setup = setup_fn(
-            df,
-            plan.setup_columns["fast"],
-            plan.setup_columns["anchor"],
-            plan.setup_columns["slow"],
-            max_bounces=spec.setup.max_bounces,
-            raw_touch_mode=spec.setup.raw_touch_mode,
-            touch_lookback_bars=spec.setup.touch_lookback_bars,
-            trend_start_confirmation_bars=spec.setup.trend_start_confirmation_bars,
-            trend_break_confirmation_bars=spec.setup.trend_break_confirmation_bars,
-            side=side,
-        )
-    elif isinstance(spec.setup, UntouchedAnchorSetupSpec):
-        setup = setup_fn(
-            df,
-            anchor_col,
-            spec.setup.lookback,
-            spec.setup.active_bars,
-            side=side,
-        )
-    else:
-        raise TypeError(f"unsupported setup spec type: {type(spec.setup).__name__}")
+    setup = compose_setup_masks(
+        df,
+        spec.setups,
+        plan,
+        anchor_col=anchor_col,
+        side=side,
+    )
     trigger_rule = spec.components.trigger
     if isinstance(trigger_rule, ReclaimTriggerSpec | StrongReclaimTriggerSpec):
         trigger = trigger_fn(df, anchor_col, trigger_rule.lookback, side=side)
@@ -206,7 +188,6 @@ def build_signals_from_spec(
     blockers_fns = tuple(
         resolve_component("blockers", rule.component_id).func for rule in spec.components.blockers
     )
-    setup_fn = resolve_component("setup", spec.components.setup).func
     trigger_fn = resolve_component("trigger", spec.components.trigger.component_id).func
     risk_fn = resolve_component("risk", spec.components.risk).func
 
@@ -224,7 +205,6 @@ def build_signals_from_spec(
         slow_col=slow_col,
         direction_fn=direction_fn,
         blockers_fns=blockers_fns,
-        setup_fn=setup_fn,
         trigger_fn=trigger_fn,
         risk_fn=risk_fn,
         context_bundle=context_bundle,
@@ -239,7 +219,6 @@ def build_signals_from_spec(
         slow_col=slow_col,
         direction_fn=direction_fn,
         blockers_fns=blockers_fns,
-        setup_fn=setup_fn,
         trigger_fn=trigger_fn,
         risk_fn=risk_fn,
         context_bundle=context_bundle,

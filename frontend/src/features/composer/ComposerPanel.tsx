@@ -111,7 +111,6 @@ function firstPipelineSectionFromErrors(errors: ValidationErrorItem[]): string |
     }
     if (
       key === "direction" ||
-      key === "setup" ||
       key === "trigger" ||
       key === "blockers" ||
       key === "risk" ||
@@ -581,7 +580,7 @@ export function ComposerPanel() {
 
   const setSingletonComponent = (
     index: number,
-    role: "direction" | "setup" | "trigger" | "risk",
+    role: "direction" | "trigger" | "risk",
     componentId: string,
   ) => {
     if (!catalog) return;
@@ -595,6 +594,7 @@ export function ComposerPanel() {
     index: number,
     role:
       | "blockers"
+      | "setups"
       | "exits"
       | "aligned_exits"
       | "countertrend_exits"
@@ -605,7 +605,7 @@ export function ComposerPanel() {
     if (!configDraft) return;
     const inst = configDraft.instances[index];
     if (!inst) return;
-    if (role === "blockers") {
+    if (role === "blockers" || role === "setups") {
       const list = [...((inst.strategy[role] as JsonObject[] | undefined) ?? [])];
       list[slotIndex] = nextSlot;
       patchStrategy(index, { [role]: list });
@@ -640,6 +640,7 @@ export function ComposerPanel() {
     index: number,
     role:
       | "blockers"
+      | "setups"
       | "exits"
       | "aligned_exits"
       | "countertrend_exits"
@@ -653,7 +654,7 @@ export function ComposerPanel() {
     const nextSlot = applyComponentDefaults(base, schema);
     const inst = configDraft.instances[index];
     if (!inst) return;
-    if (role === "blockers") {
+    if (role === "blockers" || role === "setups") {
       const list = [...((inst.strategy[role] as JsonObject[] | undefined) ?? []), nextSlot];
       patchStrategy(index, { [role]: list });
       return;
@@ -683,6 +684,7 @@ export function ComposerPanel() {
     index: number,
     role:
       | "blockers"
+      | "setups"
       | "exits"
       | "aligned_exits"
       | "countertrend_exits"
@@ -692,7 +694,7 @@ export function ComposerPanel() {
     if (!configDraft) return;
     const inst = configDraft.instances[index];
     if (!inst) return;
-    if (role === "blockers") {
+    if (role === "blockers" || role === "setups") {
       const list = ((inst.strategy[role] as JsonObject[] | undefined) ?? []).filter(
         (_, i) => i !== slotIndex,
       );
@@ -1137,7 +1139,7 @@ export function ComposerPanel() {
                 title="Setup"
                 summary={joinInstanceSummaries(
                   configDraft.instances.map((inst) =>
-                    singletonSummary((inst.strategy.setup as JsonObject) ?? {}),
+                    listSummary(((inst.strategy.setups as JsonObject[]) ?? []) as JsonObject[]),
                   ),
                 )}
                 open={openPipelineSections.has("setup")}
@@ -1145,7 +1147,7 @@ export function ComposerPanel() {
                 hasError={anyInstancePathHasError(
                   validationErrors,
                   configDraft.instances.length,
-                  (i) => `${strategyPath(i)}.setup`,
+                  (i) => `${strategyPath(i)}.setups`,
                 )}
               >
                 <ComposerInstanceGrid
@@ -1155,17 +1157,19 @@ export function ComposerPanel() {
                   {(index, inst) => {
                     const instStrategy = (inst.strategy ?? {}) as JsonObject;
                     return (
-                      <SingletonComponentSection
+                      <ListComponentSection
                         compact
                         title="Setup"
                         role="setup"
+                        pathRole="setups"
                         catalog={catalog}
                         strategy={instStrategy}
-                        value={(instStrategy.setup as JsonObject) ?? {}}
-                        pathPrefix={`${strategyPath(index)}.setup`}
+                        slots={((instStrategy.setups as JsonObject[]) ?? []) as JsonObject[]}
+                        instanceIndex={index}
                         errors={validationErrors}
-                        onSelect={(id) => setSingletonComponent(index, "setup", id)}
-                        onChange={(setup) => patchStrategy(index, { setup })}
+                        onAdd={(id) => addListSlot(index, "setups", id)}
+                        onRemove={(slot) => removeListSlot(index, "setups", slot)}
+                        onChange={(slot, next) => updateListSlot(index, "setups", slot, next)}
                       />
                     );
                   }}
@@ -2094,9 +2098,10 @@ export function ListComponentSection({
 }: {
   compact?: boolean;
   title: string;
-  role: "blockers" | "exits";
+  role: "blockers" | "exits" | "setup";
   pathRole?:
     | "blockers"
+    | "setups"
     | "exits"
     | "always_on_exits"
     | "aligned_exits"

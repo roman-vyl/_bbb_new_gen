@@ -236,13 +236,45 @@ Family-local registry (`components/registry.py`) включает, среди п
 
 ```text
 direction: ema_anchor_stack_trend
-setup: untouched_anchor_setup
+setups (stack, AND-composed): untouched_anchor_setup, ema_bounce_counter_setup, ...
 trigger: reclaim_anchor, touch_anchor
 blockers: no_blockers, counter_candle_blocker, rsi_lookback_extreme_blocker
 exits: atr_stop_loss, atr_take_profit, constant_usd_stop_loss, constant_usd_take_profit,
        rsi_signal_exit, ema_close_loss_exit, ema_cross_loss_exit
 time_stop (future)
 risk: no_risk_filter
+```
+
+External instance JSON uses `strategy.setups[]` (non-empty). Each entry has `instance_id`,
+`component_id`, and params (flat or nested `params` per catalog). Legacy singleton
+`strategy.setup` is accepted **only** at load time and normalized to a one-element `setups`
+list. Signal trace stores internals under `internals.setups[instance_id]` (no `internals.setup`).
+
+Example dual setup:
+
+```json
+"setups": [
+  {
+    "instance_id": "untouched_anchor",
+    "component_id": "untouched_anchor_setup",
+    "lookback": 50,
+    "active_bars": 3
+  },
+  {
+    "instance_id": "bounce_counter",
+    "component_id": "ema_bounce_counter_setup",
+    "params": {
+      "fast_ema": 50,
+      "anchor_ema": 200,
+      "slow_ema": 500,
+      "max_bounces": 3,
+      "raw_touch_mode": "range_cross",
+      "touch_lookback_bars": 10,
+      "trend_start_confirmation_bars": 1,
+      "trend_break_confirmation_bars": 1
+    }
+  }
+]
 ```
 
 RSI и EMA для exits считаются в feature layer по `FeaturePlan`; компоненты получают

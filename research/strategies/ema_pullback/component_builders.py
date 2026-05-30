@@ -44,6 +44,7 @@ from research.strategies.ema_pullback.spec import (
     TradeManagementSpec,
     UntouchedAnchorSetupSpec,
     RsiFeatureSpec,
+    SetupSpec,
     TradeSide,
     ReclaimTriggerSpec,
     StrongReclaimTriggerSpec,
@@ -450,11 +451,41 @@ def ema_bounce_counter_setup_spec(
     )
 
 
+def setup_rule(
+    *,
+    instance_id: str,
+    component_id: str,
+    params: SetupSpec,
+) -> SetupRuleSpec:
+    from research.strategies.ema_pullback.spec import SetupRuleSpec
+
+    return SetupRuleSpec(
+        instance_id=instance_id,
+        component_id=component_id,
+        params=params,
+    )
+
+
+def default_setups(
+    *,
+    lookback: int = 50,
+    active_bars: int = 3,
+) -> tuple[SetupRuleSpec, ...]:
+    from research.strategies.ema_pullback.spec import SetupRuleSpec
+
+    return (
+        SetupRuleSpec(
+            instance_id="setup",
+            component_id=setup_untouched_anchor(),
+            params=untouched_anchor_setup_spec(lookback=lookback, active_bars=active_bars),
+        ),
+    )
+
+
 def component_stack(
     *,
     direction: str | None = None,
     blockers: Sequence[BlockerRuleSpec] | None = None,
-    setup: str | None = None,
     trigger: TriggerSpec | None = None,
     risk: str | None = None,
 ) -> ComponentStackSpec:
@@ -466,7 +497,6 @@ def component_stack(
     return ComponentStackSpec(
         direction=direction_ema_anchor_stack() if direction is None else direction,
         blockers=normalized_blockers,
-        setup=setup_untouched_anchor() if setup is None else setup,
         trigger=trigger_reclaim_anchor() if trigger is None else trigger,
         risk=risk_no_filter() if risk is None else risk,
     )

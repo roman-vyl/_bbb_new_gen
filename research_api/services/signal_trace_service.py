@@ -61,12 +61,12 @@ def _variant_from_report(report: RunReport, variant_key: str) -> RunVariant:
 def _warmup_bars_ms(spec: Any, timeframe: str) -> int:
     base_tf = validate_timeframe(timeframe)
     base_ms = timeframe_ms(base_tf)
-    if isinstance(spec.setup, EmaBounceCounterSetupSpec):
-        lookback = int(spec.setup.touch_lookback_bars)
-    elif isinstance(spec.setup, UntouchedAnchorSetupSpec):
-        lookback = int(spec.setup.lookback)
-    else:
-        lookback = 0
+    lookback = 1
+    for rule in spec.setups:
+        if isinstance(rule.params, EmaBounceCounterSetupSpec):
+            lookback = max(lookback, int(rule.params.touch_lookback_bars))
+        elif isinstance(rule.params, UntouchedAnchorSetupSpec):
+            lookback = max(lookback, int(rule.params.lookback))
     slow_period = int(spec.anchor_stack.slow.period)
     anchor_warmup_ms = (max(lookback, slow_period) + 5) * base_ms
 

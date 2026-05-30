@@ -339,24 +339,31 @@ def run_strategy_spec(
     )
 
     exit_component_map = build_exit_instance_component_map(spec)
-    setup_trace_by_side = None
-    if isinstance(spec.setup, EmaBounceCounterSetupSpec):
-        setup_trace_by_side = {}
-        for side in ("long", "short"):
-            if not spec.trade_sides.includes(side):
-                continue
-            setup_trace_by_side[side] = ema_bounce_counter_setup_trace(
-                enriched,
-                plan.setup_columns["fast"],
-                plan.setup_columns["anchor"],
-                plan.setup_columns["slow"],
-                max_bounces=spec.setup.max_bounces,
-                raw_touch_mode=spec.setup.raw_touch_mode,
-                touch_lookback_bars=spec.setup.touch_lookback_bars,
-                trend_start_confirmation_bars=spec.setup.trend_start_confirmation_bars,
-                trend_break_confirmation_bars=spec.setup.trend_break_confirmation_bars,
-                side=side,
-            )
+    from research.strategies.ema_pullback.components.registry import EMA_BOUNCE_COUNTER_SETUP_COMPONENT
+    from research.strategies.ema_pullback.setup_runtime import run_setup_trace
+
+    setup_traces_by_instance_side: dict[str, dict[str, dict[str, pd.Series]]] | None = None
+    bounce_rules = [
+        rule
+        for rule in spec.setups
+        if rule.component_id == EMA_BOUNCE_COUNTER_SETUP_COMPONENT
+    ]
+    if bounce_rules:
+        setup_traces_by_instance_side = {}
+        anchor_col = plan.anchor_columns["anchor"]
+        for rule in bounce_rules:
+            by_side: dict[str, dict[str, pd.Series]] = {}
+            for side in ("long", "short"):
+                if not spec.trade_sides.includes(side):
+                    continue
+                by_side[side] = run_setup_trace(
+                    enriched,
+                    rule,
+                    plan,
+                    anchor_col=anchor_col,
+                    side=side,
+                )
+            setup_traces_by_instance_side[rule.instance_id] = by_side
     trade_records = extract_trade_records(
         pf,
         close,
@@ -372,7 +379,7 @@ def run_strategy_spec(
         exit_component_map=exit_component_map,
         strategy_spec=spec,
         context_bundle=context_bundle,
-        setup_trace_by_side=setup_trace_by_side,
+        setup_traces_by_instance_side=setup_traces_by_instance_side,
     )
 
     sharpe = ensure_finite_metric("sharpe_ratio", float(pf.sharpe_ratio()))

@@ -402,7 +402,7 @@ def extract_trade_records(
     exit_component_map: dict[str, str] | None = None,
     strategy_spec: Any | None = None,
     context_bundle: Any | None = None,
-    setup_trace_by_side: dict[str, dict[str, pd.Series]] | None = None,
+    setup_traces_by_instance_side: dict[str, dict[str, dict[str, pd.Series]]] | None = None,
 ) -> list[dict[str, Any]]:
     """Normalize vectorbt portfolio trades into Stage 9 trade_records (library-agnostic fields)."""
 
@@ -521,19 +521,26 @@ def extract_trade_records(
             if context_state is not None and 0 <= entry_idx < len(context_state):
                 record["entry_context_state"] = _context_state_label(context_state.iloc[entry_idx])
 
-            if setup_trace_by_side is not None and 0 <= entry_idx < len(index):
-                setup_trace = setup_trace_by_side.get(direction)
-                if setup_trace is not None:
-                    record["entry_trend_episode_id"] = _scalar_json_safe(
-                        setup_trace["trend_episode_id"].iloc[entry_idx]
-                    )
-                    record["entry_effective_bounce_number"] = _scalar_json_safe(
-                        setup_trace["effective_bounce_number"].iloc[entry_idx]
-                    )
-                    record["entry_completed_bounce_count"] = _scalar_json_safe(
-                        setup_trace["completed_bounce_count"].iloc[entry_idx]
-                    )
-                    record["entry_bounce_counter_side"] = direction
+            if setup_traces_by_instance_side is not None and 0 <= entry_idx < len(index):
+                entry_setup_diagnostics: dict[str, dict[str, Any]] = {}
+                for instance_id, by_side in setup_traces_by_instance_side.items():
+                    setup_trace = by_side.get(direction)
+                    if setup_trace is None:
+                        continue
+                    entry_setup_diagnostics[instance_id] = {
+                        "trend_episode_id": _scalar_json_safe(
+                            setup_trace["trend_episode_id"].iloc[entry_idx]
+                        ),
+                        "effective_bounce_number": _scalar_json_safe(
+                            setup_trace["effective_bounce_number"].iloc[entry_idx]
+                        ),
+                        "completed_bounce_count": _scalar_json_safe(
+                            setup_trace["completed_bounce_count"].iloc[entry_idx]
+                        ),
+                        "side": direction,
+                    }
+                if entry_setup_diagnostics:
+                    record["entry_setup_diagnostics"] = entry_setup_diagnostics
 
             if strategy_spec is not None:
                 from research.strategies.ema_pullback.context.consumption_trace import (

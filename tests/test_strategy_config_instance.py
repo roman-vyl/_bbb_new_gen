@@ -211,37 +211,26 @@ def test_component_stack_default_matches_baseline_defaults() -> None:
     assert stack.direction == "ema_anchor_stack_trend"
     assert [b.component_id for b in stack.blockers] == ["no_blockers"]
     assert [b.instance_id for b in stack.blockers] == ["no_blockers"]
-    assert stack.setup == "untouched_anchor_setup"
+    assert len(stack.blockers) >= 1
     assert stack.trigger.component_id == "reclaim_anchor"
     assert stack.risk == "no_risk_filter"
 
 
-def test_strategy_spec_rejects_old_setup_component_with_bounce_setup_spec() -> None:
-    base = make_ema_pullback_strategy_spec()
+def test_strategy_spec_rejects_mismatched_bounce_params_component_id() -> None:
+    from research.strategies.ema_pullback.component_builders import setup_rule
 
     with pytest.raises(
         ValueError,
-        match="components.setup must be 'ema_bounce_counter_setup'",
+        match="UntouchedAnchorSetupSpec",
     ):
         make_ema_pullback_strategy_spec(
-            components=component_stack(setup="untouched_anchor_setup"),
-            setup_spec=ema_bounce_counter_setup_spec(),
-            trade_management_spec=base.trade_management,
-        )
-
-
-def test_strategy_spec_rejects_bounce_setup_component_with_untouched_setup_spec() -> None:
-    base = make_ema_pullback_strategy_spec()
-
-    with pytest.raises(
-        ValueError,
-        match="components.setup must be 'untouched_anchor_setup'",
-    ):
-        make_ema_pullback_strategy_spec(
-            components=component_stack(setup="ema_bounce_counter_setup"),
-            setup_lookback=50,
-            setup_active_bars=3,
-            trade_management_spec=base.trade_management,
+            setups=(
+                setup_rule(
+                    instance_id="bad",
+                    component_id="untouched_anchor_setup",
+                    params=ema_bounce_counter_setup_spec(),
+                ),
+            ),
         )
 
 
