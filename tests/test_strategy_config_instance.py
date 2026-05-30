@@ -12,6 +12,7 @@ from research.strategies.ema_pullback.component_builders import (
     blocker_extreme_rsi,
     blocker_none,
     component_stack,
+    ema_bounce_counter_setup_spec,
     exit_atr_stop_loss,
     exit_atr_take_profit,
     exit_constant_usd_stop_loss,
@@ -213,6 +214,35 @@ def test_component_stack_default_matches_baseline_defaults() -> None:
     assert stack.setup == "untouched_anchor_setup"
     assert stack.trigger.component_id == "reclaim_anchor"
     assert stack.risk == "no_risk_filter"
+
+
+def test_strategy_spec_rejects_old_setup_component_with_bounce_setup_spec() -> None:
+    base = make_ema_pullback_strategy_spec()
+
+    with pytest.raises(
+        ValueError,
+        match="components.setup must be 'ema_bounce_counter_setup'",
+    ):
+        make_ema_pullback_strategy_spec(
+            components=component_stack(setup="untouched_anchor_setup"),
+            setup_spec=ema_bounce_counter_setup_spec(),
+            trade_management_spec=base.trade_management,
+        )
+
+
+def test_strategy_spec_rejects_bounce_setup_component_with_untouched_setup_spec() -> None:
+    base = make_ema_pullback_strategy_spec()
+
+    with pytest.raises(
+        ValueError,
+        match="components.setup must be 'untouched_anchor_setup'",
+    ):
+        make_ema_pullback_strategy_spec(
+            components=component_stack(setup="ema_bounce_counter_setup"),
+            setup_lookback=50,
+            setup_active_bars=3,
+            trade_management_spec=base.trade_management,
+        )
 
 
 def test_builders_normalize_sequences_to_tuples() -> None:

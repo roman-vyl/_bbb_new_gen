@@ -200,6 +200,24 @@ class EmaBounceCounterSetupSpec:
 SetupSpec = UntouchedAnchorSetupSpec | EmaBounceCounterSetupSpec
 
 
+def _validate_setup_component_matches_spec(components: ComponentStackSpec, setup: SetupSpec) -> None:
+    if isinstance(setup, EmaBounceCounterSetupSpec):
+        if components.setup != "ema_bounce_counter_setup":
+            raise ValueError(
+                "components.setup must be 'ema_bounce_counter_setup' "
+                "when setup is EmaBounceCounterSetupSpec"
+            )
+        return
+    if isinstance(setup, UntouchedAnchorSetupSpec):
+        if components.setup != "untouched_anchor_setup":
+            raise ValueError(
+                "components.setup must be 'untouched_anchor_setup' "
+                "when setup is UntouchedAnchorSetupSpec"
+            )
+        return
+    raise TypeError(f"unsupported setup spec type: {type(setup).__name__}")
+
+
 @dataclass(frozen=True)
 class ReclaimTriggerSpec(TriggerSpec):
     component_id: str = "reclaim_anchor"
@@ -456,6 +474,7 @@ class EmaPullbackStrategySpec:
             raise ValueError("symbol must be non-empty")
         if not self.base_timeframe.strip():
             raise ValueError("base_timeframe must be non-empty")
+        _validate_setup_component_matches_spec(self.components, self.setup)
         seen_refs: set[str] = set()
         for context_ref, _provider in self.contexts:
             if context_ref in seen_refs:
