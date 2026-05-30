@@ -17,6 +17,7 @@ from research.strategies.ema_pullback.execution.result_models import (
 )
 from research.strategies.ema_pullback.execution.exit_attribution import build_exit_instance_component_map
 from research.strategies.ema_pullback.execution.results import (
+    build_bounce_counter_breakdown,
     build_exit_reason_breakdown,
     build_fee_diagnostics,
     build_profile_breakdown,
@@ -24,13 +25,14 @@ from research.strategies.ema_pullback.execution.results import (
     build_trade_quality_breakdowns,
     extract_trade_records,
 )
+from research.strategies.ema_pullback.components.setup import ema_bounce_counter_setup_trace
 from research.strategies.ema_pullback.context.pipeline import build_context_bundle_for_spec
 from research.strategies.ema_pullback.execution.exits import build_exit_outputs_from_spec
 from research.strategies.ema_pullback.execution.signals import build_signals_from_spec
 from research.strategies.ema_pullback.features.calculations import add_feature_columns_from_plan
 from research.strategies.ema_pullback.features.plan import build_feature_plan_from_strategy_spec
 from research.strategies.ema_pullback.spec import strategy_spec_config_id, strategy_spec_to_dict
-from research.strategies.ema_pullback.spec import EmaPullbackStrategySpec
+from research.strategies.ema_pullback.spec import EmaBounceCounterSetupSpec, EmaPullbackStrategySpec
 
 
 def _profile_code(name: str) -> int:
@@ -132,6 +134,7 @@ def build_trade_side_metrics(
         profile_side_breakdown=build_profile_side_breakdown(trade_records),
         exit_reason_breakdown=build_exit_reason_breakdown(trade_records),
         fee_diagnostics=build_fee_diagnostics(trade_records, fees_rate=fees_rate),
+        bounce_counter_breakdown=build_bounce_counter_breakdown(trade_records),
         **build_trade_quality_breakdowns(trade_records),
     )
 
@@ -336,6 +339,24 @@ def run_strategy_spec(
     )
 
     exit_component_map = build_exit_instance_component_map(spec)
+    setup_trace_by_side = None
+    if isinstance(spec.setup, EmaBounceCounterSetupSpec):
+        setup_trace_by_side = {}
+        for side in ("long", "short"):
+            if not spec.trade_sides.includes(side):
+                continue
+            setup_trace_by_side[side] = ema_bounce_counter_setup_trace(
+                enriched,
+                plan.setup_columns["fast"],
+                plan.setup_columns["anchor"],
+                plan.setup_columns["slow"],
+                max_bounces=spec.setup.max_bounces,
+                raw_touch_mode=spec.setup.raw_touch_mode,
+                touch_lookback_bars=spec.setup.touch_lookback_bars,
+                trend_start_confirmation_bars=spec.setup.trend_start_confirmation_bars,
+                trend_break_confirmation_bars=spec.setup.trend_break_confirmation_bars,
+                side=side,
+            )
     trade_records = extract_trade_records(
         pf,
         close,
@@ -351,6 +372,7 @@ def run_strategy_spec(
         exit_component_map=exit_component_map,
         strategy_spec=spec,
         context_bundle=context_bundle,
+        setup_trace_by_side=setup_trace_by_side,
     )
 
     sharpe = ensure_finite_metric("sharpe_ratio", float(pf.sharpe_ratio()))

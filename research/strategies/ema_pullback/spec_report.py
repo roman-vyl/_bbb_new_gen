@@ -5,8 +5,10 @@ from __future__ import annotations
 from typing import Any, Mapping
 
 from research.strategies.ema_pullback.components.registry import (
+    EMA_BOUNCE_COUNTER_SETUP_COMPONENT,
     RECLAIM_ANCHOR_COMPONENT,
     STRONG_RECLAIM_ANCHOR_COMPONENT,
+    UNTOUCHED_ANCHOR_SETUP_COMPONENT,
 )
 from research.strategies.ema_pullback.spec import (
     AnchorStackSpec,
@@ -14,6 +16,7 @@ from research.strategies.ema_pullback.spec import (
     BlockerRuleSpec,
     ComponentStackSpec,
     EmaPullbackStrategySpec,
+    EmaBounceCounterSetupSpec,
     EmaSpec,
     ExitPolicyGroupSpec,
     ExitPolicyProfilesSpec,
@@ -157,6 +160,39 @@ def _trigger_spec(
     return TriggerSpec(component_id=component_id)
 
 
+def _setup_ema_spec(name: str, value: Any, *, default_period: int) -> EmaSpec:
+    if isinstance(value, Mapping):
+        return _optional_ema_spec(name, value) or EmaSpec(
+            source="close", timeframe="base", period=default_period
+        )
+    if value is None:
+        return EmaSpec(source="close", timeframe="base", period=default_period)
+    return EmaSpec(source="close", timeframe="base", period=int(value))
+
+
+def _setup_spec(component_id: str, payload: Mapping[str, Any]) -> UntouchedAnchorSetupSpec | EmaBounceCounterSetupSpec:
+    if component_id == EMA_BOUNCE_COUNTER_SETUP_COMPONENT:
+        return EmaBounceCounterSetupSpec(
+            fast_ema=_setup_ema_spec("setup.fast_ema", payload.get("fast_ema"), default_period=50),
+            anchor_ema=_setup_ema_spec("setup.anchor_ema", payload.get("anchor_ema"), default_period=200),
+            slow_ema=_setup_ema_spec("setup.slow_ema", payload.get("slow_ema"), default_period=500),
+            max_bounces=int(payload.get("max_bounces", 3)),
+            raw_touch_mode=str(payload.get("raw_touch_mode", "range_cross")),
+            touch_lookback_bars=int(payload.get("touch_lookback_bars", 10)),
+            trend_start_confirmation_bars=int(payload.get("trend_start_confirmation_bars", 1)),
+            trend_break_confirmation_bars=int(payload.get("trend_break_confirmation_bars", 1)),
+        )
+    if component_id == UNTOUCHED_ANCHOR_SETUP_COMPONENT:
+        return UntouchedAnchorSetupSpec(
+            lookback=int(payload.get("lookback", 50)),
+            active_bars=int(payload.get("active_bars", 3)),
+        )
+    return UntouchedAnchorSetupSpec(
+        lookback=int(payload.get("lookback", 50)),
+        active_bars=int(payload.get("active_bars", 3)),
+    )
+
+
 def _exit_policy_group(payload: Mapping[str, Any], *, name: str) -> ExitPolicyGroupSpec:
     exits_raw = payload.get("exits")
     if not isinstance(exits_raw, (list, tuple)):
@@ -241,10 +277,7 @@ def strategy_spec_from_report_dict(payload: Mapping[str, Any]) -> EmaPullbackStr
             risk=str(components_raw["risk"]),
         ),
         trade_sides=TradeSideSpec(enabled=tuple(enabled_raw)),
-        setup=UntouchedAnchorSetupSpec(
-            lookback=int(setup_raw.get("lookback", 50)),
-            active_bars=int(setup_raw.get("active_bars", 3)),
-        ),
+        setup=_setup_spec(str(components_raw["setup"]), setup_raw),
         trade_management=trade_management,
         contexts=contexts,
     )

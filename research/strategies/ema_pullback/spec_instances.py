@@ -25,6 +25,7 @@ from research.strategies.ema_pullback.spec import (
     ComponentStackSpec,
     ContextProviderSpec,
     EmaPullbackStrategySpec,
+    SetupSpec,
     TradeManagementSpec,
     TradeSide,
 )
@@ -69,6 +70,7 @@ def make_ema_pullback_strategy_spec(
     htf_slow_period: int = 1000,
     enabled_sides: Sequence[TradeSide] = ("long",),
     components: ComponentStackSpec | None = None,
+    setup_spec: SetupSpec | None = None,
     trade_management_spec: TradeManagementSpec | None = None,
     contexts: Sequence[tuple[str, ContextProviderSpec]] | None = None,
 ) -> EmaPullbackStrategySpec:
@@ -147,9 +149,13 @@ def make_ema_pullback_strategy_spec(
         ),
         components=resolved_components,
         trade_sides=trade_sides(enabled_sides),
-        setup=untouched_anchor_setup_spec(
-            lookback=setup_lookback,
-            active_bars=setup_active_bars,
+        setup=(
+            setup_spec
+            if setup_spec is not None
+            else untouched_anchor_setup_spec(
+                lookback=setup_lookback,
+                active_bars=setup_active_bars,
+            )
         ),
         trade_management=trade_mgmt,
         contexts=resolved_contexts,

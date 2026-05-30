@@ -109,6 +109,10 @@ export type TradeRecord = TradeOverlay & {
   quality_flags?: string[] | null;
   entry_context_consumption?: ContextConsumptionAttribution | null;
   exit_context_consumption?: ContextConsumptionAttribution | null;
+  entry_trend_episode_id?: number | null;
+  entry_effective_bounce_number?: number | null;
+  entry_completed_bounce_count?: number | null;
+  entry_bounce_counter_side?: "long" | "short" | null;
 };
 
 export type ContextConsumptionAttribution = {
@@ -144,6 +148,11 @@ export type ProfileSideBreakdown = {
 };
 
 export type ExitReasonBucketMetrics = DiagnosticBucketMetrics;
+export type BounceCounterBreakdown = {
+  long: Record<string, DiagnosticBucketMetrics>;
+  short: Record<string, DiagnosticBucketMetrics>;
+  total: DiagnosticBucketMetrics;
+};
 
 export type FeeDiagnostics = {
   total_fees_paid: number;
@@ -213,6 +222,7 @@ export type VariantMetrics = {
   fee_diagnostics?: FeeDiagnostics;
   quality_flag_breakdown?: Record<string, QualityFlagBucketMetrics>;
   exit_component_quality_breakdown?: Record<string, ExitComponentQualityBucketMetrics>;
+  bounce_counter_breakdown?: BounceCounterBreakdown;
 };
 
 export type RunVariant = {
@@ -389,7 +399,7 @@ export type SignalTraceMeta = {
     trigger: string;
     risk: string;
   };
-  setup_params: { lookback: number; active_bars: number };
+  setup_params: Record<string, number | string>;
   trigger_params?: { lookback: number };
   blocker_instances: { instance_id: string; component_id: string }[];
 };
@@ -426,7 +436,7 @@ export type ContextConsumptionTraceRecord = {
 
 export type ComponentEventType = "point" | "span_start" | "span_end" | "source";
 
-export type ComponentEventRole = "entry_block" | "exit_signal";
+export type ComponentEventRole = "entry_block" | "exit_signal" | "setup";
 
 export type ComponentEvent = {
   time: number;

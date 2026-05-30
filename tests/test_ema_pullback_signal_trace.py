@@ -384,6 +384,89 @@ def test_component_events_empty_without_emitters() -> None:
     assert trace.component_events == []
 
 
+def test_ema_bounce_counter_setup_trace_and_events() -> None:
+    from dataclasses import replace
+
+    from research.strategies.ema_pullback.component_builders import (
+        component_stack,
+        direction_ema_anchor_stack,
+        ema_bounce_counter_setup_spec,
+        risk_no_filter,
+        setup_ema_bounce_counter,
+        trigger_reclaim_anchor,
+    )
+
+    base = make_ema_pullback_strategy_spec(enabled_sides=("long",))
+    spec = replace(
+        base,
+        components=component_stack(
+            direction=direction_ema_anchor_stack(),
+            setup=setup_ema_bounce_counter(),
+            trigger=trigger_reclaim_anchor(),
+            risk=risk_no_filter(),
+        ),
+        setup=ema_bounce_counter_setup_spec(
+            fast_ema=50,
+            anchor_ema=200,
+            slow_ema=500,
+            max_bounces=3,
+            touch_lookback_bars=3,
+        ),
+    )
+    plan = build_feature_plan_from_strategy_spec(spec)
+    df = add_feature_columns_from_plan(_ohlcv(periods=8), plan)
+    df["close"] = 105.0
+    df["high"] = 106.0
+    df["low"] = [104.0, 99.0, 104.0, 99.0, 99.0, 104.0, 104.0, 104.0]
+    df[plan.setup_columns["fast"]] = 110.0
+    df[plan.setup_columns["anchor"]] = 100.0
+    df[plan.setup_columns["slow"]] = 90.0
+
+    trace = build_signal_trace_from_spec(df, spec, plan)
+
+    setup_internals = trace.long.internals["setup"]
+    assert setup_internals["pending_bounce_start"] == [
+        False,
+        True,
+        False,
+        False,
+        True,
+        False,
+        False,
+        False,
+    ]
+    assert setup_internals["pending_bounce_end"][3] is True
+    assert setup_internals["completed_bounce_count"] == [0, 0, 0, 0, 1, 1, 1, 2]
+    assert trace.long.signal_entry == build_signals_from_spec(df, spec, plan).entries.tolist()
+
+    setup_events = [event for event in trace.component_events if event.role == "setup"]
+    bounce_events = [
+        event
+        for event in setup_events
+        if event.metadata.get("event_name") in {
+            "bounce_opportunity_start",
+            "pending_bounce_start",
+            "pending_bounce_end",
+        }
+    ]
+    assert len(bounce_events) == 6
+    first = [event for event in bounce_events if event.span_id == bounce_events[0].span_id]
+    by_type = {event.event_type: event for event in first}
+    assert by_type["source"].time == trace.times[1]
+    assert by_type["span_start"].time == trace.times[1]
+    assert by_type["span_end"].time == trace.times[3]
+    assert by_type["source"].feature_family == "ema"
+    assert by_type["source"].component_id == "ema_bounce_counter_setup"
+    assert "anchor_ema" in by_type["source"].metadata
+    # The raw touch at index 3 is the final active lookback bar; it closes the
+    # first span but does not emit another source/span_start.
+    assert [
+        event.time
+        for event in bounce_events
+        if event.event_type in {"source", "span_start"}
+    ].count(trace.times[3]) == 0
+
+
 def test_rising_edge_indices_synthetic_source() -> None:
     from research.strategies.ema_pullback.execution.signal_trace import _rising_edge_indices
 

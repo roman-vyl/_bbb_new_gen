@@ -13,6 +13,7 @@ from research.strategies.ema_pullback.components.registry import (
     CONSTANT_USD_TAKE_PROFIT_COMPONENT,
     COUNTER_CANDLE_BLOCKER_COMPONENT,
     EMA_ANCHOR_STACK_TREND_COMPONENT,
+    EMA_BOUNCE_COUNTER_SETUP_COMPONENT,
     NO_BLOCKERS_COMPONENT,
     NO_RISK_FILTER_COMPONENT,
     NO_SIGNAL_EXIT_COMPONENT,
@@ -45,6 +46,7 @@ from research.strategies.ema_pullback.spec import (
     ExitPolicyGroupSpec,
     TradeManagementSpec,
     ExitRuleSpec,
+    SetupSpec,
     TradeSide,
     UntouchedAnchorSetupSpec,
     strategy_spec_config_id,
@@ -134,8 +136,17 @@ def load_ema_pullback_instance(instance: Mapping[str, Any]) -> EmaPullbackStrate
         slow_period=periods["slow"],
         anchor_source=periods["source"],
         anchor_timeframe=periods["timeframe"],
-        setup_lookback=setup_params.lookback,
-        setup_active_bars=setup_params.active_bars,
+        setup_lookback=(
+            setup_params.lookback
+            if isinstance(setup_params, UntouchedAnchorSetupSpec)
+            else 50
+        ),
+        setup_active_bars=(
+            setup_params.active_bars
+            if isinstance(setup_params, UntouchedAnchorSetupSpec)
+            else 3
+        ),
+        setup_spec=setup_params,
         enabled_sides=_parse_trade_sides(strategy["trade_sides"]),
         components=components,
         trade_management_spec=trade_management_spec,
@@ -365,18 +376,59 @@ def _parse_direction(value: Any) -> str:
     return builders.direction_ema_anchor_stack()
 
 
-def _parse_setup(value: Any) -> tuple[str, UntouchedAnchorSetupSpec]:
-    payload = _component_mapping("setup", value, extra_fields={"lookback", "active_bars"})
+def _parse_setup(value: Any) -> tuple[str, SetupSpec]:
+    payload = _component_mapping(
+        "setup",
+        value,
+        extra_fields={
+            "lookback",
+            "active_bars",
+            "params",
+            "fast_ema",
+            "anchor_ema",
+            "slow_ema",
+            "max_bounces",
+            "raw_touch_mode",
+            "touch_lookback_bars",
+            "trend_start_confirmation_bars",
+            "trend_break_confirmation_bars",
+        },
+    )
     component_id = _require_non_empty_str(payload, "component_id")
     _assert_known_component("setup", component_id)
-    if component_id != UNTOUCHED_ANCHOR_SETUP_COMPONENT:
-        raise EmaPullbackInstanceValidationError(f"unsupported setup component_id {component_id!r}")
-    lookback = _optional_positive_int(payload, "lookback", default=50)
-    active_bars = _optional_positive_int(payload, "active_bars", default=3)
-    return (
-        builders.setup_untouched_anchor(),
-        builders.untouched_anchor_setup_spec(lookback=lookback, active_bars=active_bars),
-    )
+    if component_id == UNTOUCHED_ANCHOR_SETUP_COMPONENT:
+        lookback = _optional_positive_int(payload, "lookback", default=50)
+        active_bars = _optional_positive_int(payload, "active_bars", default=3)
+        return (
+            builders.setup_untouched_anchor(),
+            builders.untouched_anchor_setup_spec(lookback=lookback, active_bars=active_bars),
+        )
+    if component_id == EMA_BOUNCE_COUNTER_SETUP_COMPONENT:
+        params_raw = payload.get("params", {})
+        params = _require_mapping("setup.params", params_raw) if params_raw else {}
+        merged = {**payload, **params}
+        raw_touch_mode = str(merged.get("raw_touch_mode", "range_cross"))
+        try:
+            setup_spec = builders.ema_bounce_counter_setup_spec(
+                fast_ema=_optional_positive_int(merged, "fast_ema", default=50),
+                anchor_ema=_optional_positive_int(merged, "anchor_ema", default=200),
+                slow_ema=_optional_positive_int(merged, "slow_ema", default=500),
+                max_bounces=_optional_positive_int(merged, "max_bounces", default=3),
+                raw_touch_mode=raw_touch_mode,
+                touch_lookback_bars=_optional_positive_int(
+                    merged, "touch_lookback_bars", default=10
+                ),
+                trend_start_confirmation_bars=_optional_positive_int(
+                    merged, "trend_start_confirmation_bars", default=1
+                ),
+                trend_break_confirmation_bars=_optional_positive_int(
+                    merged, "trend_break_confirmation_bars", default=1
+                ),
+            )
+        except ValueError as exc:
+            raise EmaPullbackInstanceValidationError(str(exc)) from exc
+        return (builders.setup_ema_bounce_counter(), setup_spec)
+    raise EmaPullbackInstanceValidationError(f"unsupported setup component_id {component_id!r}")
 
 
 def _parse_trigger(value: Any) -> Any:

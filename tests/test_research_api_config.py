@@ -88,11 +88,27 @@ def test_component_catalog_returns_ema_pullback_components(client: TestClient) -
         c["component_id"] == "rsi_lookback_extreme_blocker" for c in body["components"]
     )
     setup_components = [c for c in body["components"] if c.get("role") == "setup"]
-    assert [c["component_id"] for c in setup_components] == ["untouched_anchor_setup"]
+    assert [c["component_id"] for c in setup_components] == [
+        "untouched_anchor_setup",
+        "ema_bounce_counter_setup",
+    ]
     params = setup_components[0]["params_schema"]
     assert set(params) == {"lookback", "active_bars"}
     assert params["lookback"]["default"] == 50
     assert params["active_bars"]["default"] == 3
+    bounce_params = setup_components[1]["params_schema"]
+    assert set(bounce_params) == {
+        "fast_ema",
+        "anchor_ema",
+        "slow_ema",
+        "max_bounces",
+        "raw_touch_mode",
+        "touch_lookback_bars",
+        "trend_start_confirmation_bars",
+        "trend_break_confirmation_bars",
+    }
+    assert bounce_params["fast_ema"]["default"] == 50
+    assert bounce_params["raw_touch_mode"]["enum"] == ["range_cross"]
     reclaim_components = [c for c in body["components"] if c.get("component_id") == "reclaim_anchor"]
     assert len(reclaim_components) == 1
     reclaim_params = reclaim_components[0]["params_schema"]

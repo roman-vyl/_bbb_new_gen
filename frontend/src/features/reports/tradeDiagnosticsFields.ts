@@ -34,7 +34,8 @@ export function hasTradeDiagnostics(trade: TradeRecord): boolean {
     trade.exit_kind !== undefined ||
     trade.gross_pnl !== undefined ||
     trade.mfe_pct !== undefined ||
-    trade.quality_flags !== undefined
+    trade.quality_flags !== undefined ||
+    trade.entry_effective_bounce_number !== undefined
   );
 }
 
@@ -144,6 +145,36 @@ export function buildTradeDiagnosticFields(trade: TradeRecord): {
     field("exit_kind", "exit_kind", trade.exit_kind ?? EM_DASH),
     field("exit_component_id", "exit_component_id", trade.exit_component_id ?? EM_DASH),
     field("exit_instance_id", "exit_instance_id", trade.exit_instance_id ?? EM_DASH),
+    field(
+      "entry_trend_episode_id",
+      "trend_episode_id",
+      trade.entry_trend_episode_id === null || trade.entry_trend_episode_id === undefined
+        ? EM_DASH
+        : String(trade.entry_trend_episode_id),
+      "EMA bounce counter trend episode at entry",
+    ),
+    field(
+      "entry_effective_bounce_number",
+      "bounce_number",
+      trade.entry_effective_bounce_number === null ||
+        trade.entry_effective_bounce_number === undefined
+        ? EM_DASH
+        : String(trade.entry_effective_bounce_number),
+      "Effective EMA bounce interaction number at entry",
+    ),
+    field(
+      "entry_completed_bounce_count",
+      "completed_bounces",
+      trade.entry_completed_bounce_count === null ||
+        trade.entry_completed_bounce_count === undefined
+        ? EM_DASH
+        : String(trade.entry_completed_bounce_count),
+    ),
+    field(
+      "entry_bounce_counter_side",
+      "bounce_side",
+      trade.entry_bounce_counter_side ?? EM_DASH,
+    ),
     field("gross_pnl", "gross_pnl", formatMoney(trade.gross_pnl)),
     field("fees_paid", "fees_paid", formatMoney(trade.fees_paid)),
     field(

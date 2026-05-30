@@ -12,6 +12,9 @@ from research.strategies.ema_pullback.spec import (
     ExitRuleSpec,
     RsiFeatureSpec,
 )
+from research.strategies.ema_pullback.components.setup import (
+    ema_bounce_counter_setup_trace,
+)
 
 
 def _frame() -> pd.DataFrame:
@@ -49,6 +52,7 @@ def test_registry_resolves_new_stage10_components() -> None:
     assert callable(resolve_component("blockers", "counter_candle_blocker").func)
     assert callable(resolve_component("blockers", "rsi_lookback_extreme_blocker").func)
     assert callable(resolve_component("setup", "untouched_anchor_setup").func)
+    assert callable(resolve_component("setup", "ema_bounce_counter_setup").func)
     assert callable(resolve_component("trigger", "reclaim_anchor").func)
     assert callable(resolve_component("trigger", "strong_reclaim_anchor").func)
     assert callable(resolve_component("trigger", "touch_anchor").func)
@@ -140,6 +144,120 @@ def test_untouched_anchor_setup_short_mirror() -> None:
     fn = resolve_component("setup", "untouched_anchor_setup").func
     out = fn(df, "ema_close_base_200", lookback=3, active_bars=3, side="short")
     assert out.tolist() == [False, False, False, True, True, True, True, False]
+
+
+def _ema_bounce_counter_frame() -> pd.DataFrame:
+    idx = pd.date_range("2024-01-01", periods=8, freq="h", tz="UTC")
+    anchor = 100.0
+    return pd.DataFrame(
+        {
+            "close": [105.0] * 8,
+            "low": [104.0, 99.0, 104.0, 99.0, 99.0, 104.0, 104.0, 104.0],
+            "high": [106.0] * 8,
+            "ema_fast": [110.0] * 8,
+            "ema_anchor": [anchor] * 8,
+            "ema_slow": [90.0] * 8,
+        },
+        index=idx,
+    )
+
+
+def test_ema_bounce_counter_inclusive_lookback_and_final_touch_guard() -> None:
+    trace = ema_bounce_counter_setup_trace(
+        _ema_bounce_counter_frame(),
+        "ema_fast",
+        "ema_anchor",
+        "ema_slow",
+        max_bounces=3,
+        touch_lookback_bars=3,
+        side="long",
+    )
+
+    # First window starts at index 1 and is active for 1,2,3. Raw touch at
+    # final active bar 3 is ignored; a new pending can start only at 4.
+    assert trace["pending_bounce_start"].tolist() == [
+        False,
+        True,
+        False,
+        False,
+        True,
+        False,
+        False,
+        False,
+    ]
+    assert trace["pending_bounce_end"].tolist() == [
+        False,
+        False,
+        False,
+        True,
+        False,
+        False,
+        True,
+        False,
+    ]
+    assert trace["completed_bounce_count"].tolist() == [0, 0, 0, 0, 1, 1, 1, 2]
+
+
+def test_ema_bounce_counter_blocks_after_limit_completion() -> None:
+    trace = ema_bounce_counter_setup_trace(
+        _ema_bounce_counter_frame(),
+        "ema_fast",
+        "ema_anchor",
+        "ema_slow",
+        max_bounces=1,
+        touch_lookback_bars=3,
+        side="long",
+    )
+
+    assert trace["setup_allowed"].tolist() == [
+        True,
+        True,
+        True,
+        True,
+        False,
+        False,
+        False,
+        False,
+    ]
+    assert trace["pending_bounce_start"].tolist() == [
+        False,
+        True,
+        False,
+        False,
+        False,
+        False,
+        False,
+        False,
+    ]
+
+
+def test_ema_bounce_counter_short_side_mirror() -> None:
+    idx = pd.date_range("2024-01-01", periods=5, freq="h", tz="UTC")
+    df = pd.DataFrame(
+        {
+            "close": [95.0] * 5,
+            "low": [94.0] * 5,
+            "high": [96.0, 101.0, 96.0, 96.0, 96.0],
+            "ema_fast": [90.0] * 5,
+            "ema_anchor": [100.0] * 5,
+            "ema_slow": [110.0] * 5,
+        },
+        index=idx,
+    )
+    trace = ema_bounce_counter_setup_trace(
+        df,
+        "ema_fast",
+        "ema_anchor",
+        "ema_slow",
+        max_bounces=3,
+        touch_lookback_bars=2,
+        side="short",
+    )
+
+    assert trace["trend_active"].tolist() == [True, True, True, True, True]
+    assert trace["armed"].tolist() == [True, True, True, True, True]
+    assert trace["raw_touch"].tolist() == [False, True, False, False, False]
+    assert trace["pending_bounce_start"].tolist() == [False, True, False, False, False]
 
 
 def _reclaim_fn():

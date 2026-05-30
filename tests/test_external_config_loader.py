@@ -172,6 +172,50 @@ def test_load_external_config_supports_anchor_stack_source_and_timeframe() -> No
     assert spec.anchor_stack.slow.timeframe == "4h"
 
 
+def test_load_external_config_supports_ema_bounce_counter_setup() -> None:
+    instance = _instance("bounce_counter")
+    strategy = instance["strategy"]
+    assert isinstance(strategy, dict)
+    strategy["setup"] = {
+        "component_id": "ema_bounce_counter_setup",
+        "params": {
+            "fast_ema": 50,
+            "anchor_ema": 200,
+            "slow_ema": 500,
+            "max_bounces": 3,
+            "raw_touch_mode": "range_cross",
+            "touch_lookback_bars": 10,
+            "trend_start_confirmation_bars": 1,
+            "trend_break_confirmation_bars": 1,
+        },
+    }
+
+    loaded = load_strategy_config(_bundle([instance]))
+    spec = loaded.specs[0]
+
+    assert spec.components.setup == "ema_bounce_counter_setup"
+    assert spec.setup.max_bounces == 3
+    assert spec.setup.fast_ema.timeframe == "base"
+    assert loaded.entries[0].strategy_spec_config_id
+
+
+def test_load_external_config_rejects_htf_ema_bounce_counter_setup() -> None:
+    instance = _instance("bounce_counter_htf")
+    strategy = instance["strategy"]
+    assert isinstance(strategy, dict)
+    strategy["setup"] = {
+        "component_id": "ema_bounce_counter_setup",
+        "params": {
+            "fast_ema": {"source": "close", "timeframe": "4h", "period": 50},
+            "anchor_ema": 200,
+            "slow_ema": 500,
+        },
+    }
+
+    with pytest.raises(EmaPullbackInstanceValidationError, match="fast_ema"):
+        load_strategy_config(_bundle([instance]))
+
+
 def test_load_external_config_supports_exit_atr_distance_timeframe() -> None:
     instance = _instance("mtf_exit_distance")
     strategy = instance["strategy"]

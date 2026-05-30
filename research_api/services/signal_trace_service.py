@@ -22,6 +22,10 @@ from research.strategies.ema_pullback.spec_report import (
     StrategySpecReportParseError,
     strategy_spec_from_report_dict,
 )
+from research.strategies.ema_pullback.spec import (
+    EmaBounceCounterSetupSpec,
+    UntouchedAnchorSetupSpec,
+)
 
 from research_api.contracts.runs import RunReport, RunVariant
 from research_api.contracts.signal_trace import (
@@ -57,7 +61,12 @@ def _variant_from_report(report: RunReport, variant_key: str) -> RunVariant:
 def _warmup_bars_ms(spec: Any, timeframe: str) -> int:
     base_tf = validate_timeframe(timeframe)
     base_ms = timeframe_ms(base_tf)
-    lookback = int(spec.setup.lookback)
+    if isinstance(spec.setup, EmaBounceCounterSetupSpec):
+        lookback = int(spec.setup.touch_lookback_bars)
+    elif isinstance(spec.setup, UntouchedAnchorSetupSpec):
+        lookback = int(spec.setup.lookback)
+    else:
+        lookback = 0
     slow_period = int(spec.anchor_stack.slow.period)
     anchor_warmup_ms = (max(lookback, slow_period) + 5) * base_ms
 

@@ -19,8 +19,10 @@ from research.strategies.ema_pullback.context.evaluation import (
 from research.strategies.ema_pullback.spec import BlockerRuleSpec
 from research.strategies.ema_pullback.features.plan import FeaturePlan
 from research.strategies.ema_pullback.spec import EmaPullbackStrategySpec
+from research.strategies.ema_pullback.spec import EmaBounceCounterSetupSpec
 from research.strategies.ema_pullback.spec import ReclaimTriggerSpec, StrongReclaimTriggerSpec
 from research.strategies.ema_pullback.spec import RsiFeatureSpec
+from research.strategies.ema_pullback.spec import UntouchedAnchorSetupSpec
 from research.strategies.ema_pullback.spec import TradeSide
 
 
@@ -148,13 +150,29 @@ def _build_side_signals(
         for rule, signal in zip(spec.components.blockers, blocker_signals, strict=True)
     )
     blockers = compose_blocker_signals(blocker_signals)
-    setup = setup_fn(
-        df,
-        anchor_col,
-        spec.setup.lookback,
-        spec.setup.active_bars,
-        side=side,
-    )
+    if isinstance(spec.setup, EmaBounceCounterSetupSpec):
+        setup = setup_fn(
+            df,
+            plan.setup_columns["fast"],
+            plan.setup_columns["anchor"],
+            plan.setup_columns["slow"],
+            max_bounces=spec.setup.max_bounces,
+            raw_touch_mode=spec.setup.raw_touch_mode,
+            touch_lookback_bars=spec.setup.touch_lookback_bars,
+            trend_start_confirmation_bars=spec.setup.trend_start_confirmation_bars,
+            trend_break_confirmation_bars=spec.setup.trend_break_confirmation_bars,
+            side=side,
+        )
+    elif isinstance(spec.setup, UntouchedAnchorSetupSpec):
+        setup = setup_fn(
+            df,
+            anchor_col,
+            spec.setup.lookback,
+            spec.setup.active_bars,
+            side=side,
+        )
+    else:
+        raise TypeError(f"unsupported setup spec type: {type(spec.setup).__name__}")
     trigger_rule = spec.components.trigger
     if isinstance(trigger_rule, ReclaimTriggerSpec | StrongReclaimTriggerSpec):
         trigger = trigger_fn(df, anchor_col, trigger_rule.lookback, side=side)

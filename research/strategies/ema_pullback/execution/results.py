@@ -302,6 +302,41 @@ def build_exit_reason_breakdown(trade_records: list[dict[str, Any]]) -> dict[str
     return {reason: _bucket_metrics([r for r in closed if str(r.get("exit_reason") or "unknown") == reason]) for reason in reasons}
 
 
+def build_bounce_counter_breakdown(trade_records: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """Aggregate closed trades by side and entry effective bounce number."""
+
+    closed = [
+        record
+        for record in _closed_trades(trade_records)
+        if record.get("entry_effective_bounce_number") is not None
+    ]
+    if not closed:
+        return None
+    out: dict[str, Any] = {}
+    for side in ("long", "short"):
+        side_records = [record for record in closed if record.get("entry_bounce_counter_side") == side]
+        bounce_numbers = sorted(
+            {
+                int(record["entry_effective_bounce_number"])
+                for record in side_records
+                if record.get("entry_effective_bounce_number") is not None
+            }
+        )
+        out[side] = {
+            str(number): _bucket_metrics(
+                [
+                    record
+                    for record in side_records
+                    if int(record.get("entry_effective_bounce_number") or -1) == number
+                ]
+            )
+            for number in bounce_numbers
+        }
+        out[side]["total"] = _bucket_metrics(side_records)
+    out["total"] = _bucket_metrics(closed)
+    return out
+
+
 def build_trade_quality_breakdowns(trade_records: list[dict[str, Any]]) -> dict[str, Any]:
     return {
         "quality_flag_breakdown": build_quality_flag_breakdown(trade_records),
@@ -367,6 +402,7 @@ def extract_trade_records(
     exit_component_map: dict[str, str] | None = None,
     strategy_spec: Any | None = None,
     context_bundle: Any | None = None,
+    setup_trace_by_side: dict[str, dict[str, pd.Series]] | None = None,
 ) -> list[dict[str, Any]]:
     """Normalize vectorbt portfolio trades into Stage 9 trade_records (library-agnostic fields)."""
 
@@ -484,6 +520,20 @@ def extract_trade_records(
 
             if context_state is not None and 0 <= entry_idx < len(context_state):
                 record["entry_context_state"] = _context_state_label(context_state.iloc[entry_idx])
+
+            if setup_trace_by_side is not None and 0 <= entry_idx < len(index):
+                setup_trace = setup_trace_by_side.get(direction)
+                if setup_trace is not None:
+                    record["entry_trend_episode_id"] = _scalar_json_safe(
+                        setup_trace["trend_episode_id"].iloc[entry_idx]
+                    )
+                    record["entry_effective_bounce_number"] = _scalar_json_safe(
+                        setup_trace["effective_bounce_number"].iloc[entry_idx]
+                    )
+                    record["entry_completed_bounce_count"] = _scalar_json_safe(
+                        setup_trace["completed_bounce_count"].iloc[entry_idx]
+                    )
+                    record["entry_bounce_counter_side"] = direction
 
             if strategy_spec is not None:
                 from research.strategies.ema_pullback.context.consumption_trace import (

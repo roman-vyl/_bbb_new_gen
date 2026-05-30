@@ -20,6 +20,7 @@ export const COMPONENT_EVENT_ROLE_LEGEND: {
 }[] = [
   { role: "entry_block", label: "entry_block", description: "Entry blocked span / source" },
   { role: "exit_signal", label: "exit_signal", description: "Exit signal point" },
+  { role: "setup", label: "setup", description: "Setup state source / span / point" },
 ];
 
 type MarkerStyle = {
