@@ -8,11 +8,14 @@ The returned `SignalTraceBundle.times` MUST include the bar whose open time equa
 
 Explicit `to` query param (exclusive end in milliseconds) MUST continue to be accepted unchanged.
 
-#### Scenario: Full 50k render window trace includes last candle open time
+#### Scenario: Full 50k render window trace spans exact bar count and endpoints
 
-- **GIVEN** render window candles span `[T_first, T_last]` with 50 000 bars at timeframe `5m`
+- **GIVEN** render window candles span `[T_first, T_last]` with exactly 50 000 bars at timeframe `5m`
+- **AND** stored candles exist for every bar in that inclusive open-time range
 - **WHEN** Workbench requests signal trace with `from=T_first_ms` and `to_open_time_ms=T_last_ms`
-- **THEN** the response `times` array includes `T_last` (in seconds)
+- **THEN** `len(bundle.times) == 50_000`
+- **AND** `bundle.times[0] == T_first` (seconds)
+- **AND** `bundle.times[-1] == T_last` (seconds)
 - **AND** display cache chunk `toSec` equals `T_last`
 - **AND** `coversRange(T_first, T_last)` is true after merge
 
@@ -30,7 +33,17 @@ On successful `fetchSignalTrace` for a window, Workbench MUST store the full `Si
 
 When the render window changes to a `chartWindowKey` that already exists in the session cache, Workbench MUST restore `signalTrace`, `loadedSignalTraceWindowKey`, and lanes/diagnostics ready state from cache **without** a network request.
 
-The session cache MUST reset when `selectedRunId`, `selectedVariantKey`, or `effectiveContextOverlayRef` changes (same invalidation as display cache).
+The session cache MUST enforce **`MAX_SESSION_TRACE_BUNDLES_PER_KEY = 10`** (LRU eviction of oldest entries when exceeded), matching display cache chunk cap.
+
+**`SignalTraceBundleSessionCache` MUST reset** (discard all cached bundles) when any of the following change:
+
+- `selectedRunId`
+- `selectedVariantKey`
+- `effectiveContextOverlayRef`
+- `reloadToken` (run report reload / Workbench refresh identity)
+- `marketCacheKey` or `intendedMarketCacheKey` used by WorkbenchContext for chart candle bundle identity
+
+Reset on run/variant/context alone is **not sufficient** — reload with the same run id MUST NOT reuse a prior session bundle.
 
 #### Scenario: Pan back restores lanes from session cache
 
@@ -47,6 +60,20 @@ The session cache MUST reset when `selectedRunId`, `selectedVariantKey`, or `eff
 - **WHEN** the render window becomes `[T0, T1]`
 - **THEN** Workbench requests signal trace over the network
 - **AND** stores the response in both display cache and session cache when ready
+
+#### Scenario: Run reload clears session cache
+
+- **GIVEN** session cache holds bundles for the current run and variant
+- **WHEN** Workbench `reloadToken` increments (report/market reload) or `marketCacheKey` changes for the chart bundle
+- **THEN** session cache is reset and no prior `chartWindowKey` bundle is restored
+- **AND** the next render window for that key triggers a network fetch
+
+#### Scenario: Session cache LRU evicts oldest at cap
+
+- **GIVEN** session cache already holds 10 distinct `chartWindowKey` entries for the active cache identity
+- **WHEN** an 11th window bundle is stored
+- **THEN** the oldest entry is evicted
+- **AND** pan-back to the evicted window requires a network fetch
 
 ## MODIFIED Requirements
 

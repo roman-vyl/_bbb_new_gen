@@ -5,7 +5,7 @@ Pipeline debug on a 646k-bar run showed `api.fetchSignalTrace` dominating UX (~4
 ## What Changes
 
 - **research_api:** When `to_open_time_ms` is provided on `GET .../signal-trace`, resolve exclusive end via `exclusive_end_for_report_to` (same as market bundle endpoints) so OHLCV load includes the last candle open time.
-- **frontend:** Add in-memory **`SignalTraceBundleSessionCache`** keyed by `chartWindowKey` (scoped to run + variant + context ref); restore lanes/diagnostics bundle on pan-back without network when cached.
+- **frontend:** Add in-memory **`SignalTraceBundleSessionCache`** keyed by `chartWindowKey` (`MAX_SESSION_TRACE_BUNDLES_PER_KEY = 10`); restore lanes/diagnostics on pan-back without network when cached; reset on run/variant/context **and** `reloadToken` / market cache identity change.
 - **frontend:** Evolve `decideSignalTraceLoad` to skip fetch when session bundle exists for current window (display cache hit path unchanged).
 - **frontend debug:** Replace misleading `wb.render_window.shift` timed counter with `wb.render_window.shift_applied` and `wb.render_window.shift_noop`; keep `wb.pan.shift_requested` as pan-side intent.
 - **tests:** BFF integration test for `to_open_time_ms` last-bar inclusion; frontend policy/cache unit tests; optional pipeline-debug export assertion.

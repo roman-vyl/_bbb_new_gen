@@ -47,9 +47,17 @@ Market bundle and signal trace share the frontend param `to_open_time_ms = lastC
 
 ### D2 — Lanes bundle session cache (frontend)
 
-**Choice:** New module `signalTraceBundleSessionCache.ts` — `Map<chartWindowKey, SignalTraceBundle>` scoped by `traceDisplayCacheKey` (run + variant + context ref). On successful fetch, store bundle. Before starting fetch, if session cache has `chartWindowKey`, restore `signalTrace`, `loadedSignalTraceWindowKey`, status `ready`.
+**Choice:** New module `signalTraceBundleSessionCache.ts` — `Map<chartWindowKey, SignalTraceBundle>` scoped by cache identity. On successful fetch, store bundle. Before starting fetch, if session cache has `chartWindowKey`, restore `signalTrace`, `loadedSignalTraceWindowKey`, status `ready`.
 
-**Invalidation:** Same as display cache — reset on `traceDisplayCacheKey` change. LRU cap optional (e.g. 16 windows) to bound memory; evict oldest by insertion order.
+**Cap:** `MAX_SESSION_TRACE_BUNDLES_PER_KEY = 10` (fixed constant, matches display cache `MAX_CHUNKS_PER_KEY`). LRU evict oldest on insert when full.
+
+**Invalidation (required, not optional):** Reset all bundles when any of:
+
+- `traceDisplayCacheKey` inputs change (`selectedRunId`, `selectedVariantKey`, `effectiveContextOverlayRef`)
+- `reloadToken` changes (report reload / Workbench refresh)
+- `marketCacheKey` or `intendedMarketCacheKey` changes (chart candle bundle identity)
+
+Wire invalidation in the same `WorkbenchContext` effects that reset display cache or reload market data — do not rely on run/variant/context alone.
 
 **Alternatives considered:**
 
@@ -85,9 +93,8 @@ Deprecate `wb.render_window.shift` — replace references in `debug/README.md` a
 
 | Risk | Mitigation |
 |------|------------|
-| Session cache memory for many pan shifts | Cap at ~16 window keys; each bundle ~50k bars metadata-heavy but acceptable in-session |
+| Session cache memory for many pan shifts | Fixed cap `MAX_SESSION_TRACE_BUNDLES_PER_KEY = 10`; LRU eviction |
 | BFF cache key uses ms bounds; exclusive end change invalidates old cache entries | Acceptable — dev/staging only; production cache is in-process |
-| Stale bundle if run data reloaded mid-session | Invalidate on `reloadToken` / same keys as market cache identity change |
 | HTF overlay regression | Manual verify on variant with `strategy.contexts` (required task) |
 
 ## Migration Plan
@@ -99,7 +106,7 @@ Deprecate `wb.render_window.shift` — replace references in `debug/README.md` a
 
 Rollback: revert BFF exclusive-end change independently; frontend caches are additive.
 
-## Open Questions
+## Resolved decisions (formerly open questions)
 
-- Session cache LRU cap: 16 vs 10 (match display cache `MAX_CHUNKS_PER_KEY`)? **Proposed: 16 window keys.**
-- Emit `wb.signal_trace.session_hit` debug mark? **Proposed: yes, alongside existing cache_hit/miss.**
+- Session cache LRU cap: **`MAX_SESSION_TRACE_BUNDLES_PER_KEY = 10`** (matches display cache chunk cap).
+- Emit `wb.signal_trace.session_hit` debug mark: **yes**, alongside existing cache_hit/miss.
