@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { ChartAuxEmaOverlay, ChartBar, ComponentEvent } from "@/api/types";
 import { CHART_OVERLAY_EMA_KIND } from "@/api/types";
 import {
+  buildAuxOverlaysStabilizeKey,
   buildRenderWindowBoundsKey,
   displayAuxOverlaysForRenderWindow,
   displayComponentEventsForRenderWindow,
@@ -182,6 +183,33 @@ describe("stabilizeByWindowBoundsKey", () => {
     const second = stabilizeByWindowBoundsKey(cache, "b:2:10", [2]);
     expect(second).not.toBe(first);
     expect(second).toEqual([2]);
+  });
+
+  it("must not return stale aux when bounds key unchanged but aux content grew (HTF arrive after pan)", () => {
+    const cache = { current: { key: "", value: [] as ChartAuxEmaOverlay[] } };
+    const key = "1763941200:1778940900:50000";
+    const empty = stabilizeByWindowBoundsKey(cache, key, []);
+    const withHtf = stabilizeByWindowBoundsKey(
+      cache,
+      buildAuxOverlaysStabilizeKey(
+        key,
+        [
+          makeHtfOverlay([
+            { time: 1_768_000_000, value: 1 },
+            { time: 1_769_000_000, value: 2 },
+          ]),
+        ],
+      ),
+      [
+        makeHtfOverlay([
+          { time: 1_768_000_000, value: 1 },
+          { time: 1_769_000_000, value: 2 },
+        ]),
+      ],
+    );
+    expect(withHtf).not.toBe(empty);
+    expect(withHtf).toHaveLength(1);
+    expect(withHtf[0]!.points.length).toBe(2);
   });
 });
 

@@ -6,8 +6,9 @@ The system now needs a controller-based architecture that separates responsibili
 
 ## What Changes
 
-- Introduce a layered chart runtime architecture: `RunDataController`, `MarketDataStore`, `RenderWindowController`, `TraceDisplayController`, `ChartViewModel`, `ViewportController`, and a thin `ChartRenderer`.
-- Replace implicit effect/guard behavior with explicit controller events and state transitions (`trade_selected`, `user_pan_start/move/idle`, `window_swap_started/committed`, `trace_ready`).
+- Introduce a layered chart runtime architecture. **v1 (delivered):** orchestration lives in `frontend/src/features/chart/runtime/` (`RenderWindowController`, `ViewportController`, `traceDisplayOrchestrator`, `ChartViewModel`, `chartRuntime`); **shell IO** (run/report, market bundle, trace fetch effect) remains in `WorkbenchContext`; **rendering** stays in `ChartPanel`.
+- Logical roles `RunDataController` / `MarketDataStore` / `TraceDisplayController` are satisfied **in place** in Workbench for v1, not as separate files. See `implementation/ownership-map.md`.
+- Replace implicit effect/guard behavior with explicit controller events and state transitions (`trade_selected`, pointer pan, `window_swap_committed`, `trace_ready` → `noViewportChange`).
 - Change pan boundary behavior: during active drag, render-window shifts are queued as pending and committed only after pan idle debounce (no immediate window swap during live drag).
 - Enforce viewport ownership rules: trace updates never issue viewport commands; viewport changes come only from `ViewportController` policy.
 - Decouple trace display updates from render-window identity churn so cached slices can update markers/HTF overlays without triggering viewport side effects.
@@ -25,7 +26,7 @@ The system now needs a controller-based architecture that separates responsibili
 
 ## Impact
 
-- Frontend: `frontend/src/shared/context/WorkbenchContext.tsx`, chart feature modules, and `ChartPanel` are split into controller/view-model/renderer responsibilities.
+- Frontend: chart **decisions** moved to `features/chart/runtime/*`; `WorkbenchContext` slimmed on policy (still hosts data fetch/cache); `ChartPanel` is renderer + interaction emitter only.
 - Research API and trace contract remain source-compatible; orchestration and fetch timing semantics in frontend change.
 - Existing observability/debug counters will be reorganized around controller events/state transitions.
 - Manual QA and debug instrumentation must prove new invariants on heavy runs: no active-pan `setData` storm, no active-pan trace-fetch storm, one committed shift -> one key update -> one viewport command, and `traceReady` without viewport movement.

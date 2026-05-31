@@ -34,17 +34,21 @@ Constraints:
 
 ### Decision 1: Introduce controller pipeline and a thin renderer
 
-Adopt a layered runtime:
+Adopt a layered runtime (logical roles). **v1 physical layout:**
 
-- `RunDataController`: selected run/variant and report payload.
-- `MarketDataStore`: full cached market bundle for run+variant.
-- `RenderWindowController`: sliding window indices, interaction mode, pending shift.
-- `TraceDisplayController`: display cache coverage, chunk scheduling, merge/slice.
-- `ChartViewModel`: pure derivation of chart-ready series/markers/overlays/loading flags.
-- `ViewportController`: single-owner viewport command state machine.
-- `ChartRenderer` (`ChartPanel`): imperative adapter only (`setData`, markers, execute viewport command).
+| Role | v1 module / location |
+|------|----------------------|
+| `RenderWindowController` | `runtime/renderWindowController.ts` |
+| `ViewportController` | `runtime/viewportController.ts` |
+| Trace display policy | `runtime/traceDisplayOrchestrator.ts` + trace effect in `WorkbenchContext` |
+| `ChartViewModel` | `runtime/chartViewModel.ts`, built in Workbench |
+| `ChartRenderer` | `ChartPanel.tsx` |
+| `RunDataController` | `WorkbenchContext` (run/report/variant/trade) — not extracted in v1 |
+| `MarketDataStore` | `WorkbenchContext` + `marketDataCache` — not extracted in v1 |
 
-Rationale: existing bugs come from multi-owner orchestration spread across React effects/refs. Controller boundaries make event order explicit and testable.
+Rationale: existing bugs come from multi-owner **orchestration** in React effects/refs. v1 moves orchestration decisions into `runtime/`; extracting shell data stores is optional follow-up and does not block behavioral contracts.
+
+Post-cutover map: `implementation/ownership-map.md`.
 
 Alternative considered: keep current architecture and add more guards around `ChartPanel` refs/RAF sequencing. Rejected because it reduces symptom frequency but does not remove multi-owner coupling.
 
@@ -180,40 +184,37 @@ Rationale: dual runtime truth is a direct path to regression and debugging ambig
 - [Risk] Lanes/diagnostics readiness might lag if trace coalescing is too aggressive. -> Mitigation: separate display cache and session bundle cache logic retained; instrument queue/dequeue decisions.
 - [Risk] Large refactor may hide performance regressions in non-pan flows. -> Mitigation: add perf counters per controller event (`setData`, window commit latency, fetch count/latency, restore latency) and compare baseline.
 
+## v1 delivered (2026-05)
+
+- All items in `tasks.md` complete, including manual §9 and baseline §0.4 on heavy BTCUSDT 5m.
+- Legacy policy owners removed from ChartPanel; dual orchestration paths eliminated.
+- Acceptance: `implementation/acceptance.md` (manual). No Playwright suite for heavy pan (operator + unit tests).
+
+**Not in v1 scope:** separate `RunDataController` / `MarketDataStore` modules; renaming `ChartPanel` → `ChartRenderer`; archiving delta specs into `openspec/specs/` (use `/opsx:archive` when merging).
+
 ## Migration Plan
 
-1. **Baseline lock before edits**
+1. **Baseline lock before edits** ✓
    - Capture `git status`, create working branch `chart-runtime-controller-cutover`, and record starting commit hash.
    - Capture heavy-run debug counters before refactor (`setData`, trace fetch, focus/restore counters) as comparison baseline.
 
-2. **Produce ownership map from current code**
-   - Enumerate current ownership in `WorkbenchContext` and `ChartPanel`.
-   - Map target ownership transfers to `RenderWindowController`, `ViewportController`, `TraceDisplayController`, and `ChartViewModel`.
-   - Separate chart-runtime ownership from shell/report-selection ownership that remains outside runtime controllers.
+2. **Produce ownership map from current code** ✓ — see `implementation/ownership-map.md` (post-cutover v1).
 
-3. **Create controller modules as new source of truth**
+3. **Create controller modules as new source of truth** ✓
    - Implement controller modules and runtime state contracts (`committedWindow`, `pendingShift`, interaction state, viewport FSM, committed-window trace scheduling, cache slicing, view-model projection).
    - Keep controllers authoritative; do not wrap legacy decision paths as permanent runtime logic.
 
-4. **Perform destructive ownership cutover**
-   - Replace owner paths, do not add parallel owner paths.
-   - Wire Workbench shell as input provider and controller runtime as decision layer.
-   - Keep `ChartPanel` as renderer/event-emitter only.
+4. **Perform destructive ownership cutover** ✓
 
-5. **Delete old owner logic immediately per vertical slice**
+5. **Delete old owner logic immediately per vertical slice** ✓
    - After render-window ownership cut: remove immediate shift decisions from old pan handlers and legacy render-window mutations in renderer.
    - After viewport ownership cut: remove old pending-restore/seq/guard ownership logic and all non-controller focus/restore decision sources.
    - After trace ownership cut: remove fetch decisions from pending/transient window states and key-churn side effects.
    - After renderer cut: remove `shouldShift/shouldFetch/shouldFocus/shouldRestore` branches.
 
-6. **Run final cleanup audit before acceptance**
-   - Audit code/diff for legacy owner artifacts and classify each hit as removed or non-owner plumbing.
-   - Red flags include: active legacy refs/guards as decision owners, direct viewport control outside `ViewportController`, direct trace fetch from pending state, active-drag boundary causing `setData`, old immediate-shift path.
-   - Merge only when no dual orchestration ownership remains.
+6. **Run final cleanup audit before acceptance** ✓ (tasks §8)
 
-7. **Acceptance and merge**
-   - Run heavy-run acceptance checklist (data-surface + invariants).
-   - Merge only after invariant-driven acceptance and cleanup audit pass.
+7. **Acceptance and merge** ✓ manual heavy-run checklist (tasks §9); merge/archive per team workflow.
 
 Rollback strategy:
 - Use git branch/commit reset workflow; do not maintain legacy runtime as a supported fallback mode in production code.

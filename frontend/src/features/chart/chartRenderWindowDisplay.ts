@@ -101,3 +101,15 @@ export function buildRenderWindowBoundsKey(
   }
   return `${firstTimeSec}:${lastTimeSec}:${count}`;
 }
+
+/** Bounds key for aux overlay stabilize cache — must change when HTF/BFF points arrive without pan. */
+export function buildAuxOverlaysStabilizeKey(
+  boundsKey: string,
+  overlays: readonly ChartAuxEmaOverlay[],
+): string {
+  if (boundsKey === "") {
+    return "";
+  }
+  const fingerprint = overlays.map((o) => `${o.id}:${o.points.length}`).join("|");
+  return `${boundsKey}|${fingerprint}`;
+}

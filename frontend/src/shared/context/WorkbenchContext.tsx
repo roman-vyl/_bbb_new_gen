@@ -33,6 +33,7 @@ import {
   type RunVariant,
   type TradeRecord,
   type SignalTraceBundle,
+  type HtfContextTrace,
   type ComponentEvent,
   type StrategyConfigDraft,
   type WorkbenchTab,
@@ -42,7 +43,7 @@ import {
   AnchorStackParseError,
   anchorStackPeriodsFromStrategySpec,
 } from "@/features/chart/anchorStackFromSpec";
-import { mergeAuxOverlayPoints, sliceAuxOverlaysToCandleWindow } from "@/features/chart/chartAuxEmaOverlays";
+import { mergeAuxOverlayPoints } from "@/features/chart/chartAuxEmaOverlays";
 import type { ChartDataWindowManager } from "@/features/chart/chartDataWindowManager";
 import { createChartRuntime, type WindowCommitResult } from "@/features/chart/runtime/chartRuntime";
 import { buildChartViewModel, type ChartViewModel } from "@/features/chart/runtime/chartViewModel";
@@ -70,8 +71,11 @@ import {
 } from "@/features/chart/strategyContexts";
 import { candleRangeMs } from "@/features/chart/chartMarkers";
 import {
+  buildAuxOverlaysStabilizeKey,
   buildRenderWindowBoundsKey,
   candleTimeBounds,
+  displayAuxOverlaysForRenderWindow,
+  frozenHtfOverlaysForStorage,
   stabilizeByWindowBoundsKey,
 } from "@/features/chart/chartRenderWindowDisplay";
 import {
@@ -264,6 +268,8 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
   const signalTraceStatusRef = useRef<SignalTraceLoadStatus>("idle");
   const loadedSignalTraceWindowKeyRef = useRef<string | null>(null);
   const previousChartWindowKeyRef = useRef<string | null>(null);
+  /** Last HTF aux overlays for current trace coverage; re-sliced when render window moves before trace key catches up. */
+  const lastSlicedHtfOverlaysRef = useRef<ChartAuxEmaOverlay[]>([]);
   const traceLoadGenerationRef = useRef(0);
   const applyTraceDisplayRef = useRef<() => void>(() => {});
   const [reloadToken, setReloadToken] = useState(0);
@@ -844,10 +850,11 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
         const firstTimeSec = count > 0 ? rawCandles[0]!.time : null;
         const lastTimeSec = count > 0 ? rawCandles[count - 1]!.time : null;
         const boundsKey = buildRenderWindowBoundsKey(firstTimeSec, lastTimeSec, count);
+        const auxStabilizeKey = buildAuxOverlaysStabilizeKey(boundsKey, rawAux);
         return {
           candles: stabilizeByWindowBoundsKey(chartCandlesCacheRef, boundsKey, rawCandles),
           emaOverlays: stabilizeByWindowBoundsKey(chartEmaCacheRef, boundsKey, rawEma),
-          auxEmaOverlays: stabilizeByWindowBoundsKey(chartAuxEmaCacheRef, boundsKey, rawAux),
+          auxEmaOverlays: stabilizeByWindowBoundsKey(chartAuxEmaCacheRef, auxStabilizeKey, rawAux),
           firstTimeSec,
           lastTimeSec,
           count,
@@ -1010,13 +1017,44 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     }
   }, [emitChartViewportCommand]);
 
+  const applyHtfOverlaysFromDisplaySlice = useCallback(
+    (htfSlice: { times: number[]; htf_context?: HtfContextTrace }) => {
+      const htfSpecCount = auxEmaSpecs.filter((spec) => spec.source === "htf_trace").length;
+      if (htfSpecCount === 0 || htfSlice.times.length === 0 || !htfSlice.htf_context) {
+        return;
+      }
+      const htfOverlays = auxEmaSpecs
+        .filter((spec) => spec.source === "htf_trace")
+        .map((spec) =>
+          auxOverlayFromHtfSlice(spec, htfSlice.times, htfSlice.htf_context!),
+        )
+        .filter((overlay): overlay is ChartAuxEmaOverlay => overlay !== null);
+      if (htfOverlays.length === 0) {
+        return;
+      }
+      lastSlicedHtfOverlaysRef.current = htfOverlays;
+      setAuxEmaOverlays((prev) => {
+        const nonHtf = prev.filter((overlay) => !overlay.id.startsWith("htf_"));
+        return mergeAuxOverlayPoints(nonHtf, htfOverlays);
+      });
+    },
+    [auxEmaSpecs],
+  );
+
   const applyTraceDisplayForCurrentWindow = useCallback(() => {
-    const slice = sliceTraceDisplayForCandles(
-      signalTraceDisplayCacheRef.current,
-      chartViewCandlesRef.current,
-    );
+    const candles = chartViewCandlesRef.current;
+    const slice = sliceTraceDisplayForCandles(signalTraceDisplayCacheRef.current, candles);
     if (slice === null) {
       setChartDisplayComponentEvents([]);
+      const bounds = candleTimeBounds(candles);
+      if (bounds !== null) {
+        applyHtfOverlaysFromDisplaySlice(
+          signalTraceDisplayCacheRef.current.sliceHtfContextForWindow(
+            bounds.fromSec,
+            bounds.toSec,
+          ),
+        );
+      }
       return;
     }
 
@@ -1030,24 +1068,8 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       htfTimeCount: slice.htfSlice.times.length,
     });
 
-    const htfSpecCount = auxEmaSpecs.filter((spec) => spec.source === "htf_trace").length;
-    if (htfSpecCount === 0) {
-      return;
-    }
-
-    if (slice.htfSlice.times.length > 0 && slice.htfSlice.htf_context) {
-      const htfOverlays = auxEmaSpecs
-        .filter((spec) => spec.source === "htf_trace")
-        .map((spec) =>
-          auxOverlayFromHtfSlice(spec, slice.htfSlice.times, slice.htfSlice.htf_context!),
-        )
-        .filter((overlay): overlay is ChartAuxEmaOverlay => overlay !== null);
-      setAuxEmaOverlays((prev) => {
-        const nonHtf = prev.filter((overlay) => !overlay.id.startsWith("htf_"));
-        return mergeAuxOverlayPoints(nonHtf, htfOverlays);
-      });
-    }
-  }, [auxEmaSpecs]);
+    applyHtfOverlaysFromDisplaySlice(slice.htfSlice);
+  }, [applyHtfOverlaysFromDisplaySlice]);
 
   applyTraceDisplayRef.current = applyTraceDisplayForCurrentWindow;
 
@@ -1141,6 +1163,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
         .map((spec) => auxOverlayFromHtfTrace(spec, signalTrace))
         .filter((overlay): overlay is ChartAuxEmaOverlay => overlay !== null);
 
+      lastSlicedHtfOverlaysRef.current = htfOverlays;
       setAuxEmaOverlays((prev) => {
         const nonHtf = prev.filter((overlay) => !overlay.id.startsWith("htf_"));
         return mergeAuxOverlayPoints(nonHtf, htfOverlays);
@@ -1180,6 +1203,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       return;
     }
     signalTraceDisplayCacheRef.current.reset(traceDisplayCacheKey);
+    lastSlicedHtfOverlaysRef.current = [];
     setDisplayCacheVersion((version) => version + 1);
   }, [traceDisplayCacheKey]);
 
@@ -1214,6 +1238,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     chartCandlesCacheRef.current = { key: "", value: [] };
     chartEmaCacheRef.current = { key: "", value: [] };
     chartAuxEmaCacheRef.current = { key: "", value: [] };
+    lastSlicedHtfOverlaysRef.current = [];
   }, [selectedRunId, selectedVariantKey]);
 
   const chartWindowKey = useMemo(() => {
@@ -1315,14 +1340,29 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
   ]);
 
   const chartDisplayAuxEmaOverlays = useMemo(() => {
-    const bffOverlays = chartView.auxEmaOverlays.filter((overlay) => !overlay.id.startsWith("htf_"));
-    const htfOverlays = chartView.auxEmaOverlays.filter((overlay) => overlay.id.startsWith("htf_"));
-    const htfDisplay =
-      chartView.candles.length === 0
-        ? []
-        : sliceAuxOverlaysToCandleWindow(htfOverlays, chartView.candles);
-    return [...bffOverlays, ...htfDisplay];
-  }, [chartView.auxEmaOverlays, chartView.candles]);
+    const sliced = chartView.auxEmaOverlays;
+    const frozenHtf = lastSlicedHtfOverlaysRef.current;
+    const display = displayAuxOverlaysForRenderWindow(
+      sliced,
+      frozenHtf,
+      signalTraceMatchesWindow,
+      chartView.candles,
+    );
+
+    if (signalTraceMatchesWindow) {
+      const htfForStorage = frozenHtfOverlaysForStorage(sliced);
+      if (htfForStorage.some((overlay) => overlay.points.length > 0)) {
+        lastSlicedHtfOverlaysRef.current = htfForStorage;
+      }
+    }
+
+    return display;
+  }, [
+    chartView.auxEmaOverlays,
+    chartView.candles,
+    signalTraceMatchesWindow,
+    displayApplyRevision,
+  ]);
 
   useEffect(() => {
     applyTraceDisplayForCurrentWindow();

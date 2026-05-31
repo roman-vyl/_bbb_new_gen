@@ -1,3 +1,5 @@
+> **Docs:** Post-cutover ownership (logical roles vs code paths) — `implementation/ownership-map.md`. v1 keeps run/market/trace IO in `WorkbenchContext`; orchestration in `features/chart/runtime/`.
+
 ## 0. Baseline lock and branch setup
 
 - [x] 0.1 Capture `git status` snapshot before any implementation edits.
@@ -13,7 +15,7 @@
 
 ## 2. Controller modules as source of truth
 
-- [x] 2.1 Introduce controller contracts/types for `RunDataController`, `MarketDataStore`, `RenderWindowController`, `TraceDisplayController`, `ViewportController`, and `ChartViewModel`.
+- [x] 2.1 Introduce controller contracts/types for chart runtime roles (`RenderWindowController`, `ViewportController`, trace display policy, `ChartViewModel`; shell roles remain in Workbench for v1 — see ownership map).
 - [x] 2.2 Implement controller state ownership (`committedWindow`, `pendingShift`, interaction state, viewport FSM, committed-window trace scheduling).
 - [x] 2.3 Wire chart runtime to controller-owned orchestration path as primary implementation (no long-lived compatibility adapter).
 
@@ -68,7 +70,7 @@
 ## 9. Acceptance (heavy-run invariant proof)
 
 - [x] 9.1 Validate heavy BTCUSDT 5m run opens successfully and initial component events appear without manual pan.
-- [x] 9.2 Validate HTF/context overlays are visible on initial load and stay stable across pan and deferred commit.
+- [x] 9.2 Validate HTF/context overlays are visible on initial load and stay stable across pan and deferred commit (hint `+N aux EMA (exit/HTF)`; see `workbench-chart-htf-context-overlays` aux stabilize requirement).
 - [x] 9.3 Validate fast pan May -> Feb/Jan does not produce visible May -> Feb -> May -> Feb flash.
 - [x] 9.4 Validate active pan has no `setData` storm and no trace-fetch storm.
 - [x] 9.5 Validate trade focus is not applied while user pan is active.

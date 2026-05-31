@@ -33,7 +33,9 @@ Baseline is **not** a behavior parity target. It records pre-refactor debug coun
 
 ## Post-cutover
 
-Same manual steps as above; label flushes `baseline-post-cutover` and save JSON under `debug/reports/`. See `implementation/acceptance.md` for the §9 checklist.
+Captured manually on heavy BTCUSDT 5m (operator, 2026-05). Optional JSON under `debug/reports/baseline-post-cutover-*.json`.
+
+Same procedure for future regressions: label flushes `baseline-post-cutover`, compare qualitatively to pre-cutover (fewer `setData` / `fetch_start` during active pan).
 
 ## Key steps to compare (from `pipelineDebug.ts`)
 
