@@ -15,7 +15,8 @@ Document the **delivered** Workbench Chart pipeline for HTF context EMA auxiliar
 | BFF | `research_api/services/signal_trace_service.py` | Builds trace; **cache key MUST include `context_overlay_ref`** |
 | Frontend specs | `frontend/src/features/chart/strategySpecAuxEma.ts` | `collectAuxEmaSpecs` → `source: "htf_trace"`, ids `htf_{role}` |
 | Frontend contexts | `frontend/src/features/chart/strategyContexts.ts` | Reads `strategy.contexts`; resolves default overlay ref |
-| Frontend state | `frontend/src/shared/context/WorkbenchContext.tsx` | `effectiveContextOverlayRef`, aux overlay merge, `SignalTraceDisplayCache`, trace window key |
+| Frontend state | `frontend/src/shared/context/WorkbenchContext.tsx` | `effectiveContextOverlayRef`, aux overlay merge, `SignalTraceDisplayCache`, trace window key, `chartWindowSlice` aux/anchor stabilize keys |
+| Frontend display slice | `frontend/src/features/chart/chartRenderWindowDisplay.ts` | `buildAuxOverlaysStabilizeKey`, `buildEmaOverlaysStabilizeKey`, `displayAuxOverlaysForRenderWindow`, frozen HTF re-slice |
 | Frontend chart | `frontend/src/features/chart/ChartPanel.tsx` | Renders `chartDisplayAuxEmaOverlays` as dashed LineSeries |
 ## Requirements
 ### Requirement: HTF context EMA lines come from signal trace, not browser or BFF overlay EMA
@@ -130,6 +131,29 @@ HTF aux overlay points MUST be sourced from the accumulated trace display cache 
 - **THEN** HTF context EMA lines render from cache slice
 - **AND** no signal trace refetch occurs solely because the user returned to a prior window
 
+### Requirement: Aux overlay render-window stabilize cache MUST invalidate when overlay content changes at unchanged bounds
+
+Workbench slices `auxEmaOverlays` to the committed render window via `chartDataWindowManager` and MAY stabilize the sliced result by render-window bounds for performance (same pattern as candles and anchor-stack EMA).
+
+When render-window bounds (`firstTimeSec:lastTimeSec:count`) are unchanged but aux overlay point sets change — for example HTF overlays merge into state after signal trace display apply while the user has not panned — the stabilize cache key for aux overlays MUST incorporate an overlay content fingerprint (e.g. per-overlay `id` and `points.length`) via `buildAuxOverlaysStabilizeKey`.
+
+Workbench MUST NOT return a prior empty aux slice from stabilize when HTF `htf_*` overlays now have displayable points for the same bounds.
+
+#### Scenario: Late trace arrival at same render window shows HTF lines
+
+- **GIVEN** chart render window bounds are already committed and `chartWindowSlice` initially sliced zero HTF aux points
+- **AND** signal trace display apply merges `htf_fast` / `htf_anchor` / `htf_slow` into `auxEmaOverlays` for that window
+- **WHEN** Workbench recomputes `chartWindowSlice` without a bounds change
+- **THEN** sliced aux overlays include the new HTF point series
+- **AND** chart hint includes `+N aux EMA (exit/HTF)` with `N >= 1`
+- **AND** ChartPanel renders dashed HTF LineSeries
+
+#### Scenario: Pan-back stabilize does not resurrect stale empty aux
+
+- **GIVEN** user panned to window `[Ta, Tb]` with HTF visible from cache
+- **WHEN** user pans back to the same `[Ta, Tb]` bounds without refetch
+- **THEN** HTF aux overlays remain visible (not replaced by an earlier empty stabilized slice)
+
 ### Requirement: Report strategy_spec carries contexts for overlay resolution
 
 Run report `variants[].strategy_spec` MUST include `contexts: { <ref>: provider }` when the strategy instance defines contexts (via `strategy_spec_to_dict`). Chart overlay resolution reads from embedded report spec — not from Composer draft files alone.
@@ -145,7 +169,8 @@ Run report `variants[].strategy_spec` MUST include `contexts: { <ref>: provider 
 
 Any change proposal that modifies **any** of the following MUST include an explicit regression item in `tasks.md` and MUST NOT merge without verifying HTF context EMA lines on a variant with `strategy.contexts` (e.g. `htf_1` on `instance_1`):
 
-- `frontend/src/shared/context/WorkbenchContext.tsx` (signal trace load, aux EMA state, context overlay ref)
+- `frontend/src/shared/context/WorkbenchContext.tsx` (signal trace load, aux EMA state, context overlay ref, `chartWindowSlice` aux stabilize)
+- `frontend/src/features/chart/chartRenderWindowDisplay.ts` (`buildAuxOverlaysStabilizeKey`, `displayAuxOverlaysForRenderWindow`)
 - `frontend/src/features/chart/strategySpecAuxEma.ts` or `strategyContexts.ts`
 - `frontend/src/features/chart/ChartPanel.tsx` aux EMA series effect
 - `research_api/services/signal_trace_service.py` (cache, query params)
@@ -155,9 +180,10 @@ Any change proposal that modifies **any** of the following MUST include an expli
 Regression verification (minimum):
 
 1. Select run variant with single HTF context (e.g. `htf_1`, 4h EMA 200/500/1000).
-2. Chart hint includes `+3 aux EMA (exit/HTF)` after trace loads.
+2. Chart hint includes `+N aux EMA (exit/HTF)` after trace loads (not only Bar Inspector HTF values).
 3. Three dashed HTF lines visible; Bar Inspector shows EMA fast/anchor/slow at selected bar.
 4. Pan chart — lines reload without permanent disappearance.
+5. Late trace arrival at unchanged render bounds updates HTF chart lines without viewport movement.
 
 #### Scenario: Chart feature proposal lists HTF overlay regression task
 

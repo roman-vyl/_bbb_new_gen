@@ -134,10 +134,18 @@ def _patch_all() -> None:
 
     def fetch_trace(**kwargs):
         from research_api.services.market_params import parse_time_range_ms
+        from research_api.services.market_reader import resolve_exclusive_to_ms
+        from research_api.services.results_reader import load_run_report
 
         with dbg_root("bff.signal_trace"):
+            report = load_run_report(run_id=kwargs["run_id"])
+            exclusive_end_ms = resolve_exclusive_to_ms(
+                to_ms=kwargs.get("to_ms"),
+                to_open_time_ms=kwargs.get("to_open_time_ms"),
+                timeframe=report.timeframe,
+            )
             start_ms, end_ms = parse_time_range_ms(
-                from_ms=kwargs["from_ms"], to_ms=kwargs["to_ms"]
+                from_ms=kwargs["from_ms"], to_ms=exclusive_end_ms
             )
             cache_key = sts._cached_full_trace_key(
                 kwargs["run_id"],
@@ -263,19 +271,19 @@ def main() -> None:
         report = load_run_report(run_id=run_id)
         variant = report.variants[0].variant
         from_ms = report.data_range.from_open_time_ms
-        to_ms = report.data_range.to_open_time_ms
+        to_open_time_ms = report.data_range.to_open_time_ms
         sts._TRACE_CACHE.clear()
         fetch_signal_trace_bundle(
             run_id=run_id,
             variant_key=variant,
             from_ms=from_ms,
-            to_ms=to_ms,
+            to_open_time_ms=to_open_time_ms,
         )
         fetch_signal_trace_bundle(
             run_id=run_id,
             variant_key=variant,
             from_ms=from_ms,
-            to_ms=to_ms,
+            to_open_time_ms=to_open_time_ms,
         )
     except Exception as exc:
         print(f"signal_trace skipped: {exc}", file=sys.stderr)

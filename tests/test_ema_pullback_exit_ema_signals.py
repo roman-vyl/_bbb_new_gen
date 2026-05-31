@@ -131,7 +131,6 @@ def test_ema_cross_loss_confirm_three_no_exit_without_cross() -> None:
 def test_feature_plan_includes_exit_ema_outside_stack() -> None:
     base = make_ema_pullback_strategy_spec()
     spec = make_ema_pullback_strategy_spec(
-        contexts=base.contexts,
         trade_management_spec=trade_management(
             exit_policy_spec=exit_policy_htf_consumption(
                 always_on=base.trade_management.exit_policy.always_on.exits,

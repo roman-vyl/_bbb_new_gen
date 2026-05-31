@@ -110,7 +110,11 @@ describe("htf_regime_gate composer validation", () => {
 
   it("prepareStrategyForApi preserves htf_regime_gate shape", () => {
     const prepared = prepareStrategyForApi(baseStrategy);
-    const blocker = (prepared.blockers as { context_consumption: { policy: { params: { allowed_regimes: string[] } } } }[])[0]!;
+    const blocker = (prepared.blockers as {
+      context_consumption: {
+        policy: { policy_id: string; params: { allowed_regimes: string[] } };
+      };
+    }[])[0]!;
     expect(blocker.context_consumption.policy.policy_id).toBe(HTF_REGIME_GATE_POLICY_ID);
     expect(blocker.context_consumption.policy.params.allowed_regimes).toEqual(["aligned", "neutral"]);
     expect(blocker.context_consumption.policy.params).not.toHaveProperty("allowed_states");

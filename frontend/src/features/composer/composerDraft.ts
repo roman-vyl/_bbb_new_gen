@@ -221,6 +221,7 @@ export function listSlotPath(
   index: number,
   role:
     | "blockers"
+    | "setups"
     | "exits"
     | "always_on_exits"
     | "aligned_exits"
@@ -228,6 +229,9 @@ export function listSlotPath(
     | "neutral_exits",
   slot: number,
 ): string {
+  if (role === "setups") {
+    return `${strategyPath(index)}.setups[${slot}]`;
+  }
   if (role === "blockers") {
     return `${strategyPath(index)}.blockers[${slot}]`;
   }

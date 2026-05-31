@@ -291,7 +291,6 @@ function rebuildMergedState(chunks: readonly TraceDisplayChunk[]): {
 }
 
 export function createSignalTraceDisplayCache(): SignalTraceDisplayCache {
-  let key: TraceDisplayCacheKey = "";
   let chunks: TraceDisplayChunk[] = [];
   let merged = rebuildMergedState([]);
   let traceMeta: SignalTraceMeta | null = null;
@@ -301,8 +300,7 @@ export function createSignalTraceDisplayCache(): SignalTraceDisplayCache {
   }
 
   return {
-    reset(nextKey: TraceDisplayCacheKey) {
-      key = nextKey;
+    reset(_nextKey: TraceDisplayCacheKey) {
       chunks = [];
       traceMeta = null;
       rebuild();

@@ -221,6 +221,32 @@ describe("SignalTraceDisplayCache", () => {
     expect(cache.coversRange(1000, 5000)).toBe(false);
   });
 
+  it("full 50k window merge coversRange for first and last bar", () => {
+    const n = 50_000;
+    const barSec = 300;
+    const tFirst = 1_700_000_000;
+    const times = Array.from({ length: n }, (_, i) => tFirst + i * barSec);
+    const tLast = times[n - 1]!;
+
+    const cache = createSignalTraceDisplayCache();
+    cache.reset("run:v1:");
+
+    mergeDisplayChunkFromResponse(
+      cache,
+      makeBundle({
+        times,
+      }),
+    );
+
+    expect(times).toHaveLength(n);
+    expect(times[0]).toBe(tFirst);
+    expect(times[n - 1]).toBe(tLast);
+    expect(cache.coversRange(tFirst, tLast)).toBe(true);
+    expect(isTraceResponseTruncated({ fromSec: tFirst, toSec: tLast }, { fromSec: tFirst, toSec: tLast })).toBe(
+      false,
+    );
+  });
+
   it("evicts oldest chunks when LRU cap exceeded", () => {
     const cache = createSignalTraceDisplayCache();
     cache.reset("run:v1:");

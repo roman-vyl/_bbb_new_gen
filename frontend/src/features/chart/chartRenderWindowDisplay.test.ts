@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import type { ChartAuxEmaOverlay, ChartBar, ComponentEvent } from "@/api/types";
+import type { ChartAuxEmaOverlay, ChartBar, ChartEmaOverlay, ComponentEvent } from "@/api/types";
 import { CHART_OVERLAY_EMA_KIND } from "@/api/types";
 import {
+  buildAuxOverlaysStabilizeKey,
+  buildEmaOverlaysStabilizeKey,
   buildRenderWindowBoundsKey,
   displayAuxOverlaysForRenderWindow,
   displayComponentEventsForRenderWindow,
@@ -182,6 +184,65 @@ describe("stabilizeByWindowBoundsKey", () => {
     const second = stabilizeByWindowBoundsKey(cache, "b:2:10", [2]);
     expect(second).not.toBe(first);
     expect(second).toEqual([2]);
+  });
+
+  it("must not return stale aux when bounds key unchanged but aux content grew (HTF arrive after pan)", () => {
+    const cache = { current: { key: "", value: [] as ChartAuxEmaOverlay[] } };
+    const key = "1763941200:1778940900:50000";
+    const empty = stabilizeByWindowBoundsKey(cache, key, []);
+    const withHtf = stabilizeByWindowBoundsKey(
+      cache,
+      buildAuxOverlaysStabilizeKey(
+        key,
+        [
+          makeHtfOverlay([
+            { time: 1_768_000_000, value: 1 },
+            { time: 1_769_000_000, value: 2 },
+          ]),
+        ],
+      ),
+      [
+        makeHtfOverlay([
+          { time: 1_768_000_000, value: 1 },
+          { time: 1_769_000_000, value: 2 },
+        ]),
+      ],
+    );
+    expect(withHtf).not.toBe(empty);
+    expect(withHtf).toHaveLength(1);
+    expect(withHtf[0]!.points.length).toBe(2);
+  });
+
+  it("must not return stale anchor EMA when bounds unchanged but variant market bundle arrives", () => {
+    const cache = { current: { key: "", value: [] as ChartEmaOverlay[] } };
+    const bounds = "1763941200:1778940900:50000";
+    const marketV1 = "run:inst1:1h:100:200:500";
+    const marketV2 = "run:inst2:1h:100:200:500";
+    const emptyKey = buildEmaOverlaysStabilizeKey(bounds, [], marketV2);
+    const empty = stabilizeByWindowBoundsKey(cache, emptyKey, []);
+    const stack: ChartEmaOverlay[] = [
+      {
+        role: "fast",
+        period: 100,
+        points: [{ time: 1_768_000_000, value: 1, kind: CHART_OVERLAY_EMA_KIND }],
+      },
+      {
+        role: "anchor",
+        period: 200,
+        points: [{ time: 1_768_000_000, value: 2, kind: CHART_OVERLAY_EMA_KIND }],
+      },
+      {
+        role: "slow",
+        period: 500,
+        points: [{ time: 1_768_000_000, value: 3, kind: CHART_OVERLAY_EMA_KIND }],
+      },
+    ];
+    const loadedKey = buildEmaOverlaysStabilizeKey(bounds, stack, marketV2);
+    const loaded = stabilizeByWindowBoundsKey(cache, loadedKey, stack);
+    expect(empty).toHaveLength(0);
+    expect(loaded).not.toBe(empty);
+    expect(loaded).toHaveLength(3);
+    expect(buildEmaOverlaysStabilizeKey(bounds, [], marketV1)).not.toBe(emptyKey);
   });
 });
 

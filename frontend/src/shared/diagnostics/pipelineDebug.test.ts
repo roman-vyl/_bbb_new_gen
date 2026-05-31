@@ -32,4 +32,18 @@ describe("pipelineDebug", () => {
     expect(metaFactory).not.toHaveBeenCalled();
     expect(dbgExport()).toEqual([]);
   });
+
+  it("uses shift_applied and shift_noop instead of legacy shift step id", async () => {
+    const { PIPELINE_DEBUG_STEPS, dbgMark, dbgExport, dbgReset } = await import("./pipelineDebug");
+    dbgReset();
+    expect(PIPELINE_DEBUG_STEPS.renderWindow).not.toHaveProperty("shift");
+    expect(PIPELINE_DEBUG_STEPS.renderWindow.shiftApplied).toBe("wb.render_window.shift_applied");
+    expect(PIPELINE_DEBUG_STEPS.renderWindow.shiftNoop).toBe("wb.render_window.shift_noop");
+    dbgMark(PIPELINE_DEBUG_STEPS.renderWindow.shiftApplied);
+    dbgMark(PIPELINE_DEBUG_STEPS.renderWindow.shiftNoop);
+    const steps = dbgExport().map((row) => row.step);
+    expect(steps).toContain("wb.render_window.shift_applied");
+    expect(steps).toContain("wb.render_window.shift_noop");
+    expect(steps).not.toContain("wb.render_window.shift");
+  });
 });

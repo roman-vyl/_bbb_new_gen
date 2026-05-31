@@ -37,7 +37,11 @@ from research_api.contracts.signal_trace import (
     SideSignalTrace as SideSignalTraceContract,
 )
 from research_api.services.market_params import MarketParamError, normalize_symbol, parse_time_range_ms
-from research_api.services.market_reader import MarketDataNotFoundError, _open_db
+from research_api.services.market_reader import (
+    MarketDataNotFoundError,
+    _open_db,
+    resolve_exclusive_to_ms,
+)
 from research_api.services.results_reader import ResultsNotFoundError, load_run_report
 
 MAX_SIGNAL_TRACE_BARS = 50_000
@@ -165,11 +169,12 @@ def fetch_signal_trace_bundle(
     run_id: str,
     variant_key: str,
     from_ms: int,
-    to_ms: int,
+    to_ms: int | None = None,
+    to_open_time_ms: int | None = None,
     context_overlay_ref: str | None = None,
     db_path: Path | None = None,
 ) -> SignalTraceBundle:
-    """Compute entry pipeline trace for ``[from_ms, to_ms]`` (chart view window)."""
+    """Compute entry pipeline trace for chart view window ``[from_ms, exclusive_end)``."""
 
     report = load_run_report(run_id=run_id)
     # TODO(perf): load_run_report re-reads strategy config; dedupe with backtest preflight path.
@@ -184,7 +189,12 @@ def fetch_signal_trace_bundle(
     except StrategySpecReportParseError as exc:
         raise ValueError(str(exc)) from exc
 
-    start_ms, end_ms = parse_time_range_ms(from_ms=from_ms, to_ms=to_ms)
+    exclusive_end_ms = resolve_exclusive_to_ms(
+        to_ms=to_ms,
+        to_open_time_ms=to_open_time_ms,
+        timeframe=report.timeframe,
+    )
+    start_ms, end_ms = parse_time_range_ms(from_ms=from_ms, to_ms=exclusive_end_ms)
     from_sec = start_ms // 1000
     to_sec = end_ms // 1000
 

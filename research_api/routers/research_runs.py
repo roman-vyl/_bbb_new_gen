@@ -76,15 +76,15 @@ def get_signal_trace(
     to_open_time_ms: int | None = Query(None, ge=0),
     context_overlay_ref: str | None = Query(None, min_length=1),
 ) -> SignalTraceBundle:
-    end_ms = to_ms if to_ms is not None else to_open_time_ms
-    if end_ms is None:
+    if to_ms is None and to_open_time_ms is None:
         raise HTTPException(status_code=400, detail="provide to or to_open_time_ms")
     try:
         return fetch_signal_trace_bundle(
             run_id=run_id,
             variant_key=variant,
             from_ms=from_ms,
-            to_ms=end_ms,
+            to_ms=to_ms,
+            to_open_time_ms=to_open_time_ms,
             context_overlay_ref=context_overlay_ref,
         )
     except InvalidRunIdError as exc:

@@ -20,7 +20,7 @@ import {
 
 } from "lightweight-charts";
 
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
 
 import {
   dbgMark,
@@ -30,7 +30,7 @@ import {
 
 
 
-import type { AnchorStackEmaRole, ChartBar, ChartEmaOverlay } from "@/api/types";
+import type { AnchorStackEmaRole, ChartEmaOverlay } from "@/api/types";
 import { colorForAuxEmaOverlay } from "@/features/chart/chartAuxEmaOverlays";
 
 import { ChartAsideStackSplitHandle } from "@/features/chart/ChartAsideStackSplitHandle";
@@ -62,15 +62,10 @@ import {
   hasHtfAlignedComponentEvents,
 } from "@/features/chart/chartComponentEvents";
 
-import { buildChartDataKey, buildChartSeriesDataKey } from "@/features/chart/chartDataKey";
-import {
-  applyChartViewport,
-  restoreVisibleRangeAfterWindowShift,
-  resolveAnchorTimeFromVisibleRange,
-  shouldSuppressPanShiftRequest,
-} from "@/features/chart/chartViewport";
+import { shouldSuppressPanShiftRequest } from "@/features/chart/chartViewport";
+import { createChartInteractionAdapter } from "@/features/chart/runtime/interactionAdapter";
+import { executeViewportCommand } from "@/features/chart/runtime/executeViewportCommand";
 import { CHART_RENDER_WINDOW_SIZE } from "@/features/chart/chartDataWindowManager";
-import { type ChartViewMode } from "@/features/chart/chartViewWindow";
 import { findTradeById } from "@/features/chart/tradeLookup";
 
 import { useWorkbench } from "@/shared/context/WorkbenchContext";
@@ -101,13 +96,6 @@ function overlaySeriesTitle(overlay: ChartEmaOverlay): string {
 
 }
 
-type ViewportPlan = {
-  key: string;
-  mode: ChartViewMode;
-  centerTimeSec: number | null;
-  candles: ChartBar[];
-};
-
 export function ChartPanel() {
   const containerRef = useRef<HTMLDivElement>(null);
   const panelBodyRef = useRef<HTMLDivElement>(null);
@@ -130,68 +118,18 @@ export function ChartPanel() {
 
   const auxEmaSeriesRef = useRef<Map<string, ISeriesApi<"Line">>>(new Map());
 
-  const viewportKeyRef = useRef<string | null>(null);
-
-  const viewportPlanRef = useRef<ViewportPlan | null>(null);
+  /** Renderer plumbing only — suppress programmatic range / pan-shift feedback, not policy. */
   const isApplyingViewportRef = useRef(false);
   const suppressPanShiftUntilRef = useRef(0);
-  const panShiftDebounceRef = useRef<number | null>(null);
   const visibleRangeHandlerRef = useRef<(() => void) | null>(null);
-
-  const applyViewportFromPlan = useCallback((chart: IChartApi) => {
-    const plan = viewportPlanRef.current;
-    if (!plan || plan.key === "" || plan.candles.length === 0) {
-      return null;
-    }
-
-    isApplyingViewportRef.current = true;
-    suppressPanShiftUntilRef.current = Date.now() + 250;
-
-    const result = dbgTimedSync(
-      DBG.chart.viewportApply,
-      () =>
-        applyChartViewport({
-          chart,
-          mode: plan.mode,
-          candles: plan.candles,
-          centerTimeSec: plan.centerTimeSec,
-        }),
-      () => ({ mode: plan.mode, candleCount: plan.candles.length }),
-    );
-
-    window.setTimeout(() => {
-      isApplyingViewportRef.current = false;
-    }, 250);
-
-    return result;
-  }, []);
-
-  const scheduleViewportApply = useCallback(
-    (chart: IChartApi) => {
-      const run = () => applyViewportFromPlan(chart);
-      requestAnimationFrame(() => {
-        run();
-        requestAnimationFrame(() => {
-          run();
-          window.setTimeout(run, 50);
-          window.setTimeout(run, 150);
-        });
-      });
-    },
-    [applyViewportFromPlan],
-  );
+  /** Atomic setData key for window-swap; cleared after layout apply. */
+  const atomicShiftSeriesKeyRef = useRef<string | null>(null);
 
   const {
 
-    chartCandles,
-
-    chartEmaOverlays,
-
-    chartDisplayAuxEmaOverlays,
+    chartViewModel,
 
     htfAuxEmaOverlayStale,
-
-    chartDisplayComponentEvents,
 
     componentEventsStale,
 
@@ -217,8 +155,6 @@ export function ChartPanel() {
 
     selectedVariant,
 
-    selectedVariantKey,
-
     selectedTradeId,
 
     selectTrade,
@@ -230,8 +166,6 @@ export function ChartPanel() {
     chartViewFirstTimeSec,
 
     chartViewLastTimeSec,
-
-    chartViewCount,
 
     chartTradeFocusWarning,
 
@@ -253,21 +187,44 @@ export function ChartPanel() {
 
     selectBar,
 
-    onRenderWindowShiftRequest,
+    dispatchChartInteraction,
 
-    pendingViewportRestore,
+    chartViewportCommand,
 
-    clearPendingViewportRestore,
+    chartViewportCommandSeq,
+
+    acknowledgeChartViewportCommand,
+
+    isWindowSwapTransactionCancelled,
+
+    settleWindowSwapCommit,
+
+    displayApplyRevision,
+
+    renderWindowShiftSeq,
 
   } = useWorkbench();
 
-  const onRenderWindowShiftRequestRef = useRef(onRenderWindowShiftRequest);
-  onRenderWindowShiftRequestRef.current = onRenderWindowShiftRequest;
+  const dispatchChartInteractionRef = useRef(dispatchChartInteraction);
+  dispatchChartInteractionRef.current = dispatchChartInteraction;
+  const chartCandles = chartViewModel.candles;
+  const chartEmaOverlays = chartViewModel.emaOverlays;
+  const chartDisplayAuxEmaOverlays = chartViewModel.displayAuxEmaOverlays;
+  const chartDisplayComponentEvents = chartViewModel.componentEvents;
+
   const chartCandlesRef = useRef(chartCandles);
   chartCandlesRef.current = chartCandles;
-
-
-
+  const interactionAdapterRef = useRef(
+    createChartInteractionAdapter({
+      dispatch: (event) => dispatchChartInteractionRef.current(event),
+      getCandles: () => chartCandlesRef.current,
+      shouldSuppressRangeEvent: () =>
+        shouldSuppressPanShiftRequest(
+          isApplyingViewportRef.current,
+          suppressPanShiftUntilRef.current,
+        ),
+    }),
+  );
   const trades = selectedVariant?.trade_records ?? [];
 
   const selectedTrade = findTradeById(trades, selectedTradeId);
@@ -282,40 +239,7 @@ export function ChartPanel() {
 
 
 
-  const chartSeriesDataKey = useMemo(
-    () =>
-      buildChartSeriesDataKey({
-        firstTimeSec: chartViewFirstTimeSec,
-        lastTimeSec: chartViewLastTimeSec,
-        count: chartViewCount,
-      }),
-    [chartViewFirstTimeSec, chartViewLastTimeSec, chartViewCount],
-  );
-
-  const chartDataKey = useMemo(
-    () =>
-      buildChartDataKey({
-        firstTimeSec: chartViewFirstTimeSec,
-        lastTimeSec: chartViewLastTimeSec,
-        count: chartViewCount,
-        selectedTradeId,
-        centerTimeSec: chartViewCenterTimeSec,
-      }),
-    [
-      chartViewFirstTimeSec,
-      chartViewLastTimeSec,
-      chartViewCount,
-      selectedTradeId,
-      chartViewCenterTimeSec,
-    ],
-  );
-
-  const viewportApplyKey = useMemo(
-    () => `${chartDataKey}|${chartViewMode}|${chartViewCenterTimeSec ?? "none"}`,
-    [chartDataKey, chartViewMode, chartViewCenterTimeSec],
-  );
-
-
+  const chartSeriesDataKey = chartViewModel.seriesKey;
 
   const stackPeriodsLabel = useMemo(() => {
 
@@ -412,15 +336,19 @@ export function ChartPanel() {
       : `OHLC · overlay EMA requires anchor_stack in strategy_spec${auxNote}${htfStaleNote}`;
 
     const traceNote =
-
       lanesSignalTraceStatus === "ready"
-
         ? " · signal trace loaded"
-
         : lanesSignalTraceStatus === "loading"
+          ? " · Loading events/HTF context…"
+          : "";
 
-          ? " · loading signal trace…"
-
+    const traceLoadingHint =
+      lanesSignalTraceStatus === "loading" &&
+      chartDisplayComponentEvents.length === 0 &&
+      !componentEventsStale
+        ? " · Loading events/HTF context…"
+        : componentEventsStale && chartDisplayComponentEvents.length === 0
+          ? " · Loading events/HTF context…"
           : "";
 
     const parts = [
@@ -430,6 +358,7 @@ export function ChartPanel() {
       emaNote,
       "trade markers from report",
       traceNote,
+      traceLoadingHint,
       componentEventNote,
       componentStaleNote,
       htfAlignedEventNote,
@@ -569,10 +498,17 @@ export function ChartPanel() {
 
     });
 
+    const adapter = interactionAdapterRef.current;
+
+    const onPointerDown = () => adapter.onPointerDown();
+    const onPointerUp = () => adapter.onPointerUp();
+    const onWheel = () => adapter.onWheel();
+
+    el.addEventListener("pointerdown", onPointerDown);
+    el.addEventListener("pointerup", onPointerUp);
+    el.addEventListener("wheel", onWheel, { passive: true });
+
     const visibleRangeHandler = (range: { from: number; to: number } | null) => {
-      if (!range) {
-        return;
-      }
       if (
         shouldSuppressPanShiftRequest(
           isApplyingViewportRef.current,
@@ -580,24 +516,12 @@ export function ChartPanel() {
         )
       ) {
         dbgMark(DBG.pan.suppressedProgrammatic);
+        adapter.onProgrammaticViewportStart();
+        adapter.onVisibleLogicalRangeChange(range);
+        adapter.onProgrammaticViewportEnd();
         return;
       }
-      if (panShiftDebounceRef.current !== null) {
-        window.clearTimeout(panShiftDebounceRef.current);
-      }
-      panShiftDebounceRef.current = window.setTimeout(() => {
-        panShiftDebounceRef.current = null;
-        const candles = chartCandlesRef.current;
-        if (candles.length === 0) {
-          return;
-        }
-        const anchorTimeSec = resolveAnchorTimeFromVisibleRange(range, candles);
-        if (anchorTimeSec === null) {
-          return;
-        }
-        const shifted = onRenderWindowShiftRequestRef.current(range, anchorTimeSec);
-        dbgMark(shifted ? DBG.pan.shiftRequested : DBG.pan.noShift);
-      }, 100);
+      adapter.onVisibleLogicalRangeChange(range);
     };
 
     chart.timeScale().subscribeVisibleLogicalRangeChange(visibleRangeHandler);
@@ -613,7 +537,7 @@ export function ChartPanel() {
 
       chart.applyOptions({ width, height });
 
-      scheduleViewportApply(chart);
+      dispatchChartInteractionRef.current({ type: "resize" });
 
     });
 
@@ -627,10 +551,9 @@ export function ChartPanel() {
 
       visibleRangeHandlerRef.current?.();
       visibleRangeHandlerRef.current = null;
-      if (panShiftDebounceRef.current !== null) {
-        window.clearTimeout(panShiftDebounceRef.current);
-        panShiftDebounceRef.current = null;
-      }
+      el.removeEventListener("pointerdown", onPointerDown);
+      el.removeEventListener("pointerup", onPointerUp);
+      el.removeEventListener("wheel", onWheel);
 
       // chart.remove() destroys all series; do not call removeSeries afterward.
       auxEmaSeriesRef.current.clear();
@@ -647,19 +570,20 @@ export function ChartPanel() {
 
     };
 
-  }, [selectBar, scheduleViewportApply]);
+  }, [selectBar]);
 
-
-
-  useEffect(() => {
-
-    const series = seriesRef.current;
-
-    const emaByRole = emaSeriesByRoleRef.current;
-
+  useLayoutEffect(() => {
     const chart = chartRef.current;
+    const series = seriesRef.current;
+    const emaByRole = emaSeriesByRoleRef.current;
+    if (!chart || !series || !selectedVariant || chartSeriesDataKey === "") {
+      return;
+    }
 
-    if (!series || !chart || !selectedVariant || chartSeriesDataKey === "") return;
+    if (atomicShiftSeriesKeyRef.current === chartSeriesDataKey) {
+      atomicShiftSeriesKeyRef.current = null;
+      return;
+    }
 
     dbgTimedSync(
       DBG.chart.setDataCandles,
@@ -691,84 +615,6 @@ export function ChartPanel() {
       },
       () => ({ overlayCount: chartEmaOverlays.length }),
     );
-
-
-
-    viewportPlanRef.current = {
-      key: chartDataKey,
-      mode: chartViewMode,
-      centerTimeSec: chartViewCenterTimeSec,
-      candles: chartCandles,
-    };
-
-  }, [chartCandles, chartEmaOverlays, selectedVariant, chartSeriesDataKey, chartViewMode, chartViewCenterTimeSec]);
-
-  useEffect(() => {
-    const chart = chartRef.current;
-    if (!chart || pendingViewportRestore === null || chartCandles.length === 0) {
-      return;
-    }
-
-    isApplyingViewportRef.current = true;
-    suppressPanShiftUntilRef.current = Date.now() + 300;
-
-    let restoreMethod = "fitContent";
-    dbgTimedSync(
-      DBG.chart.viewportRestoreAfterShift,
-      () => {
-        const result = restoreVisibleRangeAfterWindowShift(chart, {
-          anchorTimeSec: pendingViewportRestore.anchorTimeSec,
-          newCandles: chartCandles,
-          previousVisible: pendingViewportRestore.previousVisible,
-          windowStartIndex: pendingViewportRestore.windowStartIndex,
-          fullLength: pendingViewportRestore.fullLength,
-        });
-        restoreMethod = result.method;
-        return result;
-      },
-      () => ({ barCount: chartCandles.length, method: restoreMethod }),
-    );
-
-    clearPendingViewportRestore();
-
-    window.setTimeout(() => {
-      isApplyingViewportRef.current = false;
-    }, 300);
-  }, [pendingViewportRestore, chartCandles, clearPendingViewportRestore]);
-
-  useEffect(() => {
-    viewportKeyRef.current = null;
-  }, [selectedVariantKey]);
-
-  useEffect(() => {
-    const chart = chartRef.current;
-    if (!chart || chartDataKey === "" || chartCandles.length === 0) return;
-
-    viewportPlanRef.current = {
-      key: chartDataKey,
-      mode: chartViewMode,
-      centerTimeSec: chartViewCenterTimeSec,
-      candles: chartCandles,
-    };
-    scheduleViewportApply(chart);
-  }, [
-    selectedTradeId,
-    selectedVariantKey,
-    chartViewCenterTimeSec,
-    chartViewMode,
-    chartDataKey,
-    viewportApplyKey,
-    chartCandles,
-    scheduleViewportApply,
-  ]);
-
-
-
-  useEffect(() => {
-
-    const chart = chartRef.current;
-
-    if (!chart || !selectedVariant || chartSeriesDataKey === "") return;
 
     dbgTimedSync(
       DBG.chart.setDataAuxHtf,
@@ -812,9 +658,85 @@ export function ChartPanel() {
       () => ({ overlayCount: chartDisplayAuxEmaOverlays.length }),
     );
 
-  }, [chartDisplayAuxEmaOverlays, chartSeriesDataKey, selectedVariant]);
+    atomicShiftSeriesKeyRef.current = chartSeriesDataKey;
+  }, [
+    chartCandles,
+    chartEmaOverlays,
+    chartDisplayAuxEmaOverlays,
+    chartSeriesDataKey,
+    selectedVariant,
+  ]);
 
+  useEffect(() => {
+    const chart = chartRef.current;
+    const command = chartViewportCommand;
+    if (!chart || !command || chartCandles.length === 0) {
+      return;
+    }
 
+    if (
+      command.type === "restoreAfterWindowSwap" &&
+      isWindowSwapTransactionCancelled(command.swapTransactionId)
+    ) {
+      dbgMark(DBG.renderWindow.shiftRestoreCancelled, {
+        shiftSeq: command.shiftSeq,
+        swapTransactionId: command.swapTransactionId,
+      });
+      acknowledgeChartViewportCommand();
+      return;
+    }
+
+    if (
+      command.type === "restoreAfterWindowSwap" &&
+      command.shiftSeq !== renderWindowShiftSeq
+    ) {
+      dbgMark(DBG.chart.viewportRestoreAfterShiftSkippedStale, {
+        expected: command.shiftSeq,
+        current: renderWindowShiftSeq,
+      });
+      acknowledgeChartViewportCommand();
+      return;
+    }
+
+    interactionAdapterRef.current.onProgrammaticViewportStart();
+    isApplyingViewportRef.current = true;
+    suppressPanShiftUntilRef.current = Date.now() + 300;
+
+    if (command.type === "focusTrade") {
+      dbgMark(DBG.chart.viewportApplyTradeFocus);
+    }
+    const dbgStep =
+      command.type === "restoreAfterWindowSwap"
+        ? DBG.chart.viewportRestoreAfterShift
+        : DBG.chart.viewportApply;
+    dbgTimedSync(
+      dbgStep,
+      () => {
+        executeViewportCommand({ chart, command, candles: chartCandles });
+        return null;
+      },
+      () => ({ command: command.type, barCount: chartCandles.length }),
+    );
+
+    acknowledgeChartViewportCommand();
+
+    if (command.type === "restoreAfterWindowSwap") {
+      settleWindowSwapCommit(command.shiftSeq, command.swapTransactionId);
+    }
+
+    window.setTimeout(() => {
+      isApplyingViewportRef.current = false;
+      interactionAdapterRef.current.onProgrammaticViewportEnd();
+    }, 300);
+  }, [
+    chartViewportCommand,
+    chartViewportCommandSeq,
+    chartCandles,
+    renderWindowShiftSeq,
+    acknowledgeChartViewportCommand,
+    isWindowSwapTransactionCancelled,
+    settleWindowSwapCommit,
+  ]);
 
   useEffect(() => {
 
@@ -855,6 +777,7 @@ export function ChartPanel() {
     selectedVariant,
     selectedTradeId,
     chartDisplayComponentEvents,
+    displayApplyRevision,
     chartShowEntryBlockMarkers,
     chartShowExitSignalMarkers,
   ]);

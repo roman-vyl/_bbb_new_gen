@@ -29,7 +29,11 @@ export const PIPELINE_DEBUG_STEPS = {
   },
   renderWindow: {
     tradeSelect: "wb.render_window.trade_select",
-    shift: "wb.render_window.shift",
+    shiftApplied: "wb.render_window.shift_applied",
+    shiftSettled: "wb.render_window.shift_settled",
+    shiftAborted: "wb.render_window.shift_aborted",
+    shiftRestoreCancelled: "wb.render_window.shift_restore_cancelled",
+    shiftNoop: "wb.render_window.shift_noop",
   },
   pan: {
     suppressedProgrammatic: "wb.pan.suppressed_programmatic",
@@ -39,12 +43,21 @@ export const PIPELINE_DEBUG_STEPS = {
   chartWindow: {
     slice: "wb.chart_window_slice",
   },
+  signalTrace: {
+    bootstrapReady: "wb.signal_trace.bootstrap_ready",
+    bootstrapBlocked: "wb.signal_trace.bootstrap_blocked",
+    fetchStart: "wb.signal_trace.fetch_start",
+    decision: "wb.signal_trace_decision",
+  },
   traceDisplay: {
     cacheHit: "wb.trace_display.cache_hit",
     cacheMiss: "wb.trace_display.cache_miss",
+    sessionHit: "wb.signal_trace.session_hit",
+    applyCurrentWindow: "wb.trace_display.apply_current_window",
     mergeChunk: "wb.trace_display.merge_chunk",
     sliceEvents: "wb.trace_display.slice_events",
     sliceHtf: "wb.trace_display.slice_htf",
+    fetchSuperseded: "wb.trace_display.fetch_superseded",
   },
   chart: {
     setDataCandles: "chart.setData.candles",
@@ -52,7 +65,15 @@ export const PIPELINE_DEBUG_STEPS = {
     setDataAuxHtf: "chart.setData.aux_htf",
     markersRebuild: "chart.markers.rebuild",
     viewportApply: "chart.viewport.apply",
+    viewportApplyTradeFocus: "chart.viewport.apply_trade_focus",
+    viewportApplySkippedUserPan: "chart.viewport.apply_skipped_user_pan",
+    viewportApplySkippedNoFocusIntent: "chart.viewport.apply_skipped_no_focus_intent",
     viewportRestoreAfterShift: "chart.viewport.restore_after_shift",
+    restoreByTimeAnchorFailed: "chart.viewport.restore_by_time_anchor_failed",
+    restoreByTimeAnchorApplied: "chart.viewport.restore_by_time_anchor_applied",
+    viewportRestoreAfterShiftSkippedStale: "chart.viewport.restore_after_shift_skipped_stale",
+    viewportApplySkippedStaleRaf: "chart.viewport.apply_skipped_stale_raf",
+    viewportApplySkippedPendingRestore: "chart.viewport.apply_skipped_pending_restore",
   },
 } as const;
 

@@ -25,10 +25,11 @@ const WINDOW_B: SignalTraceRequest = {
 };
 
 describe("decideSignalTraceLoad", () => {
-  it("scenario A: skips when display cache and loaded signal trace both match window", () => {
+  it("scenario A: skips fetch when display cache covers committed window", () => {
     const decision = decideSignalTraceLoad({
       chartWindowKey: REQUEST.windowKey,
       displayCacheCoversWindow: true,
+      sessionCacheHasWindow: true,
       loadedSignalTraceWindowKey: REQUEST.windowKey,
       loadingTraceWindowKey: null,
       signalTraceStatus: "ready",
@@ -38,23 +39,39 @@ describe("decideSignalTraceLoad", () => {
     expect(decision).toEqual({ action: "skip_display_cache_hit" });
   });
 
-  it("regression: cache covers window A but loaded signal trace is window B — must fetch for lanes", () => {
+  it("regression: cache covers window A but session has A — restore without fetch", () => {
     const decision = decideSignalTraceLoad({
       chartWindowKey: REQUEST.windowKey,
       displayCacheCoversWindow: true,
+      sessionCacheHasWindow: true,
       loadedSignalTraceWindowKey: WINDOW_B.windowKey,
       loadingTraceWindowKey: null,
       signalTraceStatus: "ready",
       inFlightRequest: null,
       request: REQUEST,
     });
-    expect(decision).toEqual({ action: "load_start", request: REQUEST });
+    expect(decision).toEqual({ action: "restore_session_cache" });
+  });
+
+  it("pan-back: cache covers window A while loaded trace is window B — display hit without fetch", () => {
+    const decision = decideSignalTraceLoad({
+      chartWindowKey: REQUEST.windowKey,
+      displayCacheCoversWindow: true,
+      sessionCacheHasWindow: false,
+      loadedSignalTraceWindowKey: WINDOW_B.windowKey,
+      loadingTraceWindowKey: null,
+      signalTraceStatus: "ready",
+      inFlightRequest: null,
+      request: REQUEST,
+    });
+    expect(decision).toEqual({ action: "skip_display_cache_hit" });
   });
 
   it("scenario B: skips when same window is already loading", () => {
     const decision = decideSignalTraceLoad({
       chartWindowKey: REQUEST.windowKey,
       displayCacheCoversWindow: false,
+      sessionCacheHasWindow: false,
       loadedSignalTraceWindowKey: null,
       loadingTraceWindowKey: REQUEST.windowKey,
       signalTraceStatus: "loading",
@@ -64,12 +81,27 @@ describe("decideSignalTraceLoad", () => {
     expect(decision).toEqual({ action: "skip_already_loading" });
   });
 
+  it("starts load on initial cache miss without loaded window", () => {
+    const decision = decideSignalTraceLoad({
+      chartWindowKey: REQUEST.windowKey,
+      displayCacheCoversWindow: false,
+      sessionCacheHasWindow: false,
+      loadedSignalTraceWindowKey: null,
+      loadingTraceWindowKey: null,
+      signalTraceStatus: "idle",
+      inFlightRequest: null,
+      request: REQUEST,
+    });
+    expect(decision).toEqual({ action: "load_start", request: REQUEST });
+  });
+
   it("scenario C: starts load when chartWindowKey changes and cache misses", () => {
     const nextKey = "run-a:exp_a:3000:4000";
     const nextRequest = { ...REQUEST, windowKey: nextKey, fromMs: 3_000_000, toOpenTimeMs: 4_000_000 };
     const decision = decideSignalTraceLoad({
       chartWindowKey: nextKey,
       displayCacheCoversWindow: false,
+      sessionCacheHasWindow: false,
       loadedSignalTraceWindowKey: REQUEST.windowKey,
       loadingTraceWindowKey: null,
       signalTraceStatus: "ready",
@@ -85,6 +117,7 @@ describe("decideSignalTraceLoad", () => {
     const decision = decideSignalTraceLoad({
       chartWindowKey: nextKey,
       displayCacheCoversWindow: false,
+      sessionCacheHasWindow: false,
       loadedSignalTraceWindowKey: REQUEST.windowKey,
       loadingTraceWindowKey: null,
       signalTraceStatus: "ready",
@@ -98,6 +131,7 @@ describe("decideSignalTraceLoad", () => {
     const decision = decideSignalTraceLoad({
       chartWindowKey: REQUEST.windowKey,
       displayCacheCoversWindow: false,
+      sessionCacheHasWindow: false,
       loadedSignalTraceWindowKey: null,
       loadingTraceWindowKey: null,
       signalTraceStatus: "idle",
@@ -111,6 +145,7 @@ describe("decideSignalTraceLoad", () => {
     const decision = decideSignalTraceLoad({
       chartWindowKey: null,
       displayCacheCoversWindow: false,
+      sessionCacheHasWindow: false,
       loadedSignalTraceWindowKey: null,
       loadingTraceWindowKey: null,
       signalTraceStatus: "idle",

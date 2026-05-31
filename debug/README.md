@@ -79,9 +79,9 @@ chart.markers.rebuild            2      35.0    17.5    22.0  { tradeMarkerCount
 | `scenario-name` | Действие |
 |-----------------|----------|
 | `select-trade` | выбор trade |
-| `pan-safe-zone` | pan без `wb.render_window.shift` |
-| `pan-window-shift` | pan с `wb.render_window.shift` |
-| `pan-cached-trace` | pan обратно в зону с display cache hit |
+| `pan-safe-zone` | pan без `wb.render_window.shift_applied` |
+| `pan-window-shift` | pan с `wb.render_window.shift_applied` |
+| `pan-cached-trace` | pan обратно в зону с display cache hit / `wb.signal_trace.session_hit` |
 | `load-chart` | run → Chart, свечи готовы |
 
 ---
@@ -109,7 +109,7 @@ copy(JSON.stringify(window.__pipelineDebugExport(), null, 2))
 |------|------|
 | `api.fetchRunReport` / `api.fetchChartMarketBundle` / `api.fetchSignalTrace` | network |
 | `wb.load.*` / `wb.render_window.*` / `wb.chart_window_slice` | WorkbenchContext |
-| `wb.trace_display.*` / `wb.pan.*` | cache / pan policy |
+| `wb.trace_display.*` / `wb.signal_trace.*` / `wb.pan.*` | cache / trace bootstrap / pan policy |
 | `chart.setData.*` / `chart.markers.*` / `chart.viewport.*` | ChartPanel |
 
 ---
