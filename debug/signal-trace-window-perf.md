@@ -26,3 +26,4 @@ If duration or payload is unacceptable, rollback BFF limit and implement fronten
 
 - Frontend records `wb.signal_trace_merge` with `truncated: true/false` when pipeline debug is enabled.
 - Display cache coverage uses **actual returned bounds** only — truncated responses must not mark the full 50k window as covered.
+- **Stale error on pan (§5.8):** after trace fails on window B, pan to cached window A — banner/lanes must show loading (not B's error) until fetch for A completes.

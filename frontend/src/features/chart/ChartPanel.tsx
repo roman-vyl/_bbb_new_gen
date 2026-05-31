@@ -230,7 +230,7 @@ export function ChartPanel() {
 
     lanesSignalTraceStatus,
 
-    signalTraceError,
+    lanesSignalTraceError,
 
     setContextOverlayRef,
 
@@ -951,11 +951,11 @@ export function ChartPanel() {
 
       )}
 
-      {signalTraceError && (
+      {lanesSignalTraceError && (
 
         <p className="banner banner--warn" role="status">
 
-          Signal trace: {signalTraceError}
+          Signal trace: {lanesSignalTraceError}
 
         </p>
 
@@ -1093,7 +1093,7 @@ export function ChartPanel() {
               candles={chartCandles}
               emaOverlays={chartEmaOverlays}
               signalTrace={lanesSignalTrace}
-              signalTraceError={signalTraceError}
+              signalTraceError={lanesSignalTraceError}
               signalTraceLoading={lanesSignalTraceStatus === "loading"}
               onClear={() => selectBar(null)}
             />

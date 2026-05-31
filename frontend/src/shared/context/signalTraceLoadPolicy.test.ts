@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   decideSignalTraceLoad,
+  lanesSignalTraceError,
   lanesSignalTraceStatus,
   signalTraceMatchesChartWindow,
   type SignalTraceRequest,
@@ -128,9 +129,35 @@ describe("lanesSignalTraceStatus", () => {
     expect(signalTraceMatchesChartWindow(REQUEST.windowKey, WINDOW_B.windowKey)).toBe(false);
   });
 
+  it("does not surface error from another window (pan back to cached A after B failed)", () => {
+    expect(
+      lanesSignalTraceStatus(REQUEST.windowKey, WINDOW_B.windowKey, "error"),
+    ).toBe("loading");
+  });
+
+  it("surfaces error when it belongs to the current window", () => {
+    expect(
+      lanesSignalTraceStatus(REQUEST.windowKey, REQUEST.windowKey, "error"),
+    ).toBe("error");
+  });
+
   it("reports ready when loaded trace matches chart window", () => {
     expect(
       lanesSignalTraceStatus(REQUEST.windowKey, REQUEST.windowKey, "ready"),
     ).toBe("ready");
+  });
+});
+
+describe("lanesSignalTraceError", () => {
+  it("hides stale error after pan to a different window", () => {
+    expect(
+      lanesSignalTraceError(REQUEST.windowKey, WINDOW_B.windowKey, "window B failed"),
+    ).toBeNull();
+  });
+
+  it("shows error for the current window", () => {
+    expect(
+      lanesSignalTraceError(REQUEST.windowKey, REQUEST.windowKey, "window A failed"),
+    ).toBe("window A failed");
   });
 });

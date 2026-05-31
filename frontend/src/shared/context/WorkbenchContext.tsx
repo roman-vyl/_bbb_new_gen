@@ -94,6 +94,7 @@ import {
 } from "@/features/chart/marketDataCache";
 import {
   decideSignalTraceLoad,
+  lanesSignalTraceError as deriveLanesSignalTraceError,
   lanesSignalTraceStatus as deriveLanesSignalTraceStatus,
   signalTraceMatchesChartWindow,
   type SignalTraceLoadStatus,
@@ -170,6 +171,7 @@ type WorkbenchState = {
   /** Per-window trace for lanes/diagnostics only — null when bundle is for another render window. */
   lanesSignalTrace: SignalTraceBundle | null;
   lanesSignalTraceStatus: SignalTraceLoadStatus;
+  lanesSignalTraceError: string | null;
   signalTraceError: string | null;
   contextOverlayRef: string | null;
   setContextOverlayRef: (ref: string | null) => void;
@@ -1003,6 +1005,16 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     [chartWindowKey, loadedSignalTraceWindowKey, signalTraceStatus],
   );
 
+  const lanesSignalTraceError = useMemo(
+    () =>
+      deriveLanesSignalTraceError(
+        chartWindowKey,
+        loadedSignalTraceWindowKey,
+        signalTraceError,
+      ),
+    [chartWindowKey, loadedSignalTraceWindowKey, signalTraceError],
+  );
+
   const renderWindowBounds = useMemo(
     () => candleTimeBounds(chartView.candles),
     [chartView.candles],
@@ -1215,7 +1227,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       } catch (err) {
         if (cancelled) return;
         setSignalTrace(null);
-        setLoadedSignalTraceWindowKey(null);
+        setLoadedSignalTraceWindowKey(windowKey);
         setSignalTraceStatus("error");
         setSignalTraceError(
           err instanceof ApiError
@@ -1308,6 +1320,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       signalTraceStatus,
       lanesSignalTrace,
       lanesSignalTraceStatus,
+      lanesSignalTraceError,
       signalTraceError,
       contextOverlayRef,
       setContextOverlayRef,
@@ -1369,6 +1382,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       signalTraceStatus,
       lanesSignalTrace,
       lanesSignalTraceStatus,
+      lanesSignalTraceError,
       signalTraceError,
       contextOverlayRef,
       effectiveContextOverlayRef,

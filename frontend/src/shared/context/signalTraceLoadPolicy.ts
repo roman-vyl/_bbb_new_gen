@@ -42,10 +42,23 @@ export function lanesSignalTraceStatus(
   if (signalTraceMatchesChartWindow(chartWindowKey, loadedSignalTraceWindowKey)) {
     return signalTraceStatus;
   }
-  if (signalTraceStatus === "error") {
-    return "error";
-  }
+  // Stale status from another window (including its error) — current window refetch pending/active.
   return "loading";
+}
+
+/** Only show trace error when it belongs to the current render window. */
+export function lanesSignalTraceError(
+  chartWindowKey: string | null,
+  loadedSignalTraceWindowKey: string | null,
+  signalTraceError: string | null,
+): string | null {
+  if (signalTraceError === null) {
+    return null;
+  }
+  if (signalTraceMatchesChartWindow(chartWindowKey, loadedSignalTraceWindowKey)) {
+    return signalTraceError;
+  }
+  return null;
 }
 
 export function signalTraceRequestsEqual(
