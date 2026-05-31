@@ -42,7 +42,7 @@ import {
   AnchorStackParseError,
   anchorStackPeriodsFromStrategySpec,
 } from "@/features/chart/anchorStackFromSpec";
-import { mergeAuxOverlayPoints } from "@/features/chart/chartAuxEmaOverlays";
+import { mergeAuxOverlayPoints, sliceAuxOverlaysToCandleWindow } from "@/features/chart/chartAuxEmaOverlays";
 import {
   createChartDataWindowManager,
   type ChartDataWindowManager,
@@ -55,6 +55,7 @@ import {
 } from "@/features/chart/chartViewWindow";
 import type { ChartLogicalRange } from "@/features/chart/chartViewport";
 import {
+  auxOverlayFromHtfSlice,
   auxOverlayFromHtfTrace,
   collectAuxEmaSpecs,
 } from "@/features/chart/strategySpecAuxEma";
@@ -65,12 +66,16 @@ import {
 import { candleRangeMs } from "@/features/chart/chartMarkers";
 import {
   buildRenderWindowBoundsKey,
-  displayAuxOverlaysForRenderWindow,
-  displayComponentEventsForRenderWindow,
-  frozenComponentEventsForStorage,
-  frozenHtfOverlaysForStorage,
+  candleTimeBounds,
   stabilizeByWindowBoundsKey,
 } from "@/features/chart/chartRenderWindowDisplay";
+import {
+  buildTraceDisplayCacheKey,
+  createSignalTraceDisplayCache,
+  computeChunkBoundsFromResponse,
+  isTraceResponseTruncated,
+  mergeDisplayChunkFromResponse,
+} from "@/features/chart/signalTraceDisplayCache";
 import {
   defaultClosedTradeSelection,
   deriveSelectedVariant,
@@ -89,6 +94,9 @@ import {
 } from "@/features/chart/marketDataCache";
 import {
   decideSignalTraceLoad,
+  lanesSignalTraceError as deriveLanesSignalTraceError,
+  lanesSignalTraceStatus as deriveLanesSignalTraceStatus,
+  signalTraceMatchesChartWindow,
   type SignalTraceLoadStatus,
   type SignalTraceRequest,
 } from "@/shared/context/signalTraceLoadPolicy";
@@ -160,6 +168,10 @@ type WorkbenchState = {
   refreshRunsAndSelectRun: (runId: string) => Promise<void>;
   signalTrace: SignalTraceBundle | null;
   signalTraceStatus: SignalTraceLoadStatus;
+  /** Per-window trace for lanes/diagnostics only — null when bundle is for another render window. */
+  lanesSignalTrace: SignalTraceBundle | null;
+  lanesSignalTraceStatus: SignalTraceLoadStatus;
+  lanesSignalTraceError: string | null;
   signalTraceError: string | null;
   contextOverlayRef: string | null;
   setContextOverlayRef: (ref: string | null) => void;
@@ -211,8 +223,8 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
   const [marketError, setMarketError] = useState<string | null>(null);
   const [marketCacheKey, setMarketCacheKey] = useState<MarketCacheKey | null>(null);
   const [auxEmaOverlays, setAuxEmaOverlays] = useState<ChartAuxEmaOverlay[]>([]);
-  const lastSlicedHtfOverlaysRef = useRef<ChartAuxEmaOverlay[]>([]);
-  const lastSlicedComponentEventsRef = useRef<ComponentEvent[]>([]);
+  const signalTraceDisplayCacheRef = useRef(createSignalTraceDisplayCache());
+  const [displayCacheVersion, setDisplayCacheVersion] = useState(0);
   const [chartShowEntryBlockMarkers, setChartShowEntryBlockMarkers] = useState(true);
   const [chartShowExitSignalMarkers, setChartShowExitSignalMarkers] = useState(true);
   const [runs, setRuns] = useState<RunSummary[]>([]);
@@ -223,8 +235,8 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
   const [selectedBarTimeSec, setSelectedBarTimeSec] = useState<number | null>(null);
   const [signalTrace, setSignalTrace] = useState<SignalTraceBundle | null>(null);
   const [signalTraceStatus, setSignalTraceStatus] = useState<SignalTraceLoadStatus>("idle");
+  const [loadedSignalTraceWindowKey, setLoadedSignalTraceWindowKey] = useState<string | null>(null);
   const [signalTraceError, setSignalTraceError] = useState<string | null>(null);
-  const [loadedTraceWindowKey, setLoadedTraceWindowKey] = useState<string | null>(null);
   const [contextOverlayRef, setContextOverlayRef] = useState<string | null>(null);
   const loadingTraceWindowKeyRef = useRef<string | null>(null);
   const inFlightTraceRequestRef = useRef<SignalTraceRequest | null>(null);
@@ -806,7 +818,6 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
   }, [contextOverlayRef, contextOverlayRefOptions]);
 
   useEffect(() => {
-    setLoadedTraceWindowKey(null);
     if (!selectedVariant) {
       setContextOverlayRef(null);
       return;
@@ -887,6 +898,32 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const htfSpecCount = auxEmaSpecs.filter((spec) => spec.source === "htf_trace").length;
+    if (htfSpecCount === 0) {
+      return;
+    }
+
+    const bounds = candleTimeBounds(chartView.candles);
+    if (!bounds) {
+      return;
+    }
+
+    const htfSlice = signalTraceDisplayCacheRef.current.sliceHtfContextForWindow(
+      bounds.fromSec,
+      bounds.toSec,
+    );
+
+    if (htfSlice.times.length > 0 && htfSlice.htf_context) {
+      const htfOverlays = auxEmaSpecs
+        .filter((spec) => spec.source === "htf_trace")
+        .map((spec) => auxOverlayFromHtfSlice(spec, htfSlice.times, htfSlice.htf_context))
+        .filter((overlay): overlay is ChartAuxEmaOverlay => overlay !== null);
+
+      setAuxEmaOverlays((prev) => {
+        const nonHtf = prev.filter((overlay) => !overlay.id.startsWith("htf_"));
+        return mergeAuxOverlayPoints(nonHtf, htfOverlays);
+      });
+      return;
+    }
 
     if (signalTraceStatus === "ready" && signalTrace !== null) {
       const htfOverlays = auxEmaSpecs
@@ -902,18 +939,40 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     }
 
     if (signalTraceStatus === "loading" || signalTraceStatus === "error") {
-      // Keep stale htf_* overlays — do not strip during trace reload (avoids flicker).
       return;
     }
 
     if (signalTraceStatus === "idle" && htfSpecCount > 0) {
       setAuxEmaOverlays((prev) => prev.filter((overlay) => !overlay.id.startsWith("htf_")));
     }
-  }, [signalTrace, signalTraceStatus, auxEmaSpecs]);
+  }, [
+    signalTrace,
+    signalTraceStatus,
+    auxEmaSpecs,
+    chartView.candles,
+    displayCacheVersion,
+  ]);
+
+  const traceDisplayCacheKey = useMemo(() => {
+    if (selectedRunId === null || selectedVariantKey === "") {
+      return null;
+    }
+    return buildTraceDisplayCacheKey(
+      selectedRunId,
+      selectedVariantKey,
+      effectiveContextOverlayRef,
+    );
+  }, [selectedRunId, selectedVariantKey, effectiveContextOverlayRef]);
 
   useEffect(() => {
-    lastSlicedHtfOverlaysRef.current = [];
-    lastSlicedComponentEventsRef.current = [];
+    if (traceDisplayCacheKey === null) {
+      return;
+    }
+    signalTraceDisplayCacheRef.current.reset(traceDisplayCacheKey);
+    setDisplayCacheVersion((version) => version + 1);
+  }, [traceDisplayCacheKey]);
+
+  useEffect(() => {
     chartCandlesCacheRef.current = { key: "", value: [] };
     chartEmaCacheRef.current = { key: "", value: [] };
     chartAuxEmaCacheRef.current = { key: "", value: [] };
@@ -929,68 +988,119 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     return `${selectedRunId}:${selectedVariantKey}:${first}:${last}:${overlay}`;
   }, [chartView.candles, selectedRunId, selectedVariantKey, effectiveContextOverlayRef]);
 
-  const traceMatchesWindow =
-    signalTraceStatus === "ready" &&
-    chartWindowKey !== null &&
-    loadedTraceWindowKey === chartWindowKey;
+  const signalTraceMatchesWindow = signalTraceMatchesChartWindow(
+    chartWindowKey,
+    loadedSignalTraceWindowKey,
+  );
+
+  const lanesSignalTrace = signalTraceMatchesWindow ? signalTrace : null;
+
+  const lanesSignalTraceStatus = useMemo(
+    () =>
+      deriveLanesSignalTraceStatus(
+        chartWindowKey,
+        loadedSignalTraceWindowKey,
+        signalTraceStatus,
+      ),
+    [chartWindowKey, loadedSignalTraceWindowKey, signalTraceStatus],
+  );
+
+  const lanesSignalTraceError = useMemo(
+    () =>
+      deriveLanesSignalTraceError(
+        chartWindowKey,
+        loadedSignalTraceWindowKey,
+        signalTraceError,
+      ),
+    [chartWindowKey, loadedSignalTraceWindowKey, signalTraceError],
+  );
+
+  const renderWindowBounds = useMemo(
+    () => candleTimeBounds(chartView.candles),
+    [chartView.candles],
+  );
+
+  const displayCacheCoversWindow = useMemo(() => {
+    if (renderWindowBounds === null) {
+      return false;
+    }
+    return signalTraceDisplayCacheRef.current.coversRange(
+      renderWindowBounds.fromSec,
+      renderWindowBounds.toSec,
+    );
+  }, [renderWindowBounds, displayCacheVersion]);
+
+  const displayCacheHasWindowData = useMemo(() => {
+    if (renderWindowBounds === null) {
+      return false;
+    }
+    const cache = signalTraceDisplayCacheRef.current;
+    return (
+      cache.sliceEventsForWindow(renderWindowBounds.fromSec, renderWindowBounds.toSec).length >
+        0 ||
+      cache.sliceHtfContextForWindow(renderWindowBounds.fromSec, renderWindowBounds.toSec).times
+        .length > 0
+    );
+  }, [renderWindowBounds, displayCacheVersion]);
 
   const htfAuxEmaOverlayStale = useMemo(() => {
     const hasHtfSpecs = auxEmaSpecs.some((spec) => spec.source === "htf_trace");
     if (!hasHtfSpecs) return false;
-    if (traceMatchesWindow) return false;
-    return (
-      auxEmaOverlays.some((overlay) => overlay.id.startsWith("htf_")) ||
-      lastSlicedHtfOverlaysRef.current.length > 0
-    );
-  }, [auxEmaSpecs, auxEmaOverlays, traceMatchesWindow]);
+    if (displayCacheCoversWindow) return false;
+    if (signalTraceStatus === "loading") {
+      return displayCacheHasWindowData || auxEmaOverlays.some((overlay) => overlay.id.startsWith("htf_"));
+    }
+    return displayCacheHasWindowData || auxEmaOverlays.some((overlay) => overlay.id.startsWith("htf_"));
+  }, [
+    auxEmaSpecs,
+    auxEmaOverlays,
+    displayCacheCoversWindow,
+    displayCacheHasWindowData,
+    signalTraceStatus,
+  ]);
 
   const chartDisplayAuxEmaOverlays = useMemo(() => {
-    const sliced = chartView.auxEmaOverlays;
-    const display = displayAuxOverlaysForRenderWindow(
-      sliced,
-      lastSlicedHtfOverlaysRef.current,
-      traceMatchesWindow,
-      chartView.candles,
-    );
-
-    if (traceMatchesWindow) {
-      const htfForStorage = frozenHtfOverlaysForStorage(sliced);
-      if (htfForStorage.some((overlay) => overlay.points.length > 0)) {
-        lastSlicedHtfOverlaysRef.current = htfForStorage;
-      }
-    }
-
-    return display;
-  }, [chartView.auxEmaOverlays, chartView.candles, traceMatchesWindow]);
+    const bffOverlays = chartView.auxEmaOverlays.filter((overlay) => !overlay.id.startsWith("htf_"));
+    const htfOverlays = chartView.auxEmaOverlays.filter((overlay) => overlay.id.startsWith("htf_"));
+    const htfDisplay =
+      chartView.candles.length === 0
+        ? []
+        : sliceAuxOverlaysToCandleWindow(htfOverlays, chartView.candles);
+    return [...bffOverlays, ...htfDisplay];
+  }, [chartView.auxEmaOverlays, chartView.candles]);
 
   const chartDisplayComponentEvents = useMemo(() => {
-    const traceEvents = signalTrace?.component_events ?? [];
-    const display = displayComponentEventsForRenderWindow(
-      traceEvents,
-      lastSlicedComponentEventsRef.current,
-      traceMatchesWindow,
-      chartView.candles,
-    );
-
-    if (traceMatchesWindow && (display.length > 0 || traceEvents.length === 0)) {
-      lastSlicedComponentEventsRef.current = frozenComponentEventsForStorage(display);
+    if (renderWindowBounds === null) {
+      return [];
     }
-
-    return display;
-  }, [chartView.candles, signalTrace?.component_events, traceMatchesWindow]);
+    return signalTraceDisplayCacheRef.current.sliceEventsForWindow(
+      renderWindowBounds.fromSec,
+      renderWindowBounds.toSec,
+    );
+  }, [renderWindowBounds, displayCacheVersion]);
 
   const componentEventsStale = useMemo(() => {
-    const hasEvents =
-      (signalTrace?.component_events?.length ?? 0) > 0 ||
-      chartDisplayComponentEvents.length > 0;
-    if (!hasEvents) {
+    if (renderWindowBounds === null) {
       return false;
     }
-    if (traceMatchesWindow) {
+    if (displayCacheCoversWindow) {
       return false;
     }
-    return true;
-  }, [signalTrace?.component_events, chartDisplayComponentEvents, traceMatchesWindow]);
+    const cachedCount = signalTraceDisplayCacheRef.current.sliceEventsForWindow(
+      renderWindowBounds.fromSec,
+      renderWindowBounds.toSec,
+    ).length;
+    if (cachedCount > 0 || (signalTrace?.component_events?.length ?? 0) > 0) {
+      return signalTraceStatus === "loading" || !displayCacheCoversWindow;
+    }
+    return false;
+  }, [
+    renderWindowBounds,
+    displayCacheCoversWindow,
+    displayCacheVersion,
+    signalTrace?.component_events,
+    signalTraceStatus,
+  ]);
 
   const fullCandleRange = useMemo(
     () => (cachedBundle ? candleRangeMs(cachedBundle.candles) : null),
@@ -1030,8 +1140,8 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     ) {
       setSignalTrace(null);
       setSignalTraceStatus("idle");
+      setLoadedSignalTraceWindowKey(null);
       setSignalTraceError(null);
-      setLoadedTraceWindowKey(null);
       loadingTraceWindowKeyRef.current = null;
       inFlightTraceRequestRef.current = null;
       return;
@@ -1057,7 +1167,8 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
 
     const decision = decideSignalTraceLoad({
       chartWindowKey: windowKey,
-      loadedTraceWindowKey,
+      displayCacheCoversWindow,
+      loadedSignalTraceWindowKey,
       loadingTraceWindowKey: loadingTraceWindowKeyRef.current,
       signalTraceStatus,
       inFlightRequest: inFlightTraceRequestRef.current,
@@ -1066,8 +1177,11 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
 
     dbgMark("wb.signal_trace_decision", { action: decision.action, windowKey });
 
+    if (decision.action === "skip_display_cache_hit") {
+      return;
+    }
+
     if (
-      decision.action === "skip_already_loaded" ||
       decision.action === "skip_already_loading" ||
       decision.action === "skip_identical_in_flight" ||
       decision.action === "skip_idle"
@@ -1092,13 +1206,28 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
           contextOverlayRef: effectiveContextOverlayRef,
         });
         if (cancelled) return;
+        const requestedBounds = {
+          fromSec: Math.floor(fromMs / 1000),
+          toSec: Math.floor(toOpenTimeMs / 1000),
+        };
+        const actualBounds = computeChunkBoundsFromResponse(bundle);
+        const truncated = isTraceResponseTruncated(requestedBounds, actualBounds);
+        mergeDisplayChunkFromResponse(signalTraceDisplayCacheRef.current, bundle);
+        setDisplayCacheVersion((version) => version + 1);
+        dbgMark("wb.signal_trace_merge", {
+          windowKey,
+          truncated,
+          requested: requestedBounds,
+          actual: actualBounds,
+        });
         setSignalTrace(bundle);
-        setLoadedTraceWindowKey(windowKey);
+        setLoadedSignalTraceWindowKey(windowKey);
         setSignalTraceStatus("ready");
         dbgFlush("workbench-after-signal-trace");
       } catch (err) {
         if (cancelled) return;
         setSignalTrace(null);
+        setLoadedSignalTraceWindowKey(windowKey);
         setSignalTraceStatus("error");
         setSignalTraceError(
           err instanceof ApiError
@@ -1126,6 +1255,9 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     chartWindowKey,
     marketLoadStatus,
     effectiveContextOverlayRef,
+    displayCacheCoversWindow,
+    loadedSignalTraceWindowKey,
+    signalTraceStatus,
   ]);
 
   const symbol = report?.symbol ?? "—";
@@ -1186,6 +1318,9 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       refreshRunsAndSelectRun,
       signalTrace,
       signalTraceStatus,
+      lanesSignalTrace,
+      lanesSignalTraceStatus,
+      lanesSignalTraceError,
       signalTraceError,
       contextOverlayRef,
       setContextOverlayRef,
@@ -1245,6 +1380,9 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       refreshRunsAndSelectRun,
       signalTrace,
       signalTraceStatus,
+      lanesSignalTrace,
+      lanesSignalTraceStatus,
+      lanesSignalTraceError,
       signalTraceError,
       contextOverlayRef,
       effectiveContextOverlayRef,

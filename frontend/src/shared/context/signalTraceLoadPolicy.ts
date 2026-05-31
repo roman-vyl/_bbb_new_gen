@@ -10,19 +10,56 @@ export type SignalTraceRequest = {
 
 export type SignalTraceLoadDecision =
   | { action: "skip_idle" }
-  | { action: "skip_already_loaded" }
+  | { action: "skip_display_cache_hit" }
   | { action: "skip_already_loading" }
   | { action: "skip_identical_in_flight" }
   | { action: "load_start"; request: SignalTraceRequest };
 
 export type DecideSignalTraceLoadInput = {
   chartWindowKey: string | null;
-  loadedTraceWindowKey: string | null;
+  displayCacheCoversWindow: boolean;
+  /** Window key for the current `signalTrace` bundle (lanes/diagnostics). */
+  loadedSignalTraceWindowKey: string | null;
   loadingTraceWindowKey: string | null;
   signalTraceStatus: SignalTraceLoadStatus;
   inFlightRequest: SignalTraceRequest | null;
   request: SignalTraceRequest | null;
 };
+
+export function signalTraceMatchesChartWindow(
+  chartWindowKey: string | null,
+  loadedSignalTraceWindowKey: string | null,
+): boolean {
+  return chartWindowKey !== null && loadedSignalTraceWindowKey === chartWindowKey;
+}
+
+/** Lanes/diagnostics: only expose per-window trace when it matches the render window. */
+export function lanesSignalTraceStatus(
+  chartWindowKey: string | null,
+  loadedSignalTraceWindowKey: string | null,
+  signalTraceStatus: SignalTraceLoadStatus,
+): SignalTraceLoadStatus {
+  if (signalTraceMatchesChartWindow(chartWindowKey, loadedSignalTraceWindowKey)) {
+    return signalTraceStatus;
+  }
+  // Stale status from another window (including its error) — current window refetch pending/active.
+  return "loading";
+}
+
+/** Only show trace error when it belongs to the current render window. */
+export function lanesSignalTraceError(
+  chartWindowKey: string | null,
+  loadedSignalTraceWindowKey: string | null,
+  signalTraceError: string | null,
+): string | null {
+  if (signalTraceError === null) {
+    return null;
+  }
+  if (signalTraceMatchesChartWindow(chartWindowKey, loadedSignalTraceWindowKey)) {
+    return signalTraceError;
+  }
+  return null;
+}
 
 export function signalTraceRequestsEqual(
   a: SignalTraceRequest,
@@ -37,7 +74,7 @@ export function signalTraceRequestsEqual(
   );
 }
 
-/** Whether to start signalTrace fetch or skip (dedup / guards). */
+/** Whether to start signalTrace fetch or skip (display cache / dedup / guards). */
 export function decideSignalTraceLoad(
   input: DecideSignalTraceLoadInput,
 ): SignalTraceLoadDecision {
@@ -48,10 +85,11 @@ export function decideSignalTraceLoad(
   const { request } = input;
 
   if (
-    input.chartWindowKey === input.loadedTraceWindowKey &&
+    input.displayCacheCoversWindow &&
+    signalTraceMatchesChartWindow(input.chartWindowKey, input.loadedSignalTraceWindowKey) &&
     input.signalTraceStatus === "ready"
   ) {
-    return { action: "skip_already_loaded" };
+    return { action: "skip_display_cache_hit" };
   }
 
   if (
