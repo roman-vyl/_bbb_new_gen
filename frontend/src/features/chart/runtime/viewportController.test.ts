@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { createViewportController } from "@/features/chart/runtime/viewportController";
+import {
+  canEmitTradeFocus,
+  createViewportController,
+} from "@/features/chart/runtime/viewportController";
 
 describe("viewportController", () => {
   it("traceReady always returns noViewportChange", () => {
@@ -7,20 +10,33 @@ describe("viewportController", () => {
     expect(controller.onTraceReady()).toEqual({ type: "noViewportChange" });
   });
 
-  it("suppresses trade focus while user panning", () => {
+  it("explicit trade_selected sets trade focus intent once", () => {
+    const controller = createViewportController();
+    const cmd = controller.dispatch({ type: "trade_selected", entryTimeSec: 1_700_000_000 });
+    expect(cmd).toEqual({ type: "focusTrade", entryTimeSec: 1_700_000_000 });
+    expect(canEmitTradeFocus(controller.getState())).toBe(true);
+  });
+
+  it("user pan clears activeFocusIntent and blocks trade_selected", () => {
     const controller = createViewportController({
       mode: "around-trade",
       centerTimeSec: 1_700_000_000,
+      activeFocusIntent: "trade",
+      viewportOwner: "trade",
     });
     controller.dispatch({ type: "pointerdown" });
+    expect(controller.getState().activeFocusIntent).toBeNull();
+    expect(controller.getState().viewportOwner).toBe("user");
     const cmd = controller.dispatch({ type: "trade_selected", entryTimeSec: 1_700_000_000 });
     expect(cmd?.type).toBe("noViewportChange");
   });
 
-  it("windowSwapCommitted always restores after pan shift even when trade is selected", () => {
+  it("windowSwapCommitted always restores after pan even when trade was focused", () => {
     const controller = createViewportController({
       mode: "around-trade",
       centerTimeSec: 1_700_000_000,
+      activeFocusIntent: "trade",
+      viewportOwner: "trade",
     });
     controller.dispatch({ type: "pointerdown" });
     controller.dispatch({ type: "pointerup" });
@@ -28,26 +44,47 @@ describe("viewportController", () => {
       anchorTimeSec: 1_731_000_000,
       previousVisible: { from: 120.4, to: 380.9 },
       shiftSeq: 2,
-      windowStartIndex: 100_000,
-      fullLength: 200_000,
     });
-    expect(cmd).toEqual({
-      type: "restoreAfterWindowSwap",
-      anchorTimeSec: 1_731_000_000,
-      previousVisible: { from: 120.4, to: 380.9 },
-      shiftSeq: 2,
-      windowStartIndex: 100_000,
-      fullLength: 200_000,
-    });
+    expect(cmd.type).toBe("restoreAfterWindowSwap");
   });
 
-  it("wheel pan sets suppressTradeFocus so trade_selected does not fire during scroll", () => {
+  it("resize never emits focusTrade when trade is selected but user owns viewport", () => {
     const controller = createViewportController({
       mode: "around-trade",
       centerTimeSec: 1_700_000_000,
+      activeFocusIntent: null,
+      viewportOwner: "user",
     });
-    controller.dispatch({ type: "wheel" });
-    const cmd = controller.dispatch({ type: "trade_selected", entryTimeSec: 1_700_000_000 });
-    expect(cmd?.type).toBe("noViewportChange");
+    expect(controller.dispatch({ type: "resize" })).toEqual({ type: "preserveUserRange" });
+  });
+
+  it("resize never emits focusTrade even when activeFocusIntent is still trade (stale plan)", () => {
+    const controller = createViewportController({
+      mode: "around-trade",
+      centerTimeSec: 1_700_000_000,
+      activeFocusIntent: "trade",
+      viewportOwner: "user",
+    });
+    expect(controller.dispatch({ type: "resize" })).toEqual({ type: "preserveUserRange" });
+  });
+
+  it("simulates pan shift then layout resize: restore path only, no refocus", () => {
+    const controller = createViewportController({
+      mode: "around-trade",
+      centerTimeSec: 1_700_000_000,
+      activeFocusIntent: "trade",
+      viewportOwner: "trade",
+    });
+    controller.dispatch({ type: "pointerdown" });
+    controller.dispatch({ type: "pointerup" });
+    const restore = controller.onWindowSwapCommitted({
+      anchorTimeSec: 1_731_000_000,
+      previousVisible: { from: 10, to: 50 },
+      shiftSeq: 1,
+    });
+    expect(restore.type).toBe("restoreAfterWindowSwap");
+    const resizeCmd = controller.dispatch({ type: "resize" });
+    expect(resizeCmd?.type).toBe("preserveUserRange");
+    expect(canEmitTradeFocus(controller.getState())).toBe(false);
   });
 });

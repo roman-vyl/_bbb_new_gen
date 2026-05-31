@@ -20,12 +20,26 @@ export type ViewportController = {
   }): ViewportCommand;
 };
 
+function userPanSessionStart(state: ViewportControllerState): ViewportControllerState {
+  return {
+    ...state,
+    userPanning: true,
+    activeFocusIntent: null,
+    viewportOwner: "user",
+  };
+}
+
+export function canEmitTradeFocus(state: ViewportControllerState): boolean {
+  return state.activeFocusIntent === "trade" && state.viewportOwner === "trade";
+}
+
 export function createViewportController(initial?: Partial<ViewportControllerState>): ViewportController {
   let state: ViewportControllerState = {
     mode: initial?.mode ?? "tail",
     centerTimeSec: initial?.centerTimeSec ?? null,
     userPanning: false,
-    suppressTradeFocus: false,
+    activeFocusIntent: initial?.activeFocusIntent ?? null,
+    viewportOwner: initial?.viewportOwner ?? "user",
   };
 
   return {
@@ -39,37 +53,42 @@ export function createViewportController(initial?: Partial<ViewportControllerSta
       switch (event.type) {
         case "pointerdown":
         case "pointermove":
-          state = { ...state, userPanning: true, suppressTradeFocus: true };
+          state = userPanSessionStart(state);
           return { type: "noViewportChange" };
         case "pointerup":
+          state = { ...state, userPanning: false };
+          return { type: "noViewportChange" };
         case "wheel":
-          state = { ...state, userPanning: false, suppressTradeFocus: true };
+          state = { ...state, userPanning: false, activeFocusIntent: null, viewportOwner: "user" };
           return { type: "noViewportChange" };
         case "trade_selected": {
-          if (state.userPanning || state.suppressTradeFocus) {
+          if (state.userPanning) {
             return { type: "noViewportChange" };
           }
           const entryTimeSec = event.entryTimeSec ?? state.centerTimeSec;
+          if (entryTimeSec === null) {
+            state = {
+              ...state,
+              activeFocusIntent: null,
+              viewportOwner: "user",
+            };
+            return { type: "noViewportChange" };
+          }
           state = {
             ...state,
             mode: "around-trade",
             centerTimeSec: entryTimeSec,
             userPanning: false,
-            suppressTradeFocus: false,
+            activeFocusIntent: "trade",
+            viewportOwner: "trade",
           };
-          return entryTimeSec !== null
-            ? { type: "focusTrade", entryTimeSec }
-            : { type: "noViewportChange" };
+          return { type: "focusTrade", entryTimeSec };
         }
         case "resize":
-          if (state.mode === "around-trade" && state.centerTimeSec !== null) {
-            return { type: "focusTrade", entryTimeSec: state.centerTimeSec };
-          }
           return { type: "preserveUserRange" };
         case "programmatic_viewport_start":
           return { type: "noViewportChange" };
         case "programmatic_viewport_end":
-          state = { ...state, suppressTradeFocus: false };
           return { type: "noViewportChange" };
         default:
           return null;
@@ -87,7 +106,6 @@ export function createViewportController(initial?: Partial<ViewportControllerSta
       windowStartIndex,
       fullLength,
     }): ViewportCommand {
-      // Pan/wheel window commits always restore pan anchor; trade focus is trade_selected only.
       return {
         type: "restoreAfterWindowSwap",
         anchorTimeSec,

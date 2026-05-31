@@ -50,11 +50,17 @@ export type ViewportCommand =
     }
   | { type: "preserveUserRange" };
 
+export type ViewportFocusIntent = "trade" | null;
+
+export type ViewportOwner = "user" | "trade";
+
 export type ViewportControllerState = {
   mode: ChartViewMode;
   centerTimeSec: number | null;
   userPanning: boolean;
-  suppressTradeFocus: boolean;
+  /** Set only on explicit trade_selected; cleared on user pan. */
+  activeFocusIntent: ViewportFocusIntent;
+  viewportOwner: ViewportOwner;
 };
 
 export type TraceFetchIntent = {

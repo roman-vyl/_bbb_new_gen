@@ -64,6 +64,7 @@ export const PIPELINE_DEBUG_STEPS = {
     viewportApply: "chart.viewport.apply",
     viewportApplyTradeFocus: "chart.viewport.apply_trade_focus",
     viewportApplySkippedUserPan: "chart.viewport.apply_skipped_user_pan",
+    viewportApplySkippedNoFocusIntent: "chart.viewport.apply_skipped_no_focus_intent",
     viewportRestoreAfterShift: "chart.viewport.restore_after_shift",
     restoreByTimeAnchorFailed: "chart.viewport.restore_by_time_anchor_failed",
     restoreByTimeAnchorApplied: "chart.viewport.restore_by_time_anchor_applied",

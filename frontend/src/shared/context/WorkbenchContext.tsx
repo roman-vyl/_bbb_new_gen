@@ -50,6 +50,7 @@ import {
   shouldBlockTraceFetchForActivePan,
   takeCommittedTraceFetchIntent,
 } from "@/features/chart/runtime/traceDisplayOrchestrator";
+import { canEmitTradeFocus } from "@/features/chart/runtime/viewportController";
 import type { ChartInteractionEvent, ViewportCommand } from "@/features/chart/runtime/types";
 import {
   emptyChartViewWindow,
@@ -663,7 +664,18 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const emitChartViewportCommand = useCallback((command: ViewportCommand) => {
-    if (command.type === "noViewportChange") {
+    if (command.type === "noViewportChange" || command.type === "preserveUserRange") {
+      return;
+    }
+    if (
+      command.type === "focusTrade" &&
+      !canEmitTradeFocus(chartRuntimeRef.current.viewport.getState())
+    ) {
+      dbgMark(DBG.chart.viewportApplySkippedNoFocusIntent, {
+        mode: chartRuntimeRef.current.viewport.getState().mode,
+        viewportOwner: chartRuntimeRef.current.viewport.getState().viewportOwner,
+        activeFocusIntent: chartRuntimeRef.current.viewport.getState().activeFocusIntent,
+      });
       return;
     }
     setChartViewportCommand(command);
