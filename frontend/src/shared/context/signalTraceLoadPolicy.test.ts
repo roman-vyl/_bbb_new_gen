@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   decideSignalTraceLoad,
+  lanesSignalTraceStatus,
+  signalTraceMatchesChartWindow,
   type SignalTraceRequest,
 } from "@/shared/context/signalTraceLoadPolicy";
 
@@ -13,11 +15,20 @@ const REQUEST: SignalTraceRequest = {
   toOpenTimeMs: 2_000_000,
 };
 
+const WINDOW_B: SignalTraceRequest = {
+  windowKey: "run-a:exp_a:3000:4000",
+  runId: "run-a",
+  variant: "exp_a",
+  fromMs: 3_000_000,
+  toOpenTimeMs: 4_000_000,
+};
+
 describe("decideSignalTraceLoad", () => {
-  it("scenario A: skips when display cache covers render window", () => {
+  it("scenario A: skips when display cache and loaded signal trace both match window", () => {
     const decision = decideSignalTraceLoad({
       chartWindowKey: REQUEST.windowKey,
       displayCacheCoversWindow: true,
+      loadedSignalTraceWindowKey: REQUEST.windowKey,
       loadingTraceWindowKey: null,
       signalTraceStatus: "ready",
       inFlightRequest: null,
@@ -26,10 +37,24 @@ describe("decideSignalTraceLoad", () => {
     expect(decision).toEqual({ action: "skip_display_cache_hit" });
   });
 
+  it("regression: cache covers window A but loaded signal trace is window B — must fetch for lanes", () => {
+    const decision = decideSignalTraceLoad({
+      chartWindowKey: REQUEST.windowKey,
+      displayCacheCoversWindow: true,
+      loadedSignalTraceWindowKey: WINDOW_B.windowKey,
+      loadingTraceWindowKey: null,
+      signalTraceStatus: "ready",
+      inFlightRequest: null,
+      request: REQUEST,
+    });
+    expect(decision).toEqual({ action: "load_start", request: REQUEST });
+  });
+
   it("scenario B: skips when same window is already loading", () => {
     const decision = decideSignalTraceLoad({
       chartWindowKey: REQUEST.windowKey,
       displayCacheCoversWindow: false,
+      loadedSignalTraceWindowKey: null,
       loadingTraceWindowKey: REQUEST.windowKey,
       signalTraceStatus: "loading",
       inFlightRequest: REQUEST,
@@ -44,6 +69,7 @@ describe("decideSignalTraceLoad", () => {
     const decision = decideSignalTraceLoad({
       chartWindowKey: nextKey,
       displayCacheCoversWindow: false,
+      loadedSignalTraceWindowKey: REQUEST.windowKey,
       loadingTraceWindowKey: null,
       signalTraceStatus: "ready",
       inFlightRequest: null,
@@ -58,6 +84,7 @@ describe("decideSignalTraceLoad", () => {
     const decision = decideSignalTraceLoad({
       chartWindowKey: nextKey,
       displayCacheCoversWindow: false,
+      loadedSignalTraceWindowKey: REQUEST.windowKey,
       loadingTraceWindowKey: null,
       signalTraceStatus: "ready",
       inFlightRequest: null,
@@ -70,6 +97,7 @@ describe("decideSignalTraceLoad", () => {
     const decision = decideSignalTraceLoad({
       chartWindowKey: REQUEST.windowKey,
       displayCacheCoversWindow: false,
+      loadedSignalTraceWindowKey: null,
       loadingTraceWindowKey: null,
       signalTraceStatus: "idle",
       inFlightRequest: REQUEST,
@@ -82,11 +110,27 @@ describe("decideSignalTraceLoad", () => {
     const decision = decideSignalTraceLoad({
       chartWindowKey: null,
       displayCacheCoversWindow: false,
+      loadedSignalTraceWindowKey: null,
       loadingTraceWindowKey: null,
       signalTraceStatus: "idle",
       inFlightRequest: null,
       request: null,
     });
     expect(decision).toEqual({ action: "skip_idle" });
+  });
+});
+
+describe("lanesSignalTraceStatus", () => {
+  it("does not report ready when cache covers A but loaded trace is for B", () => {
+    expect(
+      lanesSignalTraceStatus(REQUEST.windowKey, WINDOW_B.windowKey, "ready"),
+    ).toBe("loading");
+    expect(signalTraceMatchesChartWindow(REQUEST.windowKey, WINDOW_B.windowKey)).toBe(false);
+  });
+
+  it("reports ready when loaded trace matches chart window", () => {
+    expect(
+      lanesSignalTraceStatus(REQUEST.windowKey, REQUEST.windowKey, "ready"),
+    ).toBe("ready");
   });
 });

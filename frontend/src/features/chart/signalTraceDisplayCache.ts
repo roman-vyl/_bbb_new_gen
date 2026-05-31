@@ -63,6 +63,11 @@ export function componentEventDedupeKey(event: ComponentEvent, includeLabel = fa
   return `${base}\0${event.label}`;
 }
 
+/**
+ * Time samples for chunk coverage. `bundle.times` is the canonical bar grid:
+ * BFF aligns `htf_context.{fast,anchor,slow}` by index with `times` (see `htfEmaPointsFromSignalTrace`).
+ * We do not infer bounds from HTF arrays alone — empty `times` means no coverage even if `htf_context` is set.
+ */
 export function collectTraceTimeSamples(bundle: SignalTraceBundle): number[] {
   const samples: number[] = [];
   if (bundle.times.length > 0) {

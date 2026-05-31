@@ -95,13 +95,14 @@ On fetch: BFF returns full `SignalTraceBundle`; Workbench **extracts display fie
 When building a `TraceDisplayChunk` from a fetch response, compute chunk bounds from **data present in the response**:
 
 ```typescript
-// Pseudocode — use response meta bounds when BFF exposes verified actual span
+// Pseudocode — use response meta bounds when BFF exposes verified actual span.
+// `times` is the canonical bar grid; htf_context series are index-aligned (not sampled for bounds).
 chunk.fromSec = meta.actual_from_sec ?? min(
   response.times,
   response.component_events?.map(e => e.time),
-  htfBarTimes(response.htf_context),
 );
 chunk.toSec = meta.actual_to_sec ?? max(/* same sources */);
+// Empty `times` → no chunk coverage even if htf_context is present.
 ```
 
 If the response is truncated vs the requested window, the stored chunk covers **only** `[chunk.fromSec, chunk.toSec]`. `coversRange(renderWindow)` MUST NOT return true for ranges outside that span.

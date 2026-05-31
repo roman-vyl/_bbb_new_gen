@@ -18,11 +18,35 @@ export type SignalTraceLoadDecision =
 export type DecideSignalTraceLoadInput = {
   chartWindowKey: string | null;
   displayCacheCoversWindow: boolean;
+  /** Window key for the current `signalTrace` bundle (lanes/diagnostics). */
+  loadedSignalTraceWindowKey: string | null;
   loadingTraceWindowKey: string | null;
   signalTraceStatus: SignalTraceLoadStatus;
   inFlightRequest: SignalTraceRequest | null;
   request: SignalTraceRequest | null;
 };
+
+export function signalTraceMatchesChartWindow(
+  chartWindowKey: string | null,
+  loadedSignalTraceWindowKey: string | null,
+): boolean {
+  return chartWindowKey !== null && loadedSignalTraceWindowKey === chartWindowKey;
+}
+
+/** Lanes/diagnostics: only expose per-window trace when it matches the render window. */
+export function lanesSignalTraceStatus(
+  chartWindowKey: string | null,
+  loadedSignalTraceWindowKey: string | null,
+  signalTraceStatus: SignalTraceLoadStatus,
+): SignalTraceLoadStatus {
+  if (signalTraceMatchesChartWindow(chartWindowKey, loadedSignalTraceWindowKey)) {
+    return signalTraceStatus;
+  }
+  if (signalTraceStatus === "error") {
+    return "error";
+  }
+  return "loading";
+}
 
 export function signalTraceRequestsEqual(
   a: SignalTraceRequest,
@@ -47,7 +71,11 @@ export function decideSignalTraceLoad(
 
   const { request } = input;
 
-  if (input.displayCacheCoversWindow) {
+  if (
+    input.displayCacheCoversWindow &&
+    signalTraceMatchesChartWindow(input.chartWindowKey, input.loadedSignalTraceWindowKey) &&
+    input.signalTraceStatus === "ready"
+  ) {
     return { action: "skip_display_cache_hit" };
   }
 

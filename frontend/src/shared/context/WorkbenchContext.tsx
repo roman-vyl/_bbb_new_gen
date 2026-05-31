@@ -94,6 +94,8 @@ import {
 } from "@/features/chart/marketDataCache";
 import {
   decideSignalTraceLoad,
+  lanesSignalTraceStatus as deriveLanesSignalTraceStatus,
+  signalTraceMatchesChartWindow,
   type SignalTraceLoadStatus,
   type SignalTraceRequest,
 } from "@/shared/context/signalTraceLoadPolicy";
@@ -165,6 +167,9 @@ type WorkbenchState = {
   refreshRunsAndSelectRun: (runId: string) => Promise<void>;
   signalTrace: SignalTraceBundle | null;
   signalTraceStatus: SignalTraceLoadStatus;
+  /** Per-window trace for lanes/diagnostics only — null when bundle is for another render window. */
+  lanesSignalTrace: SignalTraceBundle | null;
+  lanesSignalTraceStatus: SignalTraceLoadStatus;
   signalTraceError: string | null;
   contextOverlayRef: string | null;
   setContextOverlayRef: (ref: string | null) => void;
@@ -228,6 +233,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
   const [selectedBarTimeSec, setSelectedBarTimeSec] = useState<number | null>(null);
   const [signalTrace, setSignalTrace] = useState<SignalTraceBundle | null>(null);
   const [signalTraceStatus, setSignalTraceStatus] = useState<SignalTraceLoadStatus>("idle");
+  const [loadedSignalTraceWindowKey, setLoadedSignalTraceWindowKey] = useState<string | null>(null);
   const [signalTraceError, setSignalTraceError] = useState<string | null>(null);
   const [contextOverlayRef, setContextOverlayRef] = useState<string | null>(null);
   const loadingTraceWindowKeyRef = useRef<string | null>(null);
@@ -980,6 +986,23 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     return `${selectedRunId}:${selectedVariantKey}:${first}:${last}:${overlay}`;
   }, [chartView.candles, selectedRunId, selectedVariantKey, effectiveContextOverlayRef]);
 
+  const signalTraceMatchesWindow = signalTraceMatchesChartWindow(
+    chartWindowKey,
+    loadedSignalTraceWindowKey,
+  );
+
+  const lanesSignalTrace = signalTraceMatchesWindow ? signalTrace : null;
+
+  const lanesSignalTraceStatus = useMemo(
+    () =>
+      deriveLanesSignalTraceStatus(
+        chartWindowKey,
+        loadedSignalTraceWindowKey,
+        signalTraceStatus,
+      ),
+    [chartWindowKey, loadedSignalTraceWindowKey, signalTraceStatus],
+  );
+
   const renderWindowBounds = useMemo(
     () => candleTimeBounds(chartView.candles),
     [chartView.candles],
@@ -1105,6 +1128,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     ) {
       setSignalTrace(null);
       setSignalTraceStatus("idle");
+      setLoadedSignalTraceWindowKey(null);
       setSignalTraceError(null);
       loadingTraceWindowKeyRef.current = null;
       inFlightTraceRequestRef.current = null;
@@ -1132,6 +1156,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     const decision = decideSignalTraceLoad({
       chartWindowKey: windowKey,
       displayCacheCoversWindow,
+      loadedSignalTraceWindowKey,
       loadingTraceWindowKey: loadingTraceWindowKeyRef.current,
       signalTraceStatus,
       inFlightRequest: inFlightTraceRequestRef.current,
@@ -1141,10 +1166,6 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     dbgMark("wb.signal_trace_decision", { action: decision.action, windowKey });
 
     if (decision.action === "skip_display_cache_hit") {
-      if (signalTraceStatus !== "ready") {
-        setSignalTraceStatus("ready");
-        setSignalTraceError(null);
-      }
       return;
     }
 
@@ -1188,11 +1209,13 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
           actual: actualBounds,
         });
         setSignalTrace(bundle);
+        setLoadedSignalTraceWindowKey(windowKey);
         setSignalTraceStatus("ready");
         dbgFlush("workbench-after-signal-trace");
       } catch (err) {
         if (cancelled) return;
         setSignalTrace(null);
+        setLoadedSignalTraceWindowKey(null);
         setSignalTraceStatus("error");
         setSignalTraceError(
           err instanceof ApiError
@@ -1221,6 +1244,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     marketLoadStatus,
     effectiveContextOverlayRef,
     displayCacheCoversWindow,
+    loadedSignalTraceWindowKey,
     signalTraceStatus,
   ]);
 
@@ -1282,6 +1306,8 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       refreshRunsAndSelectRun,
       signalTrace,
       signalTraceStatus,
+      lanesSignalTrace,
+      lanesSignalTraceStatus,
       signalTraceError,
       contextOverlayRef,
       setContextOverlayRef,
@@ -1341,6 +1367,8 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       refreshRunsAndSelectRun,
       signalTrace,
       signalTraceStatus,
+      lanesSignalTrace,
+      lanesSignalTraceStatus,
       signalTraceError,
       contextOverlayRef,
       effectiveContextOverlayRef,

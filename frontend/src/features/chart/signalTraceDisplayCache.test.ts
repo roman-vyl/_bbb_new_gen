@@ -82,6 +82,33 @@ function makeBundle(partial: Partial<SignalTraceBundle> & Pick<SignalTraceBundle
 }
 
 describe("computeChunkBoundsFromResponse", () => {
+  it("uses times grid endpoints for coverage when component_events are empty", () => {
+    const bundle = makeBundle({
+      times: [100, 200, 300],
+      component_events: [],
+      htf_context: makeHtf(3, 100),
+    });
+
+    expect(computeChunkBoundsFromResponse(bundle)).toEqual({ fromSec: 100, toSec: 300 });
+  });
+
+  it("returns null when times grid is empty (htf_context alone is not a time axis)", () => {
+    const bundle = makeBundle({
+      times: [],
+      component_events: [],
+      htf_context: {
+        state: ["up"],
+        fast: [1],
+        anchor: [2],
+        slow: [3],
+        meta: {},
+      },
+    });
+
+    expect(computeChunkBoundsFromResponse(bundle)).toBeNull();
+    expect(extractDisplayChunkFromResponse(bundle)).toBeNull();
+  });
+
   it("uses actual response times, not requested window", () => {
     const bundle = makeBundle({
       times: [100, 200, 300],

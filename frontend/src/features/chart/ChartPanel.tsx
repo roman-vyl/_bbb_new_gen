@@ -226,9 +226,9 @@ export function ChartPanel() {
 
     fullCandleRange,
 
-    signalTrace,
+    lanesSignalTrace,
 
-    signalTraceStatus,
+    lanesSignalTraceStatus,
 
     signalTraceError,
 
@@ -402,11 +402,11 @@ export function ChartPanel() {
 
     const traceNote =
 
-      signalTraceStatus === "ready"
+      lanesSignalTraceStatus === "ready"
 
         ? " · signal trace loaded"
 
-        : signalTraceStatus === "loading"
+        : lanesSignalTraceStatus === "loading"
 
           ? " · loading signal trace…"
 
@@ -454,7 +454,7 @@ export function ChartPanel() {
 
     chartTimeframe,
 
-    signalTraceStatus,
+    lanesSignalTraceStatus,
 
   ]);
 
@@ -1026,7 +1026,7 @@ export function ChartPanel() {
 
           <SignalTimelineLanes
 
-            signalTrace={signalTrace}
+            signalTrace={lanesSignalTrace}
 
             selectedBarTimeSec={selectedBarTimeSec}
 
@@ -1075,8 +1075,8 @@ export function ChartPanel() {
                   chartEmaOverlays={chartEmaOverlays}
                   chartAuxEmaOverlays={chartDisplayAuxEmaOverlays}
                   focusWarning={chartTradeFocusWarning}
-                  signalTrace={signalTrace}
-                  signalTraceStatus={signalTraceStatus}
+                  signalTrace={lanesSignalTrace}
+                  signalTraceStatus={lanesSignalTraceStatus}
                 />
               </div>
               <ChartAsideStackSplitHandle
@@ -1092,9 +1092,9 @@ export function ChartPanel() {
               selectedBarTimeSec={selectedBarTimeSec}
               candles={chartCandles}
               emaOverlays={chartEmaOverlays}
-              signalTrace={signalTrace}
+              signalTrace={lanesSignalTrace}
               signalTraceError={signalTraceError}
-              signalTraceLoading={signalTraceStatus === "loading"}
+              signalTraceLoading={lanesSignalTraceStatus === "loading"}
               onClear={() => selectBar(null)}
             />
           </div>
