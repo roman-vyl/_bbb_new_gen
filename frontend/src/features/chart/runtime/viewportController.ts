@@ -14,8 +14,6 @@ export type ViewportController = {
   onWindowSwapCommitted(params: {
     anchorTimeSec: number;
     previousVisible: ChartLogicalRange;
-    tradeFocusPending: boolean;
-    entryTimeSec: number | null;
     shiftSeq: number;
     windowStartIndex?: number;
     fullLength?: number;
@@ -45,7 +43,7 @@ export function createViewportController(initial?: Partial<ViewportControllerSta
           return { type: "noViewportChange" };
         case "pointerup":
         case "wheel":
-          state = { ...state, userPanning: false };
+          state = { ...state, userPanning: false, suppressTradeFocus: true };
           return { type: "noViewportChange" };
         case "trade_selected": {
           if (state.userPanning || state.suppressTradeFocus) {
@@ -71,6 +69,7 @@ export function createViewportController(initial?: Partial<ViewportControllerSta
         case "programmatic_viewport_start":
           return { type: "noViewportChange" };
         case "programmatic_viewport_end":
+          state = { ...state, suppressTradeFocus: false };
           return { type: "noViewportChange" };
         default:
           return null;
@@ -84,13 +83,12 @@ export function createViewportController(initial?: Partial<ViewportControllerSta
     onWindowSwapCommitted({
       anchorTimeSec,
       previousVisible,
-      tradeFocusPending,
-      entryTimeSec,
       shiftSeq,
       windowStartIndex,
       fullLength,
     }): ViewportCommand {
-      const restoreCmd: ViewportCommand = {
+      // Pan/wheel window commits always restore pan anchor; trade focus is trade_selected only.
+      return {
         type: "restoreAfterWindowSwap",
         anchorTimeSec,
         previousVisible,
@@ -98,13 +96,6 @@ export function createViewportController(initial?: Partial<ViewportControllerSta
         windowStartIndex,
         fullLength,
       };
-      if (state.userPanning || state.suppressTradeFocus) {
-        return restoreCmd;
-      }
-      if (tradeFocusPending && entryTimeSec !== null) {
-        return { type: "focusTrade", entryTimeSec };
-      }
-      return restoreCmd;
     },
   };
 }

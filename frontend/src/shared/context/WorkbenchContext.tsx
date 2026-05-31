@@ -896,16 +896,9 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       renderWindowShiftSeqRef.current = commit.shiftSeq;
       setRenderWindowShiftSeq(commit.shiftSeq);
 
-      const tradeFocusPending = selectedTradeEntryTimeMs !== null;
-      const entryTimeSec =
-        selectedTradeEntryTimeMs !== null
-          ? Math.floor(selectedTradeEntryTimeMs / 1000)
-          : null;
       const viewportCmd = chartRuntimeRef.current.viewport.onWindowSwapCommitted({
         anchorTimeSec: commit.anchorTimeSec,
         previousVisible: commit.previousVisible,
-        tradeFocusPending,
-        entryTimeSec,
         shiftSeq: commit.shiftSeq,
         windowStartIndex: commit.boundsBefore.windowStartIndex,
         fullLength: cachedBundle.candles.length,
@@ -928,7 +921,6 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     [
       cachedBundle,
       bumpRenderWindow,
-      selectedTradeEntryTimeMs,
       selectedRunId,
       selectedVariantKey,
       effectiveContextOverlayRef,
