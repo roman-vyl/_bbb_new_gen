@@ -167,7 +167,7 @@ export function computeRestoredVisibleLogicalRange(
     return { method: "fitContent" };
   }
 
-  const visibleWidth = Math.max(1, previousVisible.to - previousVisible.from);
+  const visibleWidth = visibleBarSpanFromLogicalRange(previousVisible);
   let anchorIndex = findBarIndexAtOrBefore(newCandles, anchorTimeSec);
 
   if (!Number.isFinite(anchorIndex) || anchorIndex < 0) {
@@ -210,72 +210,69 @@ export function computeRestoredVisibleLogicalRange(
   };
 }
 
+/** Integer bar span from chart logical range (fractional logical widths are common). */
+export function visibleBarSpanFromLogicalRange(visible: ChartLogicalRange): number {
+  const raw = visible.to - visible.from;
+  if (!Number.isFinite(raw) || raw <= 0) {
+    return 1;
+  }
+  return Math.max(1, Math.ceil(raw));
+}
+
+function resolveRestoreBarTimes(
+  newCandles: readonly ChartBar[],
+  logical: { from: number; to: number },
+): { fromTimeSec: number; toTimeSec: number } | null {
+  const fromIdx = Math.max(0, Math.min(Math.floor(logical.from), newCandles.length - 1));
+  const toIdx = Math.max(
+    fromIdx,
+    Math.min(newCandles.length - 1, Math.floor(logical.to) - 1),
+  );
+  const fromBar = newCandles[fromIdx];
+  const toBar = newCandles[toIdx];
+  if (fromBar === undefined || toBar === undefined) {
+    return null;
+  }
+  return { fromTimeSec: fromBar.time, toTimeSec: toBar.time };
+}
+
 /**
- * Primary restore path: map time anchor to visible time range (not pre-swap logical indexes).
+ * Primary restore path: time anchor → bar window → setVisibleRange (not pre-swap logical indexes).
  */
 export function restoreVisibleRangeByTimeAnchor(
   chart: IChartApi,
   params: RestoreVisibleRangeAfterWindowShiftParams,
 ): RestoreVisibleRangeResult {
-  const { anchorTimeSec, newCandles, previousVisible, windowStartIndex = 0, fullLength } = params;
   const timeScale = chart.timeScale();
-
-  if (newCandles.length === 0) {
-    timeScale.fitContent();
-    return { method: "fitContent" };
-  }
-
-  const visibleWidth = Math.max(1, previousVisible.to - previousVisible.from);
-  let anchorIndex = findBarIndexAtOrBefore(newCandles, anchorTimeSec);
-  if (!Number.isFinite(anchorIndex) || anchorIndex < 0) {
-    anchorIndex = 0;
-  }
-  if (anchorIndex >= newCandles.length) {
-    anchorIndex = newCandles.length - 1;
-  }
-
-  let fromIdx = anchorIndex - Math.floor(visibleWidth / 2);
-  let toIdx = fromIdx + visibleWidth;
-
-  if (fromIdx < 0) {
-    fromIdx = 0;
-    toIdx = Math.min(newCandles.length, visibleWidth);
-  }
-  if (toIdx > newCandles.length) {
-    toIdx = newCandles.length;
-    fromIdx = Math.max(0, toIdx - visibleWidth);
-  }
-
-  if (windowStartIndex === 0 && fromIdx < 0) {
-    fromIdx = 0;
-    toIdx = Math.min(newCandles.length, visibleWidth);
-  }
+  const logicalResult = computeRestoredVisibleLogicalRange(params);
 
   if (
-    fullLength !== undefined &&
-    windowStartIndex + newCandles.length >= fullLength &&
-    toIdx > newCandles.length
+    logicalResult.method === "fitContent" ||
+    logicalResult.logicalFrom === undefined ||
+    logicalResult.logicalTo === undefined
   ) {
-    toIdx = newCandles.length;
-    fromIdx = Math.max(0, toIdx - visibleWidth);
-  }
-
-  if (fromIdx >= toIdx || toIdx > newCandles.length) {
     timeScale.fitContent();
     return { method: "fitContent" };
   }
 
-  const fromBar = newCandles[fromIdx]!;
-  const toBar = newCandles[Math.min(newCandles.length - 1, toIdx - 1)]!;
+  const times = resolveRestoreBarTimes(params.newCandles, {
+    from: logicalResult.logicalFrom,
+    to: logicalResult.logicalTo,
+  });
+  if (times === null) {
+    timeScale.fitContent();
+    return { method: "fitContent" };
+  }
+
   timeScale.setVisibleRange({
-    from: fromBar.time as Time,
-    to: toBar.time as Time,
+    from: times.fromTimeSec as Time,
+    to: times.toTimeSec as Time,
   });
 
   return {
     method: "time-range",
-    logicalFrom: fromIdx,
-    logicalTo: toIdx,
+    logicalFrom: logicalResult.logicalFrom,
+    logicalTo: logicalResult.logicalTo,
   };
 }
 

@@ -33,6 +33,10 @@ export function createViewportController(initial?: Partial<ViewportControllerSta
   return {
     getState: () => state,
 
+    setPlan(mode: ChartViewMode, centerTimeSec: number | null) {
+      state = { ...state, mode, centerTimeSec };
+    },
+
     dispatch(event: ChartInteractionEvent): ViewportCommand | null {
       switch (event.type) {
         case "pointerdown":

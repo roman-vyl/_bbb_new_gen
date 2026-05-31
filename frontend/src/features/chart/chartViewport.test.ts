@@ -12,6 +12,7 @@ import {
   shouldSuppressPanShiftRequest,
   tradeFocusIntentChanged,
   TRADE_FOCUS_VIEWPORT_BARS,
+  visibleBarSpanFromLogicalRange,
 } from "@/features/chart/chartViewport";
 import type { IChartApi } from "lightweight-charts";
 import { findBarIndexAtOrBefore } from "@/features/chart/chartViewWindow";
@@ -53,6 +54,17 @@ describe("isTradeCenterVisible", () => {
   });
 });
 
+describe("visibleBarSpanFromLogicalRange", () => {
+  it("ceil fractional logical widths so bar indices stay integral", () => {
+    expect(visibleBarSpanFromLogicalRange({ from: 10.2, to: 46.8 })).toBe(37);
+  });
+
+  it("falls back to 1 for invalid span", () => {
+    expect(visibleBarSpanFromLogicalRange({ from: 10, to: 10 })).toBe(1);
+    expect(visibleBarSpanFromLogicalRange({ from: NaN, to: 5 })).toBe(1);
+  });
+});
+
 describe("restoreVisibleRangeByTimeAnchor", () => {
   it("applies visible time range (not logical indexes) as primary restore", () => {
     const setVisibleRange = vi.fn();
@@ -74,6 +86,46 @@ describe("restoreVisibleRangeByTimeAnchor", () => {
     expect(result.method).toBe("time-range");
     expect(setVisibleRange).toHaveBeenCalledTimes(1);
     expect(setVisibleLogicalRange).not.toHaveBeenCalled();
+  });
+
+  it("does not throw when previousVisible uses fractional logical range (December pan regression)", () => {
+    const setVisibleRange = vi.fn();
+    const chart = {
+      timeScale: () => ({
+        fitContent: vi.fn(),
+        setVisibleRange,
+        setVisibleLogicalRange: vi.fn(),
+      }),
+    } as unknown as IChartApi;
+    const newCandles = makeBars(500, 1_700_000_000);
+    const anchorTimeSec = newCandles[250]!.time;
+    expect(() =>
+      restoreVisibleRangeByTimeAnchor(chart, {
+        anchorTimeSec,
+        newCandles,
+        previousVisible: { from: 120.4, to: 380.9 },
+        windowStartIndex: 50_000,
+        fullLength: 200_000,
+      }),
+    ).not.toThrow();
+    expect(setVisibleRange).toHaveBeenCalledTimes(1);
+  });
+
+  it("fitContent when anchor is outside candle window and bars cannot be resolved", () => {
+    const fitContent = vi.fn();
+    const chart = {
+      timeScale: () => ({
+        fitContent,
+        setVisibleRange: vi.fn(),
+        setVisibleLogicalRange: vi.fn(),
+      }),
+    } as unknown as IChartApi;
+    restoreVisibleRangeByTimeAnchor(chart, {
+      anchorTimeSec: 0,
+      newCandles: [],
+      previousVisible: { from: 0, to: 40 },
+    });
+    expect(fitContent).toHaveBeenCalled();
   });
 });
 
