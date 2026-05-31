@@ -68,12 +68,12 @@ import {
   buildTradeFocusIntentKey,
   isStaleViewportCommand,
   restoreVisibleRangeAfterWindowShift,
-  resolveAnchorTimeFromVisibleRange,
   shouldBlockViewportApplyWhilePendingRestore,
   shouldScheduleTradeViewportApply,
   shouldSuppressPanShiftRequest,
   tradeFocusIntentChanged as isTradeFocusIntentChanged,
 } from "@/features/chart/chartViewport";
+import { createChartInteractionAdapter } from "@/features/chart/runtime/interactionAdapter";
 import { CHART_RENDER_WINDOW_SIZE } from "@/features/chart/chartDataWindowManager";
 import { type ChartViewMode } from "@/features/chart/chartViewWindow";
 import { findTradeById } from "@/features/chart/tradeLookup";
@@ -138,7 +138,6 @@ export function ChartPanel() {
   const viewportPlanRef = useRef<ViewportPlan | null>(null);
   const isApplyingViewportRef = useRef(false);
   const suppressPanShiftUntilRef = useRef(0);
-  const panShiftDebounceRef = useRef<number | null>(null);
   const visibleRangeHandlerRef = useRef<(() => void) | null>(null);
   const viewportCommandSeqRef = useRef(0);
   const pendingViewportRestoreRef = useRef<PendingViewportRestore | null>(null);
@@ -159,6 +158,7 @@ export function ChartPanel() {
       return null;
     }
 
+    interactionAdapterRef.current.onProgrammaticViewportStart();
     isApplyingViewportRef.current = true;
     suppressPanShiftUntilRef.current = Date.now() + 250;
 
@@ -176,6 +176,7 @@ export function ChartPanel() {
 
     window.setTimeout(() => {
       isApplyingViewportRef.current = false;
+      interactionAdapterRef.current.onProgrammaticViewportEnd();
     }, 250);
 
     return result;
@@ -279,7 +280,7 @@ export function ChartPanel() {
 
     selectBar,
 
-    onRenderWindowShiftRequest,
+    dispatchChartInteraction,
 
     pendingViewportRestore,
 
@@ -291,11 +292,22 @@ export function ChartPanel() {
 
   } = useWorkbench();
 
-  const onRenderWindowShiftRequestRef = useRef(onRenderWindowShiftRequest);
-  onRenderWindowShiftRequestRef.current = onRenderWindowShiftRequest;
+  const dispatchChartInteractionRef = useRef(dispatchChartInteraction);
+  dispatchChartInteractionRef.current = dispatchChartInteraction;
   const chartCandlesRef = useRef(chartCandles);
   chartCandlesRef.current = chartCandles;
-  const userPanActiveRef = useRef(false);
+  const interactionAdapterRef = useRef(
+    createChartInteractionAdapter({
+      dispatch: (event) => dispatchChartInteractionRef.current(event),
+      getCandles: () => chartCandlesRef.current,
+      shouldSuppressRangeEvent: () =>
+        shouldSuppressPanShiftRequest(
+          isApplyingViewportRef.current,
+          suppressPanShiftUntilRef.current,
+        ),
+    }),
+  );
+  const chartPointerPanActiveRef = useRef(false);
   const lastTradeFocusIntentKeyRef = useRef<string | null>(null);
 
 
@@ -612,10 +624,23 @@ export function ChartPanel() {
 
     });
 
+    const adapter = interactionAdapterRef.current;
+
+    const onPointerDown = () => {
+      chartPointerPanActiveRef.current = true;
+      adapter.onPointerDown();
+    };
+    const onPointerUp = () => {
+      chartPointerPanActiveRef.current = false;
+      adapter.onPointerUp();
+    };
+    const onWheel = () => adapter.onWheel();
+
+    el.addEventListener("pointerdown", onPointerDown);
+    el.addEventListener("pointerup", onPointerUp);
+    el.addEventListener("wheel", onWheel, { passive: true });
+
     const visibleRangeHandler = (range: { from: number; to: number } | null) => {
-      if (!range) {
-        return;
-      }
       if (
         shouldSuppressPanShiftRequest(
           isApplyingViewportRef.current,
@@ -623,28 +648,15 @@ export function ChartPanel() {
         )
       ) {
         dbgMark(DBG.pan.suppressedProgrammatic);
+        adapter.onProgrammaticViewportStart();
+        adapter.onVisibleLogicalRangeChange(range);
+        adapter.onProgrammaticViewportEnd();
         return;
       }
       if (!isApplyingViewportRef.current) {
-        userPanActiveRef.current = true;
         bumpViewportCommandSeq();
       }
-      if (panShiftDebounceRef.current !== null) {
-        window.clearTimeout(panShiftDebounceRef.current);
-      }
-      panShiftDebounceRef.current = window.setTimeout(() => {
-        panShiftDebounceRef.current = null;
-        const candles = chartCandlesRef.current;
-        if (candles.length === 0) {
-          return;
-        }
-        const anchorTimeSec = resolveAnchorTimeFromVisibleRange(range, candles);
-        if (anchorTimeSec === null) {
-          return;
-        }
-        const shifted = onRenderWindowShiftRequestRef.current(range, anchorTimeSec);
-        dbgMark(shifted ? DBG.pan.shiftRequested : DBG.pan.noShift);
-      }, 100);
+      adapter.onVisibleLogicalRangeChange(range);
     };
 
     chart.timeScale().subscribeVisibleLogicalRangeChange(visibleRangeHandler);
@@ -674,10 +686,9 @@ export function ChartPanel() {
 
       visibleRangeHandlerRef.current?.();
       visibleRangeHandlerRef.current = null;
-      if (panShiftDebounceRef.current !== null) {
-        window.clearTimeout(panShiftDebounceRef.current);
-        panShiftDebounceRef.current = null;
-      }
+      el.removeEventListener("pointerdown", onPointerDown);
+      el.removeEventListener("pointerup", onPointerUp);
+      el.removeEventListener("wheel", onWheel);
 
       // chart.remove() destroys all series; do not call removeSeries afterward.
       auxEmaSeriesRef.current.clear();
@@ -862,7 +873,7 @@ export function ChartPanel() {
   ]);
 
   useEffect(() => {
-    userPanActiveRef.current = false;
+    chartPointerPanActiveRef.current = false;
     lastTradeFocusIntentKeyRef.current = null;
     bumpViewportCommandSeq();
   }, [selectedTradeId, selectedVariantKey, bumpViewportCommandSeq]);
@@ -890,11 +901,11 @@ export function ChartPanel() {
 
     if (
       !shouldScheduleTradeViewportApply({
-        userPanActive: userPanActiveRef.current,
+        userPanActive: chartPointerPanActiveRef.current,
         tradeFocusIntentChanged: intentChanged,
       })
     ) {
-      if (userPanActiveRef.current && !intentChanged) {
+      if (chartPointerPanActiveRef.current && !intentChanged) {
         dbgMark(DBG.chart.viewportApplySkippedUserPan, { mode: chartViewMode });
       }
       return;

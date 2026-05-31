@@ -43,10 +43,10 @@ import {
   anchorStackPeriodsFromStrategySpec,
 } from "@/features/chart/anchorStackFromSpec";
 import { mergeAuxOverlayPoints, sliceAuxOverlaysToCandleWindow } from "@/features/chart/chartAuxEmaOverlays";
-import {
-  createChartDataWindowManager,
-  type ChartDataWindowManager,
-} from "@/features/chart/chartDataWindowManager";
+import type { ChartDataWindowManager } from "@/features/chart/chartDataWindowManager";
+import { createChartRuntime, type WindowCommitResult } from "@/features/chart/runtime/chartRuntime";
+import { shouldBlockTraceFetchForActivePan } from "@/features/chart/runtime/traceDisplayOrchestrator";
+import type { ChartInteractionEvent } from "@/features/chart/runtime/types";
 import {
   emptyChartViewWindow,
   findBarIndexAtOrBefore,
@@ -194,10 +194,7 @@ type WorkbenchState = {
   contextOverlayRefOptions: string[];
   selectedBarTimeSec: number | null;
   selectBar: (timeSec: number | null) => void;
-  onRenderWindowShiftRequest: (
-    visible: ChartLogicalRange,
-    anchorTimeSec: number,
-  ) => boolean;
+  dispatchChartInteraction: (event: ChartInteractionEvent) => void;
   pendingViewportRestore: PendingViewportRestore | null;
   clearPendingViewportRestore: () => void;
 };
@@ -274,7 +271,16 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
   const marketLoadGenRef = useRef(0);
   const intendedMarketCacheKeyRef = useRef<MarketCacheKey | null>(null);
   const marketFetchInFlightKeyRef = useRef<MarketCacheKey | null>(null);
-  const renderWindowManagerRef = useRef<ChartDataWindowManager>(createChartDataWindowManager());
+  const applyWindowCommitRef = useRef<(commit: WindowCommitResult) => void>(() => {});
+  const chartRuntimeRef = useRef(
+    createChartRuntime({
+      renderWindow: {
+        onCommit: (commit) => applyWindowCommitRef.current(commit),
+      },
+    }),
+  );
+  const renderWindowManager = (): ChartDataWindowManager =>
+    chartRuntimeRef.current.renderWindow.getManager();
   const chartCandlesCacheRef = useRef<{ key: string; value: ChartBar[] }>({ key: "", value: [] });
   const chartEmaCacheRef = useRef<{ key: string; value: ChartEmaOverlay[] }>({ key: "", value: [] });
   const chartAuxEmaCacheRef = useRef<{ key: string; value: ChartAuxEmaOverlay[] }>({
@@ -674,7 +680,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       const didRebuild = dbgTimedSync(
         DBG.renderWindow.tradeSelect,
         () => {
-          const manager = renderWindowManagerRef.current;
+          const manager = renderWindowManager();
           if (entryTimeMs === null) {
             const changed = manager.buildTailWindow();
             if (changed !== null) {
@@ -709,11 +715,12 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!cachedBundle || marketLoadStatus === "error") {
-      renderWindowManagerRef.current.reset(0);
+      chartRuntimeRef.current.reset();
+      renderWindowManager().reset(0);
       bumpRenderWindow();
       return;
     }
-    const manager = renderWindowManagerRef.current;
+    const manager = renderWindowManager();
     manager.reset(cachedBundle.candles.length);
     if (selectedTradeEntryTimeMs !== null) {
       applyRenderWindowForTrade(selectedTradeEntryTimeMs, true);
@@ -741,37 +748,39 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     applyRenderWindowForTrade(selectedTradeEntryTimeMs, false);
   }, [selectedTradeEntryTimeMs, cachedBundle, marketLoadStatus, applyRenderWindowForTrade]);
 
-  const onRenderWindowShiftRequest = useCallback(
-    (visible: ChartLogicalRange, anchorTimeSec: number) => {
+  const applyWindowCommit = useCallback(
+    (commit: WindowCommitResult) => {
       if (!cachedBundle || cachedBundle.candles.length === 0) {
-        return false;
-      }
-      const manager = renderWindowManagerRef.current;
-      const boundsBefore = manager.getWindowIndices();
-      const next = manager.maybeShiftWindowForVisibleRange(visible);
-      if (next === null) {
-        dbgMark(DBG.renderWindow.shiftNoop);
-        return false;
+        return;
       }
       dbgMark(DBG.renderWindow.shiftApplied, {
-        windowStartIndex: next.windowStartIndex,
-        windowEndIndex: next.windowEndIndex,
+        windowStartIndex: commit.bounds.windowStartIndex,
+        windowEndIndex: commit.bounds.windowEndIndex,
       });
-      const shiftSeq = renderWindowShiftSeqRef.current + 1;
-      renderWindowShiftSeqRef.current = shiftSeq;
-      setRenderWindowShiftSeq(shiftSeq);
+      renderWindowShiftSeqRef.current = commit.shiftSeq;
+      setRenderWindowShiftSeq(commit.shiftSeq);
       setPendingViewportRestore({
-        anchorTimeSec,
-        previousVisible: visible,
-        windowStartIndex: boundsBefore.windowStartIndex,
+        anchorTimeSec: commit.anchorTimeSec,
+        previousVisible: commit.previousVisible,
+        windowStartIndex: commit.boundsBefore.windowStartIndex,
         fullLength: cachedBundle.candles.length,
-        shiftSeq,
+        shiftSeq: commit.shiftSeq,
       });
       bumpRenderWindow();
       dbgScheduleShiftFlush();
-      return true;
     },
     [cachedBundle, bumpRenderWindow],
+  );
+
+  useEffect(() => {
+    applyWindowCommitRef.current = applyWindowCommit;
+  }, [applyWindowCommit]);
+
+  const dispatchChartInteraction = useCallback(
+    (event: ChartInteractionEvent) => {
+      chartRuntimeRef.current.dispatchInteraction(event);
+    },
+    [],
   );
 
   const intendedMarketCacheKey = useMemo((): MarketCacheKey | null => {
@@ -806,7 +815,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     const slice = dbgTimedSync(
       DBG.chartWindow.slice,
       () => {
-        const manager = renderWindowManagerRef.current;
+        const manager = renderWindowManager();
         manager.setFullLength(cachedBundle.candles.length);
         const intendedBundle =
           intendedMarketCacheKey !== null ? getMarketCache(intendedMarketCacheKey) : undefined;
@@ -1270,6 +1279,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
 
   const selectTrade = useCallback(
     (tradeId: number | null) => {
+      chartRuntimeRef.current.dispatchInteraction({ type: "trade_selected" });
       setSelectedTradeId(tradeId);
       if (tradeId !== null && selectedVariant) {
         const trade = findTradeById(selectedVariant.trade_records, tradeId);
@@ -1319,6 +1329,25 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
 
     const { windowKey, request, fetchSource } = bootstrap;
     previousChartWindowKeyRef.current = windowKey;
+
+    const runtime = chartRuntimeRef.current.renderWindow;
+    if (
+      shouldBlockTraceFetchForActivePan({
+        interactionState: runtime.getInteractionState(),
+        hasPendingShift: runtime.getPendingShift() !== null,
+        displayCacheCoversWindow,
+        committedWindowKey: windowKey,
+        loadedWindowKey: loadedSignalTraceWindowKeyRef.current,
+        loadingWindowKey: loadingTraceWindowKeyRef.current,
+        status: signalTraceStatusRef.current,
+      })
+    ) {
+      if (displayCacheCoversWindow) {
+        dbgMark(DBG.traceDisplay.cacheHit, { windowKey, source: "active_pan_block" });
+        applyTraceDisplayRef.current();
+      }
+      return;
+    }
 
     const sessionCacheHasWindow = signalTraceBundleSessionCacheRef.current.has(windowKey);
 
@@ -1550,7 +1579,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       contextOverlayRefOptions,
       selectedBarTimeSec,
       selectBar,
-      onRenderWindowShiftRequest,
+      dispatchChartInteraction,
       pendingViewportRestore,
       clearPendingViewportRestore,
     }),
@@ -1613,7 +1642,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       contextOverlayRefOptions,
       selectedBarTimeSec,
       selectBar,
-      onRenderWindowShiftRequest,
+      dispatchChartInteraction,
       pendingViewportRestore,
       clearPendingViewportRestore,
       displayApplyRevision,
