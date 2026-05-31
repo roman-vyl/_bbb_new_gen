@@ -4,17 +4,15 @@
 
 ## Python (research backtest + signal trace)
 
-Двойной клик или из корня репозитория:
-
 ```bat
 debug\run-pipeline-debug.bat
 ```
 
-Требуется Python с `pip install -e ".[research]"` и SQLite со свечами.
+Требуется Python с `pip install -e ".[research]"` и SQLite со свечами. Bat сам запускает `run_pipeline_debug.py`.
 
 | Файл | Описание |
 |------|----------|
-| `reports/pipeline_YYYYMMDD_HHMMSS.log` | Полный stdout/stderr прогона |
+| `reports/pipeline_YYYYMMDD_HHMMSS.log` | Полный stdout/stderr |
 | `reports/pipeline-latest.log` | Копия последнего прогона |
 
 ## Workbench (frontend in-browser pipeline)
@@ -23,29 +21,43 @@ debug\run-pipeline-debug.bat
 debug\run-workbench-pipeline-debug.bat
 ```
 
-*(Добавляется в change `frontend-pipeline-debug-v2`.)*
+**Bat не поднимает `npm run dev` и не трогает ваш стек.** Только Playwright против уже запущенного Workbench.
 
-Запускает Playwright-сценарии с `VITE_EMA_PIPELINE_DEBUG=true`, пишет результат на диск:
+### Что должно быть запущено у вас
+
+1. **Frontend (Vite)** — как вы обычно (порт `5173` или `5174`).
+2. **BFF / Research API** — `http://127.0.0.1:8000` (проверка `GET /health`).
+3. **Debug-флаг при старте Vite** — в `frontend/.env.local`:
+
+   ```
+   VITE_EMA_PIPELINE_DEBUG=true
+   ```
+
+   После изменения `.env.local` **перезапустите Vite** (флаг вшивается при старте dev-сервера).
+
+### Порты
+
+| Переменная | Назначение |
+|------------|------------|
+| `WORKBENCH_URL` | Явный URL фронта, напр. `http://127.0.0.1:5174` |
+| `RESEARCH_API_URL` | BFF, по умолчанию `http://127.0.0.1:8000` |
+
+Без `WORKBENCH_URL` bat ищет ответ на `:5173`, затем `:5174`.
+
+**Почему «висит» на Running Playwright:** тест ждёт полный market bundle на Chart (часто **1–3 мин**). Прогресс виден в окне cmd после обновления bat (Tee-Object). Альтернатива без Playwright — ручной `__pipelineDebugFlush()` в DevTools (см. ниже).
+
+### Результаты
 
 | Файл | Описание |
 |------|----------|
-| `reports/workbench_YYYYMMDD_HHMMSS.log` | Console `[pipeline]` + таблицы по сценариям |
-| `reports/workbench-latest.log` | Копия последнего прогона |
-| `reports/workbench_<scenario>_*.txt` | Опционально: отдельный excerpt на сценарий |
-
-Dev-сервер Vite должен быть доступен (bat может поднять его с флагом debug или проверить, что флаг уже выставлен).
+| `reports/workbench_YYYYMMDD_HHMMSS.log` | Playwright + `[pipeline]` |
+| `reports/workbench-latest.log` | Последний прогон |
+| `reports/workbench_<scenario>_*.txt` | Excerpt по сценарию |
 
 ## Общее
 
-- Папка **`debug/reports/`** — только debug-артефакты. Это **не** JSON backtest reports из `research/results/runs/` и **не** вкладка Reports в UI.
-- В Python-логе ищите `=== PIPELINE_DEBUG [bff.backtest] ===`; строки **`REPEAT`** — повтор шага в одном прогоне.
-- В Workbench-логе фильтруйте `[pipeline]` и блоки `=== PIPELINE_DEBUG [workbench] ===`.
-
-## Переменные
-
-| Переменная | Слой |
-|------------|------|
-| `EMA_PIPELINE_DEBUG=1` | Python (выставляет `run-pipeline-debug.bat`) |
-| `VITE_EMA_PIPELINE_DEBUG=true` | Frontend (Vite при старте dev / bat runner) |
+- **`debug/reports/`** — только debug-артефакты, не `research/results/runs/*.json` и не вкладка Reports в UI.
+- Python-лог: `=== PIPELINE_DEBUG [bff.backtest] ===`; **`REPEAT`** — повтор шага.
+- Workbench-лог: `[pipeline]`, `=== PIPELINE_DEBUG [workbench] ===`.
 
 Подробнее: [`research/diagnostics/README.md`](../research/diagnostics/README.md).

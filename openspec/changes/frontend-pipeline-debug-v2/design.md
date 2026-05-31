@@ -147,10 +147,10 @@ Common meta keys: `count` (bars, events, overlays), `fromSec`, `toSec`, `action`
 **Bat responsibilities:**
 
 1. `mkdir debug\reports` if missing.
-2. Ensure Vite is reachable with `VITE_EMA_PIPELINE_DEBUG=true` (start dev in background with env set, or fail fast with message if server up without flag).
-3. Run `npx playwright test e2e/workbench-pipeline-debug.spec.ts` from `frontend/`.
-4. Playwright collects stats via page export API and Node `fs.writeFileSync` into `debug/reports/`.
-5. Print paths and exit code like Python bat.
+2. **Do not start `npm run dev`** — probe `WORKBENCH_URL` or ports `5173`/`5174`; fail if frontend or BFF `:8000/health` unreachable.
+3. Operator must run their usual stack with `VITE_EMA_PIPELINE_DEBUG=true` at Vite startup.
+4. Run `npx playwright test e2e/workbench-pipeline-debug.spec.ts` with `PLAYWRIGHT_BASE_URL`.
+5. Playwright writes logs under `debug/reports/`.
 
 **Not the same as:** `research/results/runs/*.json` (backtest reports) or Workbench Reports UI — only debug profiling artifacts.
 

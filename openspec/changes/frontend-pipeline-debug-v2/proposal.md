@@ -9,7 +9,7 @@ After `workbench-chart-sliding-window` and `workbench-trace-window-chunk-cache`,
 - **Instrument ChartPanel** for: candle/EMA `setData`, aux HTF `setData`, markers rebuild, viewport apply vs post-shift restore (with method from `restoreVisibleRangeAfterWindowShift`).
 - **Stable step ids** under `wb.*` and `chart.*` prefixes; document a manual profiling script in `research/diagnostics/README.md` (or `debug/README.md`) mapping user actions → expected console lines.
 - **Instrumentation at call sites only** — WorkbenchContext / ChartPanel wrappers; pure modules (`signalTraceDisplayCache`, `chartDataWindowManager`) stay debug-free unless call-site timing is insufficient.
-- **`debug/run-workbench-pipeline-debug.bat`** — Playwright-driven Workbench profiling; writes logs to `debug/reports/` (same folder as Python `run-pipeline-debug.bat`, separate file prefix).
+- **`debug/run-workbench-pipeline-debug.bat`** — Playwright only against your already-running frontend + BFF (does not start `npm run dev`); writes logs to `debug/reports/`.
 - **Flush:** `__pipelineDebugFlush()` / export API consumed by the bat runner; optional auto-flush after signal trace and after render-window shift (debug only, 1000–1500ms debounce).
 
 **Non-goals**

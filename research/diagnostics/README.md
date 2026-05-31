@@ -23,13 +23,29 @@ Module API: `research.diagnostics.pipeline_trace` — `dbg_root`, `dbg_span`, `d
 
 ## Frontend (Workbench)
 
+**Automated (logs in `debug/reports/`):**
+
+```bat
+debug\run-workbench-pipeline-debug.bat
+```
+
+Does **not** start Vite — use your usual dev stack. Requires:
+
+- Frontend already up (`5173` or `5174`, or set `WORKBENCH_URL`)
+- BFF on `:8000` (`GET /health`)
+- Vite started with `VITE_EMA_PIPELINE_DEBUG=true` in `frontend/.env.local` (restart dev after change)
+
+Writes `workbench_YYYYMMDD_HHmmss.log` and per-scenario `workbench_<scenario>_*.txt`.
+
+**Manual (DevTools):**
+
 In `frontend/.env.local`:
 
 ```
 VITE_EMA_PIPELINE_DEBUG=true
 ```
 
-Restart Vite. Use Composer → Run backtest → open Chart. Filter console for `[pipeline]`. After signal trace loads, a summary table is printed; or run `__pipelineDebugFlush()` in DevTools.
+Restart Vite. Filter console for `[pipeline]`. Call `__pipelineDebugFlush()` or `__pipelineDebugExport()`.
 
 ## OpenSpec
 

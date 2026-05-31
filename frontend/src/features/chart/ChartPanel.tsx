@@ -22,6 +22,12 @@ import {
 
 import { useCallback, useEffect, useMemo, useRef } from "react";
 
+import {
+  dbgMark,
+  dbgTimedSync,
+  PIPELINE_DEBUG_STEPS as DBG,
+} from "@/shared/diagnostics/pipelineDebug";
+
 
 
 import type { AnchorStackEmaRole, ChartBar, ChartEmaOverlay } from "@/api/types";
@@ -141,12 +147,17 @@ export function ChartPanel() {
     isApplyingViewportRef.current = true;
     suppressPanShiftUntilRef.current = Date.now() + 250;
 
-    const result = applyChartViewport({
-      chart,
-      mode: plan.mode,
-      candles: plan.candles,
-      centerTimeSec: plan.centerTimeSec,
-    });
+    const result = dbgTimedSync(
+      DBG.chart.viewportApply,
+      () =>
+        applyChartViewport({
+          chart,
+          mode: plan.mode,
+          candles: plan.candles,
+          centerTimeSec: plan.centerTimeSec,
+        }),
+      () => ({ mode: plan.mode, candleCount: plan.candles.length }),
+    );
 
     window.setTimeout(() => {
       isApplyingViewportRef.current = false;
@@ -559,13 +570,16 @@ export function ChartPanel() {
     });
 
     const visibleRangeHandler = (range: { from: number; to: number } | null) => {
+      if (!range) {
+        return;
+      }
       if (
-        !range ||
         shouldSuppressPanShiftRequest(
           isApplyingViewportRef.current,
           suppressPanShiftUntilRef.current,
         )
       ) {
+        dbgMark(DBG.pan.suppressedProgrammatic);
         return;
       }
       if (panShiftDebounceRef.current !== null) {
@@ -581,7 +595,8 @@ export function ChartPanel() {
         if (anchorTimeSec === null) {
           return;
         }
-        onRenderWindowShiftRequestRef.current(range, anchorTimeSec);
+        const shifted = onRenderWindowShiftRequestRef.current(range, anchorTimeSec);
+        dbgMark(shifted ? DBG.pan.shiftRequested : DBG.pan.noShift);
       }, 100);
     };
 
@@ -646,41 +661,36 @@ export function ChartPanel() {
 
     if (!series || !chart || !selectedVariant || chartSeriesDataKey === "") return;
 
-    series.setData(toCandlestickSeriesData(chartCandles));
+    dbgTimedSync(
+      DBG.chart.setDataCandles,
+      () => {
+        series.setData(toCandlestickSeriesData(chartCandles));
+      },
+      () => ({ barCount: chartCandles.length }),
+    );
 
-
-
-    for (const role of ["fast", "anchor", "slow"] as const) {
-
-      const lineSeries = emaByRole[role];
-
-      if (!lineSeries) continue;
-
-      const overlay = chartEmaOverlays.find((o) => o.role === role);
-
-      if (!overlay) {
-
-        lineSeries.setData([]);
-
-        continue;
-
-      }
-
-      lineSeries.applyOptions({ title: overlaySeriesTitle(overlay) });
-
-      lineSeries.setData(
-
-        overlay.points.map((p) => ({
-
-          time: p.time as Time,
-
-          value: p.value,
-
-        })),
-
-      );
-
-    }
+    dbgTimedSync(
+      DBG.chart.setDataAnchorEma,
+      () => {
+        for (const role of ["fast", "anchor", "slow"] as const) {
+          const lineSeries = emaByRole[role];
+          if (!lineSeries) continue;
+          const overlay = chartEmaOverlays.find((o) => o.role === role);
+          if (!overlay) {
+            lineSeries.setData([]);
+            continue;
+          }
+          lineSeries.applyOptions({ title: overlaySeriesTitle(overlay) });
+          lineSeries.setData(
+            overlay.points.map((p) => ({
+              time: p.time as Time,
+              value: p.value,
+            })),
+          );
+        }
+      },
+      () => ({ overlayCount: chartEmaOverlays.length }),
+    );
 
 
 
@@ -702,13 +712,22 @@ export function ChartPanel() {
     isApplyingViewportRef.current = true;
     suppressPanShiftUntilRef.current = Date.now() + 300;
 
-    restoreVisibleRangeAfterWindowShift(chart, {
-      anchorTimeSec: pendingViewportRestore.anchorTimeSec,
-      newCandles: chartCandles,
-      previousVisible: pendingViewportRestore.previousVisible,
-      windowStartIndex: pendingViewportRestore.windowStartIndex,
-      fullLength: pendingViewportRestore.fullLength,
-    });
+    let restoreMethod = "fitContent";
+    dbgTimedSync(
+      DBG.chart.viewportRestoreAfterShift,
+      () => {
+        const result = restoreVisibleRangeAfterWindowShift(chart, {
+          anchorTimeSec: pendingViewportRestore.anchorTimeSec,
+          newCandles: chartCandles,
+          previousVisible: pendingViewportRestore.previousVisible,
+          windowStartIndex: pendingViewportRestore.windowStartIndex,
+          fullLength: pendingViewportRestore.fullLength,
+        });
+        restoreMethod = result.method;
+        return result;
+      },
+      () => ({ barCount: chartCandles.length, method: restoreMethod }),
+    );
 
     clearPendingViewportRestore();
 
@@ -751,75 +770,47 @@ export function ChartPanel() {
 
     if (!chart || !selectedVariant || chartSeriesDataKey === "") return;
 
-    const seriesMap = auxEmaSeriesRef.current;
-
-    const activeIds = new Set(chartDisplayAuxEmaOverlays.map((overlay) => overlay.id));
-
-    for (const [id, lineSeries] of [...seriesMap.entries()]) {
-
-      if (!activeIds.has(id)) {
-
-        chart.removeSeries(lineSeries);
-
-        seriesMap.delete(id);
-
-      }
-
-    }
-
-
-
-    chartDisplayAuxEmaOverlays.forEach((overlay, index) => {
-
-      let lineSeries = seriesMap.get(overlay.id);
-
-      if (!lineSeries) {
-
-        lineSeries = chart.addSeries(LineSeries, {
-
-          color: colorForAuxEmaOverlay(index),
-
-          lineWidth: 2,
-
-          lineStyle: overlay.dashed ? 2 : 0,
-
-          title: overlay.label,
-
-          priceLineVisible: false,
-
+    dbgTimedSync(
+      DBG.chart.setDataAuxHtf,
+      () => {
+        const seriesMap = auxEmaSeriesRef.current;
+        const activeIds = new Set(chartDisplayAuxEmaOverlays.map((overlay) => overlay.id));
+        for (const [id, lineSeries] of [...seriesMap.entries()]) {
+          if (!activeIds.has(id)) {
+            chart.removeSeries(lineSeries);
+            seriesMap.delete(id);
+          }
+        }
+        chartDisplayAuxEmaOverlays.forEach((overlay, index) => {
+          let lineSeries = seriesMap.get(overlay.id);
+          if (!lineSeries) {
+            lineSeries = chart.addSeries(LineSeries, {
+              color: colorForAuxEmaOverlay(index),
+              lineWidth: 2,
+              lineStyle: overlay.dashed ? 2 : 0,
+              title: overlay.label,
+              priceLineVisible: false,
+            });
+            seriesMap.set(overlay.id, lineSeries);
+          }
+          if (overlay.points.length === 0 && lineSeries) {
+            return;
+          }
+          lineSeries.applyOptions({
+            color: colorForAuxEmaOverlay(index),
+            lineStyle: overlay.dashed ? 2 : 0,
+            title: overlay.label,
+          });
+          lineSeries.setData(
+            overlay.points.map((p) => ({
+              time: p.time as Time,
+              value: p.value,
+            })),
+          );
         });
-
-        seriesMap.set(overlay.id, lineSeries);
-
-      }
-
-      if (overlay.points.length === 0 && lineSeries) {
-        return;
-      }
-
-      lineSeries.applyOptions({
-
-        color: colorForAuxEmaOverlay(index),
-
-        lineStyle: overlay.dashed ? 2 : 0,
-
-        title: overlay.label,
-
-      });
-
-      lineSeries.setData(
-
-        overlay.points.map((p) => ({
-
-          time: p.time as Time,
-
-          value: p.value,
-
-        })),
-
-      );
-
-    });
+      },
+      () => ({ overlayCount: chartDisplayAuxEmaOverlays.length }),
+    );
 
   }, [chartDisplayAuxEmaOverlays, chartSeriesDataKey, selectedVariant]);
 
@@ -833,25 +824,31 @@ export function ChartPanel() {
 
 
 
-    const tradeMarkers = buildTradeMarkersForView(
-
-      selectedVariant.trade_records,
-
-      selectedTradeId,
-
-      chartCandles,
-
+    let tradeMarkerCount = 0;
+    let componentMarkerCount = 0;
+    dbgTimedSync(
+      DBG.chart.markersRebuild,
+      () => {
+        const tradeMarkers = buildTradeMarkersForView(
+          selectedVariant.trade_records,
+          selectedTradeId,
+          chartCandles,
+        );
+        const componentMarkers = buildComponentEventsForView(chartDisplayComponentEvents, {
+          showEntryBlock: chartShowEntryBlockMarkers,
+          showExitSignal: chartShowExitSignalMarkers,
+          viewCandles: chartCandles,
+        });
+        tradeMarkerCount = tradeMarkers.length;
+        componentMarkerCount = componentMarkers.length;
+        markersPlugin.setMarkers(
+          [...tradeMarkers, ...componentMarkers].sort(
+            (a, b) => (a.time as number) - (b.time as number),
+          ),
+        );
+      },
+      () => ({ tradeMarkerCount, componentMarkerCount }),
     );
-
-    const componentMarkers = buildComponentEventsForView(chartDisplayComponentEvents, {
-      showEntryBlock: chartShowEntryBlockMarkers,
-      showExitSignal: chartShowExitSignalMarkers,
-      viewCandles: chartCandles,
-    });
-
-    markersPlugin.setMarkers([...tradeMarkers, ...componentMarkers].sort(
-      (a, b) => (a.time as number) - (b.time as number),
-    ));
 
   }, [
     chartCandles,
