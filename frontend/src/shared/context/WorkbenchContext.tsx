@@ -105,6 +105,7 @@ import {
   type SignalTraceLoadStatus,
   type SignalTraceRequest,
 } from "@/shared/context/signalTraceLoadPolicy";
+import { evaluateSignalTraceBootstrap } from "@/shared/context/signalTraceBootstrap";
 import {
   dbgFlush,
   dbgMark,
@@ -261,6 +262,11 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
   const [contextOverlayRef, setContextOverlayRef] = useState<string | null>(null);
   const loadingTraceWindowKeyRef = useRef<string | null>(null);
   const inFlightTraceRequestRef = useRef<SignalTraceRequest | null>(null);
+  const signalTraceStatusRef = useRef<SignalTraceLoadStatus>("idle");
+  const loadedSignalTraceWindowKeyRef = useRef<string | null>(null);
+  const previousChartWindowKeyRef = useRef<string | null>(null);
+  const traceLoadGenerationRef = useRef(0);
+  const applyTraceDisplayRef = useRef<() => void>(() => {});
   const [reloadToken, setReloadToken] = useState(0);
   const prevVariantKeyRef = useRef("");
   const prevRunIdForTradeBootstrapRef = useRef<string | null>(null);
@@ -954,6 +960,16 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     }
   }, [auxEmaSpecs]);
 
+  applyTraceDisplayRef.current = applyTraceDisplayForCurrentWindow;
+
+  useEffect(() => {
+    signalTraceStatusRef.current = signalTraceStatus;
+  }, [signalTraceStatus]);
+
+  useEffect(() => {
+    loadedSignalTraceWindowKeyRef.current = loadedSignalTraceWindowKey;
+  }, [loadedSignalTraceWindowKey]);
+
   useEffect(() => {
     if (marketLoadStatus !== "ready" || report === null || auxEmaSpecs.length === 0) {
       setAuxEmaOverlays([]);
@@ -1153,6 +1169,17 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     [chartView.candles],
   );
 
+  const renderWindowBoundsKey = useMemo(() => {
+    if (renderWindowBounds === null || chartView.count === 0) {
+      return "";
+    }
+    return buildRenderWindowBoundsKey(
+      renderWindowBounds.fromSec,
+      renderWindowBounds.toSec,
+      chartView.count,
+    );
+  }, [renderWindowBounds, chartView.count]);
+
   const displayCacheCoversWindow = useMemo(() => {
     if (renderWindowBounds === null) {
       return false;
@@ -1261,39 +1288,37 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    if (
-      report === null ||
-      selectedRunId === null ||
-      selectedVariant === null ||
-      chartWindowKey === null ||
-      marketLoadStatus !== "ready"
-    ) {
+    const bootstrap = evaluateSignalTraceBootstrap({
+      report,
+      selectedRunId,
+      selectedVariant,
+      marketLoadStatus,
+      chartWindowKey,
+      candles: chartView.candles,
+      renderWindowBounds,
+      previousWindowKey: previousChartWindowKeyRef.current,
+    });
+
+    if (!bootstrap.ready) {
+      dbgMark(DBG.signalTrace.bootstrapBlocked, { reason: bootstrap.reason });
       setSignalTrace(null);
       setSignalTraceStatus("idle");
       setLoadedSignalTraceWindowKey(null);
       setSignalTraceError(null);
       loadingTraceWindowKeyRef.current = null;
       inFlightTraceRequestRef.current = null;
+      previousChartWindowKeyRef.current = null;
       return;
     }
 
-    const candles = chartView.candles;
-    if (candles.length === 0) {
-      return;
-    }
+    dbgMark(DBG.signalTrace.bootstrapReady, {
+      windowKey: bootstrap.windowKey,
+      renderWindowRevision,
+      boundsKey: renderWindowBoundsKey,
+    });
 
-    const fromMs = candles[0]!.time * 1000;
-    const toOpenTimeMs = candles[candles.length - 1]!.time * 1000;
-    const runId = selectedRunId;
-    const variantKey = selectedVariant.variant;
-    const windowKey = chartWindowKey;
-    const request: SignalTraceRequest = {
-      windowKey,
-      runId,
-      variant: variantKey,
-      fromMs,
-      toOpenTimeMs,
-    };
+    const { windowKey, request, fetchSource } = bootstrap;
+    previousChartWindowKeyRef.current = windowKey;
 
     const sessionCacheHasWindow = signalTraceBundleSessionCacheRef.current.has(windowKey);
 
@@ -1301,23 +1326,24 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       chartWindowKey: windowKey,
       displayCacheCoversWindow,
       sessionCacheHasWindow,
-      loadedSignalTraceWindowKey,
+      loadedSignalTraceWindowKey: loadedSignalTraceWindowKeyRef.current,
       loadingTraceWindowKey: loadingTraceWindowKeyRef.current,
-      signalTraceStatus,
+      signalTraceStatus: signalTraceStatusRef.current,
       inFlightRequest: inFlightTraceRequestRef.current,
       request,
     });
 
-    dbgMark("wb.signal_trace_decision", {
+    dbgMark(DBG.signalTrace.decision, {
       action: decision.action,
       windowKey,
       displayCacheCoversWindow,
       sessionCacheHasWindow,
+      fetchSource,
     });
 
     if (decision.action === "skip_display_cache_hit") {
       dbgMark(DBG.traceDisplay.cacheHit, { windowKey });
-      applyTraceDisplayForCurrentWindow();
+      applyTraceDisplayRef.current();
       return;
     }
 
@@ -1326,6 +1352,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       if (sessionBundle === null) {
         return;
       }
+      dbgMark(DBG.signalTrace.fetchStart, { source: "session_restore", windowKey });
       dbgTimedSync(
         DBG.traceDisplay.mergeChunk,
         () => {
@@ -1339,10 +1366,12 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       setDisplayCacheVersion((version) => version + 1);
       setSignalTrace(sessionBundle);
       setLoadedSignalTraceWindowKey(windowKey);
+      loadedSignalTraceWindowKeyRef.current = windowKey;
       setSignalTraceStatus("ready");
+      signalTraceStatusRef.current = "ready";
       setSignalTraceError(null);
       dbgMark(DBG.traceDisplay.sessionHit, { windowKey });
-      applyTraceDisplayForCurrentWindow();
+      applyTraceDisplayRef.current();
       return;
     }
 
@@ -1358,12 +1387,17 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       return;
     }
 
+    const generation = ++traceLoadGenerationRef.current;
+    const runId = request.runId;
+    const variantKey = request.variant;
+    const { fromMs, toOpenTimeMs } = request;
+
     loadingTraceWindowKeyRef.current = windowKey;
     inFlightTraceRequestRef.current = request;
     setSignalTraceStatus("loading");
+    signalTraceStatusRef.current = "loading";
     setSignalTraceError(null);
-
-    let cancelled = false;
+    dbgMark(DBG.signalTrace.fetchStart, { source: fetchSource, windowKey });
 
     async function loadTrace() {
       try {
@@ -1374,7 +1408,9 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
           toOpenTimeMs,
           contextOverlayRef: effectiveContextOverlayRef,
         });
-        if (cancelled) return;
+        if (generation !== traceLoadGenerationRef.current) {
+          return;
+        }
         const requestedBounds = {
           fromSec: Math.floor(fromMs / 1000),
           toSec: Math.floor(toOpenTimeMs / 1000),
@@ -1392,7 +1428,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
           }),
         );
         setDisplayCacheVersion((version) => version + 1);
-        applyTraceDisplayForCurrentWindow();
+        applyTraceDisplayRef.current();
         dbgMark("wb.signal_trace_merge", {
           windowKey,
           truncated,
@@ -1401,14 +1437,20 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
         });
         setSignalTrace(bundle);
         setLoadedSignalTraceWindowKey(windowKey);
+        loadedSignalTraceWindowKeyRef.current = windowKey;
         setSignalTraceStatus("ready");
+        signalTraceStatusRef.current = "ready";
         signalTraceBundleSessionCacheRef.current.set(windowKey, bundle);
         dbgFlush("workbench-after-signal-trace");
       } catch (err) {
-        if (cancelled) return;
+        if (generation !== traceLoadGenerationRef.current) {
+          return;
+        }
         setSignalTrace(null);
         setLoadedSignalTraceWindowKey(windowKey);
+        loadedSignalTraceWindowKeyRef.current = windowKey;
         setSignalTraceStatus("error");
+        signalTraceStatusRef.current = "error";
         setSignalTraceError(
           err instanceof ApiError
             ? err.detail
@@ -1417,7 +1459,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
               : "Failed to load signal trace.",
         );
       } finally {
-        if (!cancelled) {
+        if (generation === traceLoadGenerationRef.current) {
           loadingTraceWindowKeyRef.current = null;
           inFlightTraceRequestRef.current = null;
         }
@@ -1425,20 +1467,17 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     }
 
     void loadTrace();
-    return () => {
-      cancelled = true;
-    };
   }, [
     report,
     selectedRunId,
-    selectedVariant?.variant,
+    selectedVariant,
     chartWindowKey,
+    renderWindowRevision,
+    renderWindowBoundsKey,
     marketLoadStatus,
     effectiveContextOverlayRef,
     displayCacheCoversWindow,
-    loadedSignalTraceWindowKey,
-    signalTraceStatus,
-    applyTraceDisplayForCurrentWindow,
+    displayCacheVersion,
   ]);
 
   const symbol = report?.symbol ?? "—";

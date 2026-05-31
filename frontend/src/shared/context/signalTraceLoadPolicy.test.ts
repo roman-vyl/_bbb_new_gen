@@ -81,6 +81,20 @@ describe("decideSignalTraceLoad", () => {
     expect(decision).toEqual({ action: "skip_already_loading" });
   });
 
+  it("starts load on initial cache miss without loaded window", () => {
+    const decision = decideSignalTraceLoad({
+      chartWindowKey: REQUEST.windowKey,
+      displayCacheCoversWindow: false,
+      sessionCacheHasWindow: false,
+      loadedSignalTraceWindowKey: null,
+      loadingTraceWindowKey: null,
+      signalTraceStatus: "idle",
+      inFlightRequest: null,
+      request: REQUEST,
+    });
+    expect(decision).toEqual({ action: "load_start", request: REQUEST });
+  });
+
   it("scenario C: starts load when chartWindowKey changes and cache misses", () => {
     const nextKey = "run-a:exp_a:3000:4000";
     const nextRequest = { ...REQUEST, windowKey: nextKey, fromMs: 3_000_000, toOpenTimeMs: 4_000_000 };

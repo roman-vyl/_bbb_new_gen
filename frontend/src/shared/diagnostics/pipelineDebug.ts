@@ -40,6 +40,12 @@ export const PIPELINE_DEBUG_STEPS = {
   chartWindow: {
     slice: "wb.chart_window_slice",
   },
+  signalTrace: {
+    bootstrapReady: "wb.signal_trace.bootstrap_ready",
+    bootstrapBlocked: "wb.signal_trace.bootstrap_blocked",
+    fetchStart: "wb.signal_trace.fetch_start",
+    decision: "wb.signal_trace_decision",
+  },
   traceDisplay: {
     cacheHit: "wb.trace_display.cache_hit",
     cacheMiss: "wb.trace_display.cache_miss",
