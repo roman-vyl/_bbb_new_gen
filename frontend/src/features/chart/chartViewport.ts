@@ -247,6 +247,18 @@ export type TradeFocusIntentKeyParams = {
   centerTimeSec: number | null;
 };
 
+/** Whether programmatic viewport apply must wait until restore-after-shift completes. */
+export function shouldBlockViewportApplyWhilePendingRestore(
+  pendingRestore: unknown,
+): boolean {
+  return pendingRestore !== null;
+}
+
+/** True when a scheduled viewport command was superseded by a newer pan/shift/trade change. */
+export function isStaleViewportCommand(requestedSeq: number, currentSeq: number): boolean {
+  return requestedSeq !== currentSeq;
+}
+
 /** User trade-focus intent — excludes render-window bounds (first/last/count). */
 export function buildTradeFocusIntentKey(params: TradeFocusIntentKeyParams): string {
   return `${params.selectedTradeId ?? "none"}|${params.selectedVariantKey}|${params.chartViewMode}|${params.centerTimeSec ?? "none"}`;

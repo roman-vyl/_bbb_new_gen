@@ -65,6 +65,8 @@ export const PIPELINE_DEBUG_STEPS = {
     viewportApplySkippedUserPan: "chart.viewport.apply_skipped_user_pan",
     viewportRestoreAfterShift: "chart.viewport.restore_after_shift",
     viewportRestoreAfterShiftSkippedStale: "chart.viewport.restore_after_shift_skipped_stale",
+    viewportApplySkippedStaleRaf: "chart.viewport.apply_skipped_stale_raf",
+    viewportApplySkippedPendingRestore: "chart.viewport.apply_skipped_pending_restore",
   },
 } as const;
 

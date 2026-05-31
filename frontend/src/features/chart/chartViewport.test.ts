@@ -4,7 +4,9 @@ import {
   buildTradeFocusIntentKey,
   centeredVisibleLogicalRange,
   computeRestoredVisibleLogicalRange,
+  isStaleViewportCommand,
   isTradeCenterVisible,
+  shouldBlockViewportApplyWhilePendingRestore,
   shouldScheduleTradeViewportApply,
   shouldSuppressPanShiftRequest,
   tradeFocusIntentChanged,
@@ -161,5 +163,17 @@ describe("shouldScheduleTradeViewportApply", () => {
         tradeFocusIntentChanged: false,
       }),
     ).toBe(false);
+  });
+});
+
+describe("viewport command guards", () => {
+  it("blocks apply while pending restore is active", () => {
+    expect(shouldBlockViewportApplyWhilePendingRestore(null)).toBe(false);
+    expect(shouldBlockViewportApplyWhilePendingRestore({ shiftSeq: 1 })).toBe(true);
+  });
+
+  it("detects stale viewport command seq", () => {
+    expect(isStaleViewportCommand(2, 3)).toBe(true);
+    expect(isStaleViewportCommand(3, 3)).toBe(false);
   });
 });

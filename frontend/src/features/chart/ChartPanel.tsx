@@ -20,7 +20,7 @@ import {
 
 } from "lightweight-charts";
 
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 
 import {
   dbgMark,
@@ -66,8 +66,10 @@ import { buildChartDataKey, buildChartSeriesDataKey } from "@/features/chart/cha
 import {
   applyChartViewport,
   buildTradeFocusIntentKey,
+  isStaleViewportCommand,
   restoreVisibleRangeAfterWindowShift,
   resolveAnchorTimeFromVisibleRange,
+  shouldBlockViewportApplyWhilePendingRestore,
   shouldScheduleTradeViewportApply,
   shouldSuppressPanShiftRequest,
   tradeFocusIntentChanged as isTradeFocusIntentChanged,
@@ -76,7 +78,7 @@ import { CHART_RENDER_WINDOW_SIZE } from "@/features/chart/chartDataWindowManage
 import { type ChartViewMode } from "@/features/chart/chartViewWindow";
 import { findTradeById } from "@/features/chart/tradeLookup";
 
-import { useWorkbench } from "@/shared/context/WorkbenchContext";
+import { useWorkbench, type PendingViewportRestore } from "@/shared/context/WorkbenchContext";
 
 
 
@@ -138,8 +140,20 @@ export function ChartPanel() {
   const suppressPanShiftUntilRef = useRef(0);
   const panShiftDebounceRef = useRef<number | null>(null);
   const visibleRangeHandlerRef = useRef<(() => void) | null>(null);
+  const viewportCommandSeqRef = useRef(0);
+  const pendingViewportRestoreRef = useRef<PendingViewportRestore | null>(null);
+  const atomicShiftSeriesKeyRef = useRef<string | null>(null);
+
+  const bumpViewportCommandSeq = useCallback(() => {
+    viewportCommandSeqRef.current += 1;
+  }, []);
 
   const applyViewportFromPlan = useCallback((chart: IChartApi) => {
+    if (shouldBlockViewportApplyWhilePendingRestore(pendingViewportRestoreRef.current)) {
+      dbgMark(DBG.chart.viewportApplySkippedPendingRestore);
+      return null;
+    }
+
     const plan = viewportPlanRef.current;
     if (!plan || plan.key === "" || plan.candles.length === 0) {
       return null;
@@ -169,14 +183,25 @@ export function ChartPanel() {
 
   const scheduleViewportApply = useCallback(
     (chart: IChartApi, options?: { tradeFocus?: boolean }) => {
-      const run = () => {
+      if (shouldBlockViewportApplyWhilePendingRestore(pendingViewportRestoreRef.current)) {
+        dbgMark(DBG.chart.viewportApplySkippedPendingRestore);
+        return;
+      }
+
+      const commandSeq = viewportCommandSeqRef.current;
+      requestAnimationFrame(() => {
+        if (isStaleViewportCommand(commandSeq, viewportCommandSeqRef.current)) {
+          dbgMark(DBG.chart.viewportApplySkippedStaleRaf);
+          return;
+        }
+        if (shouldBlockViewportApplyWhilePendingRestore(pendingViewportRestoreRef.current)) {
+          dbgMark(DBG.chart.viewportApplySkippedPendingRestore);
+          return;
+        }
         if (options?.tradeFocus) {
           dbgMark(DBG.chart.viewportApplyTradeFocus);
         }
         applyViewportFromPlan(chart);
-      };
-      requestAnimationFrame(() => {
-        run();
       });
     },
     [applyViewportFromPlan],
@@ -600,6 +625,10 @@ export function ChartPanel() {
         dbgMark(DBG.pan.suppressedProgrammatic);
         return;
       }
+      if (!isApplyingViewportRef.current) {
+        userPanActiveRef.current = true;
+        bumpViewportCommandSeq();
+      }
       if (panShiftDebounceRef.current !== null) {
         window.clearTimeout(panShiftDebounceRef.current);
       }
@@ -614,9 +643,6 @@ export function ChartPanel() {
           return;
         }
         const shifted = onRenderWindowShiftRequestRef.current(range, anchorTimeSec);
-        if (!isApplyingViewportRef.current) {
-          userPanActiveRef.current = true;
-        }
         dbgMark(shifted ? DBG.pan.shiftRequested : DBG.pan.noShift);
       }, 100);
     };
@@ -668,19 +694,50 @@ export function ChartPanel() {
 
     };
 
-  }, [selectBar, scheduleViewportApply]);
+  }, [selectBar, scheduleViewportApply, bumpViewportCommandSeq]);
 
 
 
   useEffect(() => {
+    pendingViewportRestoreRef.current = pendingViewportRestore;
+    if (pendingViewportRestore !== null) {
+      bumpViewportCommandSeq();
+    }
+  }, [pendingViewportRestore, bumpViewportCommandSeq]);
 
-    const series = seriesRef.current;
-
-    const emaByRole = emaSeriesByRoleRef.current;
-
+  useLayoutEffect(() => {
     const chart = chartRef.current;
+    const series = seriesRef.current;
+    const emaByRole = emaSeriesByRoleRef.current;
+    if (!chart || !series || !selectedVariant || chartSeriesDataKey === "") {
+      return;
+    }
 
-    if (!series || !chart || !selectedVariant || chartSeriesDataKey === "") return;
+    const restore = pendingViewportRestore;
+    const shiftRestore =
+      restore !== null &&
+      restore.shiftSeq === renderWindowShiftSeq &&
+      chartCandles.length > 0;
+
+    if (
+      restore !== null &&
+      restore.shiftSeq !== renderWindowShiftSeq
+    ) {
+      dbgMark(DBG.chart.viewportRestoreAfterShiftSkippedStale, {
+        expected: restore.shiftSeq,
+        current: renderWindowShiftSeq,
+      });
+      clearPendingViewportRestore();
+      return;
+    }
+
+    if (
+      !shiftRestore &&
+      atomicShiftSeriesKeyRef.current === chartSeriesDataKey
+    ) {
+      atomicShiftSeriesKeyRef.current = null;
+      return;
+    }
 
     dbgTimedSync(
       DBG.chart.setDataCandles,
@@ -712,116 +769,6 @@ export function ChartPanel() {
       },
       () => ({ overlayCount: chartEmaOverlays.length }),
     );
-
-
-
-    viewportPlanRef.current = {
-      key: chartDataKey,
-      mode: chartViewMode,
-      centerTimeSec: chartViewCenterTimeSec,
-      candles: chartCandles,
-    };
-
-  }, [chartCandles, chartEmaOverlays, selectedVariant, chartSeriesDataKey, chartViewMode, chartViewCenterTimeSec]);
-
-  useEffect(() => {
-    const chart = chartRef.current;
-    if (!chart || pendingViewportRestore === null || chartCandles.length === 0) {
-      return;
-    }
-
-    if (pendingViewportRestore.shiftSeq !== renderWindowShiftSeq) {
-      dbgMark(DBG.chart.viewportRestoreAfterShiftSkippedStale, {
-        expected: pendingViewportRestore.shiftSeq,
-        current: renderWindowShiftSeq,
-      });
-      clearPendingViewportRestore();
-      return;
-    }
-
-    isApplyingViewportRef.current = true;
-    suppressPanShiftUntilRef.current = Date.now() + 300;
-
-    let restoreMethod = "fitContent";
-    dbgTimedSync(
-      DBG.chart.viewportRestoreAfterShift,
-      () => {
-        const result = restoreVisibleRangeAfterWindowShift(chart, {
-          anchorTimeSec: pendingViewportRestore.anchorTimeSec,
-          newCandles: chartCandles,
-          previousVisible: pendingViewportRestore.previousVisible,
-          windowStartIndex: pendingViewportRestore.windowStartIndex,
-          fullLength: pendingViewportRestore.fullLength,
-        });
-        restoreMethod = result.method;
-        return result;
-      },
-      () => ({ barCount: chartCandles.length, method: restoreMethod }),
-    );
-
-    clearPendingViewportRestore();
-
-    window.setTimeout(() => {
-      isApplyingViewportRef.current = false;
-    }, 300);
-  }, [pendingViewportRestore, chartCandles, clearPendingViewportRestore, renderWindowShiftSeq]);
-
-  useEffect(() => {
-    userPanActiveRef.current = false;
-    lastTradeFocusIntentKeyRef.current = null;
-  }, [selectedTradeId, selectedVariantKey]);
-
-  useEffect(() => {
-    const chart = chartRef.current;
-    if (!chart || chartCandles.length === 0) return;
-
-    const intentChanged = isTradeFocusIntentChanged(
-      lastTradeFocusIntentKeyRef.current,
-      tradeFocusIntentKey,
-    );
-
-    viewportPlanRef.current = {
-      key: chartDataKey,
-      mode: chartViewMode,
-      centerTimeSec: chartViewCenterTimeSec,
-      candles: chartCandles,
-    };
-
-    if (
-      !shouldScheduleTradeViewportApply({
-        userPanActive: userPanActiveRef.current,
-        tradeFocusIntentChanged: intentChanged,
-      })
-    ) {
-      if (userPanActiveRef.current && !intentChanged) {
-        dbgMark(DBG.chart.viewportApplySkippedUserPan, { mode: chartViewMode });
-      }
-      return;
-    }
-
-    lastTradeFocusIntentKeyRef.current = tradeFocusIntentKey;
-
-    scheduleViewportApply(chart, {
-      tradeFocus: chartViewMode === "around-trade" && intentChanged,
-    });
-  }, [
-    selectedTradeId,
-    selectedVariantKey,
-    chartViewCenterTimeSec,
-    chartViewMode,
-    chartDataKey,
-    chartCandles,
-    tradeFocusIntentKey,
-    scheduleViewportApply,
-  ]);
-
-
-
-  useEffect(() => {
-
-    const chart = chartRef.current;
-
-    if (!chart || !selectedVariant || chartSeriesDataKey === "") return;
 
     dbgTimedSync(
       DBG.chart.setDataAuxHtf,
@@ -865,7 +812,110 @@ export function ChartPanel() {
       () => ({ overlayCount: chartDisplayAuxEmaOverlays.length }),
     );
 
-  }, [chartDisplayAuxEmaOverlays, chartSeriesDataKey, selectedVariant]);
+    viewportPlanRef.current = {
+      key: chartDataKey,
+      mode: chartViewMode,
+      centerTimeSec: chartViewCenterTimeSec,
+      candles: chartCandles,
+    };
+
+    if (shiftRestore && restore !== null) {
+      isApplyingViewportRef.current = true;
+      suppressPanShiftUntilRef.current = Date.now() + 300;
+
+      let restoreMethod = "fitContent";
+      dbgTimedSync(
+        DBG.chart.viewportRestoreAfterShift,
+        () => {
+          const result = restoreVisibleRangeAfterWindowShift(chart, {
+            anchorTimeSec: restore.anchorTimeSec,
+            newCandles: chartCandles,
+            previousVisible: restore.previousVisible,
+            windowStartIndex: restore.windowStartIndex,
+            fullLength: restore.fullLength,
+          });
+          restoreMethod = result.method;
+          return result;
+        },
+        () => ({ barCount: chartCandles.length, method: restoreMethod }),
+      );
+
+      atomicShiftSeriesKeyRef.current = chartSeriesDataKey;
+      clearPendingViewportRestore();
+
+      window.setTimeout(() => {
+        isApplyingViewportRef.current = false;
+      }, 300);
+    }
+  }, [
+    chartCandles,
+    chartEmaOverlays,
+    chartDisplayAuxEmaOverlays,
+    chartSeriesDataKey,
+    selectedVariant,
+    chartViewMode,
+    chartViewCenterTimeSec,
+    chartDataKey,
+    pendingViewportRestore,
+    renderWindowShiftSeq,
+    clearPendingViewportRestore,
+  ]);
+
+  useEffect(() => {
+    userPanActiveRef.current = false;
+    lastTradeFocusIntentKeyRef.current = null;
+    bumpViewportCommandSeq();
+  }, [selectedTradeId, selectedVariantKey, bumpViewportCommandSeq]);
+
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart || chartCandles.length === 0) return;
+
+    if (shouldBlockViewportApplyWhilePendingRestore(pendingViewportRestore)) {
+      dbgMark(DBG.chart.viewportApplySkippedPendingRestore);
+      return;
+    }
+
+    const intentChanged = isTradeFocusIntentChanged(
+      lastTradeFocusIntentKeyRef.current,
+      tradeFocusIntentKey,
+    );
+
+    viewportPlanRef.current = {
+      key: chartDataKey,
+      mode: chartViewMode,
+      centerTimeSec: chartViewCenterTimeSec,
+      candles: chartCandles,
+    };
+
+    if (
+      !shouldScheduleTradeViewportApply({
+        userPanActive: userPanActiveRef.current,
+        tradeFocusIntentChanged: intentChanged,
+      })
+    ) {
+      if (userPanActiveRef.current && !intentChanged) {
+        dbgMark(DBG.chart.viewportApplySkippedUserPan, { mode: chartViewMode });
+      }
+      return;
+    }
+
+    lastTradeFocusIntentKeyRef.current = tradeFocusIntentKey;
+
+    scheduleViewportApply(chart, {
+      tradeFocus: chartViewMode === "around-trade" && intentChanged,
+    });
+  }, [
+    selectedTradeId,
+    selectedVariantKey,
+    chartViewCenterTimeSec,
+    chartViewMode,
+    chartDataKey,
+    chartCandles,
+    tradeFocusIntentKey,
+    pendingViewportRestore,
+    scheduleViewportApply,
+  ]);
 
 
 
