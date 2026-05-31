@@ -797,7 +797,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
         setChartViewportCommand(null);
       }
       const command = chartRuntimeRef.current.dispatchInteraction(event);
-      if (command !== null) {
+      if (command !== null && command.type !== "restoreAfterWindowSwap") {
         emitChartViewportCommand(command);
       }
     },
@@ -1012,7 +1012,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
   const finalizeTraceDisplayUpdate = useCallback(() => {
     applyTraceDisplayRef.current();
     const traceViewportCmd = chartRuntimeRef.current.viewport.onTraceReady();
-    if (traceViewportCmd.type !== "noViewportChange") {
+    if (traceViewportCmd.type !== "noViewportChange" && traceViewportCmd.type !== "restoreAfterWindowSwap") {
       emitChartViewportCommand(traceViewportCmd);
     }
   }, [emitChartViewportCommand]);
@@ -1439,7 +1439,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
         type: "trade_selected",
         entryTimeSec,
       });
-      if (command !== null) {
+      if (command !== null && command.type !== "restoreAfterWindowSwap") {
         emitChartViewportCommand(command);
       }
       setSelectedTradeId(tradeId);

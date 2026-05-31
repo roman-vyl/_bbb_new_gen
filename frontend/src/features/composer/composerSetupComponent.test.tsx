@@ -202,7 +202,7 @@ describe("setup component slot normalization", () => {
     };
     const prepared = prepareConfigDraftForApi(draft, SETUP_CATALOG);
     expect(prepared.instances[0]!.strategy.setups).toEqual([apiSlot]);
-    expect(prepared.instances[0]!.strategy.setup).toBeUndefined();
+    expect(prepared.instances[0]!.strategy).not.toHaveProperty("setup");
   });
 
   it("migrates legacy singleton setup to setups on load", () => {

@@ -374,7 +374,7 @@ export function restoreVisibleRangeByTimeAnchor(
   chart: IChartApi,
   params: RestoreVisibleRangeAfterWindowShiftParams,
 ): RestoreVisibleRangeResult {
-  const { newCandles, previousVisible } = params;
+  const { newCandles } = params;
 
   if (newCandles.length === 0) {
     const debug = buildRestoreByTimeAnchorDebugMeta(params, {

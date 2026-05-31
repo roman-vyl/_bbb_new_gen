@@ -2,22 +2,22 @@ import type { ChartViewMode } from "@/features/chart/chartViewWindow";
 import type { ChartLogicalRange } from "@/features/chart/chartViewport";
 import type {
   ChartInteractionEvent,
-  ViewportCommand,
+  ViewportControllerCommand,
   ViewportControllerState,
 } from "@/features/chart/runtime/types";
 
 export type ViewportController = {
   getState(): ViewportControllerState;
   setPlan(mode: ChartViewMode, centerTimeSec: number | null): void;
-  dispatch(event: ChartInteractionEvent): ViewportCommand | null;
-  onTraceReady(): ViewportCommand;
+  dispatch(event: ChartInteractionEvent): ViewportControllerCommand | null;
+  onTraceReady(): ViewportControllerCommand;
   onWindowSwapCommitted(params: {
     anchorTimeSec: number;
     previousVisible: ChartLogicalRange;
     shiftSeq: number;
     windowStartIndex?: number;
     fullLength?: number;
-  }): ViewportCommand;
+  }): ViewportControllerCommand;
 };
 
 function userPanSessionStart(state: ViewportControllerState): ViewportControllerState {
@@ -49,7 +49,7 @@ export function createViewportController(initial?: Partial<ViewportControllerSta
       state = { ...state, mode, centerTimeSec };
     },
 
-    dispatch(event: ChartInteractionEvent): ViewportCommand | null {
+    dispatch(event: ChartInteractionEvent): ViewportControllerCommand | null {
       switch (event.type) {
         case "pointerdown":
         case "pointermove":
@@ -95,7 +95,7 @@ export function createViewportController(initial?: Partial<ViewportControllerSta
       }
     },
 
-    onTraceReady(): ViewportCommand {
+    onTraceReady(): ViewportControllerCommand {
       return { type: "noViewportChange" };
     },
 
@@ -105,7 +105,7 @@ export function createViewportController(initial?: Partial<ViewportControllerSta
       shiftSeq,
       windowStartIndex,
       fullLength,
-    }): ViewportCommand {
+    }): ViewportControllerCommand {
       return {
         type: "restoreAfterWindowSwap",
         anchorTimeSec,

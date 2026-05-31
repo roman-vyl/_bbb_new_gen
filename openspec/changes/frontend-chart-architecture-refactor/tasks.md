@@ -66,9 +66,13 @@
 - [x] 8.6 Audit for `setData` triggered by active drag boundary; remove immediate-shift path.
 - [x] 8.7 Audit for old immediate `maybeShiftWindowForVisibleRange`-style ownership path; remove.
 - [x] 8.8 For any retained legacy symbol names, document why they are renderer/DOM plumbing only and not orchestration ownership.
+- [x] 8.9 Final chart audit recorded in `implementation/chart-audit.md` (viewport/setData/trace-fetch ownership).
 
 ## 9. Acceptance (heavy-run invariant proof)
 
+**Gate (2026-05):** `npm run build` and `npm test` MUST be green before treating §9 as done in archive. Heavy-run manual checks below are operator-only (see `implementation/acceptance.md`); not reproducible in CI.
+
+- [x] 9.0 `npm run build` green; `npm test` green (chart type contract + composer `setups[]` fixes).
 - [x] 9.1 Validate heavy BTCUSDT 5m run opens successfully and initial component events appear without manual pan.
 - [x] 9.2 Validate HTF/context overlays are visible on initial load and stay stable across pan and deferred commit (hint `+N aux EMA (exit/HTF)`; see `workbench-chart-htf-context-overlays` aux stabilize requirement).
 - [x] 9.3 Validate fast pan May -> Feb/Jan does not produce visible May -> Feb -> May -> Feb flash.
@@ -89,3 +93,8 @@
 - [x] 9.16 Validate `context_consumption_trace[]` remains available for inspector/diagnostics and never drives viewport movement.
 - [x] 9.17 Validate `component_events[]` full contract remains available (`event_type`, `role`, `side`, ids, labels, timeframe/meta fields) and renderer remains role-driven for future components.
 - [x] 9.18 Validate cache behavior parity: market bundle full-range cache, render-window slicing, display cache for events/HTF, session bundle cache for lanes/diagnostics/pan-back, cache-hit display updates without network fetch.
+
+## Backend (out of chart refactor scope; tracked for repo honesty)
+
+- [x] `python -m pytest -q -m workbench_api` — green (64 tests).
+- [ ] Full `python -m pytest -q` — **not** required for chart archive; 1 failing research test (`test_feature_plan_includes_exit_ema_outside_stack`) as of 2026-05. See `implementation/acceptance.md`.

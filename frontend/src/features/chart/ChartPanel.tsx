@@ -20,7 +20,7 @@ import {
 
 } from "lightweight-charts";
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
 
 import {
   dbgMark,
@@ -30,7 +30,7 @@ import {
 
 
 
-import type { AnchorStackEmaRole, ChartBar, ChartEmaOverlay } from "@/api/types";
+import type { AnchorStackEmaRole, ChartEmaOverlay } from "@/api/types";
 import { colorForAuxEmaOverlay } from "@/features/chart/chartAuxEmaOverlays";
 
 import { ChartAsideStackSplitHandle } from "@/features/chart/ChartAsideStackSplitHandle";
@@ -62,7 +62,6 @@ import {
   hasHtfAlignedComponentEvents,
 } from "@/features/chart/chartComponentEvents";
 
-import { buildChartDataKey } from "@/features/chart/chartDataKey";
 import { shouldSuppressPanShiftRequest } from "@/features/chart/chartViewport";
 import { createChartInteractionAdapter } from "@/features/chart/runtime/interactionAdapter";
 import { executeViewportCommand } from "@/features/chart/runtime/executeViewportCommand";
@@ -156,8 +155,6 @@ export function ChartPanel() {
 
     selectedVariant,
 
-    selectedVariantKey,
-
     selectedTradeId,
 
     selectTrade,
@@ -169,8 +166,6 @@ export function ChartPanel() {
     chartViewFirstTimeSec,
 
     chartViewLastTimeSec,
-
-    chartViewCount,
 
     chartTradeFocusWarning,
 
@@ -245,25 +240,6 @@ export function ChartPanel() {
 
 
   const chartSeriesDataKey = chartViewModel.seriesKey;
-
-  const chartDataKey = useMemo(
-    () =>
-      buildChartDataKey({
-        firstTimeSec: chartViewModel.firstTimeSec,
-        lastTimeSec: chartViewModel.lastTimeSec,
-        count: chartViewModel.count,
-        selectedTradeId,
-        centerTimeSec: chartViewModel.centerTimeSec,
-      }),
-    [
-      chartViewModel.seriesKey,
-      chartViewModel.firstTimeSec,
-      chartViewModel.lastTimeSec,
-      chartViewModel.count,
-      chartViewModel.centerTimeSec,
-      selectedTradeId,
-    ],
-  );
 
   const stackPeriodsLabel = useMemo(() => {
 

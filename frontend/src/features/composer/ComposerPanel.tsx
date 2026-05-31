@@ -2092,7 +2092,7 @@ export function ListComponentSection({
   compact = false,
   title,
   role,
-  pathRole = role,
+  pathRole = role === "setup" ? "setups" : role,
   catalog,
   strategy,
   slots,

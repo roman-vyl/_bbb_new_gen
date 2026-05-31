@@ -37,20 +37,27 @@ export type ChartInteractionEvent =
   | { type: "trade_selected"; entryTimeSec: number | null }
   | { type: "resize" };
 
-export type ViewportCommand =
+export type RestoreAfterWindowSwapCommand = {
+  type: "restoreAfterWindowSwap";
+  anchorTimeSec: number;
+  previousVisible: ChartLogicalRange;
+  windowStartIndex?: number;
+  fullLength?: number;
+  shiftSeq: number;
+  /** Assigned by Workbench before ChartPanel execute. */
+  swapTransactionId: number;
+};
+
+export type ViewportControllerCommand =
   | { type: "noViewportChange" }
   | { type: "focusTrade"; entryTimeSec: number }
-  | {
-      type: "restoreAfterWindowSwap";
-      anchorTimeSec: number;
-      previousVisible: ChartLogicalRange;
-      windowStartIndex?: number;
-      fullLength?: number;
-      shiftSeq: number;
-      /** Monotonic id; invalidated when a new pointerdown starts before settle. */
-      swapTransactionId: number;
-    }
+  | Omit<RestoreAfterWindowSwapCommand, "swapTransactionId">
   | { type: "preserveUserRange" };
+
+/** Viewport command for ChartPanel; restoreAfterWindowSwap always has swapTransactionId when emitted from shell. */
+export type ViewportCommand =
+  | Exclude<ViewportControllerCommand, { type: "restoreAfterWindowSwap" }>
+  | RestoreAfterWindowSwapCommand;
 
 export type ViewportFocusIntent = "trade" | null;
 

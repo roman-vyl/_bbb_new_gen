@@ -18,7 +18,7 @@ describe("createBlankConfigDraft", () => {
     expect(draft.experiment_id).toBe(COMPOSER_DEFAULT_EXPERIMENT_ID);
     expect(draft.experiment_id.trim().length).toBeGreaterThan(0);
     const strategy = draft.instances[0]?.strategy;
-    expect(strategy?.setup).toMatchObject({
+    expect(strategy?.setups?.[0]).toMatchObject({
       component_id: "untouched_anchor_setup",
     });
     expect(strategy?.trigger).toEqual({

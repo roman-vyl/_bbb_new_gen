@@ -116,5 +116,6 @@ Used from `WorkbenchContext` for `chartDisplayAuxEmaOverlays` and `chartWindowSl
 ## Related docs
 
 - Acceptance (manual): `implementation/acceptance.md`
+- Chart audit (viewport/setData/trace): `implementation/chart-audit.md`
 - Baseline counters: `implementation/baseline.md`
 - Delta specs (pre-archive): `specs/` in this change directory

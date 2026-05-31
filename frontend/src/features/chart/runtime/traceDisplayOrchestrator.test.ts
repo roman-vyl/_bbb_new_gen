@@ -5,8 +5,6 @@ import {
   shouldBlockTraceFetchForActivePan,
   traceDisplayPlanTouchesViewport,
 } from "@/features/chart/runtime/traceDisplayOrchestrator";
-import type { SignalTraceLoadDecision } from "@/shared/context/signalTraceLoadPolicy";
-
 const READY_BOOTSTRAP = {
   ready: true as const,
   windowKey: "run-a:exp_a:1000:2000",

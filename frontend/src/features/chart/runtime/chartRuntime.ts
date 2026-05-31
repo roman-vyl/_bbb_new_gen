@@ -7,7 +7,7 @@ import { createViewportController, type ViewportController } from "@/features/ch
 import { resetTraceFetchCoalescer } from "@/features/chart/runtime/traceDisplayOrchestrator";
 import type {
   ChartInteractionEvent,
-  ViewportCommand,
+  ViewportControllerCommand,
   WindowCommitResult,
 } from "@/features/chart/runtime/types";
 import type { ChartViewMode } from "@/features/chart/chartViewWindow";
@@ -19,7 +19,7 @@ export type ChartRuntimeConfig = {
 export type ChartRuntime = {
   renderWindow: RenderWindowController;
   viewport: ViewportController;
-  dispatchInteraction(event: ChartInteractionEvent): ViewportCommand | null;
+  dispatchInteraction(event: ChartInteractionEvent): ViewportControllerCommand | null;
   setViewportPlan(mode: ChartViewMode, centerTimeSec: number | null): void;
   reset(): void;
 };
@@ -33,7 +33,7 @@ export function createChartRuntime(config: ChartRuntimeConfig = {}): ChartRuntim
     },
   });
 
-  function dispatchInteraction(event: ChartInteractionEvent): ViewportCommand | null {
+  function dispatchInteraction(event: ChartInteractionEvent): ViewportControllerCommand | null {
     renderWindow.dispatch(event);
     const viewportCommand = viewport.dispatch(event);
 
