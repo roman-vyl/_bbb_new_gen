@@ -65,9 +65,12 @@ import {
 import { buildChartDataKey, buildChartSeriesDataKey } from "@/features/chart/chartDataKey";
 import {
   applyChartViewport,
+  buildTradeFocusIntentKey,
   restoreVisibleRangeAfterWindowShift,
   resolveAnchorTimeFromVisibleRange,
+  shouldScheduleTradeViewportApply,
   shouldSuppressPanShiftRequest,
+  tradeFocusIntentChanged as isTradeFocusIntentChanged,
 } from "@/features/chart/chartViewport";
 import { CHART_RENDER_WINDOW_SIZE } from "@/features/chart/chartDataWindowManager";
 import { type ChartViewMode } from "@/features/chart/chartViewWindow";
@@ -129,8 +132,6 @@ export function ChartPanel() {
   const tradePriceLinesRef = useRef<IPriceLine[]>([]);
 
   const auxEmaSeriesRef = useRef<Map<string, ISeriesApi<"Line">>>(new Map());
-
-  const viewportKeyRef = useRef<string | null>(null);
 
   const viewportPlanRef = useRef<ViewportPlan | null>(null);
   const isApplyingViewportRef = useRef(false);
@@ -270,7 +271,7 @@ export function ChartPanel() {
   const chartCandlesRef = useRef(chartCandles);
   chartCandlesRef.current = chartCandles;
   const userPanActiveRef = useRef(false);
-  const lastTradeFocusKeyRef = useRef<string | null>(null);
+  const lastTradeFocusIntentKeyRef = useRef<string | null>(null);
 
 
 
@@ -316,9 +317,15 @@ export function ChartPanel() {
     ],
   );
 
-  const viewportApplyKey = useMemo(
-    () => `${chartDataKey}|${chartViewMode}|${chartViewCenterTimeSec ?? "none"}`,
-    [chartDataKey, chartViewMode, chartViewCenterTimeSec],
+  const tradeFocusIntentKey = useMemo(
+    () =>
+      buildTradeFocusIntentKey({
+        selectedTradeId,
+        selectedVariantKey,
+        chartViewMode,
+        centerTimeSec: chartViewCenterTimeSec,
+      }),
+    [selectedTradeId, selectedVariantKey, chartViewMode, chartViewCenterTimeSec],
   );
 
 
@@ -761,28 +768,17 @@ export function ChartPanel() {
 
   useEffect(() => {
     userPanActiveRef.current = false;
-    lastTradeFocusKeyRef.current = null;
-    viewportKeyRef.current = null;
+    lastTradeFocusIntentKeyRef.current = null;
   }, [selectedTradeId, selectedVariantKey]);
 
   useEffect(() => {
     const chart = chartRef.current;
-    if (!chart || chartDataKey === "" || chartCandles.length === 0) return;
+    if (!chart || chartCandles.length === 0) return;
 
-    const tradeFocusKey = `${selectedTradeId ?? "none"}|${selectedVariantKey}|${viewportApplyKey}`;
-    const tradeFocusChanged = lastTradeFocusKeyRef.current !== tradeFocusKey;
-    lastTradeFocusKeyRef.current = tradeFocusKey;
-
-    if (userPanActiveRef.current && !tradeFocusChanged) {
-      dbgMark(DBG.chart.viewportApplySkippedUserPan, { mode: chartViewMode });
-      viewportPlanRef.current = {
-        key: chartDataKey,
-        mode: chartViewMode,
-        centerTimeSec: chartViewCenterTimeSec,
-        candles: chartCandles,
-      };
-      return;
-    }
+    const intentChanged = isTradeFocusIntentChanged(
+      lastTradeFocusIntentKeyRef.current,
+      tradeFocusIntentKey,
+    );
 
     viewportPlanRef.current = {
       key: chartDataKey,
@@ -791,19 +787,31 @@ export function ChartPanel() {
       candles: chartCandles,
     };
 
-    if (viewportKeyRef.current === viewportApplyKey && !tradeFocusChanged) {
+    if (
+      !shouldScheduleTradeViewportApply({
+        userPanActive: userPanActiveRef.current,
+        tradeFocusIntentChanged: intentChanged,
+      })
+    ) {
+      if (userPanActiveRef.current && !intentChanged) {
+        dbgMark(DBG.chart.viewportApplySkippedUserPan, { mode: chartViewMode });
+      }
       return;
     }
-    viewportKeyRef.current = viewportApplyKey;
 
-    scheduleViewportApply(chart, { tradeFocus: chartViewMode === "around-trade" && tradeFocusChanged });
+    lastTradeFocusIntentKeyRef.current = tradeFocusIntentKey;
+
+    scheduleViewportApply(chart, {
+      tradeFocus: chartViewMode === "around-trade" && intentChanged,
+    });
   }, [
     selectedTradeId,
     selectedVariantKey,
     chartViewCenterTimeSec,
     chartViewMode,
     chartDataKey,
-    viewportApplyKey,
+    chartCandles,
+    tradeFocusIntentKey,
     scheduleViewportApply,
   ]);
 

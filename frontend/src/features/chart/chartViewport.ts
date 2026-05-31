@@ -239,3 +239,36 @@ export function shouldSuppressPanShiftRequest(
 ): boolean {
   return isApplyingViewport || nowMs < suppressUntilMs;
 }
+
+export type TradeFocusIntentKeyParams = {
+  selectedTradeId: number | null;
+  selectedVariantKey: string;
+  chartViewMode: ChartViewMode;
+  centerTimeSec: number | null;
+};
+
+/** User trade-focus intent — excludes render-window bounds (first/last/count). */
+export function buildTradeFocusIntentKey(params: TradeFocusIntentKeyParams): string {
+  return `${params.selectedTradeId ?? "none"}|${params.selectedVariantKey}|${params.chartViewMode}|${params.centerTimeSec ?? "none"}`;
+}
+
+export function tradeFocusIntentChanged(
+  previousIntentKey: string | null,
+  nextIntentKey: string,
+): boolean {
+  return previousIntentKey !== nextIntentKey;
+}
+
+/** Whether programmatic trade/tail viewport apply should run (not restore-after-shift). */
+export function shouldScheduleTradeViewportApply(input: {
+  userPanActive: boolean;
+  tradeFocusIntentChanged: boolean;
+}): boolean {
+  if (!input.tradeFocusIntentChanged) {
+    return false;
+  }
+  if (input.userPanActive && !input.tradeFocusIntentChanged) {
+    return false;
+  }
+  return true;
+}

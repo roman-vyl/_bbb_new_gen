@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  buildTradeFocusIntentKey,
   centeredVisibleLogicalRange,
   computeRestoredVisibleLogicalRange,
   isTradeCenterVisible,
+  shouldScheduleTradeViewportApply,
   shouldSuppressPanShiftRequest,
+  tradeFocusIntentChanged,
   TRADE_FOCUS_VIEWPORT_BARS,
 } from "@/features/chart/chartViewport";
 import { findBarIndexAtOrBefore } from "@/features/chart/chartViewWindow";
@@ -92,5 +95,71 @@ describe("shouldSuppressPanShiftRequest", () => {
   it("suppresses until deadline after restore", () => {
     expect(shouldSuppressPanShiftRequest(false, Date.now() + 500, Date.now())).toBe(true);
     expect(shouldSuppressPanShiftRequest(false, Date.now() - 1, Date.now())).toBe(false);
+  });
+});
+
+describe("buildTradeFocusIntentKey", () => {
+  it("excludes render-window bounds from trade focus intent", () => {
+    const intentA = buildTradeFocusIntentKey({
+      selectedTradeId: 1,
+      selectedVariantKey: "exp_a",
+      chartViewMode: "around-trade",
+      centerTimeSec: 1_100,
+    });
+    const intentB = buildTradeFocusIntentKey({
+      selectedTradeId: 1,
+      selectedVariantKey: "exp_a",
+      chartViewMode: "around-trade",
+      centerTimeSec: 1_100,
+    });
+    expect(intentA).toBe("1|exp_a|around-trade|1100");
+    expect(intentA).toBe(intentB);
+  });
+
+  it("changes when selected trade or center changes", () => {
+    const base = {
+      selectedVariantKey: "exp_a",
+      chartViewMode: "around-trade" as const,
+      centerTimeSec: 1_100,
+    };
+    const trade1 = buildTradeFocusIntentKey({ ...base, selectedTradeId: 1 });
+    const trade2 = buildTradeFocusIntentKey({ ...base, selectedTradeId: 2 });
+    expect(trade1).not.toBe(trade2);
+  });
+});
+
+describe("shouldScheduleTradeViewportApply", () => {
+  it("skips when user pan is active and render window bounds changed but intent did not", () => {
+    const intentKey = buildTradeFocusIntentKey({
+      selectedTradeId: 1,
+      selectedVariantKey: "exp_a",
+      chartViewMode: "around-trade",
+      centerTimeSec: 1_100,
+    });
+    expect(tradeFocusIntentChanged(intentKey, intentKey)).toBe(false);
+    expect(
+      shouldScheduleTradeViewportApply({
+        userPanActive: true,
+        tradeFocusIntentChanged: false,
+      }),
+    ).toBe(false);
+  });
+
+  it("allows apply when trade focus intent changes even during user pan", () => {
+    expect(
+      shouldScheduleTradeViewportApply({
+        userPanActive: true,
+        tradeFocusIntentChanged: true,
+      }),
+    ).toBe(true);
+  });
+
+  it("skips bounds-only updates without user pan", () => {
+    expect(
+      shouldScheduleTradeViewportApply({
+        userPanActive: false,
+        tradeFocusIntentChanged: false,
+      }),
+    ).toBe(false);
   });
 });
