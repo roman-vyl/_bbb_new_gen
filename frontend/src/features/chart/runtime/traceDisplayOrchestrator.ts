@@ -1,4 +1,6 @@
+import type { SignalTraceLoadDecision } from "@/shared/context/signalTraceLoadPolicy";
 import type { SignalTraceLoadStatus } from "@/shared/context/signalTraceLoadPolicy";
+import type { SignalTraceBootstrapState } from "@/shared/context/signalTraceBootstrap";
 import type { RenderWindowInteractionState } from "@/features/chart/runtime/types";
 
 export type TraceSchedulingInput = {
@@ -57,4 +59,59 @@ export function takeCommittedTraceFetchIntent(): string | null {
 
 export function peekPendingTraceFetchIntent(): string | null {
   return pendingFetchIntent?.windowKey ?? null;
+}
+
+export type TraceDisplayLoadPlan =
+  | { action: "bootstrap_blocked" }
+  | { action: "fetch_superseded" }
+  | { action: "pan_block"; applyDisplayFromCache: boolean }
+  | { action: "display_cache_hit" }
+  | { action: "restore_session" }
+  | { action: "network_fetch" }
+  | { action: "defer"; reason: SignalTraceLoadDecision["action"] };
+
+/**
+ * Single committed-window trace plan. Pending pan state and coalesced intents
+ * must not publish fetch decisions outside this helper.
+ */
+export function planTraceDisplayLoad(input: {
+  bootstrap: SignalTraceBootstrapState;
+  coalescedWindowKey: string | null;
+  committedWindowKey: string;
+  panScheduling: TraceSchedulingInput;
+  loadDecision: SignalTraceLoadDecision;
+}): TraceDisplayLoadPlan {
+  if (!input.bootstrap.ready) {
+    return { action: "bootstrap_blocked" };
+  }
+
+  if (
+    input.coalescedWindowKey !== null &&
+    input.coalescedWindowKey !== input.committedWindowKey
+  ) {
+    return { action: "fetch_superseded" };
+  }
+
+  if (shouldBlockTraceFetchForActivePan(input.panScheduling)) {
+    return {
+      action: "pan_block",
+      applyDisplayFromCache: input.panScheduling.displayCacheCoversWindow,
+    };
+  }
+
+  switch (input.loadDecision.action) {
+    case "skip_display_cache_hit":
+      return { action: "display_cache_hit" };
+    case "restore_session_cache":
+      return { action: "restore_session" };
+    case "load_start":
+      return { action: "network_fetch" };
+    default:
+      return { action: "defer", reason: input.loadDecision.action };
+  }
+}
+
+/** Display-cache updates must never imply a viewport command. */
+export function traceDisplayPlanTouchesViewport(_plan: TraceDisplayLoadPlan): boolean {
+  return false;
 }

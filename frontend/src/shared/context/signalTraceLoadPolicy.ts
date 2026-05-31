@@ -93,11 +93,7 @@ export function decideSignalTraceLoad(
     return { action: "restore_session_cache" };
   }
 
-  if (
-    input.displayCacheCoversWindow &&
-    signalTraceMatchesChartWindow(input.chartWindowKey, input.loadedSignalTraceWindowKey) &&
-    input.signalTraceStatus === "ready"
-  ) {
+  if (input.displayCacheCoversWindow) {
     return { action: "skip_display_cache_hit" };
   }
 

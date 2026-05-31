@@ -45,9 +45,10 @@ import {
 import { mergeAuxOverlayPoints, sliceAuxOverlaysToCandleWindow } from "@/features/chart/chartAuxEmaOverlays";
 import type { ChartDataWindowManager } from "@/features/chart/chartDataWindowManager";
 import { createChartRuntime, type WindowCommitResult } from "@/features/chart/runtime/chartRuntime";
+import { buildChartViewModel, type ChartViewModel } from "@/features/chart/runtime/chartViewModel";
 import {
+  planTraceDisplayLoad,
   queueTraceFetchIntent,
-  shouldBlockTraceFetchForActivePan,
   takeCommittedTraceFetchIntent,
 } from "@/features/chart/runtime/traceDisplayOrchestrator";
 import { canEmitTradeFocus } from "@/features/chart/runtime/viewportController";
@@ -139,6 +140,8 @@ type WorkbenchState = {
   selectedRunId: string | null;
   setSelectedRunId: (runId: string) => void;
   report: RunReport | null;
+  /** Renderer-facing projection; prefer over individual chart* fields in ChartPanel. */
+  chartViewModel: ChartViewModel;
   chartCandles: ChartBar[];
   chartEmaOverlays: ChartEmaOverlay[];
   chartAuxEmaOverlays: ChartAuxEmaOverlay[];
@@ -999,6 +1002,14 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     }
   }, [selectedVariant, chartTimeframe, effectiveContextOverlayRef]);
 
+  const finalizeTraceDisplayUpdate = useCallback(() => {
+    applyTraceDisplayRef.current();
+    const traceViewportCmd = chartRuntimeRef.current.viewport.onTraceReady();
+    if (traceViewportCmd.type !== "noViewportChange") {
+      emitChartViewportCommand(traceViewportCmd);
+    }
+  }, [emitChartViewportCommand]);
+
   const applyTraceDisplayForCurrentWindow = useCallback(() => {
     const slice = sliceTraceDisplayForCandles(
       signalTraceDisplayCacheRef.current,
@@ -1337,6 +1348,31 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     signalTraceStatus,
   ]);
 
+  const chartViewModel = useMemo(
+    () =>
+      buildChartViewModel({
+        candles: chartView.candles,
+        emaOverlays: chartView.emaOverlays,
+        auxEmaOverlays: chartView.auxEmaOverlays,
+        displayAuxEmaOverlays: chartDisplayAuxEmaOverlays,
+        componentEvents: chartDisplayComponentEvents,
+        htfOverlayStale: htfAuxEmaOverlayStale,
+        componentEventsStale,
+        viewMode: chartView.mode,
+        centerTimeSec: chartView.centerTimeSec,
+        firstTimeSec: chartView.firstTimeSec,
+        lastTimeSec: chartView.lastTimeSec,
+        count: chartView.count,
+      }),
+    [
+      chartView,
+      chartDisplayAuxEmaOverlays,
+      chartDisplayComponentEvents,
+      htfAuxEmaOverlayStale,
+      componentEventsStale,
+    ],
+  );
+
   const fullCandleRange = useMemo(
     () => (cachedBundle ? candleRangeMs(cachedBundle.candles) : null),
     [cachedBundle],
@@ -1403,47 +1439,20 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       return;
     }
 
+    const { windowKey, request, fetchSource } = bootstrap;
+    const committedWindowKey = windowKey;
+
     dbgMark(DBG.signalTrace.bootstrapReady, {
-      windowKey: bootstrap.windowKey,
+      windowKey: committedWindowKey,
       renderWindowRevision,
       boundsKey: renderWindowBoundsKey,
     });
 
-    const { windowKey, request, fetchSource } = bootstrap;
-    previousChartWindowKeyRef.current = windowKey;
-
     const coalescedFetchKey = takeCommittedTraceFetchIntent();
-    if (coalescedFetchKey !== null && coalescedFetchKey !== windowKey) {
-      dbgMark(DBG.traceDisplay.fetchSuperseded, {
-        coalesced: coalescedFetchKey,
-        windowKey,
-      });
-      return;
-    }
-
     const runtime = chartRuntimeRef.current.renderWindow;
-    if (
-      shouldBlockTraceFetchForActivePan({
-        interactionState: runtime.getInteractionState(),
-        hasPendingShift: runtime.getPendingShift() !== null,
-        displayCacheCoversWindow,
-        committedWindowKey: windowKey,
-        loadedWindowKey: loadedSignalTraceWindowKeyRef.current,
-        loadingWindowKey: loadingTraceWindowKeyRef.current,
-        status: signalTraceStatusRef.current,
-      })
-    ) {
-      if (displayCacheCoversWindow) {
-        dbgMark(DBG.traceDisplay.cacheHit, { windowKey, source: "active_pan_block" });
-        applyTraceDisplayRef.current();
-      }
-      return;
-    }
-
-    const sessionCacheHasWindow = signalTraceBundleSessionCacheRef.current.has(windowKey);
-
-    const decision = decideSignalTraceLoad({
-      chartWindowKey: windowKey,
+    const sessionCacheHasWindow = signalTraceBundleSessionCacheRef.current.has(committedWindowKey);
+    const loadDecision = decideSignalTraceLoad({
+      chartWindowKey: committedWindowKey,
       displayCacheCoversWindow,
       sessionCacheHasWindow,
       loadedSignalTraceWindowKey: loadedSignalTraceWindowKeyRef.current,
@@ -1453,26 +1462,68 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       request,
     });
 
+    const plan = planTraceDisplayLoad({
+      bootstrap,
+      coalescedWindowKey: coalescedFetchKey,
+      committedWindowKey,
+      panScheduling: {
+        interactionState: runtime.getInteractionState(),
+        hasPendingShift: runtime.getPendingShift() !== null,
+        displayCacheCoversWindow,
+        committedWindowKey,
+        loadedWindowKey: loadedSignalTraceWindowKeyRef.current,
+        loadingWindowKey: loadingTraceWindowKeyRef.current,
+        status: signalTraceStatusRef.current,
+      },
+      loadDecision,
+    });
+
     dbgMark(DBG.signalTrace.decision, {
-      action: decision.action,
-      windowKey,
+      action: loadDecision.action,
+      plan: plan.action,
+      windowKey: committedWindowKey,
       displayCacheCoversWindow,
       sessionCacheHasWindow,
       fetchSource,
     });
 
-    if (decision.action === "skip_display_cache_hit") {
-      dbgMark(DBG.traceDisplay.cacheHit, { windowKey });
-      applyTraceDisplayRef.current();
+    if (plan.action === "bootstrap_blocked") {
       return;
     }
 
-    if (decision.action === "restore_session_cache") {
-      const sessionBundle = signalTraceBundleSessionCacheRef.current.get(windowKey);
+    if (plan.action === "fetch_superseded") {
+      dbgMark(DBG.traceDisplay.fetchSuperseded, {
+        coalesced: coalescedFetchKey,
+        windowKey: committedWindowKey,
+      });
+      return;
+    }
+
+    if (plan.action === "pan_block") {
+      if (plan.applyDisplayFromCache) {
+        dbgMark(DBG.traceDisplay.cacheHit, {
+          windowKey: committedWindowKey,
+          source: "active_pan_block",
+        });
+        finalizeTraceDisplayUpdate();
+      }
+      return;
+    }
+
+    previousChartWindowKeyRef.current = committedWindowKey;
+
+    if (plan.action === "display_cache_hit") {
+      dbgMark(DBG.traceDisplay.cacheHit, { windowKey: committedWindowKey });
+      finalizeTraceDisplayUpdate();
+      return;
+    }
+
+    if (plan.action === "restore_session") {
+      const sessionBundle = signalTraceBundleSessionCacheRef.current.get(committedWindowKey);
       if (sessionBundle === null) {
         return;
       }
-      dbgMark(DBG.signalTrace.fetchStart, { source: "session_restore", windowKey });
+      dbgMark(DBG.signalTrace.fetchStart, { source: "session_restore", windowKey: committedWindowKey });
       dbgTimedSync(
         DBG.traceDisplay.mergeChunk,
         () => {
@@ -1485,26 +1536,34 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       );
       setDisplayCacheVersion((version) => version + 1);
       setSignalTrace(sessionBundle);
-      setLoadedSignalTraceWindowKey(windowKey);
-      loadedSignalTraceWindowKeyRef.current = windowKey;
+      setLoadedSignalTraceWindowKey(committedWindowKey);
+      loadedSignalTraceWindowKeyRef.current = committedWindowKey;
       setSignalTraceStatus("ready");
       signalTraceStatusRef.current = "ready";
       setSignalTraceError(null);
-      dbgMark(DBG.traceDisplay.sessionHit, { windowKey });
-      applyTraceDisplayRef.current();
+      dbgMark(DBG.traceDisplay.sessionHit, { windowKey: committedWindowKey });
+      finalizeTraceDisplayUpdate();
+      return;
+    }
+
+    if (plan.action === "defer") {
+      if (!displayCacheCoversWindow) {
+        dbgMark(DBG.traceDisplay.cacheMiss, { windowKey: committedWindowKey });
+      }
+      return;
+    }
+
+    if (plan.action !== "network_fetch") {
+      return;
+    }
+
+    const decision = loadDecision;
+    if (decision.action !== "load_start") {
       return;
     }
 
     if (!displayCacheCoversWindow) {
-      dbgMark(DBG.traceDisplay.cacheMiss, { windowKey });
-    }
-
-    if (
-      decision.action === "skip_already_loading" ||
-      decision.action === "skip_identical_in_flight" ||
-      decision.action === "skip_idle"
-    ) {
-      return;
+      dbgMark(DBG.traceDisplay.cacheMiss, { windowKey: committedWindowKey });
     }
 
     const generation = ++traceLoadGenerationRef.current;
@@ -1548,7 +1607,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
           }),
         );
         setDisplayCacheVersion((version) => version + 1);
-        applyTraceDisplayRef.current();
+        finalizeTraceDisplayUpdate();
         dbgMark("wb.signal_trace_merge", {
           windowKey,
           truncated,
@@ -1593,11 +1652,11 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     selectedVariant,
     chartWindowKey,
     renderWindowRevision,
-    renderWindowBoundsKey,
     marketLoadStatus,
     effectiveContextOverlayRef,
     displayCacheCoversWindow,
     displayCacheVersion,
+    finalizeTraceDisplayUpdate,
   ]);
 
   const symbol = report?.symbol ?? "—";
@@ -1620,6 +1679,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       selectedRunId,
       setSelectedRunId,
       report,
+      chartViewModel,
       chartCandles: chartView.candles,
       chartEmaOverlays: chartView.emaOverlays,
       chartAuxEmaOverlays: chartView.auxEmaOverlays,
@@ -1692,6 +1752,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       selectedRunId,
       setSelectedRunId,
       report,
+      chartViewModel,
       chartView.candles,
       chartView.emaOverlays,
       chartDisplayAuxEmaOverlays,

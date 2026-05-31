@@ -62,7 +62,7 @@ import {
   hasHtfAlignedComponentEvents,
 } from "@/features/chart/chartComponentEvents";
 
-import { buildChartDataKey, buildChartSeriesDataKey } from "@/features/chart/chartDataKey";
+import { buildChartDataKey } from "@/features/chart/chartDataKey";
 import { shouldSuppressPanShiftRequest } from "@/features/chart/chartViewport";
 import { createChartInteractionAdapter } from "@/features/chart/runtime/interactionAdapter";
 import { executeViewportCommand } from "@/features/chart/runtime/executeViewportCommand";
@@ -119,22 +119,18 @@ export function ChartPanel() {
 
   const auxEmaSeriesRef = useRef<Map<string, ISeriesApi<"Line">>>(new Map());
 
+  /** Renderer plumbing only — suppress programmatic range / pan-shift feedback, not policy. */
   const isApplyingViewportRef = useRef(false);
   const suppressPanShiftUntilRef = useRef(0);
   const visibleRangeHandlerRef = useRef<(() => void) | null>(null);
+  /** Atomic setData key for window-swap; cleared after layout apply. */
   const atomicShiftSeriesKeyRef = useRef<string | null>(null);
 
   const {
 
-    chartCandles,
-
-    chartEmaOverlays,
-
-    chartDisplayAuxEmaOverlays,
+    chartViewModel,
 
     htfAuxEmaOverlayStale,
-
-    chartDisplayComponentEvents,
 
     componentEventsStale,
 
@@ -216,6 +212,11 @@ export function ChartPanel() {
 
   const dispatchChartInteractionRef = useRef(dispatchChartInteraction);
   dispatchChartInteractionRef.current = dispatchChartInteraction;
+  const chartCandles = chartViewModel.candles;
+  const chartEmaOverlays = chartViewModel.emaOverlays;
+  const chartDisplayAuxEmaOverlays = chartViewModel.displayAuxEmaOverlays;
+  const chartDisplayComponentEvents = chartViewModel.componentEvents;
+
   const chartCandlesRef = useRef(chartCandles);
   chartCandlesRef.current = chartCandles;
   const interactionAdapterRef = useRef(
@@ -243,31 +244,24 @@ export function ChartPanel() {
 
 
 
-  const chartSeriesDataKey = useMemo(
-    () =>
-      buildChartSeriesDataKey({
-        firstTimeSec: chartViewFirstTimeSec,
-        lastTimeSec: chartViewLastTimeSec,
-        count: chartViewCount,
-      }),
-    [chartViewFirstTimeSec, chartViewLastTimeSec, chartViewCount],
-  );
+  const chartSeriesDataKey = chartViewModel.seriesKey;
 
   const chartDataKey = useMemo(
     () =>
       buildChartDataKey({
-        firstTimeSec: chartViewFirstTimeSec,
-        lastTimeSec: chartViewLastTimeSec,
-        count: chartViewCount,
+        firstTimeSec: chartViewModel.firstTimeSec,
+        lastTimeSec: chartViewModel.lastTimeSec,
+        count: chartViewModel.count,
         selectedTradeId,
-        centerTimeSec: chartViewCenterTimeSec,
+        centerTimeSec: chartViewModel.centerTimeSec,
       }),
     [
-      chartViewFirstTimeSec,
-      chartViewLastTimeSec,
-      chartViewCount,
+      chartViewModel.seriesKey,
+      chartViewModel.firstTimeSec,
+      chartViewModel.lastTimeSec,
+      chartViewModel.count,
+      chartViewModel.centerTimeSec,
       selectedTradeId,
-      chartViewCenterTimeSec,
     ],
   );
 

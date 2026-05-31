@@ -31,6 +31,10 @@ Baseline is **not** a behavior parity target. It records pre-refactor debug coun
 4. In browser console: `__pipelineDebugFlush("baseline-pre-cutover")` then `copy(__pipelineDebugExport())`.
 5. Save export under `debug/reports/baseline-pre-cutover-<date>.json` (manual).
 
+## Post-cutover
+
+Same manual steps as above; label flushes `baseline-post-cutover` and save JSON under `debug/reports/`. See `implementation/acceptance.md` for the §9 checklist.
+
 ## Key steps to compare (from `pipelineDebug.ts`)
 
 | Step id | Meaning |

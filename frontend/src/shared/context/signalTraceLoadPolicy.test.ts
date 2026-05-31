@@ -25,7 +25,7 @@ const WINDOW_B: SignalTraceRequest = {
 };
 
 describe("decideSignalTraceLoad", () => {
-  it("scenario A: skips when display cache and loaded signal trace both match window", () => {
+  it("scenario A: skips fetch when display cache covers committed window", () => {
     const decision = decideSignalTraceLoad({
       chartWindowKey: REQUEST.windowKey,
       displayCacheCoversWindow: true,
@@ -53,7 +53,7 @@ describe("decideSignalTraceLoad", () => {
     expect(decision).toEqual({ action: "restore_session_cache" });
   });
 
-  it("regression: cache covers window A but loaded signal trace is window B — must fetch for lanes", () => {
+  it("pan-back: cache covers window A while loaded trace is window B — display hit without fetch", () => {
     const decision = decideSignalTraceLoad({
       chartWindowKey: REQUEST.windowKey,
       displayCacheCoversWindow: true,
@@ -64,7 +64,7 @@ describe("decideSignalTraceLoad", () => {
       inFlightRequest: null,
       request: REQUEST,
     });
-    expect(decision).toEqual({ action: "load_start", request: REQUEST });
+    expect(decision).toEqual({ action: "skip_display_cache_hit" });
   });
 
   it("scenario B: skips when same window is already loading", () => {
