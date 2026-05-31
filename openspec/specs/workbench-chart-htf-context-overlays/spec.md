@@ -15,7 +15,7 @@ Document the **delivered** Workbench Chart pipeline for HTF context EMA auxiliar
 | BFF | `research_api/services/signal_trace_service.py` | Builds trace; **cache key MUST include `context_overlay_ref`** |
 | Frontend specs | `frontend/src/features/chart/strategySpecAuxEma.ts` | `collectAuxEmaSpecs` → `source: "htf_trace"`, ids `htf_{role}` |
 | Frontend contexts | `frontend/src/features/chart/strategyContexts.ts` | Reads `strategy.contexts`; resolves default overlay ref |
-| Frontend state | `frontend/src/shared/context/WorkbenchContext.tsx` | `effectiveContextOverlayRef`, aux overlay merge, trace window key |
+| Frontend state | `frontend/src/shared/context/WorkbenchContext.tsx` | `effectiveContextOverlayRef`, aux overlay merge, `SignalTraceDisplayCache`, trace window key |
 | Frontend chart | `frontend/src/features/chart/ChartPanel.tsx` | Renders `chartDisplayAuxEmaOverlays` as dashed LineSeries |
 ## Requirements
 ### Requirement: HTF context EMA lines come from signal trace, not browser or BFF overlay EMA
@@ -100,25 +100,35 @@ A trace computed without overlay ref MUST NOT be returned for a later request wi
 
 ### Requirement: HTF aux overlays survive trace reload and window pan
 
-While `signalTraceStatus` is `loading` or `error`, Workbench MUST NOT strip existing `htf_*` aux overlays (avoid flicker). When the trace window key changes before the new trace arrives, Workbench MAY show a stale banner (`htfAuxEmaOverlayStale`) and freeze last sliced HTF overlay points until `traceMatchesWindow`.
+While `signalTraceStatus` is `loading` or `error`, Workbench MUST NOT strip existing `htf_*` aux overlays (avoid flicker) when displayable HTF points remain available from the **trace display cache** slice for the current render window.
+
+When the render window shifts before a new chunk arrives, Workbench MAY show a stale banner (`htfAuxEmaOverlayStale`) only for **uncovered** portions of the window.
 
 Clearing all aux overlays (`setAuxEmaOverlays([])`) MUST NOT run when HTF specs exist but BFF exit-EMA specs are empty — HTF-only variants still render context lines.
 
-HTF aux overlay points MUST be sliced to the **current render window** (same bounds as `chartCandles`). When the sliding render window shifts on pan, HTF overlay series MUST receive points filtered to the new window until fresh trace data arrives.
+HTF aux overlay points MUST be sourced from the accumulated trace display cache (when available), then sliced to the **current render window** (same bounds as `chartCandles`). When the sliding render window shifts on pan and cache covers the new range, HTF overlay series MUST update from cache slice **without** waiting for a new fetch.
 
 #### Scenario: Pan chart retains HTF lines during trace reload
 
 - **GIVEN** HTF context EMA lines visible for the current render window
-- **WHEN** user pans the chart and the render window shifts, starting signal trace reload
-- **THEN** previous HTF lines remain visible until replaced or stale banner explains lag
-- **AND** lines update when the new trace reaches `ready` with matching `chartWindowKey` for the **new render window bounds**
+- **WHEN** user pans the chart to an uncovered range and signal trace chunk fetch starts
+- **THEN** HTF lines from cached overlapping sub-range MAY remain visible until the new chunk merges
+- **AND** stale banner MAY explain lag for uncovered data
+- **AND** lines update when cache covers the full render window
 
-#### Scenario: HTF overlay slice follows render window shift
+#### Scenario: HTF overlay slice follows render window shift from cache
 
-- **GIVEN** HTF context EMA lines sliced to render window `[T0, T1]`
-- **WHEN** pan shifts the render window to `[T0', T1']` before trace reload completes
-- **THEN** displayed HTF overlay points are sliced to `[T0', T1']` (or frozen stale slice aligned to new bounds per existing stale rules)
-- **AND** HTF lines do not retain points from the pre-shift window outside the new bounds
+- **GIVEN** trace cache contains `htf_context` covering `[T0, T2]`
+- **WHEN** pan shifts the render window from `[T0, T1]` to `[T1, T2]` without a new fetch
+- **THEN** displayed HTF overlay points are sliced to the new window bounds from cache
+- **AND** HTF lines do not retain points outside the new render window
+
+#### Scenario: Pan back restores HTF from cache without refetch
+
+- **GIVEN** trace cache contains HTF context for `[Ta, Tb]`
+- **WHEN** user pans away and later returns to render window `[Ta, Tb]`
+- **THEN** HTF context EMA lines render from cache slice
+- **AND** no signal trace refetch occurs solely because the user returned to a prior window
 
 ### Requirement: Report strategy_spec carries contexts for overlay resolution
 

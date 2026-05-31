@@ -30,14 +30,14 @@
 
 ## 5. Manual verification
 
-- [ ] 5.1 Pan render window within previously loaded trace range — events + HTF update instantly, no loading flicker
-- [ ] 5.2 Pan into new uncached range — fetch starts, stale banner, then data appears; display cache merges
-- [ ] 5.3 Pan back to earlier range — events + HTF from display cache without refetch (network tab)
-- [ ] 5.4 Switch variant or context overlay ref — display cache resets, fresh fetch
-- [ ] 5.5 **Verify HTF context EMA overlays** (`workbench-chart-htf-context-overlays`): variant with `strategy.contexts.htf_1` — pan across cached and uncached ranges; no permanent line loss
-- [ ] 5.6 Signal timeline lanes + trade diagnostics still work after window pan (may refetch; acceptable v1)
-- [ ] 5.7 **Truncation + perf gate:** 50k render window — response span matches request OR partial coverage UI (never false full cache); log fetch duration for perf acceptance decision
-- [ ] 5.8 **Stale error on pan:** fail trace on window B, pan to cached window A — lanes/banner must not show B's error (expect loading then ready/error for A only)
+- [x] 5.1 Pan render window within previously loaded trace range — events + HTF update instantly, no loading flicker
+- [x] 5.2 Pan into new uncached range — fetch starts, stale banner, then data appears; display cache merges
+- [x] 5.3 Pan back to earlier range — events + HTF from display cache without refetch (network tab)
+- [x] 5.4 Switch variant or context overlay ref — display cache resets, fresh fetch
+- [x] 5.5 **Verify HTF context EMA overlays** (`workbench-chart-htf-context-overlays`): variant with `strategy.contexts.htf_1` — pan across cached and uncached ranges; no permanent line loss
+- [x] 5.6 Signal timeline lanes + trade diagnostics still work after window pan (may refetch; acceptable v1)
+- [x] 5.7 **Truncation + perf gate:** 50k render window — response span matches request OR partial coverage UI (never false full cache); log fetch duration for perf acceptance decision
+- [x] 5.8 **Stale error on pan:** fail trace on window B, pan to cached window A — lanes/banner must not show B's error (expect loading then ready/error for A only)
 
 ## 6. Unit tests (CI)
 

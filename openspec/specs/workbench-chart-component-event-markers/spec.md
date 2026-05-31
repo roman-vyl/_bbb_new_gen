@@ -4,7 +4,7 @@
 
 Chart component semantic events derived from signal trace: generic `component_events[]` contract with `event_type` vocabulary (`point`, `span_start`, `span_end`, `source`), extensible `role`, top-level alignment fields, component-specific data in `metadata`. v1 RSI emitters (`rsi_lookback_extreme_blocker`, `rsi_signal_exit`); frontend renders by `event_type` + `role` + `side` only.
 
-**Same trace payload** also carries `htf_context` for HTF EMA dashed overlays — see `workbench-chart-htf-context-overlays`. Changes to signal trace loading or caching MUST regression-check both features.
+**Same trace payload** also carries `htf_context` for HTF EMA dashed overlays — see `workbench-chart-htf-context-overlays`. Changes to signal trace loading, display cache, or caching MUST regression-check both features. See also `workbench-trace-window-chunk-cache`.
 ## Requirements
 ### Requirement: Signal trace exposes component_events with event_type vocabulary
 
@@ -324,7 +324,9 @@ The Chart UI SHALL provide:
 
 Component events MUST be filtered to the same **current render window** candle time range as trade markers and chart candles — the sliding window managed by `chartDataWindowManager`, not a fixed trade-selection slice that does not move on pan.
 
-When the user pans and the render window shifts, component events MUST be re-filtered to the new window bounds before passing to the chart marker plugin.
+Component events for display MUST be sourced from the **accumulated signal trace display cache** (when available), then sliced to the render window — not from the latest single-window trace response alone.
+
+When the user pans and the render window shifts, component events MUST be re-sliced from cache to the new window bounds before passing to the chart marker plugin. If the new window is already covered by cache, this MUST occur without a network fetch.
 
 Partial spans are acceptable: when the visible window intersects the middle or end of a blocked run, only `span_end` (or only `span_start`) MAY appear — this is expected and MUST NOT be treated as a data bug.
 
@@ -346,7 +348,14 @@ Partial spans are acceptable: when the visible window intersects the middle or e
 - **GIVEN** component events visible for render window `[T0, T1]`
 - **WHEN** user pans until the render window shifts to `[T0', T1']`
 - **THEN** events with `time` outside `[T0', T1']` are removed from the marker plugin
-- **AND** events with `time` inside `[T0', T1']` are shown if present in loaded trace data
+- **AND** events with `time` inside `[T0', T1']` are shown from trace cache slice when covered
+
+#### Scenario: Pan back shows cached events without refetch
+
+- **GIVEN** trace cache previously loaded events for `[Ta, Tb]`
+- **WHEN** user pans away and later pans back to render window `[Ta, Tb]`
+- **THEN** component events for that window appear from cache slice
+- **AND** no signal trace refetch occurs solely because the user returned to a prior window
 
 ### Requirement: Chart HTF hint uses top-level timeframes
 
