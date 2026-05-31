@@ -2,6 +2,7 @@ import type { IChartApi, Time } from "lightweight-charts";
 
 import type { ChartBar } from "@/api/types";
 import { findBarIndexAtOrBefore, type ChartViewMode } from "@/features/chart/chartViewWindow";
+import { dbgMark, PIPELINE_DEBUG_STEPS as DBG } from "@/shared/diagnostics/pipelineDebug";
 
 /** Bars visible on screen when focusing a trade (subset of loaded chunk). */
 export const TRADE_FOCUS_VIEWPORT_BARS = 400;
@@ -16,8 +17,40 @@ export type RestoreVisibleRangeAfterWindowShiftParams = {
   fullLength?: number;
 };
 
+export type WindowSwapRestoreFallbackMode =
+  | "anchor_center"
+  | "clamp_left"
+  | "clamp_right"
+  | "no_op";
+
+export type RestoreByTimeAnchorDebugMeta = {
+  anchorTime: number;
+  previousVisibleFrom: number;
+  previousVisibleTo: number;
+  visibleBarSpan: number;
+  candleCount: number;
+  firstTime: number | null;
+  lastTime: number | null;
+  resolvedFrom: number | null;
+  resolvedTo: number | null;
+  failureReason: string | null;
+  fallbackMode: WindowSwapRestoreFallbackMode;
+};
+
 export type RestoreVisibleRangeResult = {
-  method: "time-range" | "logical-range" | "fitContent";
+  method: "time-range" | "no-op";
+  fallbackMode: WindowSwapRestoreFallbackMode;
+  failureReason: string | null;
+  logicalFrom?: number;
+  logicalTo?: number;
+  fromTimeSec?: number;
+  toTimeSec?: number;
+  debug: RestoreByTimeAnchorDebugMeta;
+};
+
+/** @deprecated Window-swap restore never uses fitContent; kept for trade/tail apply only. */
+export type LegacyRestoreComputeResult = {
+  method: "logical-range" | "no-op";
   logicalFrom?: number;
   logicalTo?: number;
 };
@@ -153,63 +186,6 @@ export function resolveAnchorTimeFromVisibleRange(
   return candles[idx]?.time ?? null;
 }
 
-/**
- * Compute restored visible logical range after render window shift.
- * Primary: time anchor; fallbacks: nearest bar, edge clamp, fitContent.
- */
-export function computeRestoredVisibleLogicalRange(
-  params: RestoreVisibleRangeAfterWindowShiftParams,
-): RestoreVisibleRangeResult {
-  const { anchorTimeSec, newCandles, previousVisible, windowStartIndex = 0, fullLength } =
-    params;
-
-  if (newCandles.length === 0) {
-    return { method: "fitContent" };
-  }
-
-  const visibleWidth = visibleBarSpanFromLogicalRange(previousVisible);
-  let anchorIndex = findBarIndexAtOrBefore(newCandles, anchorTimeSec);
-
-  if (!Number.isFinite(anchorIndex) || anchorIndex < 0) {
-    anchorIndex = 0;
-  }
-  if (anchorIndex >= newCandles.length) {
-    anchorIndex = newCandles.length - 1;
-  }
-
-  let logical = centeredVisibleLogicalRange(newCandles.length, anchorIndex, visibleWidth);
-
-  if (windowStartIndex === 0 && logical.from < 0) {
-    logical = { from: 0, to: Math.min(newCandles.length, visibleWidth) };
-  }
-
-  if (
-    fullLength !== undefined &&
-    windowStartIndex + newCandles.length >= fullLength &&
-    logical.to > newCandles.length
-  ) {
-    logical = {
-      from: Math.max(0, newCandles.length - visibleWidth),
-      to: newCandles.length,
-    };
-  }
-
-  if (
-    !Number.isFinite(logical.from) ||
-    !Number.isFinite(logical.to) ||
-    logical.from >= logical.to ||
-    logical.to > newCandles.length
-  ) {
-    return { method: "fitContent" };
-  }
-
-  return {
-    method: "logical-range",
-    logicalFrom: logical.from,
-    logicalTo: logical.to,
-  };
-}
-
 /** Integer bar span from chart logical range (fractional logical widths are common). */
 export function visibleBarSpanFromLogicalRange(visible: ChartLogicalRange): number {
   const raw = visible.to - visible.from;
@@ -219,87 +195,270 @@ export function visibleBarSpanFromLogicalRange(visible: ChartLogicalRange): numb
   return Math.max(1, Math.ceil(raw));
 }
 
-function resolveRestoreBarTimes(
-  newCandles: readonly ChartBar[],
+export type WindowSwapRestorePlan = {
+  fallbackMode: WindowSwapRestoreFallbackMode;
+  logicalFrom: number;
+  logicalTo: number;
+  failureReason: string | null;
+};
+
+function clampLogicalRangeToCandleCount(
   logical: { from: number; to: number },
-): { fromTimeSec: number; toTimeSec: number } | null {
-  const fromIdx = Math.max(0, Math.min(Math.floor(logical.from), newCandles.length - 1));
-  const toIdx = Math.max(
-    fromIdx,
-    Math.min(newCandles.length - 1, Math.floor(logical.to) - 1),
-  );
-  const fromBar = newCandles[fromIdx];
-  const toBar = newCandles[toIdx];
-  if (fromBar === undefined || toBar === undefined) {
-    return null;
+  candleCount: number,
+): { from: number; to: number } {
+  if (candleCount <= 0) {
+    return { from: 0, to: 0 };
   }
-  return { fromTimeSec: fromBar.time, toTimeSec: toBar.time };
+  let from = Math.max(0, Math.floor(logical.from));
+  let to = Math.min(candleCount, Math.max(from + 1, Math.ceil(logical.to)));
+  if (to > candleCount) {
+    to = candleCount;
+  }
+  if (from >= to) {
+    from = Math.max(0, to - 1);
+  }
+  return { from, to };
+}
+
+export function buildRestoreByTimeAnchorDebugMeta(
+  params: RestoreVisibleRangeAfterWindowShiftParams,
+  overrides: Partial<RestoreByTimeAnchorDebugMeta> = {},
+): RestoreByTimeAnchorDebugMeta {
+  const { anchorTimeSec, newCandles, previousVisible } = params;
+  const count = newCandles.length;
+  return {
+    anchorTime: anchorTimeSec,
+    previousVisibleFrom: previousVisible.from,
+    previousVisibleTo: previousVisible.to,
+    visibleBarSpan: visibleBarSpanFromLogicalRange(previousVisible),
+    candleCount: count,
+    firstTime: count > 0 ? newCandles[0]!.time : null,
+    lastTime: count > 0 ? newCandles[count - 1]!.time : null,
+    resolvedFrom: null,
+    resolvedTo: null,
+    failureReason: null,
+    fallbackMode: "no_op",
+    ...overrides,
+  };
 }
 
 /**
- * Primary restore path: time anchor → bar window → setVisibleRange (not pre-swap logical indexes).
+ * Plan post-swap restore window: anchor center or edge clamp — never fitContent.
+ */
+export function computeWindowSwapRestorePlan(
+  params: RestoreVisibleRangeAfterWindowShiftParams,
+): WindowSwapRestorePlan | null {
+  const { anchorTimeSec, newCandles, previousVisible, windowStartIndex = 0, fullLength } =
+    params;
+
+  if (newCandles.length === 0) {
+    return null;
+  }
+
+  const visibleWidth = visibleBarSpanFromLogicalRange(previousVisible);
+  const count = newCandles.length;
+  const firstTime = newCandles[0]!.time;
+  const lastTime = newCandles[count - 1]!.time;
+
+  let fallbackMode: WindowSwapRestoreFallbackMode;
+  let failureReason: string | null;
+  let logical: { from: number; to: number };
+
+  if (anchorTimeSec < firstTime) {
+    fallbackMode = "clamp_left";
+    failureReason = "anchor_before_window";
+    logical = { from: 0, to: Math.min(count, visibleWidth) };
+  } else if (anchorTimeSec > lastTime) {
+    fallbackMode = "clamp_right";
+    failureReason = "anchor_after_window";
+    logical = { from: Math.max(0, count - visibleWidth), to: count };
+  } else {
+    fallbackMode = "anchor_center";
+    failureReason = null;
+    const anchorIndex = findBarIndexAtOrBefore(newCandles, anchorTimeSec);
+    logical = centeredVisibleLogicalRange(count, anchorIndex, visibleWidth);
+
+    if (windowStartIndex === 0 && logical.from < 0) {
+      fallbackMode = "clamp_left";
+      failureReason = "global_start_edge";
+      logical = { from: 0, to: Math.min(count, visibleWidth) };
+    }
+
+    if (
+      fullLength !== undefined &&
+      windowStartIndex + count >= fullLength &&
+      logical.to > count
+    ) {
+      fallbackMode = "clamp_right";
+      failureReason = failureReason ?? "global_end_edge";
+      logical = { from: Math.max(0, count - visibleWidth), to: count };
+    }
+  }
+
+  const clamped = clampLogicalRangeToCandleCount(logical, count);
+  return {
+    fallbackMode,
+    logicalFrom: clamped.from,
+    logicalTo: clamped.to,
+    failureReason,
+  };
+}
+
+function resolveRestoreBarTimes(
+  newCandles: readonly ChartBar[],
+  logical: { from: number; to: number },
+): {
+  fromTimeSec: number;
+  toTimeSec: number;
+  resolvedFrom: number;
+  resolvedTo: number;
+} | null {
+  if (newCandles.length === 0) {
+    return null;
+  }
+
+  const clamped = clampLogicalRangeToCandleCount(logical, newCandles.length);
+  const resolvedFrom = clamped.from;
+  const resolvedTo = Math.max(
+    resolvedFrom,
+    Math.min(newCandles.length - 1, clamped.to - 1),
+  );
+  const fromBar = newCandles[resolvedFrom];
+  const toBar = newCandles[resolvedTo];
+  if (fromBar === undefined || toBar === undefined) {
+    return null;
+  }
+
+  const firstTime = newCandles[0]!.time;
+  const lastTime = newCandles[newCandles.length - 1]!.time;
+  let fromTimeSec = fromBar.time;
+  let toTimeSec = toBar.time;
+  if (fromTimeSec > toTimeSec) {
+    [fromTimeSec, toTimeSec] = [toTimeSec, fromTimeSec];
+  }
+  fromTimeSec = Math.max(firstTime, Math.min(fromTimeSec, lastTime));
+  toTimeSec = Math.max(firstTime, Math.min(toTimeSec, lastTime));
+  if (fromTimeSec > toTimeSec) {
+    return null;
+  }
+
+  return { fromTimeSec, toTimeSec, resolvedFrom, resolvedTo };
+}
+
+/** Pure logical plan (tests / diagnostics); window-swap path never returns fitContent. */
+export function computeRestoredVisibleLogicalRange(
+  params: RestoreVisibleRangeAfterWindowShiftParams,
+): LegacyRestoreComputeResult {
+  const plan = computeWindowSwapRestorePlan(params);
+  if (plan === null) {
+    return { method: "no-op" };
+  }
+  return {
+    method: "logical-range",
+    logicalFrom: plan.logicalFrom,
+    logicalTo: plan.logicalTo,
+  };
+}
+
+function emitRestoreDebug(
+  step: (typeof DBG.chart)[keyof typeof DBG.chart],
+  debug: RestoreByTimeAnchorDebugMeta,
+): void {
+  dbgMark(step, debug as unknown as Record<string, unknown>);
+}
+
+/**
+ * Window-swap restore: time anchor → clamped setVisibleRange. Never fitContent.
  */
 export function restoreVisibleRangeByTimeAnchor(
   chart: IChartApi,
   params: RestoreVisibleRangeAfterWindowShiftParams,
 ): RestoreVisibleRangeResult {
-  const timeScale = chart.timeScale();
-  const logicalResult = computeRestoredVisibleLogicalRange(params);
+  const { newCandles, previousVisible } = params;
 
-  if (
-    logicalResult.method === "fitContent" ||
-    logicalResult.logicalFrom === undefined ||
-    logicalResult.logicalTo === undefined
-  ) {
-    timeScale.fitContent();
-    return { method: "fitContent" };
+  if (newCandles.length === 0) {
+    const debug = buildRestoreByTimeAnchorDebugMeta(params, {
+      fallbackMode: "no_op",
+      failureReason: "empty_candles",
+    });
+    emitRestoreDebug(DBG.chart.restoreByTimeAnchorFailed, debug);
+    return {
+      method: "no-op",
+      fallbackMode: "no_op",
+      failureReason: "empty_candles",
+      debug,
+    };
   }
 
-  const times = resolveRestoreBarTimes(params.newCandles, {
-    from: logicalResult.logicalFrom,
-    to: logicalResult.logicalTo,
+  const plan = computeWindowSwapRestorePlan(params);
+  if (plan === null) {
+    const debug = buildRestoreByTimeAnchorDebugMeta(params, {
+      fallbackMode: "no_op",
+      failureReason: "empty_candles",
+    });
+    emitRestoreDebug(DBG.chart.restoreByTimeAnchorFailed, debug);
+    return {
+      method: "no-op",
+      fallbackMode: "no_op",
+      failureReason: "empty_candles",
+      debug,
+    };
+  }
+
+  const times = resolveRestoreBarTimes(newCandles, {
+    from: plan.logicalFrom,
+    to: plan.logicalTo,
   });
+
   if (times === null) {
-    timeScale.fitContent();
-    return { method: "fitContent" };
+    const debug = buildRestoreByTimeAnchorDebugMeta(params, {
+      fallbackMode: plan.fallbackMode,
+      failureReason: "invalid_resolved_range",
+      resolvedFrom: plan.logicalFrom,
+      resolvedTo: plan.logicalTo,
+    });
+    emitRestoreDebug(DBG.chart.restoreByTimeAnchorFailed, debug);
+    return {
+      method: "no-op",
+      fallbackMode: plan.fallbackMode,
+      failureReason: "invalid_resolved_range",
+      logicalFrom: plan.logicalFrom,
+      logicalTo: plan.logicalTo,
+      debug,
+    };
   }
 
-  timeScale.setVisibleRange({
+  chart.timeScale().setVisibleRange({
     from: times.fromTimeSec as Time,
     to: times.toTimeSec as Time,
   });
 
+  const debug = buildRestoreByTimeAnchorDebugMeta(params, {
+    fallbackMode: plan.fallbackMode,
+    failureReason: plan.failureReason,
+    resolvedFrom: times.resolvedFrom,
+    resolvedTo: times.resolvedTo,
+  });
+  emitRestoreDebug(DBG.chart.restoreByTimeAnchorApplied, debug);
+
   return {
     method: "time-range",
-    logicalFrom: logicalResult.logicalFrom,
-    logicalTo: logicalResult.logicalTo,
+    fallbackMode: plan.fallbackMode,
+    failureReason: plan.failureReason,
+    logicalFrom: plan.logicalFrom,
+    logicalTo: plan.logicalTo,
+    fromTimeSec: times.fromTimeSec,
+    toTimeSec: times.toTimeSec,
+    debug,
   };
 }
 
-/** Apply restored visible range after Context-driven setData. */
+/** Apply restored visible range after Context-driven setData (time-based only). */
 export function restoreVisibleRangeAfterWindowShift(
   chart: IChartApi,
   params: RestoreVisibleRangeAfterWindowShiftParams,
 ): RestoreVisibleRangeResult {
-  const timeResult = restoreVisibleRangeByTimeAnchor(chart, params);
-  if (timeResult.method === "time-range") {
-    return timeResult;
-  }
-
-  const result = computeRestoredVisibleLogicalRange(params);
-  const timeScale = chart.timeScale();
-
-  if (result.method === "fitContent" || result.logicalFrom === undefined || result.logicalTo === undefined) {
-    timeScale.fitContent();
-    return result;
-  }
-
-  timeScale.setVisibleLogicalRange({
-    from: result.logicalFrom,
-    to: result.logicalTo,
-  });
-
-  return result;
+  return restoreVisibleRangeByTimeAnchor(chart, params);
 }
 
 /** True when a programmatic viewport restore should suppress pan shift requests. */

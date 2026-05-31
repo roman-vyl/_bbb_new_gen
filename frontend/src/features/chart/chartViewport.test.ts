@@ -4,8 +4,10 @@ import {
   buildTradeFocusIntentKey,
   centeredVisibleLogicalRange,
   computeRestoredVisibleLogicalRange,
+  computeWindowSwapRestorePlan,
   isStaleViewportCommand,
   isTradeCenterVisible,
+  restoreVisibleRangeAfterWindowShift,
   restoreVisibleRangeByTimeAnchor,
   shouldBlockViewportApplyWhilePendingRestore,
   shouldScheduleTradeViewportApply,
@@ -65,17 +67,25 @@ describe("visibleBarSpanFromLogicalRange", () => {
   });
 });
 
-describe("restoreVisibleRangeByTimeAnchor", () => {
-  it("applies visible time range (not logical indexes) as primary restore", () => {
-    const setVisibleRange = vi.fn();
-    const setVisibleLogicalRange = vi.fn();
-    const chart = {
-      timeScale: () => ({
-        fitContent: vi.fn(),
-        setVisibleRange,
-        setVisibleLogicalRange,
-      }),
-    } as unknown as IChartApi;
+function mockChartForRestore() {
+  const fitContent = vi.fn(() => {
+    throw new Error("fitContent must not run during window-swap restore");
+  });
+  const setVisibleRange = vi.fn();
+  const setVisibleLogicalRange = vi.fn();
+  const chart = {
+    timeScale: () => ({
+      fitContent,
+      setVisibleRange,
+      setVisibleLogicalRange,
+    }),
+  } as unknown as IChartApi;
+  return { chart, fitContent, setVisibleRange, setVisibleLogicalRange };
+}
+
+describe("window-swap restore never calls fitContent", () => {
+  it("anchor inside window restores around anchor time", () => {
+    const { chart, fitContent, setVisibleRange } = mockChartForRestore();
     const newCandles = makeBars(100);
     const anchorTimeSec = newCandles[50]!.time;
     const result = restoreVisibleRangeByTimeAnchor(chart, {
@@ -84,19 +94,62 @@ describe("restoreVisibleRangeByTimeAnchor", () => {
       previousVisible: { from: 40, to: 80 },
     });
     expect(result.method).toBe("time-range");
+    expect(result.fallbackMode).toBe("anchor_center");
+    expect(fitContent).not.toHaveBeenCalled();
     expect(setVisibleRange).toHaveBeenCalledTimes(1);
-    expect(setVisibleLogicalRange).not.toHaveBeenCalled();
+    const range = setVisibleRange.mock.calls[0]![0] as { from: number; to: number };
+    expect(range.from).toBeGreaterThanOrEqual(newCandles[0]!.time);
+    expect(range.to).toBeLessThanOrEqual(newCandles[99]!.time);
   });
 
-  it("does not throw when previousVisible uses fractional logical range (December pan regression)", () => {
-    const setVisibleRange = vi.fn();
-    const chart = {
-      timeScale: () => ({
-        fitContent: vi.fn(),
-        setVisibleRange,
-        setVisibleLogicalRange: vi.fn(),
-      }),
-    } as unknown as IChartApi;
+  it("anchor left of window clamps to left edge with visible span", () => {
+    const { chart, fitContent, setVisibleRange } = mockChartForRestore();
+    const newCandles = makeBars(100, 1_700_000_000);
+    const result = restoreVisibleRangeByTimeAnchor(chart, {
+      anchorTimeSec: newCandles[0]!.time - 10_000,
+      newCandles,
+      previousVisible: { from: 10, to: 50 },
+    });
+    expect(result.method).toBe("time-range");
+    expect(result.fallbackMode).toBe("clamp_left");
+    expect(fitContent).not.toHaveBeenCalled();
+    expect(setVisibleRange).toHaveBeenCalledTimes(1);
+    const range = setVisibleRange.mock.calls[0]![0] as { from: number; to: number };
+    expect(range.from).toBe(newCandles[0]!.time);
+  });
+
+  it("anchor right of window clamps to right edge with visible span", () => {
+    const { chart, fitContent, setVisibleRange } = mockChartForRestore();
+    const newCandles = makeBars(100, 1_700_000_000);
+    const result = restoreVisibleRangeByTimeAnchor(chart, {
+      anchorTimeSec: newCandles[99]!.time + 10_000,
+      newCandles,
+      previousVisible: { from: 10, to: 50 },
+    });
+    expect(result.method).toBe("time-range");
+    expect(result.fallbackMode).toBe("clamp_right");
+    expect(fitContent).not.toHaveBeenCalled();
+    expect(setVisibleRange).toHaveBeenCalledTimes(1);
+    const range = setVisibleRange.mock.calls[0]![0] as { from: number; to: number };
+    expect(range.to).toBe(newCandles[99]!.time);
+  });
+
+  it("empty candles is no-op without throw or fitContent", () => {
+    const { chart, fitContent, setVisibleRange } = mockChartForRestore();
+    const result = restoreVisibleRangeAfterWindowShift(chart, {
+      anchorTimeSec: 0,
+      newCandles: [],
+      previousVisible: { from: 0, to: 40 },
+    });
+    expect(result.method).toBe("no-op");
+    expect(result.fallbackMode).toBe("no_op");
+    expect(result.debug.failureReason).toBe("empty_candles");
+    expect(fitContent).not.toHaveBeenCalled();
+    expect(setVisibleRange).not.toHaveBeenCalled();
+  });
+
+  it("fractional logical range does not throw and never fitContent", () => {
+    const { chart, fitContent, setVisibleRange } = mockChartForRestore();
     const newCandles = makeBars(500, 1_700_000_000);
     const anchorTimeSec = newCandles[250]!.time;
     expect(() =>
@@ -108,24 +161,32 @@ describe("restoreVisibleRangeByTimeAnchor", () => {
         fullLength: 200_000,
       }),
     ).not.toThrow();
+    expect(fitContent).not.toHaveBeenCalled();
     expect(setVisibleRange).toHaveBeenCalledTimes(1);
   });
 
-  it("fitContent when anchor is outside candle window and bars cannot be resolved", () => {
-    const fitContent = vi.fn();
-    const chart = {
-      timeScale: () => ({
-        fitContent,
-        setVisibleRange: vi.fn(),
-        setVisibleLogicalRange: vi.fn(),
-      }),
-    } as unknown as IChartApi;
-    restoreVisibleRangeByTimeAnchor(chart, {
-      anchorTimeSec: 0,
-      newCandles: [],
-      previousVisible: { from: 0, to: 40 },
-    });
-    expect(fitContent).toHaveBeenCalled();
+  it("repeated left shifts at historical edge stay clamp_left without fitContent", () => {
+    const { chart, fitContent, setVisibleRange } = mockChartForRestore();
+    const newCandles = makeBars(50, 1_000_000);
+    for (let shift = 0; shift < 5; shift += 1) {
+      const plan = computeWindowSwapRestorePlan({
+        anchorTimeSec: 500_000,
+        newCandles,
+        previousVisible: { from: 12.3, to: 48.7 },
+        windowStartIndex: 0,
+        fullLength: 200_000,
+      });
+      expect(plan?.fallbackMode).toBe("clamp_left");
+      restoreVisibleRangeByTimeAnchor(chart, {
+        anchorTimeSec: 500_000,
+        newCandles,
+        previousVisible: { from: 12.3, to: 48.7 },
+        windowStartIndex: 0,
+        fullLength: 200_000,
+      });
+    }
+    expect(fitContent).not.toHaveBeenCalled();
+    expect(setVisibleRange).toHaveBeenCalledTimes(5);
   });
 });
 
@@ -157,13 +218,13 @@ describe("computeRestoredVisibleLogicalRange", () => {
     expect(result.logicalFrom).toBe(0);
   });
 
-  it("falls back to fitContent on invalid range", () => {
+  it("returns no-op plan on empty candles (never fitContent)", () => {
     const result = computeRestoredVisibleLogicalRange({
       anchorTimeSec: 0,
       newCandles: [],
       previousVisible: { from: 0, to: 0 },
     });
-    expect(result.method).toBe("fitContent");
+    expect(result.method).toBe("no-op");
   });
 });
 
