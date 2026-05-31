@@ -80,6 +80,7 @@ import {
   isTraceResponseTruncated,
   mergeDisplayChunkFromResponse,
 } from "@/features/chart/signalTraceDisplayCache";
+import { sliceTraceDisplayForCandles } from "@/features/chart/traceDisplayApply";
 import {
   defaultClosedTradeSelection,
   deriveSelectedVariant,
@@ -122,6 +123,7 @@ export type PendingViewportRestore = {
   previousVisible: ChartLogicalRange;
   windowStartIndex: number;
   fullLength: number;
+  shiftSeq: number;
 };
 
 type WorkbenchState = {
@@ -147,6 +149,8 @@ type WorkbenchState = {
   htfAuxEmaOverlayStale: boolean;
   chartDisplayComponentEvents: ComponentEvent[];
   componentEventsStale: boolean;
+  displayApplyRevision: number;
+  renderWindowShiftSeq: number;
   chartShowEntryBlockMarkers: boolean;
   setChartShowEntryBlockMarkers: (show: boolean) => void;
   chartShowExitSignalMarkers: boolean;
@@ -239,6 +243,9 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
   const signalTraceDisplayCacheRef = useRef(createSignalTraceDisplayCache());
   const signalTraceBundleSessionCacheRef = useRef(createSignalTraceBundleSessionCache());
   const [displayCacheVersion, setDisplayCacheVersion] = useState(0);
+  const [displayApplyRevision, setDisplayApplyRevision] = useState(0);
+  const [renderWindowShiftSeq, setRenderWindowShiftSeq] = useState(0);
+  const [chartDisplayComponentEvents, setChartDisplayComponentEvents] = useState<ComponentEvent[]>([]);
   const [chartShowEntryBlockMarkers, setChartShowEntryBlockMarkers] = useState(true);
   const [chartShowExitSignalMarkers, setChartShowExitSignalMarkers] = useState(true);
   const [runs, setRuns] = useState<RunSummary[]>([]);
@@ -272,6 +279,8 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
   const [pendingViewportRestore, setPendingViewportRestore] =
     useState<PendingViewportRestore | null>(null);
   const skipTradeWindowRebuildRef = useRef(false);
+  const renderWindowShiftSeqRef = useRef(0);
+  const chartViewCandlesRef = useRef<ChartBar[]>([]);
 
   useEffect(() => {
     selectedVariantKeyRef.current = selectedVariantKey;
@@ -742,11 +751,15 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
         windowStartIndex: next.windowStartIndex,
         windowEndIndex: next.windowEndIndex,
       });
+      const shiftSeq = renderWindowShiftSeqRef.current + 1;
+      renderWindowShiftSeqRef.current = shiftSeq;
+      setRenderWindowShiftSeq(shiftSeq);
       setPendingViewportRestore({
         anchorTimeSec,
         previousVisible: visible,
         windowStartIndex: boundsBefore.windowStartIndex,
         fullLength: cachedBundle.candles.length,
+        shiftSeq,
       });
       bumpRenderWindow();
       dbgScheduleShiftFlush();
@@ -844,6 +857,8 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     };
   }, [chartWindowSlice, selectedTradeEntryTimeMs]);
 
+  chartViewCandlesRef.current = chartView.candles;
+
   useEffect(() => {
     intendedMarketCacheKeyRef.current = intendedMarketCacheKey;
   }, [intendedMarketCacheKey]);
@@ -899,6 +914,45 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       return [];
     }
   }, [selectedVariant, chartTimeframe, effectiveContextOverlayRef]);
+
+  const applyTraceDisplayForCurrentWindow = useCallback(() => {
+    const slice = sliceTraceDisplayForCandles(
+      signalTraceDisplayCacheRef.current,
+      chartViewCandlesRef.current,
+    );
+    if (slice === null) {
+      setChartDisplayComponentEvents([]);
+      return;
+    }
+
+    setChartDisplayComponentEvents(slice.events);
+    setDisplayApplyRevision((revision) => revision + 1);
+
+    dbgMark(DBG.traceDisplay.applyCurrentWindow, {
+      fromSec: slice.fromSec,
+      toSec: slice.toSec,
+      eventCount: slice.events.length,
+      htfTimeCount: slice.htfSlice.times.length,
+    });
+
+    const htfSpecCount = auxEmaSpecs.filter((spec) => spec.source === "htf_trace").length;
+    if (htfSpecCount === 0) {
+      return;
+    }
+
+    if (slice.htfSlice.times.length > 0 && slice.htfSlice.htf_context) {
+      const htfOverlays = auxEmaSpecs
+        .filter((spec) => spec.source === "htf_trace")
+        .map((spec) =>
+          auxOverlayFromHtfSlice(spec, slice.htfSlice.times, slice.htfSlice.htf_context!),
+        )
+        .filter((overlay): overlay is ChartAuxEmaOverlay => overlay !== null);
+      setAuxEmaOverlays((prev) => {
+        const nonHtf = prev.filter((overlay) => !overlay.id.startsWith("htf_"));
+        return mergeAuxOverlayPoints(nonHtf, htfOverlays);
+      });
+    }
+  }, [auxEmaSpecs]);
 
   useEffect(() => {
     if (marketLoadStatus !== "ready" || report === null || auxEmaSpecs.length === 0) {
@@ -973,15 +1027,6 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     );
 
     if (htfSlice.times.length > 0 && htfSlice.htf_context) {
-      const htfOverlays = auxEmaSpecs
-        .filter((spec) => spec.source === "htf_trace")
-        .map((spec) => auxOverlayFromHtfSlice(spec, htfSlice.times, htfSlice.htf_context))
-        .filter((overlay): overlay is ChartAuxEmaOverlay => overlay !== null);
-
-      setAuxEmaOverlays((prev) => {
-        const nonHtf = prev.filter((overlay) => !overlay.id.startsWith("htf_"));
-        return mergeAuxOverlayPoints(nonHtf, htfOverlays);
-      });
       return;
     }
 
@@ -1011,6 +1056,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     auxEmaSpecs,
     chartView.candles,
     displayCacheVersion,
+    displayApplyRevision,
   ]);
 
   const traceDisplayCacheKey = useMemo(() => {
@@ -1162,17 +1208,9 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     return [...bffOverlays, ...htfDisplay];
   }, [chartView.auxEmaOverlays, chartView.candles]);
 
-  const chartDisplayComponentEvents = useMemo(() => {
-    if (renderWindowBounds === null) {
-      return [];
-    }
-    const { fromSec, toSec } = renderWindowBounds;
-    return dbgTimedSync(
-      DBG.traceDisplay.sliceEvents,
-      () => signalTraceDisplayCacheRef.current.sliceEventsForWindow(fromSec, toSec),
-      () => ({ fromSec, toSec }),
-    );
-  }, [renderWindowBounds, displayCacheVersion]);
+  useEffect(() => {
+    applyTraceDisplayForCurrentWindow();
+  }, [renderWindowBounds, displayCacheVersion, applyTraceDisplayForCurrentWindow]);
 
   const componentEventsStale = useMemo(() => {
     if (renderWindowBounds === null) {
@@ -1181,11 +1219,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     if (displayCacheCoversWindow) {
       return false;
     }
-    const cachedCount = signalTraceDisplayCacheRef.current.sliceEventsForWindow(
-      renderWindowBounds.fromSec,
-      renderWindowBounds.toSec,
-    ).length;
-    if (cachedCount > 0 || (signalTrace?.component_events?.length ?? 0) > 0) {
+    if (chartDisplayComponentEvents.length > 0 || (signalTrace?.component_events?.length ?? 0) > 0) {
       return signalTraceStatus === "loading" || !displayCacheCoversWindow;
     }
     return false;
@@ -1193,6 +1227,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     renderWindowBounds,
     displayCacheCoversWindow,
     displayCacheVersion,
+    chartDisplayComponentEvents.length,
     signalTrace?.component_events,
     signalTraceStatus,
   ]);
@@ -1282,6 +1317,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
 
     if (decision.action === "skip_display_cache_hit") {
       dbgMark(DBG.traceDisplay.cacheHit, { windowKey });
+      applyTraceDisplayForCurrentWindow();
       return;
     }
 
@@ -1290,14 +1326,23 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       if (sessionBundle === null) {
         return;
       }
+      dbgTimedSync(
+        DBG.traceDisplay.mergeChunk,
+        () => {
+          mergeDisplayChunkFromResponse(signalTraceDisplayCacheRef.current, sessionBundle);
+        },
+        () => ({
+          eventCount: sessionBundle.component_events?.length ?? 0,
+          timeCount: sessionBundle.times.length,
+        }),
+      );
+      setDisplayCacheVersion((version) => version + 1);
       setSignalTrace(sessionBundle);
       setLoadedSignalTraceWindowKey(windowKey);
       setSignalTraceStatus("ready");
       setSignalTraceError(null);
       dbgMark(DBG.traceDisplay.sessionHit, { windowKey });
-      if (displayCacheCoversWindow) {
-        dbgMark(DBG.traceDisplay.cacheHit, { windowKey });
-      }
+      applyTraceDisplayForCurrentWindow();
       return;
     }
 
@@ -1347,6 +1392,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
           }),
         );
         setDisplayCacheVersion((version) => version + 1);
+        applyTraceDisplayForCurrentWindow();
         dbgMark("wb.signal_trace_merge", {
           windowKey,
           truncated,
@@ -1392,6 +1438,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     displayCacheCoversWindow,
     loadedSignalTraceWindowKey,
     signalTraceStatus,
+    applyTraceDisplayForCurrentWindow,
   ]);
 
   const symbol = report?.symbol ?? "—";
@@ -1421,6 +1468,8 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       htfAuxEmaOverlayStale,
       chartDisplayComponentEvents,
       componentEventsStale,
+      displayApplyRevision,
+      renderWindowShiftSeq,
       chartShowEntryBlockMarkers,
       setChartShowEntryBlockMarkers,
       chartShowExitSignalMarkers,
@@ -1487,6 +1536,8 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       htfAuxEmaOverlayStale,
       chartDisplayComponentEvents,
       componentEventsStale,
+      displayApplyRevision,
+      renderWindowShiftSeq,
       chartShowEntryBlockMarkers,
       chartShowExitSignalMarkers,
       chartView.mode,
@@ -1526,6 +1577,8 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       onRenderWindowShiftRequest,
       pendingViewportRestore,
       clearPendingViewportRestore,
+      displayApplyRevision,
+      renderWindowShiftSeq,
     ],
   );
 

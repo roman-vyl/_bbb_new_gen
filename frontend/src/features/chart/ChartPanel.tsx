@@ -156,7 +156,7 @@ export function ChartPanel() {
           candles: plan.candles,
           centerTimeSec: plan.centerTimeSec,
         }),
-      () => ({ mode: plan.mode, candleCount: plan.candles.length }),
+      () => ({ mode: plan.mode, candleCount: plan.candles.length, tradeFocus: plan.mode === "around-trade" }),
     );
 
     window.setTimeout(() => {
@@ -167,15 +167,15 @@ export function ChartPanel() {
   }, []);
 
   const scheduleViewportApply = useCallback(
-    (chart: IChartApi) => {
-      const run = () => applyViewportFromPlan(chart);
+    (chart: IChartApi, options?: { tradeFocus?: boolean }) => {
+      const run = () => {
+        if (options?.tradeFocus) {
+          dbgMark(DBG.chart.viewportApplyTradeFocus);
+        }
+        applyViewportFromPlan(chart);
+      };
       requestAnimationFrame(() => {
         run();
-        requestAnimationFrame(() => {
-          run();
-          window.setTimeout(run, 50);
-          window.setTimeout(run, 150);
-        });
       });
     },
     [applyViewportFromPlan],
@@ -259,12 +259,18 @@ export function ChartPanel() {
 
     clearPendingViewportRestore,
 
+    displayApplyRevision,
+
+    renderWindowShiftSeq,
+
   } = useWorkbench();
 
   const onRenderWindowShiftRequestRef = useRef(onRenderWindowShiftRequest);
   onRenderWindowShiftRequestRef.current = onRenderWindowShiftRequest;
   const chartCandlesRef = useRef(chartCandles);
   chartCandlesRef.current = chartCandles;
+  const userPanActiveRef = useRef(false);
+  const lastTradeFocusKeyRef = useRef<string | null>(null);
 
 
 
@@ -412,15 +418,19 @@ export function ChartPanel() {
       : `OHLC · overlay EMA requires anchor_stack in strategy_spec${auxNote}${htfStaleNote}`;
 
     const traceNote =
-
       lanesSignalTraceStatus === "ready"
-
         ? " · signal trace loaded"
-
         : lanesSignalTraceStatus === "loading"
+          ? " · Loading events/HTF context…"
+          : "";
 
-          ? " · loading signal trace…"
-
+    const traceLoadingHint =
+      lanesSignalTraceStatus === "loading" &&
+      chartDisplayComponentEvents.length === 0 &&
+      !componentEventsStale
+        ? " · Loading events/HTF context…"
+        : componentEventsStale && chartDisplayComponentEvents.length === 0
+          ? " · Loading events/HTF context…"
           : "";
 
     const parts = [
@@ -430,6 +440,7 @@ export function ChartPanel() {
       emaNote,
       "trade markers from report",
       traceNote,
+      traceLoadingHint,
       componentEventNote,
       componentStaleNote,
       htfAlignedEventNote,
@@ -596,6 +607,9 @@ export function ChartPanel() {
           return;
         }
         const shifted = onRenderWindowShiftRequestRef.current(range, anchorTimeSec);
+        if (!isApplyingViewportRef.current) {
+          userPanActiveRef.current = true;
+        }
         dbgMark(shifted ? DBG.pan.shiftRequested : DBG.pan.noShift);
       }, 100);
     };
@@ -709,6 +723,15 @@ export function ChartPanel() {
       return;
     }
 
+    if (pendingViewportRestore.shiftSeq !== renderWindowShiftSeq) {
+      dbgMark(DBG.chart.viewportRestoreAfterShiftSkippedStale, {
+        expected: pendingViewportRestore.shiftSeq,
+        current: renderWindowShiftSeq,
+      });
+      clearPendingViewportRestore();
+      return;
+    }
+
     isApplyingViewportRef.current = true;
     suppressPanShiftUntilRef.current = Date.now() + 300;
 
@@ -734,15 +757,32 @@ export function ChartPanel() {
     window.setTimeout(() => {
       isApplyingViewportRef.current = false;
     }, 300);
-  }, [pendingViewportRestore, chartCandles, clearPendingViewportRestore]);
+  }, [pendingViewportRestore, chartCandles, clearPendingViewportRestore, renderWindowShiftSeq]);
 
   useEffect(() => {
+    userPanActiveRef.current = false;
+    lastTradeFocusKeyRef.current = null;
     viewportKeyRef.current = null;
-  }, [selectedVariantKey]);
+  }, [selectedTradeId, selectedVariantKey]);
 
   useEffect(() => {
     const chart = chartRef.current;
     if (!chart || chartDataKey === "" || chartCandles.length === 0) return;
+
+    const tradeFocusKey = `${selectedTradeId ?? "none"}|${selectedVariantKey}|${viewportApplyKey}`;
+    const tradeFocusChanged = lastTradeFocusKeyRef.current !== tradeFocusKey;
+    lastTradeFocusKeyRef.current = tradeFocusKey;
+
+    if (userPanActiveRef.current && !tradeFocusChanged) {
+      dbgMark(DBG.chart.viewportApplySkippedUserPan, { mode: chartViewMode });
+      viewportPlanRef.current = {
+        key: chartDataKey,
+        mode: chartViewMode,
+        centerTimeSec: chartViewCenterTimeSec,
+        candles: chartCandles,
+      };
+      return;
+    }
 
     viewportPlanRef.current = {
       key: chartDataKey,
@@ -750,7 +790,13 @@ export function ChartPanel() {
       centerTimeSec: chartViewCenterTimeSec,
       candles: chartCandles,
     };
-    scheduleViewportApply(chart);
+
+    if (viewportKeyRef.current === viewportApplyKey && !tradeFocusChanged) {
+      return;
+    }
+    viewportKeyRef.current = viewportApplyKey;
+
+    scheduleViewportApply(chart, { tradeFocus: chartViewMode === "around-trade" && tradeFocusChanged });
   }, [
     selectedTradeId,
     selectedVariantKey,
@@ -758,7 +804,6 @@ export function ChartPanel() {
     chartViewMode,
     chartDataKey,
     viewportApplyKey,
-    chartCandles,
     scheduleViewportApply,
   ]);
 
@@ -855,6 +900,7 @@ export function ChartPanel() {
     selectedVariant,
     selectedTradeId,
     chartDisplayComponentEvents,
+    displayApplyRevision,
     chartShowEntryBlockMarkers,
     chartShowExitSignalMarkers,
   ]);

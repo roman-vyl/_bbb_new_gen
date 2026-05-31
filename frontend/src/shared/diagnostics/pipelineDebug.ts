@@ -44,6 +44,7 @@ export const PIPELINE_DEBUG_STEPS = {
     cacheHit: "wb.trace_display.cache_hit",
     cacheMiss: "wb.trace_display.cache_miss",
     sessionHit: "wb.signal_trace.session_hit",
+    applyCurrentWindow: "wb.trace_display.apply_current_window",
     mergeChunk: "wb.trace_display.merge_chunk",
     sliceEvents: "wb.trace_display.slice_events",
     sliceHtf: "wb.trace_display.slice_htf",
@@ -54,7 +55,10 @@ export const PIPELINE_DEBUG_STEPS = {
     setDataAuxHtf: "chart.setData.aux_htf",
     markersRebuild: "chart.markers.rebuild",
     viewportApply: "chart.viewport.apply",
+    viewportApplyTradeFocus: "chart.viewport.apply_trade_focus",
+    viewportApplySkippedUserPan: "chart.viewport.apply_skipped_user_pan",
     viewportRestoreAfterShift: "chart.viewport.restore_after_shift",
+    viewportRestoreAfterShiftSkippedStale: "chart.viewport.restore_after_shift_skipped_stale",
   },
 } as const;
 
