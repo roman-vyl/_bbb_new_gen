@@ -164,9 +164,9 @@ describe("buildChartViewWindow", () => {
   });
 
   it("centers trade focus up to render limit when cache is larger", () => {
-    const candles = makeBars(10_000, 1_000_000);
+    const candles = makeBars(60_000, 1_000_000);
     const emaOverlays = makeOverlays(candles);
-    const entryMs = candles[5000].time * 1000;
+    const entryMs = candles[30_000].time * 1000;
     const view = buildChartViewWindow({
       candles,
       emaOverlays,
@@ -174,7 +174,7 @@ describe("buildChartViewWindow", () => {
     });
     expect(view.mode).toBe("around-trade");
     expect(view.candles).toHaveLength(CHART_RENDER_BAR_LIMIT);
-    expect(view.candles.some((b) => b.time === candles[5000].time)).toBe(true);
+    expect(view.candles.some((b) => b.time === candles[30_000].time)).toBe(true);
     expect(view.firstTimeSec).toBeGreaterThan(candles[0].time);
     expect(view.lastTimeSec).toBeLessThan(candles[candles.length - 1].time);
   });

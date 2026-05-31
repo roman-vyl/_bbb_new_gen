@@ -43,7 +43,17 @@ import {
   anchorStackPeriodsFromStrategySpec,
 } from "@/features/chart/anchorStackFromSpec";
 import { mergeAuxOverlayPoints } from "@/features/chart/chartAuxEmaOverlays";
-import { buildChartViewWindow, emptyChartViewWindow, type ChartViewMode } from "@/features/chart/chartViewWindow";
+import {
+  createChartDataWindowManager,
+  type ChartDataWindowManager,
+} from "@/features/chart/chartDataWindowManager";
+import {
+  emptyChartViewWindow,
+  findBarIndexAtOrBefore,
+  type ChartViewMode,
+  type ChartViewWindow,
+} from "@/features/chart/chartViewWindow";
+import type { ChartLogicalRange } from "@/features/chart/chartViewport";
 import {
   auxOverlayFromHtfTrace,
   collectAuxEmaSpecs,
@@ -81,6 +91,13 @@ export type ConfigLoadStatus = "loading" | "ready" | "empty" | "error";
 export type MarketLoadStatus = "idle" | "loading" | "ready" | "error";
 export type CandlesSource = "market" | "unavailable";
 export type { SignalTraceLoadStatus };
+
+export type PendingViewportRestore = {
+  anchorTimeSec: number;
+  previousVisible: ChartLogicalRange;
+  windowStartIndex: number;
+  fullLength: number;
+};
 
 type WorkbenchState = {
   symbol: string;
@@ -143,6 +160,9 @@ type WorkbenchState = {
   contextOverlayRefOptions: string[];
   selectedBarTimeSec: number | null;
   selectBar: (timeSec: number | null) => void;
+  onRenderWindowShiftRequest: (visible: ChartLogicalRange, anchorTimeSec: number) => void;
+  pendingViewportRestore: PendingViewportRestore | null;
+  clearPendingViewportRestore: () => void;
 };
 
 const WorkbenchContext = createContext<WorkbenchState | null>(null);
@@ -208,6 +228,11 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
   const marketLoadGenRef = useRef(0);
   const intendedMarketCacheKeyRef = useRef<MarketCacheKey | null>(null);
   const marketFetchInFlightKeyRef = useRef<MarketCacheKey | null>(null);
+  const renderWindowManagerRef = useRef<ChartDataWindowManager>(createChartDataWindowManager());
+  const [renderWindowRevision, setRenderWindowRevision] = useState(0);
+  const [pendingViewportRestore, setPendingViewportRestore] =
+    useState<PendingViewportRestore | null>(null);
+  const skipTradeWindowRebuildRef = useRef(false);
 
   useEffect(() => {
     selectedVariantKeyRef.current = selectedVariantKey;
@@ -565,6 +590,97 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
 
   const cachedBundle = marketCacheKey !== null ? getMarketCache(marketCacheKey) : undefined;
 
+  const bumpRenderWindow = useCallback(() => {
+    setRenderWindowRevision((r) => r + 1);
+  }, []);
+
+  const clearPendingViewportRestore = useCallback(() => {
+    setPendingViewportRestore(null);
+  }, []);
+
+  const applyRenderWindowForTrade = useCallback(
+    (entryTimeMs: number | null, forceRebuild: boolean) => {
+      const manager = renderWindowManagerRef.current;
+      if (!cachedBundle || cachedBundle.candles.length === 0) {
+        return false;
+      }
+      if (entryTimeMs === null) {
+        const changed = manager.buildTailWindow();
+        if (changed !== null) {
+          bumpRenderWindow();
+        }
+        return changed !== null;
+      }
+      const entryIndex = findBarIndexAtOrBefore(
+        cachedBundle.candles,
+        Math.floor(entryTimeMs / 1000),
+      );
+      if (!forceRebuild && !manager.shouldRebuildForTrade(entryIndex)) {
+        skipTradeWindowRebuildRef.current = true;
+        return false;
+      }
+      skipTradeWindowRebuildRef.current = false;
+      const changed = manager.buildWindowAroundIndex(entryIndex);
+      if (changed !== null) {
+        bumpRenderWindow();
+      }
+      return changed !== null;
+    },
+    [cachedBundle, bumpRenderWindow],
+  );
+
+  useEffect(() => {
+    if (!cachedBundle || marketLoadStatus === "error") {
+      renderWindowManagerRef.current.reset(0);
+      bumpRenderWindow();
+      return;
+    }
+    const manager = renderWindowManagerRef.current;
+    manager.reset(cachedBundle.candles.length);
+    if (selectedTradeEntryTimeMs !== null) {
+      applyRenderWindowForTrade(selectedTradeEntryTimeMs, true);
+    } else {
+      manager.buildTailWindow();
+      bumpRenderWindow();
+    }
+  }, [
+    cachedBundle,
+    marketLoadStatus,
+    selectedRunId,
+    selectedVariantKey,
+    marketCacheKey,
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reset only on run/variant/bundle identity
+  ]);
+
+  useEffect(() => {
+    if (!cachedBundle || marketLoadStatus === "error") {
+      return;
+    }
+    applyRenderWindowForTrade(selectedTradeEntryTimeMs, false);
+  }, [selectedTradeEntryTimeMs, cachedBundle, marketLoadStatus, applyRenderWindowForTrade]);
+
+  const onRenderWindowShiftRequest = useCallback(
+    (visible: ChartLogicalRange, anchorTimeSec: number) => {
+      const manager = renderWindowManagerRef.current;
+      if (!cachedBundle || cachedBundle.candles.length === 0) {
+        return;
+      }
+      const boundsBefore = manager.getWindowIndices();
+      const shifted = manager.maybeShiftWindowForVisibleRange(visible);
+      if (shifted === null) {
+        return;
+      }
+      setPendingViewportRestore({
+        anchorTimeSec,
+        previousVisible: visible,
+        windowStartIndex: boundsBefore.windowStartIndex,
+        fullLength: cachedBundle.candles.length,
+      });
+      bumpRenderWindow();
+    },
+    [cachedBundle, bumpRenderWindow],
+  );
+
   const intendedMarketCacheKey = useMemo((): MarketCacheKey | null => {
     if (report === null || selectedVariant === null) return null;
     try {
@@ -580,6 +696,45 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       return null;
     }
   }, [report, selectedVariant, chartTimeframe, reloadToken]);
+
+  const chartView = useMemo((): ChartViewWindow => {
+    if (!cachedBundle || marketLoadStatus === "error") {
+      return emptyChartViewWindow();
+    }
+    const manager = renderWindowManagerRef.current;
+    manager.setFullLength(cachedBundle.candles.length);
+    const intendedBundle =
+      intendedMarketCacheKey !== null ? getMarketCache(intendedMarketCacheKey) : undefined;
+    const anchorEmaOverlays = intendedBundle?.ema_overlays ?? [];
+    const candles = manager.sliceCandles(cachedBundle.candles);
+    const emaOverlays = manager.sliceEmaOverlays(anchorEmaOverlays, cachedBundle.candles);
+    const auxSliced = manager.sliceAuxOverlays(auxEmaOverlays, cachedBundle.candles);
+    const mode: ChartViewMode =
+      selectedTradeEntryTimeMs !== null ? "around-trade" : "tail";
+    const centerTimeSec =
+      selectedTradeEntryTimeMs !== null
+        ? Math.floor(selectedTradeEntryTimeMs / 1000)
+        : null;
+    const count = candles.length;
+    return {
+      mode,
+      candles,
+      emaOverlays,
+      auxEmaOverlays: auxSliced,
+      centerTimeSec,
+      firstTimeSec: count > 0 ? candles[0]!.time : null,
+      lastTimeSec: count > 0 ? candles[count - 1]!.time : null,
+      count,
+    };
+  }, [
+    cachedBundle,
+    marketLoadStatus,
+    selectedTradeEntryTimeMs,
+    auxEmaOverlays,
+    intendedMarketCacheKey,
+    marketCacheKey,
+    renderWindowRevision,
+  ]);
 
   useEffect(() => {
     intendedMarketCacheKeyRef.current = intendedMarketCacheKey;
@@ -719,30 +874,6 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       setAuxEmaOverlays((prev) => prev.filter((overlay) => !overlay.id.startsWith("htf_")));
     }
   }, [signalTrace, signalTraceStatus, auxEmaSpecs]);
-
-  const chartView = useMemo(() => {
-    // Keep chart focus usable while a new variant's market bundle loads: marketCacheKey
-    // still points at the previous cached bundle (same run candles) until fetch completes.
-    if (!cachedBundle || marketLoadStatus === "error") {
-      return emptyChartViewWindow();
-    }
-    const intendedBundle =
-      intendedMarketCacheKey !== null ? getMarketCache(intendedMarketCacheKey) : undefined;
-    const anchorEmaOverlays = intendedBundle?.ema_overlays ?? [];
-    return buildChartViewWindow({
-      candles: cachedBundle.candles,
-      emaOverlays: anchorEmaOverlays,
-      auxEmaOverlays,
-      selectedTradeEntryTimeMs,
-    });
-  }, [
-    cachedBundle,
-    marketLoadStatus,
-    selectedTradeEntryTimeMs,
-    auxEmaOverlays,
-    intendedMarketCacheKey,
-    marketCacheKey,
-  ]);
 
   useEffect(() => {
     lastSlicedHtfOverlaysRef.current = [];
@@ -1029,6 +1160,9 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       contextOverlayRefOptions,
       selectedBarTimeSec,
       selectBar,
+      onRenderWindowShiftRequest,
+      pendingViewportRestore,
+      clearPendingViewportRestore,
     }),
     [
       symbol,
@@ -1084,6 +1218,9 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       contextOverlayRefOptions,
       selectedBarTimeSec,
       selectBar,
+      onRenderWindowShiftRequest,
+      pendingViewportRestore,
+      clearPendingViewportRestore,
     ],
   );
 
