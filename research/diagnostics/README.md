@@ -23,13 +23,11 @@ Module API: `research.diagnostics.pipeline_trace` — `dbg_root`, `dbg_span`, `d
 
 ## Frontend (Workbench)
 
-In `frontend/.env.local`:
+Три слоя — [`debug/README.md`](../../debug/README.md):
 
-```
-VITE_EMA_PIPELINE_DEBUG=true
-```
-
-Restart Vite. Use Composer → Run backtest → open Chart. Filter console for `[pipeline]`. After signal trace loads, a summary table is printed; or run `__pipelineDebugFlush()` in DevTools.
+1. **Module** — `pipelineDebug.ts`; start via `scripts\dev-workbench-debug-mode.bat` (or `.env.local`); no-op when off  
+2. **Console** — UI scenario → `__pipelineDebugFlush("scenario")` → table  
+3. **Manual file** — `copy(JSON.stringify(__pipelineDebugExport()))` → `debug/reports/` (no auto write)
 
 ## OpenSpec
 

@@ -1,0 +1,265 @@
+[
+  {
+    "step": "api.fetchChartMarketBundle",
+    "count": 1,
+    "total_ms": 25708.9,
+    "max_ms": 25708.9,
+    "avg_ms": 25708.9,
+    "last_meta": {}
+  },
+  {
+    "step": "api.fetchRunReport",
+    "count": 1,
+    "total_ms": 62.2,
+    "max_ms": 62.2,
+    "avg_ms": 62.2,
+    "last_meta": {}
+  },
+  {
+    "step": "api.fetchSignalTrace",
+    "count": 10,
+    "total_ms": 442148.8,
+    "max_ms": 93165.6,
+    "avg_ms": 44214.9,
+    "last_meta": {}
+  },
+  {
+    "step": "chart.markers.rebuild",
+    "count": 10,
+    "total_ms": 50.9,
+    "max_ms": 8.8,
+    "avg_ms": 5.1,
+    "last_meta": {
+      "tradeMarkerCount": 49,
+      "componentMarkerCount": 1002
+    }
+  },
+  {
+    "step": "chart.setData.anchor_ema",
+    "count": 8,
+    "total_ms": 4168.1,
+    "max_ms": 965.8,
+    "avg_ms": 521,
+    "last_meta": {
+      "overlayCount": 3
+    }
+  },
+  {
+    "step": "chart.setData.aux_htf",
+    "count": 8,
+    "total_ms": 930.6,
+    "max_ms": 409.2,
+    "avg_ms": 116.3,
+    "last_meta": {
+      "overlayCount": 3
+    }
+  },
+  {
+    "step": "chart.setData.candles",
+    "count": 8,
+    "total_ms": 2746.4,
+    "max_ms": 409.6,
+    "avg_ms": 343.3,
+    "last_meta": {
+      "barCount": 50000
+    }
+  },
+  {
+    "step": "chart.viewport.apply",
+    "count": 79,
+    "total_ms": 6.9,
+    "max_ms": 0.7,
+    "avg_ms": 0.1,
+    "last_meta": {
+      "mode": "around-trade",
+      "candleCount": 50000
+    }
+  },
+  {
+    "step": "chart.viewport.restore_after_shift",
+    "count": 7,
+    "total_ms": 0.7,
+    "max_ms": 0.3,
+    "avg_ms": 0.1,
+    "last_meta": {
+      "barCount": 50000,
+      "method": "logical-range"
+    }
+  },
+  {
+    "step": "wb.chart_window_slice",
+    "count": 34,
+    "total_ms": 1481,
+    "max_ms": 65.1,
+    "avg_ms": 43.6,
+    "last_meta": {
+      "barCount": 50000,
+      "overlayCount": 6
+    }
+  },
+  {
+    "step": "wb.load.market_bundle_ready",
+    "count": 1,
+    "total_ms": 0,
+    "max_ms": 0,
+    "avg_ms": 0,
+    "last_meta": {
+      "barCount": 646029
+    }
+  },
+  {
+    "step": "wb.load.report_ready",
+    "count": 1,
+    "total_ms": 0,
+    "max_ms": 0,
+    "avg_ms": 0,
+    "last_meta": {
+      "runId": "2026-05-30T203157Z_ema_pullback_BTCUSDT_5m"
+    }
+  },
+  {
+    "step": "wb.market_fetch_skip_in_flight",
+    "count": 1,
+    "total_ms": 0,
+    "max_ms": 0,
+    "avg_ms": 0,
+    "last_meta": {
+      "key": "2026-05-30T203157Z_ema_pullback_BTCUSDT_5m|BTCUSDT|5m|instance_1|100|200|500|1585132500000|1778940900000|0"
+    }
+  },
+  {
+    "step": "wb.market_fetch_start",
+    "count": 1,
+    "total_ms": 0,
+    "max_ms": 0,
+    "avg_ms": 0,
+    "last_meta": {
+      "key": "2026-05-30T203157Z_ema_pullback_BTCUSDT_5m|BTCUSDT|5m|instance_1|100|200|500|1585132500000|1778940900000|0"
+    }
+  },
+  {
+    "step": "wb.pan.no_shift",
+    "count": 113,
+    "total_ms": 0,
+    "max_ms": 0,
+    "avg_ms": 0
+  },
+  {
+    "step": "wb.pan.shift_requested",
+    "count": 7,
+    "total_ms": 0,
+    "max_ms": 0,
+    "avg_ms": 0
+  },
+  {
+    "step": "wb.pan.suppressed_programmatic",
+    "count": 66,
+    "total_ms": 0,
+    "max_ms": 0,
+    "avg_ms": 0
+  },
+  {
+    "step": "wb.render_window.init",
+    "count": 1,
+    "total_ms": 0,
+    "max_ms": 0,
+    "avg_ms": 0,
+    "last_meta": {
+      "fullLength": 646029,
+      "variant": "instance_1"
+    }
+  },
+  {
+    "step": "wb.render_window.shift",
+    "count": 120,
+    "total_ms": 1.8,
+    "max_ms": 0.2,
+    "avg_ms": 0,
+    "last_meta": {}
+  },
+  {
+    "step": "wb.render_window.trade_select",
+    "count": 2,
+    "total_ms": 0.5,
+    "max_ms": 0.4,
+    "avg_ms": 0.2,
+    "last_meta": {
+      "rebuilt": false,
+      "skipped": false
+    }
+  },
+  {
+    "step": "wb.signal_trace_decision",
+    "count": 13,
+    "total_ms": 0,
+    "max_ms": 0,
+    "avg_ms": 0,
+    "last_meta": {
+      "action": "skip_already_loading",
+      "windowKey": "2026-05-30T203157Z_ema_pullback_BTCUSDT_5m:instance_1:1763941200:1778940900:htf_1",
+      "displayCacheCoversWindow": false
+    }
+  },
+  {
+    "step": "wb.signal_trace_merge",
+    "count": 2,
+    "total_ms": 0,
+    "max_ms": 0,
+    "avg_ms": 0,
+    "last_meta": {
+      "windowKey": "2026-05-30T203157Z_ema_pullback_BTCUSDT_5m:instance_1:1763941200:1778940900:htf_1",
+      "truncated": true,
+      "requested": {
+        "fromSec": 1763941200,
+        "toSec": 1778940900
+      },
+      "actual": {
+        "fromSec": 1763941200,
+        "toSec": 1778940600
+      }
+    }
+  },
+  {
+    "step": "wb.trace_display.cache_miss",
+    "count": 13,
+    "total_ms": 0,
+    "max_ms": 0,
+    "avg_ms": 0,
+    "last_meta": {
+      "windowKey": "2026-05-30T203157Z_ema_pullback_BTCUSDT_5m:instance_1:1763941200:1778940900:htf_1"
+    }
+  },
+  {
+    "step": "wb.trace_display.merge_chunk",
+    "count": 2,
+    "total_ms": 106.2,
+    "max_ms": 97.5,
+    "avg_ms": 53.1,
+    "last_meta": {
+      "eventCount": 1002,
+      "timeCount": 49999
+    }
+  },
+  {
+    "step": "wb.trace_display.slice_events",
+    "count": 40,
+    "total_ms": 4.5,
+    "max_ms": 0.4,
+    "avg_ms": 0.1,
+    "last_meta": {
+      "fromSec": 1763941200,
+      "toSec": 1778940900
+    }
+  },
+  {
+    "step": "wb.trace_display.slice_htf",
+    "count": 20,
+    "total_ms": 110.5,
+    "max_ms": 21.2,
+    "avg_ms": 5.5,
+    "last_meta": {
+      "fromSec": 1763941200,
+      "toSec": 1778940900
+    }
+  }
+]

@@ -100,7 +100,13 @@ import {
   type SignalTraceLoadStatus,
   type SignalTraceRequest,
 } from "@/shared/context/signalTraceLoadPolicy";
-import { dbgFlush, dbgMark } from "@/shared/diagnostics/pipelineDebug";
+import {
+  dbgFlush,
+  dbgMark,
+  dbgScheduleShiftFlush,
+  dbgTimedSync,
+  PIPELINE_DEBUG_STEPS as DBG,
+} from "@/shared/diagnostics/pipelineDebug";
 export type ReportLoadStatus = "loading" | "ready" | "error";
 export type ConfigLoadStatus = "loading" | "ready" | "empty" | "error";
 export type MarketLoadStatus = "idle" | "loading" | "ready" | "error";
@@ -179,7 +185,10 @@ type WorkbenchState = {
   contextOverlayRefOptions: string[];
   selectedBarTimeSec: number | null;
   selectBar: (timeSec: number | null) => void;
-  onRenderWindowShiftRequest: (visible: ChartLogicalRange, anchorTimeSec: number) => void;
+  onRenderWindowShiftRequest: (
+    visible: ChartLogicalRange,
+    anchorTimeSec: number,
+  ) => boolean;
   pendingViewportRestore: PendingViewportRestore | null;
   clearPendingViewportRestore: () => void;
 };
@@ -384,6 +393,12 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       cancelled = true;
     };
   }, [selectedRunId, reloadToken]);
+
+  useEffect(() => {
+    if (reportLoadStatus === "ready" && selectedRunId !== null) {
+      dbgMark(DBG.load.reportReady, { runId: selectedRunId });
+    }
+  }, [reportLoadStatus, selectedRunId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -615,6 +630,12 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
 
   const cachedBundle = marketCacheKey !== null ? getMarketCache(marketCacheKey) : undefined;
 
+  useEffect(() => {
+    if (marketLoadStatus === "ready" && cachedBundle !== undefined) {
+      dbgMark(DBG.load.marketBundleReady, { barCount: cachedBundle.candles.length });
+    }
+  }, [marketLoadStatus, cachedBundle]);
+
   const bumpRenderWindow = useCallback(() => {
     setRenderWindowRevision((r) => r + 1);
   }, []);
@@ -625,31 +646,43 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
 
   const applyRenderWindowForTrade = useCallback(
     (entryTimeMs: number | null, forceRebuild: boolean) => {
-      const manager = renderWindowManagerRef.current;
       if (!cachedBundle || cachedBundle.candles.length === 0) {
         return false;
       }
-      if (entryTimeMs === null) {
-        const changed = manager.buildTailWindow();
-        if (changed !== null) {
-          bumpRenderWindow();
-        }
-        return changed !== null;
-      }
-      const entryIndex = findBarIndexAtOrBefore(
-        cachedBundle.candles,
-        Math.floor(entryTimeMs / 1000),
+      let rebuilt = false;
+      let skipped = false;
+      const didRebuild = dbgTimedSync(
+        DBG.renderWindow.tradeSelect,
+        () => {
+          const manager = renderWindowManagerRef.current;
+          if (entryTimeMs === null) {
+            const changed = manager.buildTailWindow();
+            if (changed !== null) {
+              bumpRenderWindow();
+            }
+            rebuilt = changed !== null;
+            return rebuilt;
+          }
+          const entryIndex = findBarIndexAtOrBefore(
+            cachedBundle.candles,
+            Math.floor(entryTimeMs / 1000),
+          );
+          if (!forceRebuild && !manager.shouldRebuildForTrade(entryIndex)) {
+            skipTradeWindowRebuildRef.current = true;
+            skipped = true;
+            return false;
+          }
+          skipTradeWindowRebuildRef.current = false;
+          const changed = manager.buildWindowAroundIndex(entryIndex);
+          if (changed !== null) {
+            bumpRenderWindow();
+          }
+          rebuilt = changed !== null;
+          return rebuilt;
+        },
+        () => ({ rebuilt, skipped }),
       );
-      if (!forceRebuild && !manager.shouldRebuildForTrade(entryIndex)) {
-        skipTradeWindowRebuildRef.current = true;
-        return false;
-      }
-      skipTradeWindowRebuildRef.current = false;
-      const changed = manager.buildWindowAroundIndex(entryIndex);
-      if (changed !== null) {
-        bumpRenderWindow();
-      }
-      return changed !== null;
+      return didRebuild;
     },
     [cachedBundle, bumpRenderWindow],
   );
@@ -668,6 +701,10 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       manager.buildTailWindow();
       bumpRenderWindow();
     }
+    dbgMark(DBG.load.renderWindowInit, {
+      fullLength: cachedBundle.candles.length,
+      variant: selectedVariantKey,
+    });
   }, [
     cachedBundle,
     marketLoadStatus,
@@ -686,22 +723,39 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
 
   const onRenderWindowShiftRequest = useCallback(
     (visible: ChartLogicalRange, anchorTimeSec: number) => {
-      const manager = renderWindowManagerRef.current;
       if (!cachedBundle || cachedBundle.candles.length === 0) {
-        return;
+        return false;
       }
-      const boundsBefore = manager.getWindowIndices();
-      const shifted = manager.maybeShiftWindowForVisibleRange(visible);
-      if (shifted === null) {
-        return;
+      let shiftedBounds: { windowStartIndex: number; windowEndIndex: number } | null =
+        null;
+      const shifted = dbgTimedSync(
+        DBG.renderWindow.shift,
+        () => {
+          const manager = renderWindowManagerRef.current;
+          const boundsBefore = manager.getWindowIndices();
+          const next = manager.maybeShiftWindowForVisibleRange(visible);
+          if (next === null) {
+            return false;
+          }
+          shiftedBounds = next;
+          setPendingViewportRestore({
+            anchorTimeSec,
+            previousVisible: visible,
+            windowStartIndex: boundsBefore.windowStartIndex,
+            fullLength: cachedBundle.candles.length,
+          });
+          bumpRenderWindow();
+          return true;
+        },
+        () => ({
+          windowStartIndex: shiftedBounds?.windowStartIndex,
+          windowEndIndex: shiftedBounds?.windowEndIndex,
+        }),
+      );
+      if (shifted) {
+        dbgScheduleShiftFlush();
       }
-      setPendingViewportRestore({
-        anchorTimeSec,
-        previousVisible: visible,
-        windowStartIndex: boundsBefore.windowStartIndex,
-        fullLength: cachedBundle.candles.length,
-      });
-      bumpRenderWindow();
+      return shifted;
     },
     [cachedBundle, bumpRenderWindow],
   );
@@ -733,26 +787,37 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
         count: 0,
       };
     }
-    const manager = renderWindowManagerRef.current;
-    manager.setFullLength(cachedBundle.candles.length);
-    const intendedBundle =
-      intendedMarketCacheKey !== null ? getMarketCache(intendedMarketCacheKey) : undefined;
-    const anchorEmaOverlays = intendedBundle?.ema_overlays ?? [];
-    const rawCandles = manager.sliceCandles(cachedBundle.candles);
-    const rawEma = manager.sliceEmaOverlays(anchorEmaOverlays, cachedBundle.candles);
-    const rawAux = manager.sliceAuxOverlays(auxEmaOverlays, cachedBundle.candles);
-    const count = rawCandles.length;
-    const firstTimeSec = count > 0 ? rawCandles[0]!.time : null;
-    const lastTimeSec = count > 0 ? rawCandles[count - 1]!.time : null;
-    const boundsKey = buildRenderWindowBoundsKey(firstTimeSec, lastTimeSec, count);
-    return {
-      candles: stabilizeByWindowBoundsKey(chartCandlesCacheRef, boundsKey, rawCandles),
-      emaOverlays: stabilizeByWindowBoundsKey(chartEmaCacheRef, boundsKey, rawEma),
-      auxEmaOverlays: stabilizeByWindowBoundsKey(chartAuxEmaCacheRef, boundsKey, rawAux),
-      firstTimeSec,
-      lastTimeSec,
-      count,
-    };
+    let barCount = 0;
+    let overlayCount = 0;
+    const slice = dbgTimedSync(
+      DBG.chartWindow.slice,
+      () => {
+        const manager = renderWindowManagerRef.current;
+        manager.setFullLength(cachedBundle.candles.length);
+        const intendedBundle =
+          intendedMarketCacheKey !== null ? getMarketCache(intendedMarketCacheKey) : undefined;
+        const anchorEmaOverlays = intendedBundle?.ema_overlays ?? [];
+        const rawCandles = manager.sliceCandles(cachedBundle.candles);
+        const rawEma = manager.sliceEmaOverlays(anchorEmaOverlays, cachedBundle.candles);
+        const rawAux = manager.sliceAuxOverlays(auxEmaOverlays, cachedBundle.candles);
+        const count = rawCandles.length;
+        barCount = count;
+        overlayCount = rawEma.length + rawAux.length;
+        const firstTimeSec = count > 0 ? rawCandles[0]!.time : null;
+        const lastTimeSec = count > 0 ? rawCandles[count - 1]!.time : null;
+        const boundsKey = buildRenderWindowBoundsKey(firstTimeSec, lastTimeSec, count);
+        return {
+          candles: stabilizeByWindowBoundsKey(chartCandlesCacheRef, boundsKey, rawCandles),
+          emaOverlays: stabilizeByWindowBoundsKey(chartEmaCacheRef, boundsKey, rawEma),
+          auxEmaOverlays: stabilizeByWindowBoundsKey(chartAuxEmaCacheRef, boundsKey, rawAux),
+          firstTimeSec,
+          lastTimeSec,
+          count,
+        };
+      },
+      () => ({ barCount, overlayCount }),
+    );
+    return slice;
   }, [
     cachedBundle,
     marketLoadStatus,
@@ -1034,13 +1099,19 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     if (renderWindowBounds === null) {
       return false;
     }
+    const { fromSec, toSec } = renderWindowBounds;
     const cache = signalTraceDisplayCacheRef.current;
-    return (
-      cache.sliceEventsForWindow(renderWindowBounds.fromSec, renderWindowBounds.toSec).length >
-        0 ||
-      cache.sliceHtfContextForWindow(renderWindowBounds.fromSec, renderWindowBounds.toSec).times
-        .length > 0
+    const eventCount = dbgTimedSync(
+      DBG.traceDisplay.sliceEvents,
+      () => cache.sliceEventsForWindow(fromSec, toSec).length,
+      () => ({ fromSec, toSec }),
     );
+    const htfTimes = dbgTimedSync(
+      DBG.traceDisplay.sliceHtf,
+      () => cache.sliceHtfContextForWindow(fromSec, toSec).times.length,
+      () => ({ fromSec, toSec }),
+    );
+    return eventCount > 0 || htfTimes > 0;
   }, [renderWindowBounds, displayCacheVersion]);
 
   const htfAuxEmaOverlayStale = useMemo(() => {
@@ -1073,9 +1144,11 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     if (renderWindowBounds === null) {
       return [];
     }
-    return signalTraceDisplayCacheRef.current.sliceEventsForWindow(
-      renderWindowBounds.fromSec,
-      renderWindowBounds.toSec,
+    const { fromSec, toSec } = renderWindowBounds;
+    return dbgTimedSync(
+      DBG.traceDisplay.sliceEvents,
+      () => signalTraceDisplayCacheRef.current.sliceEventsForWindow(fromSec, toSec),
+      () => ({ fromSec, toSec }),
     );
   }, [renderWindowBounds, displayCacheVersion]);
 
@@ -1175,10 +1248,19 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       request,
     });
 
-    dbgMark("wb.signal_trace_decision", { action: decision.action, windowKey });
+    dbgMark("wb.signal_trace_decision", {
+      action: decision.action,
+      windowKey,
+      displayCacheCoversWindow,
+    });
 
     if (decision.action === "skip_display_cache_hit") {
+      dbgMark(DBG.traceDisplay.cacheHit, { windowKey });
       return;
+    }
+
+    if (!displayCacheCoversWindow) {
+      dbgMark(DBG.traceDisplay.cacheMiss, { windowKey });
     }
 
     if (
@@ -1212,7 +1294,16 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
         };
         const actualBounds = computeChunkBoundsFromResponse(bundle);
         const truncated = isTraceResponseTruncated(requestedBounds, actualBounds);
-        mergeDisplayChunkFromResponse(signalTraceDisplayCacheRef.current, bundle);
+        dbgTimedSync(
+          DBG.traceDisplay.mergeChunk,
+          () => {
+            mergeDisplayChunkFromResponse(signalTraceDisplayCacheRef.current, bundle);
+          },
+          () => ({
+            eventCount: bundle.component_events?.length ?? 0,
+            timeCount: bundle.times.length,
+          }),
+        );
         setDisplayCacheVersion((version) => version + 1);
         dbgMark("wb.signal_trace_merge", {
           windowKey,
