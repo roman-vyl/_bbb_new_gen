@@ -56,7 +56,7 @@ import {
   hasHtfAlignedComponentEvents,
 } from "@/features/chart/chartComponentEvents";
 
-import { buildChartDataKey } from "@/features/chart/chartDataKey";
+import { buildChartDataKey, buildChartSeriesDataKey } from "@/features/chart/chartDataKey";
 import {
   applyChartViewport,
   restoreVisibleRangeAfterWindowShift,
@@ -270,6 +270,16 @@ export function ChartPanel() {
     selectedTrade && tradeOutsideCandleRange(selectedTrade.entry_time_ms, fullCandleRange);
 
 
+
+  const chartSeriesDataKey = useMemo(
+    () =>
+      buildChartSeriesDataKey({
+        firstTimeSec: chartViewFirstTimeSec,
+        lastTimeSec: chartViewLastTimeSec,
+        count: chartViewCount,
+      }),
+    [chartViewFirstTimeSec, chartViewLastTimeSec, chartViewCount],
+  );
 
   const chartDataKey = useMemo(
     () =>
@@ -634,7 +644,7 @@ export function ChartPanel() {
 
     const chart = chartRef.current;
 
-    if (!series || !chart || !selectedVariant || chartDataKey === "") return;
+    if (!series || !chart || !selectedVariant || chartSeriesDataKey === "") return;
 
     series.setData(toCandlestickSeriesData(chartCandles));
 
@@ -681,7 +691,7 @@ export function ChartPanel() {
       candles: chartCandles,
     };
 
-  }, [chartCandles, chartEmaOverlays, selectedVariant, chartDataKey, chartViewMode, chartViewCenterTimeSec]);
+  }, [chartCandles, chartEmaOverlays, selectedVariant, chartSeriesDataKey, chartViewMode, chartViewCenterTimeSec]);
 
   useEffect(() => {
     const chart = chartRef.current;
@@ -739,7 +749,7 @@ export function ChartPanel() {
 
     const chart = chartRef.current;
 
-    if (!chart || !selectedVariant || chartDataKey === "") return;
+    if (!chart || !selectedVariant || chartSeriesDataKey === "") return;
 
     const seriesMap = auxEmaSeriesRef.current;
 
@@ -811,7 +821,7 @@ export function ChartPanel() {
 
     });
 
-  }, [chartDisplayAuxEmaOverlays, chartDataKey, selectedVariant]);
+  }, [chartDisplayAuxEmaOverlays, chartSeriesDataKey, selectedVariant]);
 
 
 

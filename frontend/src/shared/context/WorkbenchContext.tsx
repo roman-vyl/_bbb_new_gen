@@ -63,7 +63,14 @@ import {
   strategyContextRefOptions,
 } from "@/features/chart/strategyContexts";
 import { candleRangeMs } from "@/features/chart/chartMarkers";
-import { filterComponentEventsToTimeRange } from "@/features/chart/chartComponentEvents";
+import {
+  buildRenderWindowBoundsKey,
+  displayAuxOverlaysForRenderWindow,
+  displayComponentEventsForRenderWindow,
+  frozenComponentEventsForStorage,
+  frozenHtfOverlaysForStorage,
+  stabilizeByWindowBoundsKey,
+} from "@/features/chart/chartRenderWindowDisplay";
 import {
   defaultClosedTradeSelection,
   deriveSelectedVariant,
@@ -229,6 +236,12 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
   const intendedMarketCacheKeyRef = useRef<MarketCacheKey | null>(null);
   const marketFetchInFlightKeyRef = useRef<MarketCacheKey | null>(null);
   const renderWindowManagerRef = useRef<ChartDataWindowManager>(createChartDataWindowManager());
+  const chartCandlesCacheRef = useRef<{ key: string; value: ChartBar[] }>({ key: "", value: [] });
+  const chartEmaCacheRef = useRef<{ key: string; value: ChartEmaOverlay[] }>({ key: "", value: [] });
+  const chartAuxEmaCacheRef = useRef<{ key: string; value: ChartAuxEmaOverlay[] }>({
+    key: "",
+    value: [],
+  });
   const [renderWindowRevision, setRenderWindowRevision] = useState(0);
   const [pendingViewportRestore, setPendingViewportRestore] =
     useState<PendingViewportRestore | null>(null);
@@ -697,44 +710,67 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     }
   }, [report, selectedVariant, chartTimeframe, reloadToken]);
 
-  const chartView = useMemo((): ChartViewWindow => {
+  const chartWindowSlice = useMemo(() => {
     if (!cachedBundle || marketLoadStatus === "error") {
-      return emptyChartViewWindow();
+      return {
+        candles: [] as ChartBar[],
+        emaOverlays: [] as ChartEmaOverlay[],
+        auxEmaOverlays: [] as ChartAuxEmaOverlay[],
+        firstTimeSec: null as number | null,
+        lastTimeSec: null as number | null,
+        count: 0,
+      };
     }
     const manager = renderWindowManagerRef.current;
     manager.setFullLength(cachedBundle.candles.length);
     const intendedBundle =
       intendedMarketCacheKey !== null ? getMarketCache(intendedMarketCacheKey) : undefined;
     const anchorEmaOverlays = intendedBundle?.ema_overlays ?? [];
-    const candles = manager.sliceCandles(cachedBundle.candles);
-    const emaOverlays = manager.sliceEmaOverlays(anchorEmaOverlays, cachedBundle.candles);
-    const auxSliced = manager.sliceAuxOverlays(auxEmaOverlays, cachedBundle.candles);
+    const rawCandles = manager.sliceCandles(cachedBundle.candles);
+    const rawEma = manager.sliceEmaOverlays(anchorEmaOverlays, cachedBundle.candles);
+    const rawAux = manager.sliceAuxOverlays(auxEmaOverlays, cachedBundle.candles);
+    const count = rawCandles.length;
+    const firstTimeSec = count > 0 ? rawCandles[0]!.time : null;
+    const lastTimeSec = count > 0 ? rawCandles[count - 1]!.time : null;
+    const boundsKey = buildRenderWindowBoundsKey(firstTimeSec, lastTimeSec, count);
+    return {
+      candles: stabilizeByWindowBoundsKey(chartCandlesCacheRef, boundsKey, rawCandles),
+      emaOverlays: stabilizeByWindowBoundsKey(chartEmaCacheRef, boundsKey, rawEma),
+      auxEmaOverlays: stabilizeByWindowBoundsKey(chartAuxEmaCacheRef, boundsKey, rawAux),
+      firstTimeSec,
+      lastTimeSec,
+      count,
+    };
+  }, [
+    cachedBundle,
+    marketLoadStatus,
+    auxEmaOverlays,
+    intendedMarketCacheKey,
+    marketCacheKey,
+    renderWindowRevision,
+  ]);
+
+  const chartView = useMemo((): ChartViewWindow => {
+    if (chartWindowSlice.count === 0) {
+      return emptyChartViewWindow();
+    }
     const mode: ChartViewMode =
       selectedTradeEntryTimeMs !== null ? "around-trade" : "tail";
     const centerTimeSec =
       selectedTradeEntryTimeMs !== null
         ? Math.floor(selectedTradeEntryTimeMs / 1000)
         : null;
-    const count = candles.length;
     return {
       mode,
-      candles,
-      emaOverlays,
-      auxEmaOverlays: auxSliced,
+      candles: chartWindowSlice.candles,
+      emaOverlays: chartWindowSlice.emaOverlays,
+      auxEmaOverlays: chartWindowSlice.auxEmaOverlays,
       centerTimeSec,
-      firstTimeSec: count > 0 ? candles[0]!.time : null,
-      lastTimeSec: count > 0 ? candles[count - 1]!.time : null,
-      count,
+      firstTimeSec: chartWindowSlice.firstTimeSec,
+      lastTimeSec: chartWindowSlice.lastTimeSec,
+      count: chartWindowSlice.count,
     };
-  }, [
-    cachedBundle,
-    marketLoadStatus,
-    selectedTradeEntryTimeMs,
-    auxEmaOverlays,
-    intendedMarketCacheKey,
-    marketCacheKey,
-    renderWindowRevision,
-  ]);
+  }, [chartWindowSlice, selectedTradeEntryTimeMs]);
 
   useEffect(() => {
     intendedMarketCacheKeyRef.current = intendedMarketCacheKey;
@@ -878,6 +914,9 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     lastSlicedHtfOverlaysRef.current = [];
     lastSlicedComponentEventsRef.current = [];
+    chartCandlesCacheRef.current = { key: "", value: [] };
+    chartEmaCacheRef.current = { key: "", value: [] };
+    chartAuxEmaCacheRef.current = { key: "", value: [] };
   }, [selectedRunId, selectedVariantKey]);
 
   const chartWindowKey = useMemo(() => {
@@ -907,43 +946,37 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
 
   const chartDisplayAuxEmaOverlays = useMemo(() => {
     const sliced = chartView.auxEmaOverlays;
-    const bffOverlays = sliced.filter((overlay) => !overlay.id.startsWith("htf_"));
-    const htfSliced = sliced.filter((overlay) => overlay.id.startsWith("htf_"));
-
-    const useFrozenHtf =
-      !traceMatchesWindow && lastSlicedHtfOverlaysRef.current.length > 0;
-
-    let htfDisplay = htfSliced;
-    if (useFrozenHtf) {
-      htfDisplay = lastSlicedHtfOverlaysRef.current;
-    } else if (htfSliced.some((overlay) => overlay.points.length > 0)) {
-      lastSlicedHtfOverlaysRef.current = htfSliced;
-    }
-
-    return [...bffOverlays, ...htfDisplay];
-  }, [chartView.auxEmaOverlays, traceMatchesWindow]);
-
-  const chartDisplayComponentEvents = useMemo(() => {
-    if (chartView.candles.length === 0) {
-      return [];
-    }
-    const fromSec = chartView.candles[0]!.time;
-    const toSec = chartView.candles[chartView.candles.length - 1]!.time;
-    const source = signalTrace?.component_events ?? [];
-    const sliced = filterComponentEventsToTimeRange(source, fromSec, toSec);
+    const display = displayAuxOverlaysForRenderWindow(
+      sliced,
+      lastSlicedHtfOverlaysRef.current,
+      traceMatchesWindow,
+      chartView.candles,
+    );
 
     if (traceMatchesWindow) {
-      if (sliced.length > 0 || source.length === 0) {
-        lastSlicedComponentEventsRef.current = sliced;
+      const htfForStorage = frozenHtfOverlaysForStorage(sliced);
+      if (htfForStorage.some((overlay) => overlay.points.length > 0)) {
+        lastSlicedHtfOverlaysRef.current = htfForStorage;
       }
-      return sliced;
     }
 
-    if (lastSlicedComponentEventsRef.current.length > 0) {
-      return lastSlicedComponentEventsRef.current;
+    return display;
+  }, [chartView.auxEmaOverlays, chartView.candles, traceMatchesWindow]);
+
+  const chartDisplayComponentEvents = useMemo(() => {
+    const traceEvents = signalTrace?.component_events ?? [];
+    const display = displayComponentEventsForRenderWindow(
+      traceEvents,
+      lastSlicedComponentEventsRef.current,
+      traceMatchesWindow,
+      chartView.candles,
+    );
+
+    if (traceMatchesWindow && (display.length > 0 || traceEvents.length === 0)) {
+      lastSlicedComponentEventsRef.current = frozenComponentEventsForStorage(display);
     }
 
-    return sliced;
+    return display;
   }, [chartView.candles, signalTrace?.component_events, traceMatchesWindow]);
 
   const componentEventsStale = useMemo(() => {
