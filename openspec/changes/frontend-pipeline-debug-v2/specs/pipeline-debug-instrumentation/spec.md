@@ -88,26 +88,21 @@ When `VITE_EMA_PIPELINE_DEBUG` is `"true"`, pan-related debug output MUST be lim
 - **WHEN** debug is enabled and pan is suppressed because viewport apply or restore is in progress
 - **THEN** debug output includes `wb.pan.suppressed_programmatic` and does not increment pan timing for that callback generation
 
-### Requirement: Workbench debug reports are written by bat runner to debug/reports
+### Requirement: Workbench debug export supports manual profiling artifacts
 
-The repository SHALL provide `debug/run-workbench-pipeline-debug.bat` that runs automated Workbench profiling (Playwright) and writes output files under `debug/reports/` without manual DevTools copy/paste.
+The frontend debug module SHALL expose `window.__pipelineDebugExport()` returning serializable rows with `step`, `count`, `total_ms`, `avg_ms`, `max_ms`, and optional `last_meta` per step.
 
-Output MUST include at least:
+Documentation in `debug/README.md` SHALL describe saving export JSON under `debug/reports/` after `__pipelineDebugFlush(label)` for named scenarios (load-chart, trade-select, pan-shift, trace-loaded).
 
-- `debug/reports/workbench_YYYYMMDD_HHmmss.log` — full run log
-- `debug/reports/workbench-latest.log` — copy of the latest run
+#### Scenario: Export includes last_meta for diagnosis
 
-The frontend debug module SHALL expose a browser export hook (e.g. `window.__pipelineDebugExport()`) that returns serializable stats for the bat/Playwright runner to persist via Node file I/O.
+- **WHEN** debug is enabled and the operator calls `window.__pipelineDebugExport()` after a timed step with metadata
+- **THEN** the row for that step includes `last_meta` with the most recent metadata fields (e.g. barCount, action, shifted)
 
-#### Scenario: Bat run creates workbench log files
+#### Scenario: Manual artifacts live beside Python logs
 
-- **WHEN** the operator runs `debug\run-workbench-pipeline-debug.bat` with dev server and API available
-- **THEN** new files appear under `debug/reports/` with the `workbench_` prefix containing `[pipeline]` entries and summary tables for the scripted scenarios
-
-#### Scenario: Python and Workbench logs share reports folder
-
-- **WHEN** both `run-pipeline-debug.bat` and `run-workbench-pipeline-debug.bat` have been executed
-- **THEN** `debug/reports/` contains `pipeline_*.log` (Python) and `workbench_*.log` (frontend) as separate artifacts
+- **WHEN** the operator saves Workbench export JSON under `debug/reports/`
+- **THEN** those files coexist with `pipeline_*.log` from `run-pipeline-debug.bat` without requiring automation
 
 ### Requirement: Manual flush remains available for ad-hoc profiling
 

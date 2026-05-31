@@ -1,6 +1,18 @@
-/** Opt-in Workbench pipeline timings. Enable with VITE_EMA_PIPELINE_DEBUG=true. */
+/**
+ * Opt-in Workbench pipeline timings. Enable with VITE_EMA_PIPELINE_DEBUG=true.
+ *
+ * Layers:
+ * 1. This module (dbgMark / dbgTimed / dbgTimedSync / dbgFlush / dbgExport / dbgReset) — no-op when flag off.
+ * 2. Browser console — operator runs UI scenario, then __pipelineDebugFlush(label).
+ * 3. Manual save — copy(__pipelineDebugExport()) into debug/reports/ (no auto file I/O).
+ */
 
-type Row = { count: number; totalMs: number; maxMs: number };
+type Row = {
+  count: number;
+  totalMs: number;
+  maxMs: number;
+  lastMeta?: Record<string, unknown>;
+};
 
 type MetaFactory = () => Record<string, unknown>;
 
@@ -50,6 +62,7 @@ export type PipelineDebugExportRow = {
   total_ms: number;
   max_ms: number;
   avg_ms: number;
+  last_meta?: Record<string, unknown>;
 };
 
 export function pipelineDebugEnabled(): boolean {
@@ -63,28 +76,32 @@ function resolveMeta(meta?: Record<string, unknown> | MetaFactory): Record<strin
   return typeof meta === "function" ? meta() : meta;
 }
 
-function recordTimed(step: string, ms: number, meta: Record<string, unknown>): void {
+function touchRow(step: string): Row {
   const row = stats.get(step) ?? { count: 0, totalMs: 0, maxMs: 0 };
+  stats.set(step, row);
+  return row;
+}
+
+function recordTimed(step: string, ms: number, meta: Record<string, unknown>): void {
+  const row = touchRow(step);
   row.count += 1;
   row.totalMs += ms;
   row.maxMs = Math.max(row.maxMs, ms);
-  stats.set(step, row);
+  row.lastMeta = meta;
   console.debug("[pipeline]", step, { count: row.count, ms: ms.toFixed(1), ...meta });
 }
 
 export function dbgMark(step: string, meta?: Record<string, unknown>): void {
   if (!pipelineDebugEnabled()) return;
-  const row = stats.get(step) ?? { count: 0, totalMs: 0, maxMs: 0 };
+  const row = touchRow(step);
   row.count += 1;
-  stats.set(step, row);
+  if (meta !== undefined) {
+    row.lastMeta = meta;
+  }
   console.debug("[pipeline]", step, { count: row.count, ...meta });
 }
 
-export function dbgTimedSync<T>(
-  step: string,
-  fn: () => T,
-  meta?: MetaFactory,
-): T {
+export function dbgTimedSync<T>(step: string, fn: () => T, meta?: MetaFactory): T {
   if (!pipelineDebugEnabled()) {
     return fn();
   }
@@ -123,6 +140,7 @@ export function dbgExport(): PipelineDebugExportRow[] {
       total_ms: Number(row.totalMs.toFixed(1)),
       max_ms: Number(row.maxMs.toFixed(1)),
       avg_ms: row.count > 0 ? Number((row.totalMs / row.count).toFixed(1)) : 0,
+      ...(row.lastMeta !== undefined ? { last_meta: row.lastMeta } : {}),
     }));
 }
 
@@ -141,9 +159,13 @@ export function dbgFlush(label = "workbench"): void {
       total_ms: row.total_ms,
       avg_ms: row.avg_ms,
       max_ms: row.max_ms,
+      last_meta: row.last_meta ?? "",
     })),
   );
   console.groupEnd();
+  console.info(
+    "[pipeline debug] Сохранить: copy(JSON.stringify(__pipelineDebugExport(), null, 2)) → debug/reports/",
+  );
 }
 
 /** Debounced flush after render-window shift (debug only). */
@@ -158,10 +180,43 @@ export function dbgScheduleShiftFlush(debounceMs = 1200): void {
   }, debounceMs);
 }
 
+const PIPELINE_DEBUG_FAQ_LINES = [
+  "1. Сделайте сценарий в Workbench (Chart: run, trade, pan, дождаться events/HTF).",
+  "2. Перед сценарием (опционально):  __pipelineDebugReset()",
+  "3. Таблица таймингов:            __pipelineDebugFlush(\"имя-сценария\")",
+  "   Примеры имён: select-trade | pan-safe-zone | pan-window-shift | pan-cached-trace",
+  "4. Сохранить JSON:               copy(JSON.stringify(__pipelineDebugExport(), null, 2))",
+  "   Вставить в файл: debug/reports/workbench-<имя>.json",
+  "5. Живые логи по ходу: фильтр консоли [pipeline]",
+  "6. Эта справка снова:            __pipelineDebugHelp()",
+] as const;
+
+let consoleFaqShown = false;
+
+/** Short FAQ in DevTools console (debug mode only). */
+export function dbgPrintConsoleFaq(force = false): void {
+  if (!pipelineDebugEnabled()) return;
+  if (consoleFaqShown && !force) return;
+  if (!force) {
+    consoleFaqShown = true;
+  }
+  console.log(
+    "%c[pipeline debug]%c VITE_EMA_PIPELINE_DEBUG — см. FAQ ниже (или __pipelineDebugHelp())",
+    "font-weight:700;color:#a78bfa",
+    "color:inherit",
+  );
+  console.groupCollapsed("[pipeline debug] FAQ — что нажать и что вводить в консоль");
+  for (const line of PIPELINE_DEBUG_FAQ_LINES) {
+    console.log(line);
+  }
+  console.groupEnd();
+}
+
 type PipelineDebugWindow = {
   __pipelineDebugFlush?: (label?: string) => void;
   __pipelineDebugExport?: () => PipelineDebugExportRow[];
   __pipelineDebugReset?: () => void;
+  __pipelineDebugHelp?: () => void;
 };
 
 if (pipelineDebugEnabled() && typeof window !== "undefined") {
@@ -169,4 +224,6 @@ if (pipelineDebugEnabled() && typeof window !== "undefined") {
   w.__pipelineDebugFlush = dbgFlush;
   w.__pipelineDebugExport = dbgExport;
   w.__pipelineDebugReset = dbgReset;
+  w.__pipelineDebugHelp = () => dbgPrintConsoleFaq(true);
+  dbgPrintConsoleFaq();
 }

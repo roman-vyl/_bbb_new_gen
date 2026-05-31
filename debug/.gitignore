@@ -1,3 +1,4 @@
 reports/*.log
+reports/workbench-*.json
 reports/workbench_*.txt
 !reports/.gitkeep

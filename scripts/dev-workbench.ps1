@@ -1,6 +1,7 @@
 # Start Research Workbench: BFF (8000) + Vite (5173).
 param(
     [switch]$SkipStop,
+    [switch]$PipelineDebug,
     [int]$BffPort = 8000,
     [int]$WebPort = 5173
 )
@@ -87,10 +88,20 @@ if (-not $healthOk) {
 Write-Host "BFF OK (chart-bundle: ema_fast / ema_anchor / ema_slow)" -ForegroundColor Green
 
 # --- Start Vite ---
+$viteTitle = if ($PipelineDebug) { 'Research Workbench UI (pipeline debug)' } else { 'Research Workbench UI' }
+$viteDebugPreamble = ""
+if ($PipelineDebug) {
+    $viteDebugPreamble = @"
+`$env:VITE_EMA_PIPELINE_DEBUG = 'true'
+Write-Host 'VITE_EMA_PIPELINE_DEBUG=true - use __pipelineDebugFlush in DevTools' -ForegroundColor Magenta
+"@
+}
+
 $viteCmd = @"
 Set-Location '$RepoRoot\frontend'
-`$Host.UI.RawUI.WindowTitle = 'Research Workbench UI'
+`$Host.UI.RawUI.WindowTitle = '$viteTitle'
 Write-Host 'Research Workbench UI  http://127.0.0.1:$WebPort' -ForegroundColor Cyan
+$viteDebugPreamble
 npm run dev -- --host 127.0.0.1 --port $WebPort --strictPort
 "@
 
@@ -102,3 +113,7 @@ Write-Host "  UI:   http://127.0.0.1:$WebPort/"
 Write-Host "  BFF:  http://127.0.0.1:$BffPort/docs"
 Write-Host "  Stop: scripts\stop-workbench.bat"
 Write-Host "  After backend code changes: stop, then dev again (BFF has no auto-reload)."
+if ($PipelineDebug) {
+    Write-Host "  Pipeline debug: DevTools -> __pipelineDebugHelp() / __pipelineDebugFlush('scenario')" -ForegroundColor Magenta
+    Write-Host "  See debug\README.md" -ForegroundColor Magenta
+}

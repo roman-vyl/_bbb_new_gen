@@ -1,6 +1,6 @@
 # Pipeline debug
 
-Диагностика пайплайна с сохранением логов в **`debug/reports/`**.
+Артефакты — в **`debug/reports/`**.
 
 ## Python (research backtest + signal trace)
 
@@ -8,56 +8,115 @@
 debug\run-pipeline-debug.bat
 ```
 
-Требуется Python с `pip install -e ".[research]"` и SQLite со свечами. Bat сам запускает `run_pipeline_debug.py`.
+→ `reports/pipeline_*.log` (автоматически).
 
-| Файл | Описание |
-|------|----------|
-| `reports/pipeline_YYYYMMDD_HHMMSS.log` | Полный stdout/stderr |
-| `reports/pipeline-latest.log` | Копия последнего прогона |
+---
 
-## Workbench (frontend in-browser pipeline)
+## Workbench (frontend) — модель по слоям
+
+### Слой 1 — Frontend debug module
+
+`frontend/src/shared/diagnostics/pipelineDebug.ts`
+
+| API | Назначение |
+|-----|------------|
+| `dbgMark` | мгновенная отметка (policy, pan decision, cache hit) |
+| `dbgTimed` | async span (API fetch) |
+| `dbgTimedSync` | sync span (slice, setData, markers) |
+| `dbgFlush` | таблица в console |
+| `dbgExport` | JSON-строки для сохранения |
+| `dbgReset` | сброс счётчиков перед сценарием |
+
+Включение (один из вариантов):
+
+- **`scripts\dev-workbench-debug-mode.bat`** — как `dev-workbench.bat`, но Vite с `VITE_EMA_PIPELINE_DEBUG=true` (рекомендуется)
+- или `VITE_EMA_PIPELINE_DEBUG=true` в `frontend/.env.local` + restart Vite
+
+Без флага — **no-op** (нет `performance.now()`, console, meta).
+
+Хуки только в **WorkbenchContext** / **ChartPanel** (call-site), не в pure utils.
+
+Window hooks (dev only): `__pipelineDebugFlush`, `__pipelineDebugExport`, `__pipelineDebugReset`, `__pipelineDebugHelp` (FAQ в консоли).
+
+---
+
+### Запуск стека
 
 ```bat
-debug\run-workbench-pipeline-debug.bat
+scripts\dev-workbench-debug-mode.bat
 ```
 
-**Bat не поднимает `npm run dev` и не трогает ваш стек.** Только Playwright против уже запущенного Workbench.
+BFF `:8000` + Vite `:5173` в отдельных окнах (как `dev-workbench.bat`). Остановка: `scripts\stop-workbench.bat`.
 
-### Что должно быть запущено у вас
+---
 
-1. **Frontend (Vite)** — как вы обычно (порт `5173` или `5174`).
-2. **BFF / Research API** — `http://127.0.0.1:8000` (проверка `GET /health`).
-3. **Debug-флаг при старте Vite** — в `frontend/.env.local`:
+### Слой 2 — Browser console (основной UI)
 
-   ```
-   VITE_EMA_PIPELINE_DEBUG=true
-   ```
+Пользователь сам выполняет сценарий в Workbench, затем:
 
-   После изменения `.env.local` **перезапустите Vite** (флаг вшивается при старте dev-сервера).
+```js
+window.__pipelineDebugReset()              // опционально, перед сценарием
 
-### Порты
+// … UI: select trade, pan safe, pan shift, pan back to cached trace …
 
-| Переменная | Назначение |
-|------------|------------|
-| `WORKBENCH_URL` | Явный URL фронта, напр. `http://127.0.0.1:5174` |
-| `RESEARCH_API_URL` | BFF, по умолчанию `http://127.0.0.1:8000` |
+window.__pipelineDebugFlush("scenario-name")
+```
 
-Без `WORKBENCH_URL` bat ищет ответ на `:5173`, затем `:5174`.
+В консоли — группа `=== PIPELINE_DEBUG [scenario-name] ===` и таблица:
 
-**Почему «висит» на Running Playwright:** тест ждёт полный market bundle на Chart (часто **1–3 мин**). Прогресс виден в окне cmd после обновления bat (Tee-Object). Альтернатива без Playwright — ручной `__pipelineDebugFlush()` в DevTools (см. ниже).
+```
+step                         count  total_ms  avg_ms  max_ms  last_meta
+chart.setData.candles            1     180.0   180.0   180.0  { barCount: 50000 }
+wb.trace_display.cache_hit       1       0.2     0.2     0.2  { windowKey: "…" }
+chart.markers.rebuild            2      35.0    17.5    22.0  { tradeMarkerCount: 3, … }
+```
 
-### Результаты
+По ходу сценария — отдельные строки `[pipeline]` (фильтр в DevTools).  
+При загрузке страницы в консоли появляется свёрнутый блок **FAQ**; снова: `__pipelineDebugHelp()`.
 
-| Файл | Описание |
-|------|----------|
-| `reports/workbench_YYYYMMDD_HHMMSS.log` | Playwright + `[pipeline]` |
-| `reports/workbench-latest.log` | Последний прогон |
-| `reports/workbench_<scenario>_*.txt` | Excerpt по сценарию |
+Примеры имён сценариев:
+
+| `scenario-name` | Действие |
+|-----------------|----------|
+| `select-trade` | выбор trade |
+| `pan-safe-zone` | pan без `wb.render_window.shift` |
+| `pan-window-shift` | pan с `wb.render_window.shift` |
+| `pan-cached-trace` | pan обратно в зону с display cache hit |
+| `load-chart` | run → Chart, свечи готовы |
+
+---
+
+### Слой 3 — Экспорт вручную
+
+```js
+copy(JSON.stringify(window.__pipelineDebugExport(), null, 2))
+```
+
+Сохранить вставку в файл, например:
+
+- `debug/reports/workbench-select-trade.json`
+- `debug/reports/workbench-pan-window-shift.json`
+
+**Автоматической записи в файл нет** — только ручное сохранение из буфера.
+
+`dbgExport()` возвращает массив `{ step, count, total_ms, avg_ms, max_ms, last_meta? }`.
+
+---
+
+## Справка: step ids
+
+| step | Слой |
+|------|------|
+| `api.fetchRunReport` / `api.fetchChartMarketBundle` / `api.fetchSignalTrace` | network |
+| `wb.load.*` / `wb.render_window.*` / `wb.chart_window_slice` | WorkbenchContext |
+| `wb.trace_display.*` / `wb.pan.*` | cache / pan policy |
+| `chart.setData.*` / `chart.markers.*` / `chart.viewport.*` | ChartPanel |
+
+---
 
 ## Общее
 
-- **`debug/reports/`** — только debug-артефакты, не `research/results/runs/*.json` и не вкладка Reports в UI.
-- Python-лог: `=== PIPELINE_DEBUG [bff.backtest] ===`; **`REPEAT`** — повтор шага.
-- Workbench-лог: `[pipeline]`, `=== PIPELINE_DEBUG [workbench] ===`.
+- `debug/reports/` ≠ `research/results/runs/*.json`.
+- Python: `=== PIPELINE_DEBUG [bff.backtest] ===`, **`REPEAT`** = повтор в одном прогоне.
 
-Подробнее: [`research/diagnostics/README.md`](../research/diagnostics/README.md).
+[`research/diagnostics/README.md`](../research/diagnostics/README.md)

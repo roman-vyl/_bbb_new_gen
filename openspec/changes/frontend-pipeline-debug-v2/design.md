@@ -132,29 +132,15 @@ Prefixes unchanged from v1. New ids:
 
 Common meta keys: `count` (bars, events, overlays), `fromSec`, `toSec`, `action`, `shifted`, `rebuilt`, `method`, `cacheKey`, `chunkCount`.
 
-### D8 — Bat runner writes Workbench reports under `debug/reports/`
+### D8 — Three-layer manual model
 
-**Choice:** Add `debug/run-workbench-pipeline-debug.bat` (sibling to existing `run-pipeline-debug.bat` for Python). It runs a Playwright script (`frontend/e2e/workbench-pipeline-debug.spec.ts`) that exercises the four profiling scenarios, calls `window.__pipelineDebugExport()` (or flush + captured console), and **writes files to disk** — no manual DevTools copy/paste.
+| Layer | Responsibility |
+|-------|----------------|
+| **1. `pipelineDebug.ts`** | `dbgMark`, `dbgTimed`, `dbgTimedSync`, `dbgFlush`, `dbgExport`, `dbgReset`; gated by `VITE_EMA_PIPELINE_DEBUG=true`; no-op when off |
+| **2. Browser console** | Operator runs UI scenario; `__pipelineDebugFlush(label)` prints table (`step`, `count`, `total_ms`, `avg_ms`, `max_ms`, `last_meta`) |
+| **3. Manual file** | `copy(JSON.stringify(__pipelineDebugExport()))` → save under `debug/reports/`; **no** automatic file I/O from app or bat |
 
-**Output layout** (same directory as Python logs):
-
-| File | Content |
-|------|---------|
-| `debug/reports/workbench_YYYYMMDD_HHmmss.log` | Full run: console `[pipeline]` lines + per-scenario flush tables |
-| `debug/reports/workbench-latest.log` | Copy of last run |
-| `debug/reports/workbench_<scenario>_YYYYMMDD_HHmmss.txt` | Optional per-scenario excerpt (trade-select, pan-safe, pan-shift, cache-hit) |
-
-**Bat responsibilities:**
-
-1. `mkdir debug\reports` if missing.
-2. **Do not start `npm run dev`** — probe `WORKBENCH_URL` or ports `5173`/`5174`; fail if frontend or BFF `:8000/health` unreachable.
-3. Operator must run their usual stack with `VITE_EMA_PIPELINE_DEBUG=true` at Vite startup.
-4. Run `npx playwright test e2e/workbench-pipeline-debug.spec.ts` with `PLAYWRIGHT_BASE_URL`.
-5. Playwright writes logs under `debug/reports/`.
-
-**Not the same as:** `research/results/runs/*.json` (backtest reports) or Workbench Reports UI — only debug profiling artifacts.
-
-**Alternative rejected:** Browser download blob — user wants bat-driven, repo-local `debug/reports/` like Python path.
+**Not the same as:** `research/results/runs/*.json` (backtest reports) or Workbench Reports UI.
 
 ## Risks / Trade-offs
 
@@ -172,7 +158,7 @@ Common meta keys: `count` (bars, events, overlays), `fromSec`, `toSec`, `action`
 1. Extend `pipelineDebug.ts` helpers (backward compatible).
 2. Add hooks in WorkbenchContext + ChartPanel.
 3. Update diagnostics README with action → step checklist.
-4. Operators run `debug\run-workbench-pipeline-debug.bat` → logs land in `debug/reports/`. Ad-hoc: DevTools + `__pipelineDebugFlush()` still works.
+4. Operators profile via DevTools; save exports to `debug/reports/` manually.
 
 Rollback: unset env var; hooks are no-ops.
 

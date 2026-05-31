@@ -9,8 +9,7 @@ After `workbench-chart-sliding-window` and `workbench-trace-window-chunk-cache`,
 - **Instrument ChartPanel** for: candle/EMA `setData`, aux HTF `setData`, markers rebuild, viewport apply vs post-shift restore (with method from `restoreVisibleRangeAfterWindowShift`).
 - **Stable step ids** under `wb.*` and `chart.*` prefixes; document a manual profiling script in `research/diagnostics/README.md` (or `debug/README.md`) mapping user actions → expected console lines.
 - **Instrumentation at call sites only** — WorkbenchContext / ChartPanel wrappers; pure modules (`signalTraceDisplayCache`, `chartDataWindowManager`) stay debug-free unless call-site timing is insufficient.
-- **`debug/run-workbench-pipeline-debug.bat`** — Playwright only against your already-running frontend + BFF (does not start `npm run dev`); writes logs to `debug/reports/`.
-- **Flush:** `__pipelineDebugFlush()` / export API consumed by the bat runner; optional auto-flush after signal trace and after render-window shift (debug only, 1000–1500ms debounce).
+- **Manual profiling only** — (1) Vite + debug flag, (2) browser Workbench, (3) UI scenario, (4) console flush/export, (5) save JSON to `debug/reports/`; optional auto-flush after signal trace / render-window shift when debug on.
 
 **Non-goals**
 
@@ -34,7 +33,7 @@ _(none — extends existing capability)_
 | Layer | Scope |
 |-------|--------|
 | **frontend** | `shared/diagnostics/pipelineDebug.ts`, `shared/context/WorkbenchContext.tsx`, `features/chart/ChartPanel.tsx` (no changes inside pure cache/window utils unless exception documented) |
-| **debug** | `run-workbench-pipeline-debug.bat`, `reports/workbench_*.log` |
+| **debug** | `README.md` manual workflow; operator-saved `reports/workbench-*.json` |
 | **research** | README runbook section only |
 | **research_api** | _none_ |
 | **data_engine** | _none_ |

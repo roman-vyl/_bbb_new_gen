@@ -23,29 +23,11 @@ Module API: `research.diagnostics.pipeline_trace` — `dbg_root`, `dbg_span`, `d
 
 ## Frontend (Workbench)
 
-**Automated (logs in `debug/reports/`):**
+Три слоя — [`debug/README.md`](../../debug/README.md):
 
-```bat
-debug\run-workbench-pipeline-debug.bat
-```
-
-Does **not** start Vite — use your usual dev stack. Requires:
-
-- Frontend already up (`5173` or `5174`, or set `WORKBENCH_URL`)
-- BFF on `:8000` (`GET /health`)
-- Vite started with `VITE_EMA_PIPELINE_DEBUG=true` in `frontend/.env.local` (restart dev after change)
-
-Writes `workbench_YYYYMMDD_HHmmss.log` and per-scenario `workbench_<scenario>_*.txt`.
-
-**Manual (DevTools):**
-
-In `frontend/.env.local`:
-
-```
-VITE_EMA_PIPELINE_DEBUG=true
-```
-
-Restart Vite. Filter console for `[pipeline]`. Call `__pipelineDebugFlush()` or `__pipelineDebugExport()`.
+1. **Module** — `pipelineDebug.ts`; start via `scripts\dev-workbench-debug-mode.bat` (or `.env.local`); no-op when off  
+2. **Console** — UI scenario → `__pipelineDebugFlush("scenario")` → table  
+3. **Manual file** — `copy(JSON.stringify(__pipelineDebugExport()))` → `debug/reports/` (no auto write)
 
 ## OpenSpec
 
