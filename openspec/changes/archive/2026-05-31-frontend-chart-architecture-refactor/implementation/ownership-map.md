@@ -1,6 +1,6 @@
 # Chart runtime ownership map (post-cutover v1)
 
-**Status:** Delivered on branch `BIG-frontend-refactoring`. Manual acceptance (§9) and baseline (0.4) confirmed.
+**Status:** Delivered — archived **2026-05-31** (`frontend-chart-architecture-refactor`). Manual acceptance (§9) and baseline (0.4) confirmed. Shell decomposition follow-up: `docs/frontend/follow-up-workbench-context-decomposition.md`.
 
 This map describes **actual code**, not the full target from `design.md` Decision 1. v1 moved **orchestration decisions** into `frontend/src/features/chart/runtime/`; **data loading and React wiring** remain in `WorkbenchContext`.
 

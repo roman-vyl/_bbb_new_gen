@@ -1,4 +1,4 @@
-import type { ChartAuxEmaOverlay, ChartBar, ComponentEvent } from "@/api/types";
+import type { ChartAuxEmaOverlay, ChartBar, ChartEmaOverlay, ComponentEvent } from "@/api/types";
 import { filterComponentEventsToTimeRange } from "@/features/chart/chartComponentEvents";
 import { sliceAuxOverlaysToCandleWindow } from "@/features/chart/chartAuxEmaOverlays";
 
@@ -112,4 +112,17 @@ export function buildAuxOverlaysStabilizeKey(
   }
   const fingerprint = overlays.map((o) => `${o.id}:${o.points.length}`).join("|");
   return `${boundsKey}|${fingerprint}`;
+}
+
+/** Bounds key for anchor-stack EMA stabilize — must change when variant/market bundle arrives without pan. */
+export function buildEmaOverlaysStabilizeKey(
+  boundsKey: string,
+  overlays: readonly ChartEmaOverlay[],
+  marketCacheKey: string,
+): string {
+  if (boundsKey === "") {
+    return "";
+  }
+  const fingerprint = overlays.map((o) => `${o.role}:${o.period}:${o.points.length}`).join("|");
+  return `${boundsKey}|${marketCacheKey}|${fingerprint}`;
 }

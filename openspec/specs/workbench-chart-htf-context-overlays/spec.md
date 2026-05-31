@@ -15,8 +15,8 @@ Document the **delivered** Workbench Chart pipeline for HTF context EMA auxiliar
 | BFF | `research_api/services/signal_trace_service.py` | Builds trace; **cache key MUST include `context_overlay_ref`** |
 | Frontend specs | `frontend/src/features/chart/strategySpecAuxEma.ts` | `collectAuxEmaSpecs` → `source: "htf_trace"`, ids `htf_{role}` |
 | Frontend contexts | `frontend/src/features/chart/strategyContexts.ts` | Reads `strategy.contexts`; resolves default overlay ref |
-| Frontend state | `frontend/src/shared/context/WorkbenchContext.tsx` | `effectiveContextOverlayRef`, aux overlay merge, `SignalTraceDisplayCache`, trace window key, `chartWindowSlice` aux stabilize key |
-| Frontend display slice | `frontend/src/features/chart/chartRenderWindowDisplay.ts` | `buildAuxOverlaysStabilizeKey`, `displayAuxOverlaysForRenderWindow`, frozen HTF re-slice |
+| Frontend state | `frontend/src/shared/context/WorkbenchContext.tsx` | `effectiveContextOverlayRef`, aux overlay merge, `SignalTraceDisplayCache`, trace window key, `chartWindowSlice` aux/anchor stabilize keys |
+| Frontend display slice | `frontend/src/features/chart/chartRenderWindowDisplay.ts` | `buildAuxOverlaysStabilizeKey`, `buildEmaOverlaysStabilizeKey`, `displayAuxOverlaysForRenderWindow`, frozen HTF re-slice |
 | Frontend chart | `frontend/src/features/chart/ChartPanel.tsx` | Renders `chartDisplayAuxEmaOverlays` as dashed LineSeries |
 ## Requirements
 ### Requirement: HTF context EMA lines come from signal trace, not browser or BFF overlay EMA

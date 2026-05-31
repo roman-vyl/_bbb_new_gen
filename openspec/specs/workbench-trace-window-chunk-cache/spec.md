@@ -74,35 +74,68 @@ The cache MUST NOT require fetching the entire report time range in one request.
 
 ### Requirement: Render window slice reads from trace cache before fetch
 
-When the chart render window changes to `[firstTime, lastTime]`, Workbench MUST:
+When the **committed** chart render window changes to `[firstTime, lastTime]`, Workbench MUST:
 
-1. Check whether the trace cache **covers** `[firstTime, lastTime]`
-2. If covered → slice `component_events` and `htf_context` from **display cache** for chart display **without** a network request
-3. If not covered → fetch signal trace for the **missing or current window range**, extract display fields into cache, merge, then slice for display
+1. Check whether the trace display cache covers `[firstTime, lastTime]`
+2. If covered, slice `component_events` and `htf_context` from cache immediately without network request
+3. If uncovered, schedule fetch for the missing/current committed window range and merge result into cache
 
-Pan-driven render-window shifts MUST follow the same pipeline.
+Pan-driven transient states before window commit MUST NOT trigger fetch decisions for display cache.
 
-#### Scenario: Pan within cached range is instant
+Display updates from cache MUST remain independent from viewport commands; cache hits or merges MUST NOT issue viewport focus/restore.
 
-- **GIVEN** trace cache already covers `[T0, T1]`
-- **WHEN** user pans the render window to `[T0', T1']` where `T0' >= T0` and `T1' <= T1`
-- **THEN** component events and HTF context EMA display update from cache slice immediately
-- **AND** no new `fetchSignalTrace` request is started solely due to the pan
+#### Scenario: Covered committed window updates display without fetch
 
-#### Scenario: Pan into uncached range triggers chunk fetch
+- **GIVEN** display cache covers committed window `[T0, T1]`
+- **WHEN** committed window changes to `[T0', T1']` fully inside coverage
+- **THEN** markers and HTF overlays are sliced from cache immediately
+- **AND** no `fetchSignalTrace` request starts for that transition
 
-- **GIVEN** trace cache covers `[T0, T1]`
-- **WHEN** user pans the render window to `[T0', T1']` not fully contained in cached coverage
-- **THEN** Workbench requests signal trace for the missing/current window range
-- **AND** merges the response into cache when ready
-- **AND** display updates from the merged cache slice
+#### Scenario: Uncovered committed window schedules fetch
+
+- **GIVEN** display cache does not fully cover committed window `[T0', T1']`
+- **WHEN** the new window is committed
+- **THEN** Workbench schedules trace fetch for missing/current range
+- **AND** display keeps cache-derived partial/stale state until merge completes
 
 #### Scenario: Pan back to previously visited range uses cache
 
 - **GIVEN** user previously loaded trace for window `[Ta, Tb]` and later for `[Tc, Td]`
 - **AND** both ranges are present in the merged cache
-- **WHEN** user pans back so the render window equals `[Ta, Tb]` again
+- **WHEN** user pans back so the committed render window equals `[Ta, Tb]` again
 - **THEN** events and HTF overlays render from cache slice without refetch
+
+### Requirement: Pan-active trace fetches SHALL be coalesced by latest committed intent
+
+While pan is active and render-window shift intents are still pending, Workbench MUST coalesce trace fetch planning to prevent request storms from transient boundary oscillations.
+
+At most one uncovered committed window intent MAY be queued for post-idle evaluation per active pan cycle; superseded intents MUST be replaced by the latest one.
+
+For v1 controller runtime, uncovered pending windows during active pan MUST use strict idle-only fetch policy:
+
+- no network prefetch starts during active pan for uncovered pending windows;
+- only cache-hit display updates for current committed window are allowed during active pan.
+
+#### Scenario: Rapid boundary oscillation does not spawn many requests
+
+- **GIVEN** user rapidly drags near both safe-zone boundaries during one active pan cycle
+- **WHEN** multiple pending shift intents are produced before idle commit
+- **THEN** Workbench retains only the latest committed-window fetch intent
+- **AND** does not enqueue one network fetch per transient intent
+
+#### Scenario: Active pan uncovered range does not prefetch
+
+- **GIVEN** pending shift points to an uncovered range while pan is still active
+- **WHEN** controller evaluates trace scheduling
+- **THEN** no network fetch starts for that pending uncovered range
+- **AND** fetch starts only after committed shift (pointerup or idle fallback commit)
+
+#### Scenario: Trace merge updates display only
+
+- **GIVEN** a coalesced fetch response is merged into display cache
+- **WHEN** current window display data is recomputed
+- **THEN** marker and HTF overlays update for current committed window
+- **AND** viewport command remains unchanged (`noViewportChange`)
 
 ### Requirement: Trace cache invalidates on run variant or context ref change
 

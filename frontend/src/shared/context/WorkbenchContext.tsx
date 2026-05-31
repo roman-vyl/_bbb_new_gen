@@ -72,6 +72,7 @@ import {
 import { candleRangeMs } from "@/features/chart/chartMarkers";
 import {
   buildAuxOverlaysStabilizeKey,
+  buildEmaOverlaysStabilizeKey,
   buildRenderWindowBoundsKey,
   candleTimeBounds,
   displayAuxOverlaysForRenderWindow,
@@ -850,10 +851,15 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
         const firstTimeSec = count > 0 ? rawCandles[0]!.time : null;
         const lastTimeSec = count > 0 ? rawCandles[count - 1]!.time : null;
         const boundsKey = buildRenderWindowBoundsKey(firstTimeSec, lastTimeSec, count);
+        const emaStabilizeKey = buildEmaOverlaysStabilizeKey(
+          boundsKey,
+          rawEma,
+          intendedMarketCacheKey ?? "",
+        );
         const auxStabilizeKey = buildAuxOverlaysStabilizeKey(boundsKey, rawAux);
         return {
           candles: stabilizeByWindowBoundsKey(chartCandlesCacheRef, boundsKey, rawCandles),
-          emaOverlays: stabilizeByWindowBoundsKey(chartEmaCacheRef, boundsKey, rawEma),
+          emaOverlays: stabilizeByWindowBoundsKey(chartEmaCacheRef, emaStabilizeKey, rawEma),
           auxEmaOverlays: stabilizeByWindowBoundsKey(chartAuxEmaCacheRef, auxStabilizeKey, rawAux),
           firstTimeSec,
           lastTimeSec,

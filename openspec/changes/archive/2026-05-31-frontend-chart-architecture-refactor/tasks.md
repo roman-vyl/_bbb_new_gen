@@ -1,4 +1,6 @@
-> **Docs:** Post-cutover ownership (logical roles vs code paths) — `implementation/ownership-map.md`. v1 keeps run/market/trace IO in `WorkbenchContext`; orchestration in `features/chart/runtime/`.
+> **Status:** Complete — archived **2026-05-31**. Canonical specs: `openspec/specs/workbench-chart-controller-orchestration/`, updated `workbench-chart-sliding-window`, `workbench-trace-window-chunk-cache`, `workbench-chart-htf-context-overlays`. Follow-up: `docs/frontend/follow-up-workbench-context-decomposition.md`.
+>
+> **Docs:** Post-cutover ownership — `implementation/ownership-map.md`. v1 keeps run/market/trace IO in `WorkbenchContext`; orchestration in `features/chart/runtime/`.
 
 ## 0. Baseline lock and branch setup
 
@@ -94,7 +96,14 @@
 - [x] 9.17 Validate `component_events[]` full contract remains available (`event_type`, `role`, `side`, ids, labels, timeframe/meta fields) and renderer remains role-driven for future components.
 - [x] 9.18 Validate cache behavior parity: market bundle full-range cache, render-window slicing, display cache for events/HTF, session bundle cache for lanes/diagnostics/pan-back, cache-hit display updates without network fetch.
 
+## 10. Post-cutover bugfixes (same branch, before archive)
+
+- [x] 10.1 Anchor-stack EMA stabilize on variant switch (`buildEmaOverlaysStabilizeKey` + unit test; manual instance_2).
+- [x] 10.2 HTF aux stabilize (prior slice; `buildAuxOverlaysStabilizeKey` + unit test).
+- [x] 10.3 Viewport `swapTransactionId` only on shell window-swap commit (no incomplete restore from `dispatchInteraction`).
+- [x] 10.4 Composer `setups[]` / `npm run build` type fixes.
+
 ## Backend (out of chart refactor scope; tracked for repo honesty)
 
 - [x] `python -m pytest -q -m workbench_api` — green (64 tests).
-- [ ] Full `python -m pytest -q` — **not** required for chart archive; 1 failing research test (`test_feature_plan_includes_exit_ema_outside_stack`) as of 2026-05. See `implementation/acceptance.md`.
+- [x] Full `python -m pytest -q` — green; fixed `test_feature_plan_includes_exit_ema_outside_stack` (empty `contexts` override).

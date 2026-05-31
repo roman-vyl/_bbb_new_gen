@@ -17,7 +17,10 @@ describe("createBlankConfigDraft", () => {
     const draft = createBlankConfigDraft();
     expect(draft.experiment_id).toBe(COMPOSER_DEFAULT_EXPERIMENT_ID);
     expect(draft.experiment_id.trim().length).toBeGreaterThan(0);
-    const strategy = draft.instances[0]?.strategy;
+    const strategy = draft.instances[0]?.strategy as {
+      setups?: { component_id: string }[];
+      trigger?: { component_id: string; lookback: number };
+    };
     expect(strategy?.setups?.[0]).toMatchObject({
       component_id: "untouched_anchor_setup",
     });
