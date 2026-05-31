@@ -19,7 +19,11 @@ export function shouldBlockTraceFetchForActivePan(input: TraceSchedulingInput): 
   if (input.displayCacheCoversWindow) {
     return false;
   }
-  if (input.interactionState === "user_panning" || input.interactionState === "pending_shift") {
+  if (
+    input.interactionState === "user_panning" ||
+    input.interactionState === "pending_shift" ||
+    input.interactionState === "applying_shift"
+  ) {
     return true;
   }
   if (input.hasPendingShift) {

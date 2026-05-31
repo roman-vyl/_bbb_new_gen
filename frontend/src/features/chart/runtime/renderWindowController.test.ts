@@ -66,4 +66,43 @@ describe("renderWindowController", () => {
     expect(commits.length).toBeGreaterThanOrEqual(0);
     vi.useRealTimers();
   });
+
+  it("stays applying_shift until settleWindowSwap", () => {
+    const manager = createChartDataWindowManager();
+    manager.reset(100_000);
+    manager.buildTailWindow();
+
+    const controller = createRenderWindowController({ manager });
+
+    controller.dispatch({ type: "pointerdown" });
+    controller.recordBoundaryIntent({ from: 0, to: 5 }, 1_700_000_000);
+    controller.dispatch({ type: "pointerup" });
+
+    expect(controller.getInteractionState()).toBe("applying_shift");
+    expect(controller.getApplyingShiftSeq()).toBe(1);
+
+    controller.settleWindowSwap(1);
+    expect(controller.getInteractionState()).toBe("idle_user_view");
+    expect(controller.getApplyingShiftSeq()).toBeNull();
+  });
+
+  it("pointerdown during applying_shift aborts stale swap", () => {
+    const manager = createChartDataWindowManager();
+    manager.reset(100_000);
+    manager.buildTailWindow();
+
+    const controller = createRenderWindowController({ manager });
+
+    controller.dispatch({ type: "pointerdown" });
+    controller.recordBoundaryIntent({ from: 0, to: 5 }, 1_700_000_000);
+    controller.dispatch({ type: "pointerup" });
+    expect(controller.getInteractionState()).toBe("applying_shift");
+
+    controller.dispatch({ type: "pointerdown" });
+    expect(controller.getInteractionState()).toBe("user_panning");
+    expect(controller.getApplyingShiftSeq()).toBeNull();
+
+    controller.settleWindowSwap(1);
+    expect(controller.getInteractionState()).toBe("user_panning");
+  });
 });

@@ -194,6 +194,8 @@ type WorkbenchState = {
   chartViewportCommand: ViewportCommand | null;
   chartViewportCommandSeq: number;
   acknowledgeChartViewportCommand: () => void;
+  isWindowSwapTransactionCancelled: (swapTransactionId: number) => boolean;
+  settleWindowSwapCommit: (shiftSeq: number, swapTransactionId: number) => void;
 };
 
 const WorkbenchContext = createContext<WorkbenchState | null>(null);
@@ -269,6 +271,8 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
   const intendedMarketCacheKeyRef = useRef<MarketCacheKey | null>(null);
   const marketFetchInFlightKeyRef = useRef<MarketCacheKey | null>(null);
   const applyWindowCommitRef = useRef<(commit: WindowCommitResult) => void>(() => {});
+  const windowSwapTransactionIdRef = useRef(0);
+  const windowSwapCancelledThroughIdRef = useRef(0);
   const chartRuntimeRef = useRef(
     createChartRuntime({
       renderWindow: {
@@ -764,8 +768,25 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     applyRenderWindowForTrade(selectedTradeEntryTimeMs, false);
   }, [selectedTradeEntryTimeMs, cachedBundle, marketLoadStatus, applyRenderWindowForTrade]);
 
+  const isWindowSwapTransactionCancelled = useCallback((swapTransactionId: number) => {
+    return swapTransactionId <= windowSwapCancelledThroughIdRef.current;
+  }, []);
+
+  const settleWindowSwapCommit = useCallback((shiftSeq: number, swapTransactionId: number) => {
+    if (swapTransactionId <= windowSwapCancelledThroughIdRef.current) {
+      dbgMark(DBG.renderWindow.shiftRestoreCancelled, { shiftSeq, swapTransactionId });
+      return;
+    }
+    chartRuntimeRef.current.renderWindow.settleWindowSwap(shiftSeq);
+    dbgMark(DBG.renderWindow.shiftSettled, { shiftSeq, swapTransactionId });
+  }, []);
+
   const dispatchChartInteraction = useCallback(
     (event: ChartInteractionEvent) => {
+      if (event.type === "pointerdown") {
+        windowSwapCancelledThroughIdRef.current = windowSwapTransactionIdRef.current;
+        setChartViewportCommand(null);
+      }
       const command = chartRuntimeRef.current.dispatchInteraction(event);
       if (command !== null) {
         emitChartViewportCommand(command);
@@ -908,6 +929,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       renderWindowShiftSeqRef.current = commit.shiftSeq;
       setRenderWindowShiftSeq(commit.shiftSeq);
 
+      const swapTransactionId = ++windowSwapTransactionIdRef.current;
       const viewportCmd = chartRuntimeRef.current.viewport.onWindowSwapCommitted({
         anchorTimeSec: commit.anchorTimeSec,
         previousVisible: commit.previousVisible,
@@ -915,7 +937,11 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
         windowStartIndex: commit.boundsBefore.windowStartIndex,
         fullLength: cachedBundle.candles.length,
       });
-      emitChartViewportCommand(viewportCmd);
+      if (viewportCmd.type === "restoreAfterWindowSwap") {
+        emitChartViewportCommand({ ...viewportCmd, swapTransactionId });
+      } else {
+        emitChartViewportCommand(viewportCmd);
+      }
 
       const slice = cachedBundle.candles.slice(
         commit.bounds.windowStartIndex,
@@ -1648,6 +1674,8 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       chartViewportCommand,
       chartViewportCommandSeq,
       acknowledgeChartViewportCommand,
+      isWindowSwapTransactionCancelled,
+      settleWindowSwapCommit,
     }),
     [
       symbol,
@@ -1712,6 +1740,8 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       chartViewportCommand,
       chartViewportCommandSeq,
       acknowledgeChartViewportCommand,
+      isWindowSwapTransactionCancelled,
+      settleWindowSwapCommit,
       displayApplyRevision,
       renderWindowShiftSeq,
     ],

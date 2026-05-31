@@ -32,6 +32,9 @@ export type RenderWindowController = {
   recordBoundaryIntent(visible: ChartLogicalRange, anchorTimeSec: number): boolean;
   /** Commit pending shift if allowed; returns commit payload or null. */
   tryCommitPendingShift(): WindowCommitResult | null;
+  getApplyingShiftSeq(): number | null;
+  settleWindowSwap(shiftSeq: number): void;
+  abortApplyingShift(): number | null;
   flushIdleCommitTimer(): void;
   buildCommittedWindow(
     firstTimeSec: number | null,
@@ -70,6 +73,7 @@ export function createRenderWindowController(
   let pointerActive = false;
   let wheelActive = false;
   let programmaticViewportActive = false;
+  let applyingShiftSeq: number | null = null;
   let idleTimer: ReturnType<typeof setTimeout> | null = null;
 
   function clearIdleTimer(): void {
@@ -96,8 +100,17 @@ export function createRenderWindowController(
     interactionState = next;
   }
 
+  function settleInteractionAfterSwap(): void {
+    applyingShiftSeq = null;
+    if (pointerActive || wheelActive) {
+      setInteractionState(pendingShift ? "pending_shift" : "user_panning");
+      return;
+    }
+    setInteractionState("idle_user_view");
+  }
+
   function recordBoundaryIntent(visible: ChartLogicalRange, anchorTimeSec: number): boolean {
-    if (programmaticViewportActive) {
+    if (programmaticViewportActive || interactionState === "applying_shift") {
       return false;
     }
     const direction = shiftDirectionFromVisible(visible, manager);
@@ -133,9 +146,10 @@ export function createRenderWindowController(
       return null;
     }
 
-    setInteractionState("applying_shift");
     committedRevision += 1;
     shiftSeq += 1;
+    applyingShiftSeq = shiftSeq;
+    setInteractionState("applying_shift");
 
     const result: WindowCommitResult = {
       bounds: next,
@@ -145,14 +159,30 @@ export function createRenderWindowController(
       shiftSeq,
     };
 
-    setInteractionState(pointerActive || wheelActive ? "user_panning" : "idle_user_view");
     onCommit?.(result);
     return result;
+  }
+
+  function abortApplyingShift(): number | null {
+    const aborted = applyingShiftSeq;
+    if (interactionState !== "applying_shift") {
+      return aborted;
+    }
+    settleInteractionAfterSwap();
+    return aborted;
+  }
+
+  function settleWindowSwap(shiftSeq: number): void {
+    if (applyingShiftSeq !== shiftSeq) {
+      return;
+    }
+    settleInteractionAfterSwap();
   }
 
   function dispatch(event: ChartInteractionEvent): void {
     switch (event.type) {
       case "pointerdown":
+        abortApplyingShift();
         pointerActive = true;
         setInteractionState("user_panning");
         break;
@@ -166,7 +196,12 @@ export function createRenderWindowController(
         clearIdleTimer();
         {
           const committed = tryCommitPendingShift();
-          if (committed === null && !wheelActive && pendingShift === null) {
+          if (
+            committed === null &&
+            !wheelActive &&
+            pendingShift === null &&
+            interactionState !== "applying_shift"
+          ) {
             setInteractionState("idle_user_view");
           }
         }
@@ -210,6 +245,7 @@ export function createRenderWindowController(
       pendingShift = null;
       committedRevision = 0;
       shiftSeq = 0;
+      applyingShiftSeq = null;
       clearIdleTimer();
       setInteractionState("idle_user_view");
     },
@@ -223,6 +259,9 @@ export function createRenderWindowController(
     dispatch,
     recordBoundaryIntent,
     tryCommitPendingShift,
+    getApplyingShiftSeq: () => applyingShiftSeq,
+    settleWindowSwap,
+    abortApplyingShift,
     flushIdleCommitTimer: clearIdleTimer,
     buildCommittedWindow(firstTimeSec, lastTimeSec) {
       return {

@@ -204,6 +204,10 @@ export function ChartPanel() {
 
     acknowledgeChartViewportCommand,
 
+    isWindowSwapTransactionCancelled,
+
+    settleWindowSwapCommit,
+
     displayApplyRevision,
 
     renderWindowShiftSeq,
@@ -702,6 +706,18 @@ export function ChartPanel() {
 
     if (
       command.type === "restoreAfterWindowSwap" &&
+      isWindowSwapTransactionCancelled(command.swapTransactionId)
+    ) {
+      dbgMark(DBG.renderWindow.shiftRestoreCancelled, {
+        shiftSeq: command.shiftSeq,
+        swapTransactionId: command.swapTransactionId,
+      });
+      acknowledgeChartViewportCommand();
+      return;
+    }
+
+    if (
+      command.type === "restoreAfterWindowSwap" &&
       command.shiftSeq !== renderWindowShiftSeq
     ) {
       dbgMark(DBG.chart.viewportRestoreAfterShiftSkippedStale, {
@@ -734,6 +750,10 @@ export function ChartPanel() {
 
     acknowledgeChartViewportCommand();
 
+    if (command.type === "restoreAfterWindowSwap") {
+      settleWindowSwapCommit(command.shiftSeq, command.swapTransactionId);
+    }
+
     window.setTimeout(() => {
       isApplyingViewportRef.current = false;
       interactionAdapterRef.current.onProgrammaticViewportEnd();
@@ -744,6 +764,8 @@ export function ChartPanel() {
     chartCandles,
     renderWindowShiftSeq,
     acknowledgeChartViewportCommand,
+    isWindowSwapTransactionCancelled,
+    settleWindowSwapCommit,
   ]);
 
   useEffect(() => {

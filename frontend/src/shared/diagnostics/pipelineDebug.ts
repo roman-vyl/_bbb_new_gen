@@ -30,6 +30,9 @@ export const PIPELINE_DEBUG_STEPS = {
   renderWindow: {
     tradeSelect: "wb.render_window.trade_select",
     shiftApplied: "wb.render_window.shift_applied",
+    shiftSettled: "wb.render_window.shift_settled",
+    shiftAborted: "wb.render_window.shift_aborted",
+    shiftRestoreCancelled: "wb.render_window.shift_restore_cancelled",
     shiftNoop: "wb.render_window.shift_noop",
   },
   pan: {

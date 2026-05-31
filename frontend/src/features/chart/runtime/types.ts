@@ -47,6 +47,8 @@ export type ViewportCommand =
       windowStartIndex?: number;
       fullLength?: number;
       shiftSeq: number;
+      /** Monotonic id; invalidated when a new pointerdown starts before settle. */
+      swapTransactionId: number;
     }
   | { type: "preserveUserRange" };
 
