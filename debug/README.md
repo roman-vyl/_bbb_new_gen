@@ -79,8 +79,8 @@ chart.markers.rebuild            2      35.0    17.5    22.0  { tradeMarkerCount
 | `scenario-name` | Действие |
 |-----------------|----------|
 | `select-trade` | выбор trade |
-| `pan-safe-zone` | pan без `wb.render_window.shift` |
-| `pan-window-shift` | pan с `wb.render_window.shift` |
+| `pan-safe-zone` | pan без `wb.render_window.shift_applied` |
+| `pan-window-shift` | pan с `wb.render_window.shift_applied` |
 | `pan-cached-trace` | pan обратно в зону с display cache hit |
 | `load-chart` | run → Chart, свечи готовы |
 

@@ -29,7 +29,8 @@ export const PIPELINE_DEBUG_STEPS = {
   },
   renderWindow: {
     tradeSelect: "wb.render_window.trade_select",
-    shift: "wb.render_window.shift",
+    shiftApplied: "wb.render_window.shift_applied",
+    shiftNoop: "wb.render_window.shift_noop",
   },
   pan: {
     suppressedProgrammatic: "wb.pan.suppressed_programmatic",
@@ -42,6 +43,7 @@ export const PIPELINE_DEBUG_STEPS = {
   traceDisplay: {
     cacheHit: "wb.trace_display.cache_hit",
     cacheMiss: "wb.trace_display.cache_miss",
+    sessionHit: "wb.signal_trace.session_hit",
     mergeChunk: "wb.trace_display.merge_chunk",
     sliceEvents: "wb.trace_display.slice_events",
     sliceHtf: "wb.trace_display.slice_htf",

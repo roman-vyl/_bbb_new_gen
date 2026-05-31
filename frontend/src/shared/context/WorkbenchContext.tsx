@@ -70,6 +70,10 @@ import {
   stabilizeByWindowBoundsKey,
 } from "@/features/chart/chartRenderWindowDisplay";
 import {
+  buildSessionCacheIdentity,
+  createSignalTraceBundleSessionCache,
+} from "@/features/chart/signalTraceBundleSessionCache";
+import {
   buildTraceDisplayCacheKey,
   createSignalTraceDisplayCache,
   computeChunkBoundsFromResponse,
@@ -233,6 +237,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
   const [marketCacheKey, setMarketCacheKey] = useState<MarketCacheKey | null>(null);
   const [auxEmaOverlays, setAuxEmaOverlays] = useState<ChartAuxEmaOverlay[]>([]);
   const signalTraceDisplayCacheRef = useRef(createSignalTraceDisplayCache());
+  const signalTraceBundleSessionCacheRef = useRef(createSignalTraceBundleSessionCache());
   const [displayCacheVersion, setDisplayCacheVersion] = useState(0);
   const [chartShowEntryBlockMarkers, setChartShowEntryBlockMarkers] = useState(true);
   const [chartShowExitSignalMarkers, setChartShowExitSignalMarkers] = useState(true);
@@ -726,36 +731,26 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       if (!cachedBundle || cachedBundle.candles.length === 0) {
         return false;
       }
-      let shiftedBounds: { windowStartIndex: number; windowEndIndex: number } | null =
-        null;
-      const shifted = dbgTimedSync(
-        DBG.renderWindow.shift,
-        () => {
-          const manager = renderWindowManagerRef.current;
-          const boundsBefore = manager.getWindowIndices();
-          const next = manager.maybeShiftWindowForVisibleRange(visible);
-          if (next === null) {
-            return false;
-          }
-          shiftedBounds = next;
-          setPendingViewportRestore({
-            anchorTimeSec,
-            previousVisible: visible,
-            windowStartIndex: boundsBefore.windowStartIndex,
-            fullLength: cachedBundle.candles.length,
-          });
-          bumpRenderWindow();
-          return true;
-        },
-        () => ({
-          windowStartIndex: shiftedBounds?.windowStartIndex,
-          windowEndIndex: shiftedBounds?.windowEndIndex,
-        }),
-      );
-      if (shifted) {
-        dbgScheduleShiftFlush();
+      const manager = renderWindowManagerRef.current;
+      const boundsBefore = manager.getWindowIndices();
+      const next = manager.maybeShiftWindowForVisibleRange(visible);
+      if (next === null) {
+        dbgMark(DBG.renderWindow.shiftNoop);
+        return false;
       }
-      return shifted;
+      dbgMark(DBG.renderWindow.shiftApplied, {
+        windowStartIndex: next.windowStartIndex,
+        windowEndIndex: next.windowEndIndex,
+      });
+      setPendingViewportRestore({
+        anchorTimeSec,
+        previousVisible: visible,
+        windowStartIndex: boundsBefore.windowStartIndex,
+        fullLength: cachedBundle.candles.length,
+      });
+      bumpRenderWindow();
+      dbgScheduleShiftFlush();
+      return true;
     },
     [cachedBundle, bumpRenderWindow],
   );
@@ -1037,6 +1032,33 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     setDisplayCacheVersion((version) => version + 1);
   }, [traceDisplayCacheKey]);
 
+  const sessionCacheIdentity = useMemo(() => {
+    if (selectedRunId === null || selectedVariantKey === "") {
+      return null;
+    }
+    return buildSessionCacheIdentity(
+      selectedRunId,
+      selectedVariantKey,
+      effectiveContextOverlayRef,
+      reloadToken,
+      intendedMarketCacheKey ?? marketCacheKey,
+    );
+  }, [
+    selectedRunId,
+    selectedVariantKey,
+    effectiveContextOverlayRef,
+    reloadToken,
+    intendedMarketCacheKey,
+    marketCacheKey,
+  ]);
+
+  useEffect(() => {
+    if (sessionCacheIdentity === null) {
+      return;
+    }
+    signalTraceBundleSessionCacheRef.current.reset(sessionCacheIdentity);
+  }, [sessionCacheIdentity]);
+
   useEffect(() => {
     chartCandlesCacheRef.current = { key: "", value: [] };
     chartEmaCacheRef.current = { key: "", value: [] };
@@ -1238,9 +1260,12 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       toOpenTimeMs,
     };
 
+    const sessionCacheHasWindow = signalTraceBundleSessionCacheRef.current.has(windowKey);
+
     const decision = decideSignalTraceLoad({
       chartWindowKey: windowKey,
       displayCacheCoversWindow,
+      sessionCacheHasWindow,
       loadedSignalTraceWindowKey,
       loadingTraceWindowKey: loadingTraceWindowKeyRef.current,
       signalTraceStatus,
@@ -1252,10 +1277,27 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       action: decision.action,
       windowKey,
       displayCacheCoversWindow,
+      sessionCacheHasWindow,
     });
 
     if (decision.action === "skip_display_cache_hit") {
       dbgMark(DBG.traceDisplay.cacheHit, { windowKey });
+      return;
+    }
+
+    if (decision.action === "restore_session_cache") {
+      const sessionBundle = signalTraceBundleSessionCacheRef.current.get(windowKey);
+      if (sessionBundle === null) {
+        return;
+      }
+      setSignalTrace(sessionBundle);
+      setLoadedSignalTraceWindowKey(windowKey);
+      setSignalTraceStatus("ready");
+      setSignalTraceError(null);
+      dbgMark(DBG.traceDisplay.sessionHit, { windowKey });
+      if (displayCacheCoversWindow) {
+        dbgMark(DBG.traceDisplay.cacheHit, { windowKey });
+      }
       return;
     }
 
@@ -1314,6 +1356,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
         setSignalTrace(bundle);
         setLoadedSignalTraceWindowKey(windowKey);
         setSignalTraceStatus("ready");
+        signalTraceBundleSessionCacheRef.current.set(windowKey, bundle);
         dbgFlush("workbench-after-signal-trace");
       } catch (err) {
         if (cancelled) return;

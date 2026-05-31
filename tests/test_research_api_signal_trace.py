@@ -213,3 +213,108 @@ def test_signal_trace_meta_validates_dual_setup_stack() -> None:
         if event.role == "setup"
     }
     assert "bounce_counter" in setup_event_ids
+
+
+def test_to_open_time_ms_exclusive_end_returns_full_50k_window(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """to_open_time_ms uses market-style exclusive end; slice includes first and last bar."""
+    from types import SimpleNamespace
+
+    import pandas as pd
+
+    from data_engine.contracts import timeframe_ms
+    from research.strategies.ema_pullback.execution.signal_trace import (
+        SideSignalTrace,
+        SignalTraceBundleData,
+    )
+    from research.strategies.ema_pullback.spec_instances import make_ema_pullback_strategy_spec
+    from research_api.services import signal_trace_service as sts
+    from research_api.services.signal_trace_service import MAX_SIGNAL_TRACE_BARS
+
+    n = MAX_SIGNAL_TRACE_BARS
+    bar_ms = timeframe_ms("5m")
+    bar_sec = bar_ms // 1000
+    t_first_sec = 1_700_000_000
+    t_last_sec = t_first_sec + (n - 1) * bar_sec
+    t_first_ms = t_first_sec * 1000
+    t_last_ms = t_last_sec * 1000
+    times = [t_first_sec + i * bar_sec for i in range(n)]
+
+    def side(length: int) -> SideSignalTrace:
+        false = [False] * length
+        true = [True] * length
+        return SideSignalTrace(
+            direction_ok=false,
+            blockers_ok=true,
+            setup_ok=false,
+            trigger_ok=false,
+            risk_ok=true,
+            signal_entry=false,
+            stop_ready=true,
+            portfolio_entry=false,
+            internals={},
+        )
+
+    full_trace = SignalTraceBundleData(
+        times=times,
+        meta={
+            "variant": "v1",
+            "component_ids": {
+                "direction": "ema_anchor_stack_trend",
+                "setups": [{"instance_id": "setup", "component_id": "untouched_anchor_setup"}],
+                "trigger": "reclaim_anchor",
+                "risk": "no_risk_filter",
+            },
+            "setup_params": [],
+            "blocker_instances": [],
+        },
+        htf_context={"state": [], "fast": [], "anchor": [], "slow": [], "meta": {}},
+        context_consumption_trace=[],
+        component_events=[],
+        long=side(n),
+        short=side(n),
+    )
+
+    spec = make_ema_pullback_strategy_spec()
+    report = SimpleNamespace(
+        family="ema_pullback",
+        symbol="BTCUSDT",
+        timeframe="5m",
+        variants=[
+            SimpleNamespace(
+                variant="v1",
+                strategy_spec={},
+            )
+        ],
+    )
+
+    one_row = pd.DataFrame(
+        {
+            "open": [1.0],
+            "high": [1.0],
+            "low": [1.0],
+            "close": [1.0],
+            "volume": [1.0],
+        },
+        index=pd.date_range("2024-01-01", periods=1, freq="5min", tz="UTC"),
+    )
+
+    monkeypatch.setattr(sts, "load_run_report", lambda run_id: report)
+    monkeypatch.setattr(sts, "strategy_spec_from_report_dict", lambda _: spec)
+    monkeypatch.setattr(sts, "_warmup_bars_ms", lambda *args, **kwargs: 0)
+    monkeypatch.setattr(sts, "_load_ohlcv_frame", lambda **kwargs: one_row)
+    monkeypatch.setattr(sts, "add_feature_columns_from_plan", lambda df, plan: df)
+    monkeypatch.setattr(sts, "build_signal_trace_from_spec", lambda *args, **kwargs: full_trace)
+    sts._TRACE_CACHE.clear()
+
+    bundle = sts.fetch_signal_trace_bundle(
+        run_id="run1",
+        variant_key="v1",
+        from_ms=t_first_ms,
+        to_open_time_ms=t_last_ms,
+    )
+
+    assert len(bundle.times) == n
+    assert bundle.times[0] == t_first_sec
+    assert bundle.times[-1] == t_last_sec

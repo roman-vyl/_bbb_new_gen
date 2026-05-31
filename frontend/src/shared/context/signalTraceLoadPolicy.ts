@@ -11,6 +11,7 @@ export type SignalTraceRequest = {
 export type SignalTraceLoadDecision =
   | { action: "skip_idle" }
   | { action: "skip_display_cache_hit" }
+  | { action: "restore_session_cache" }
   | { action: "skip_already_loading" }
   | { action: "skip_identical_in_flight" }
   | { action: "load_start"; request: SignalTraceRequest };
@@ -18,6 +19,7 @@ export type SignalTraceLoadDecision =
 export type DecideSignalTraceLoadInput = {
   chartWindowKey: string | null;
   displayCacheCoversWindow: boolean;
+  sessionCacheHasWindow: boolean;
   /** Window key for the current `signalTrace` bundle (lanes/diagnostics). */
   loadedSignalTraceWindowKey: string | null;
   loadingTraceWindowKey: string | null;
@@ -83,6 +85,13 @@ export function decideSignalTraceLoad(
   }
 
   const { request } = input;
+
+  if (
+    input.sessionCacheHasWindow &&
+    !signalTraceMatchesChartWindow(input.chartWindowKey, input.loadedSignalTraceWindowKey)
+  ) {
+    return { action: "restore_session_cache" };
+  }
 
   if (
     input.displayCacheCoversWindow &&
