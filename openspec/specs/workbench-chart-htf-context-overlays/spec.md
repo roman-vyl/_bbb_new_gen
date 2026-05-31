@@ -17,9 +17,7 @@ Document the **delivered** Workbench Chart pipeline for HTF context EMA auxiliar
 | Frontend contexts | `frontend/src/features/chart/strategyContexts.ts` | Reads `strategy.contexts`; resolves default overlay ref |
 | Frontend state | `frontend/src/shared/context/WorkbenchContext.tsx` | `effectiveContextOverlayRef`, aux overlay merge, trace window key |
 | Frontend chart | `frontend/src/features/chart/ChartPanel.tsx` | Renders `chartDisplayAuxEmaOverlays` as dashed LineSeries |
-
 ## Requirements
-
 ### Requirement: HTF context EMA lines come from signal trace, not browser or BFF overlay EMA
 
 When a variant defines `strategy.contexts[<ref>]` with `component_id: htf_context`, the Chart SHALL render three auxiliary EMA lines (fast / anchor / slow) from **`signal_trace.htf_context`** values aligned to `signal_trace.times`. Period and timeframe labels MUST come from the selected context provider config (`fast_period`, `anchor_period`, `slow_period`, `timeframe`).
@@ -106,12 +104,21 @@ While `signalTraceStatus` is `loading` or `error`, Workbench MUST NOT strip exis
 
 Clearing all aux overlays (`setAuxEmaOverlays([])`) MUST NOT run when HTF specs exist but BFF exit-EMA specs are empty — HTF-only variants still render context lines.
 
+HTF aux overlay points MUST be sliced to the **current render window** (same bounds as `chartCandles`). When the sliding render window shifts on pan, HTF overlay series MUST receive points filtered to the new window until fresh trace data arrives.
+
 #### Scenario: Pan chart retains HTF lines during trace reload
 
-- **GIVEN** HTF context EMA lines visible for the current window
-- **WHEN** user pans the chart and signal trace reload starts
+- **GIVEN** HTF context EMA lines visible for the current render window
+- **WHEN** user pans the chart and the render window shifts, starting signal trace reload
 - **THEN** previous HTF lines remain visible until replaced or stale banner explains lag
-- **AND** lines update when the new trace reaches `ready` with matching `chartWindowKey`
+- **AND** lines update when the new trace reaches `ready` with matching `chartWindowKey` for the **new render window bounds**
+
+#### Scenario: HTF overlay slice follows render window shift
+
+- **GIVEN** HTF context EMA lines sliced to render window `[T0, T1]`
+- **WHEN** pan shifts the render window to `[T0', T1']` before trace reload completes
+- **THEN** displayed HTF overlay points are sliced to `[T0', T1']` (or frozen stale slice aligned to new bounds per existing stale rules)
+- **AND** HTF lines do not retain points from the pre-shift window outside the new bounds
 
 ### Requirement: Report strategy_spec carries contexts for overlay resolution
 
@@ -147,3 +154,4 @@ Regression verification (minimum):
 - **WHEN** a proposal adds component event markers or changes signal trace loading
 - **THEN** `tasks.md` includes a checkbox for HTF context EMA overlay manual verification
 - **AND** design.md links this spec
+

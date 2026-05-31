@@ -56,9 +56,15 @@ import {
   hasHtfAlignedComponentEvents,
 } from "@/features/chart/chartComponentEvents";
 
-import { buildChartDataKey } from "@/features/chart/chartDataKey";
-import { applyChartViewport } from "@/features/chart/chartViewport";
-import { CHART_RENDER_BAR_LIMIT, type ChartViewMode } from "@/features/chart/chartViewWindow";
+import { buildChartDataKey, buildChartSeriesDataKey } from "@/features/chart/chartDataKey";
+import {
+  applyChartViewport,
+  restoreVisibleRangeAfterWindowShift,
+  resolveAnchorTimeFromVisibleRange,
+  shouldSuppressPanShiftRequest,
+} from "@/features/chart/chartViewport";
+import { CHART_RENDER_WINDOW_SIZE } from "@/features/chart/chartDataWindowManager";
+import { type ChartViewMode } from "@/features/chart/chartViewWindow";
 import { findTradeById } from "@/features/chart/tradeLookup";
 
 import { useWorkbench } from "@/shared/context/WorkbenchContext";
@@ -121,6 +127,10 @@ export function ChartPanel() {
   const viewportKeyRef = useRef<string | null>(null);
 
   const viewportPlanRef = useRef<ViewportPlan | null>(null);
+  const isApplyingViewportRef = useRef(false);
+  const suppressPanShiftUntilRef = useRef(0);
+  const panShiftDebounceRef = useRef<number | null>(null);
+  const visibleRangeHandlerRef = useRef<(() => void) | null>(null);
 
   const applyViewportFromPlan = useCallback((chart: IChartApi) => {
     const plan = viewportPlanRef.current;
@@ -128,12 +138,21 @@ export function ChartPanel() {
       return null;
     }
 
-    return applyChartViewport({
+    isApplyingViewportRef.current = true;
+    suppressPanShiftUntilRef.current = Date.now() + 250;
+
+    const result = applyChartViewport({
       chart,
       mode: plan.mode,
       candles: plan.candles,
       centerTimeSec: plan.centerTimeSec,
     });
+
+    window.setTimeout(() => {
+      isApplyingViewportRef.current = false;
+    }, 250);
+
+    return result;
   }, []);
 
   const scheduleViewportApply = useCallback(
@@ -223,7 +242,18 @@ export function ChartPanel() {
 
     selectBar,
 
+    onRenderWindowShiftRequest,
+
+    pendingViewportRestore,
+
+    clearPendingViewportRestore,
+
   } = useWorkbench();
+
+  const onRenderWindowShiftRequestRef = useRef(onRenderWindowShiftRequest);
+  onRenderWindowShiftRequestRef.current = onRenderWindowShiftRequest;
+  const chartCandlesRef = useRef(chartCandles);
+  chartCandlesRef.current = chartCandles;
 
 
 
@@ -240,6 +270,16 @@ export function ChartPanel() {
     selectedTrade && tradeOutsideCandleRange(selectedTrade.entry_time_ms, fullCandleRange);
 
 
+
+  const chartSeriesDataKey = useMemo(
+    () =>
+      buildChartSeriesDataKey({
+        firstTimeSec: chartViewFirstTimeSec,
+        lastTimeSec: chartViewLastTimeSec,
+        count: chartViewCount,
+      }),
+    [chartViewFirstTimeSec, chartViewLastTimeSec, chartViewCount],
+  );
 
   const chartDataKey = useMemo(
     () =>
@@ -518,6 +558,38 @@ export function ChartPanel() {
 
     });
 
+    const visibleRangeHandler = (range: { from: number; to: number } | null) => {
+      if (
+        !range ||
+        shouldSuppressPanShiftRequest(
+          isApplyingViewportRef.current,
+          suppressPanShiftUntilRef.current,
+        )
+      ) {
+        return;
+      }
+      if (panShiftDebounceRef.current !== null) {
+        window.clearTimeout(panShiftDebounceRef.current);
+      }
+      panShiftDebounceRef.current = window.setTimeout(() => {
+        panShiftDebounceRef.current = null;
+        const candles = chartCandlesRef.current;
+        if (candles.length === 0) {
+          return;
+        }
+        const anchorTimeSec = resolveAnchorTimeFromVisibleRange(range, candles);
+        if (anchorTimeSec === null) {
+          return;
+        }
+        onRenderWindowShiftRequestRef.current(range, anchorTimeSec);
+      }, 100);
+    };
+
+    chart.timeScale().subscribeVisibleLogicalRangeChange(visibleRangeHandler);
+    visibleRangeHandlerRef.current = () => {
+      chart.timeScale().unsubscribeVisibleLogicalRangeChange(visibleRangeHandler);
+    };
+
 
 
     const ro = new ResizeObserver((entries) => {
@@ -537,6 +609,13 @@ export function ChartPanel() {
     return () => {
 
       ro.disconnect();
+
+      visibleRangeHandlerRef.current?.();
+      visibleRangeHandlerRef.current = null;
+      if (panShiftDebounceRef.current !== null) {
+        window.clearTimeout(panShiftDebounceRef.current);
+        panShiftDebounceRef.current = null;
+      }
 
       // chart.remove() destroys all series; do not call removeSeries afterward.
       auxEmaSeriesRef.current.clear();
@@ -565,7 +644,7 @@ export function ChartPanel() {
 
     const chart = chartRef.current;
 
-    if (!series || !chart || !selectedVariant || chartDataKey === "") return;
+    if (!series || !chart || !selectedVariant || chartSeriesDataKey === "") return;
 
     series.setData(toCandlestickSeriesData(chartCandles));
 
@@ -612,7 +691,31 @@ export function ChartPanel() {
       candles: chartCandles,
     };
 
-  }, [chartCandles, chartEmaOverlays, selectedVariant, chartDataKey, chartViewMode, chartViewCenterTimeSec]);
+  }, [chartCandles, chartEmaOverlays, selectedVariant, chartSeriesDataKey, chartViewMode, chartViewCenterTimeSec]);
+
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart || pendingViewportRestore === null || chartCandles.length === 0) {
+      return;
+    }
+
+    isApplyingViewportRef.current = true;
+    suppressPanShiftUntilRef.current = Date.now() + 300;
+
+    restoreVisibleRangeAfterWindowShift(chart, {
+      anchorTimeSec: pendingViewportRestore.anchorTimeSec,
+      newCandles: chartCandles,
+      previousVisible: pendingViewportRestore.previousVisible,
+      windowStartIndex: pendingViewportRestore.windowStartIndex,
+      fullLength: pendingViewportRestore.fullLength,
+    });
+
+    clearPendingViewportRestore();
+
+    window.setTimeout(() => {
+      isApplyingViewportRef.current = false;
+    }, 300);
+  }, [pendingViewportRestore, chartCandles, clearPendingViewportRestore]);
 
   useEffect(() => {
     viewportKeyRef.current = null;
@@ -646,7 +749,7 @@ export function ChartPanel() {
 
     const chart = chartRef.current;
 
-    if (!chart || !selectedVariant || chartDataKey === "") return;
+    if (!chart || !selectedVariant || chartSeriesDataKey === "") return;
 
     const seriesMap = auxEmaSeriesRef.current;
 
@@ -718,7 +821,7 @@ export function ChartPanel() {
 
     });
 
-  }, [chartDisplayAuxEmaOverlays, chartDataKey, selectedVariant]);
+  }, [chartDisplayAuxEmaOverlays, chartSeriesDataKey, selectedVariant]);
 
 
 
@@ -858,13 +961,14 @@ export function ChartPanel() {
 
       )}
 
-      {candlesSource === "market" && marketCandlesCount > CHART_RENDER_BAR_LIMIT && (
+      {candlesSource === "market" && marketCandlesCount > CHART_RENDER_WINDOW_SIZE && (
 
         <p className="banner banner--info" role="status">
 
           Full report range cached ({marketCandlesCount} bars). Chart renders up to{" "}
 
-          {CHART_RENDER_BAR_LIMIT} bars per view; trade focus uses an in-memory slice (no extra API
+          {CHART_RENDER_WINDOW_SIZE.toLocaleString()} bars per render window; pan shifts slice from
+          in-memory cache (no extra API
 
           calls).
 

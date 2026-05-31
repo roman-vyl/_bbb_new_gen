@@ -1,7 +1,11 @@
 import type { ChartAuxEmaOverlay, ChartBar, ChartEmaOverlay, IndicatorPoint } from "@/api/types";
 import { sliceAuxOverlaysToCandleWindow } from "@/features/chart/chartAuxEmaOverlays";
 
-export const CHART_RENDER_BAR_LIMIT = 5000;
+export const CHART_RENDER_WINDOW_SIZE = 50_000;
+export const CHART_RENDER_SAFE_ZONE = 10_000;
+
+/** @deprecated Use CHART_RENDER_WINDOW_SIZE */
+export const CHART_RENDER_BAR_LIMIT = CHART_RENDER_WINDOW_SIZE;
 
 export type ChartViewMode = "empty" | "tail" | "around-trade";
 
@@ -135,7 +139,7 @@ export function buildChartViewWindow({
   emaOverlays,
   auxEmaOverlays = [],
   selectedTradeEntryTimeMs,
-  limit = CHART_RENDER_BAR_LIMIT,
+  limit = CHART_RENDER_WINDOW_SIZE,
 }: BuildChartViewWindowParams): ChartViewWindow {
   if (candles.length === 0) {
     return emptyChartViewWindow();

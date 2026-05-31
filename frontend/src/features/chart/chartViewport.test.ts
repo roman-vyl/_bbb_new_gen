@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 
 import {
   centeredVisibleLogicalRange,
+  computeRestoredVisibleLogicalRange,
   isTradeCenterVisible,
+  shouldSuppressPanShiftRequest,
   TRADE_FOCUS_VIEWPORT_BARS,
 } from "@/features/chart/chartViewport";
 import { findBarIndexAtOrBefore } from "@/features/chart/chartViewWindow";
@@ -20,9 +22,13 @@ function makeBars(count: number, startTime = 1_000_000): ChartBar[] {
 
 describe("centeredVisibleLogicalRange", () => {
   it("centers index in the middle of viewport", () => {
-    const range = centeredVisibleLogicalRange(5000, 2500, 120);
+    const range = centeredVisibleLogicalRange(5000, 2500, 400);
     expect(2500).toBeGreaterThanOrEqual(range.from);
     expect(2500).toBeLessThan(range.to);
+  });
+
+  it("uses 400 bars default trade focus", () => {
+    expect(TRADE_FOCUS_VIEWPORT_BARS).toBe(400);
   });
 });
 
@@ -37,5 +43,54 @@ describe("isTradeCenterVisible", () => {
       isTradeCenterVisible(candles, centerIdx, { from: fromBar.time, to: toBar.time }),
     ).toBe(true);
     expect(findBarIndexAtOrBefore(candles, candles[centerIdx]!.time)).toBe(centerIdx);
+  });
+});
+
+describe("computeRestoredVisibleLogicalRange", () => {
+  it("restores around anchor time in new window", () => {
+    const oldCandles = makeBars(100, 1_000_000);
+    const newCandles = makeBars(100, 1_000_000 + 50 * 300);
+    const anchorTimeSec = oldCandles[50]!.time;
+    const result = computeRestoredVisibleLogicalRange({
+      anchorTimeSec,
+      newCandles,
+      previousVisible: { from: 40, to: 80 },
+    });
+    expect(result.method).toBe("logical-range");
+    expect(result.logicalFrom).toBeDefined();
+    expect(result.logicalTo! - result.logicalFrom!).toBe(40);
+  });
+
+  it("clamps at global start", () => {
+    const newCandles = makeBars(50, 1_000_000);
+    const result = computeRestoredVisibleLogicalRange({
+      anchorTimeSec: newCandles[0]!.time,
+      newCandles,
+      previousVisible: { from: 10, to: 30 },
+      windowStartIndex: 0,
+      fullLength: 500,
+    });
+    expect(result.method).toBe("logical-range");
+    expect(result.logicalFrom).toBe(0);
+  });
+
+  it("falls back to fitContent on invalid range", () => {
+    const result = computeRestoredVisibleLogicalRange({
+      anchorTimeSec: 0,
+      newCandles: [],
+      previousVisible: { from: 0, to: 0 },
+    });
+    expect(result.method).toBe("fitContent");
+  });
+});
+
+describe("shouldSuppressPanShiftRequest", () => {
+  it("suppresses during programmatic viewport apply", () => {
+    expect(shouldSuppressPanShiftRequest(true, 0)).toBe(true);
+  });
+
+  it("suppresses until deadline after restore", () => {
+    expect(shouldSuppressPanShiftRequest(false, Date.now() + 500, Date.now())).toBe(true);
+    expect(shouldSuppressPanShiftRequest(false, Date.now() - 1, Date.now())).toBe(false);
   });
 });
