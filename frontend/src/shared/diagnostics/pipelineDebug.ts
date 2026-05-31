@@ -54,6 +54,7 @@ export const PIPELINE_DEBUG_STEPS = {
     mergeChunk: "wb.trace_display.merge_chunk",
     sliceEvents: "wb.trace_display.slice_events",
     sliceHtf: "wb.trace_display.slice_htf",
+    fetchSuperseded: "wb.trace_display.fetch_superseded",
   },
   chart: {
     setDataCandles: "chart.setData.candles",

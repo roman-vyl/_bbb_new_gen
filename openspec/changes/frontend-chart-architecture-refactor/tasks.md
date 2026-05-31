@@ -22,19 +22,19 @@
 - [x] 3.1 Implement active pan lifecycle: boundary crossing during drag records `pendingShift` only and does not mutate committed window.
 - [x] 3.2 Ensure pending shift does not publish new `chartWindowKey`; trace orchestration is keyed only by committed window.
 - [x] 3.3 Implement commit policy: `pointerup` commit for pointer lifecycle, idle debounce fallback (300-500ms) for wheel/touchpad or missed `pointerup`.
-- [ ] 3.4 Implement time-based restore anchor (visible-time center or cursor-time anchor) and forbid logical-index-based restore as primary method.
+- [x] 3.4 Implement time-based restore anchor (visible-time center or cursor-time anchor) and forbid logical-index-based restore as primary method (slice-1.1: `restoreVisibleRangeByTimeAnchor` primary path).
 
 ## 4. ViewportController as single owner
 
-- [ ] 4.1 Move all viewport command emission to `ViewportController`; remove all other viewport command sources.
+- [x] 4.1 Move all viewport command emission to `ViewportController`; remove all other viewport command sources.
 - [x] 4.2 Encode explicit rules for `tradeSelected`, `userPanStart`, `windowSwapCommitted`, and enforce hard rule `traceReady -> noViewportChange`.
 - [x] 4.3 Ensure trade focus commands are suppressed while `user_panning` is active.
-- [ ] 4.4 Remove legacy policy-owner refs/guards (`pendingViewportRestoreRef`, `viewportCommandSeqRef`, stale RAF policy guards) or demote them to non-owner plumbing only.
+- [x] 4.4 Remove legacy policy-owner refs/guards (`pendingViewportRestoreRef`, `viewportCommandSeqRef`, stale RAF policy guards) or demote them to non-owner plumbing only.
 
 ## 5. TraceDisplayController committed-window orchestration
 
 - [x] 5.1 Make trace scheduling read committed window only; transient pending windows must not trigger fetch.
-- [ ] 5.2 Implement pan-time request coalescing so oscillating boundary intents do not create fetch storms.
+- [x] 5.2 Implement pan-time request coalescing so oscillating boundary intents do not create fetch storms.
 - [x] 5.3 Enforce strict idle-only fetch for uncovered pending windows during active pan (no active-pan prefetch, except cache-hit display updates for committed window).
 - [ ] 5.4 Ensure cache hit and cache merge update markers/HTF overlays only, without viewport side effects.
 - [ ] 5.5 Preserve pan-back behavior: returning to cached trace coverage does not trigger unnecessary fetch.

@@ -5,3 +5,4 @@ export * from "@/features/chart/runtime/traceDisplayOrchestrator";
 export * from "@/features/chart/runtime/chartViewModel";
 export * from "@/features/chart/runtime/interactionAdapter";
 export * from "@/features/chart/runtime/chartRuntime";
+export * from "@/features/chart/runtime/executeViewportCommand";

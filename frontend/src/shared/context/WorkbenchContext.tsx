@@ -45,15 +45,18 @@ import {
 import { mergeAuxOverlayPoints, sliceAuxOverlaysToCandleWindow } from "@/features/chart/chartAuxEmaOverlays";
 import type { ChartDataWindowManager } from "@/features/chart/chartDataWindowManager";
 import { createChartRuntime, type WindowCommitResult } from "@/features/chart/runtime/chartRuntime";
-import { shouldBlockTraceFetchForActivePan } from "@/features/chart/runtime/traceDisplayOrchestrator";
-import type { ChartInteractionEvent } from "@/features/chart/runtime/types";
+import {
+  queueTraceFetchIntent,
+  shouldBlockTraceFetchForActivePan,
+  takeCommittedTraceFetchIntent,
+} from "@/features/chart/runtime/traceDisplayOrchestrator";
+import type { ChartInteractionEvent, ViewportCommand } from "@/features/chart/runtime/types";
 import {
   emptyChartViewWindow,
   findBarIndexAtOrBefore,
   type ChartViewMode,
   type ChartViewWindow,
 } from "@/features/chart/chartViewWindow";
-import type { ChartLogicalRange } from "@/features/chart/chartViewport";
 import {
   auxOverlayFromHtfSlice,
   auxOverlayFromHtfTrace,
@@ -118,14 +121,6 @@ export type ConfigLoadStatus = "loading" | "ready" | "empty" | "error";
 export type MarketLoadStatus = "idle" | "loading" | "ready" | "error";
 export type CandlesSource = "market" | "unavailable";
 export type { SignalTraceLoadStatus };
-
-export type PendingViewportRestore = {
-  anchorTimeSec: number;
-  previousVisible: ChartLogicalRange;
-  windowStartIndex: number;
-  fullLength: number;
-  shiftSeq: number;
-};
 
 type WorkbenchState = {
   symbol: string;
@@ -195,8 +190,9 @@ type WorkbenchState = {
   selectedBarTimeSec: number | null;
   selectBar: (timeSec: number | null) => void;
   dispatchChartInteraction: (event: ChartInteractionEvent) => void;
-  pendingViewportRestore: PendingViewportRestore | null;
-  clearPendingViewportRestore: () => void;
+  chartViewportCommand: ViewportCommand | null;
+  chartViewportCommandSeq: number;
+  acknowledgeChartViewportCommand: () => void;
 };
 
 const WorkbenchContext = createContext<WorkbenchState | null>(null);
@@ -288,8 +284,8 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     value: [],
   });
   const [renderWindowRevision, setRenderWindowRevision] = useState(0);
-  const [pendingViewportRestore, setPendingViewportRestore] =
-    useState<PendingViewportRestore | null>(null);
+  const [chartViewportCommand, setChartViewportCommand] = useState<ViewportCommand | null>(null);
+  const [chartViewportCommandSeq, setChartViewportCommandSeq] = useState(0);
   const skipTradeWindowRebuildRef = useRef(false);
   const renderWindowShiftSeqRef = useRef(0);
   const chartViewCandlesRef = useRef<ChartBar[]>([]);
@@ -666,8 +662,16 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     setRenderWindowRevision((r) => r + 1);
   }, []);
 
-  const clearPendingViewportRestore = useCallback(() => {
-    setPendingViewportRestore(null);
+  const emitChartViewportCommand = useCallback((command: ViewportCommand) => {
+    if (command.type === "noViewportChange") {
+      return;
+    }
+    setChartViewportCommand(command);
+    setChartViewportCommandSeq((seq) => seq + 1);
+  }, []);
+
+  const acknowledgeChartViewportCommand = useCallback(() => {
+    setChartViewportCommand(null);
   }, []);
 
   const applyRenderWindowForTrade = useCallback(
@@ -748,39 +752,14 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     applyRenderWindowForTrade(selectedTradeEntryTimeMs, false);
   }, [selectedTradeEntryTimeMs, cachedBundle, marketLoadStatus, applyRenderWindowForTrade]);
 
-  const applyWindowCommit = useCallback(
-    (commit: WindowCommitResult) => {
-      if (!cachedBundle || cachedBundle.candles.length === 0) {
-        return;
-      }
-      dbgMark(DBG.renderWindow.shiftApplied, {
-        windowStartIndex: commit.bounds.windowStartIndex,
-        windowEndIndex: commit.bounds.windowEndIndex,
-      });
-      renderWindowShiftSeqRef.current = commit.shiftSeq;
-      setRenderWindowShiftSeq(commit.shiftSeq);
-      setPendingViewportRestore({
-        anchorTimeSec: commit.anchorTimeSec,
-        previousVisible: commit.previousVisible,
-        windowStartIndex: commit.boundsBefore.windowStartIndex,
-        fullLength: cachedBundle.candles.length,
-        shiftSeq: commit.shiftSeq,
-      });
-      bumpRenderWindow();
-      dbgScheduleShiftFlush();
-    },
-    [cachedBundle, bumpRenderWindow],
-  );
-
-  useEffect(() => {
-    applyWindowCommitRef.current = applyWindowCommit;
-  }, [applyWindowCommit]);
-
   const dispatchChartInteraction = useCallback(
     (event: ChartInteractionEvent) => {
-      chartRuntimeRef.current.dispatchInteraction(event);
+      const command = chartRuntimeRef.current.dispatchInteraction(event);
+      if (command !== null) {
+        emitChartViewportCommand(command);
+      }
     },
-    [],
+    [emitChartViewportCommand],
   );
 
   const intendedMarketCacheKey = useMemo((): MarketCacheKey | null => {
@@ -875,6 +854,10 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
   chartViewCandlesRef.current = chartView.candles;
 
   useEffect(() => {
+    chartRuntimeRef.current.setViewportPlan(chartView.mode, chartView.centerTimeSec);
+  }, [chartView.mode, chartView.centerTimeSec]);
+
+  useEffect(() => {
     intendedMarketCacheKeyRef.current = intendedMarketCacheKey;
   }, [intendedMarketCacheKey]);
 
@@ -900,6 +883,62 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
 
   /** Resolved ref for trace + HTF overlays (avoids one-frame null before default effect runs). */
   const effectiveContextOverlayRef = contextOverlayRef ?? defaultContextOverlayRef;
+
+  const applyWindowCommit = useCallback(
+    (commit: WindowCommitResult) => {
+      if (!cachedBundle || cachedBundle.candles.length === 0) {
+        return;
+      }
+      dbgMark(DBG.renderWindow.shiftApplied, {
+        windowStartIndex: commit.bounds.windowStartIndex,
+        windowEndIndex: commit.bounds.windowEndIndex,
+      });
+      renderWindowShiftSeqRef.current = commit.shiftSeq;
+      setRenderWindowShiftSeq(commit.shiftSeq);
+
+      const tradeFocusPending = selectedTradeEntryTimeMs !== null;
+      const entryTimeSec =
+        selectedTradeEntryTimeMs !== null
+          ? Math.floor(selectedTradeEntryTimeMs / 1000)
+          : null;
+      const viewportCmd = chartRuntimeRef.current.viewport.onWindowSwapCommitted({
+        anchorTimeSec: commit.anchorTimeSec,
+        previousVisible: commit.previousVisible,
+        tradeFocusPending,
+        entryTimeSec,
+        shiftSeq: commit.shiftSeq,
+        windowStartIndex: commit.boundsBefore.windowStartIndex,
+        fullLength: cachedBundle.candles.length,
+      });
+      emitChartViewportCommand(viewportCmd);
+
+      const slice = cachedBundle.candles.slice(
+        commit.bounds.windowStartIndex,
+        commit.bounds.windowEndIndex,
+      );
+      if (slice.length > 0 && selectedRunId !== null) {
+        const overlay = effectiveContextOverlayRef ?? "";
+        const windowKey = `${selectedRunId}:${selectedVariantKey}:${slice[0]!.time}:${slice[slice.length - 1]!.time}:${overlay}`;
+        queueTraceFetchIntent(windowKey);
+      }
+
+      bumpRenderWindow();
+      dbgScheduleShiftFlush();
+    },
+    [
+      cachedBundle,
+      bumpRenderWindow,
+      selectedTradeEntryTimeMs,
+      selectedRunId,
+      selectedVariantKey,
+      effectiveContextOverlayRef,
+      emitChartViewportCommand,
+    ],
+  );
+
+  useEffect(() => {
+    applyWindowCommitRef.current = applyWindowCommit;
+  }, [applyWindowCommit]);
 
   useEffect(() => {
     if (contextOverlayRef !== null && !contextOverlayRefOptions.includes(contextOverlayRef)) {
@@ -1279,18 +1318,31 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
 
   const selectTrade = useCallback(
     (tradeId: number | null) => {
-      chartRuntimeRef.current.dispatchInteraction({ type: "trade_selected" });
-      setSelectedTradeId(tradeId);
+      let entryTimeSec: number | null = null;
       if (tradeId !== null && selectedVariant) {
         const trade = findTradeById(selectedVariant.trade_records, tradeId);
         const entryTimeMs = resolveTradeEntryTimeMs(trade);
         if (entryTimeMs !== null) {
-          setSelectedBarTimeSec(Math.floor(entryTimeMs / 1000));
+          entryTimeSec = Math.floor(entryTimeMs / 1000);
         }
+      }
+      if (entryTimeSec !== null) {
+        chartRuntimeRef.current.setViewportPlan("around-trade", entryTimeSec);
+      }
+      const command = chartRuntimeRef.current.dispatchInteraction({
+        type: "trade_selected",
+        entryTimeSec,
+      });
+      if (command !== null) {
+        emitChartViewportCommand(command);
+      }
+      setSelectedTradeId(tradeId);
+      if (tradeId !== null && entryTimeSec !== null) {
+        setSelectedBarTimeSec(entryTimeSec);
         setActiveTab("chart");
       }
     },
-    [selectedVariant, selectedTradeId],
+    [selectedVariant, emitChartViewportCommand],
   );
 
   const selectBar = useCallback((timeSec: number | null) => {
@@ -1329,6 +1381,15 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
 
     const { windowKey, request, fetchSource } = bootstrap;
     previousChartWindowKeyRef.current = windowKey;
+
+    const coalescedFetchKey = takeCommittedTraceFetchIntent();
+    if (coalescedFetchKey !== null && coalescedFetchKey !== windowKey) {
+      dbgMark(DBG.traceDisplay.fetchSuperseded, {
+        coalesced: coalescedFetchKey,
+        windowKey,
+      });
+      return;
+    }
 
     const runtime = chartRuntimeRef.current.renderWindow;
     if (
@@ -1580,8 +1641,9 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       selectedBarTimeSec,
       selectBar,
       dispatchChartInteraction,
-      pendingViewportRestore,
-      clearPendingViewportRestore,
+      chartViewportCommand,
+      chartViewportCommandSeq,
+      acknowledgeChartViewportCommand,
     }),
     [
       symbol,
@@ -1643,8 +1705,9 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       selectedBarTimeSec,
       selectBar,
       dispatchChartInteraction,
-      pendingViewportRestore,
-      clearPendingViewportRestore,
+      chartViewportCommand,
+      chartViewportCommandSeq,
+      acknowledgeChartViewportCommand,
       displayApplyRevision,
       renderWindowShiftSeq,
     ],

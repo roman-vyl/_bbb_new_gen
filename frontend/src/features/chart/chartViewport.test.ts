@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   buildTradeFocusIntentKey,
@@ -6,12 +6,14 @@ import {
   computeRestoredVisibleLogicalRange,
   isStaleViewportCommand,
   isTradeCenterVisible,
+  restoreVisibleRangeByTimeAnchor,
   shouldBlockViewportApplyWhilePendingRestore,
   shouldScheduleTradeViewportApply,
   shouldSuppressPanShiftRequest,
   tradeFocusIntentChanged,
   TRADE_FOCUS_VIEWPORT_BARS,
 } from "@/features/chart/chartViewport";
+import type { IChartApi } from "lightweight-charts";
 import { findBarIndexAtOrBefore } from "@/features/chart/chartViewWindow";
 import type { ChartBar } from "@/api/types";
 
@@ -48,6 +50,30 @@ describe("isTradeCenterVisible", () => {
       isTradeCenterVisible(candles, centerIdx, { from: fromBar.time, to: toBar.time }),
     ).toBe(true);
     expect(findBarIndexAtOrBefore(candles, candles[centerIdx]!.time)).toBe(centerIdx);
+  });
+});
+
+describe("restoreVisibleRangeByTimeAnchor", () => {
+  it("applies visible time range (not logical indexes) as primary restore", () => {
+    const setVisibleRange = vi.fn();
+    const setVisibleLogicalRange = vi.fn();
+    const chart = {
+      timeScale: () => ({
+        fitContent: vi.fn(),
+        setVisibleRange,
+        setVisibleLogicalRange,
+      }),
+    } as unknown as IChartApi;
+    const newCandles = makeBars(100);
+    const anchorTimeSec = newCandles[50]!.time;
+    const result = restoreVisibleRangeByTimeAnchor(chart, {
+      anchorTimeSec,
+      newCandles,
+      previousVisible: { from: 40, to: 80 },
+    });
+    expect(result.method).toBe("time-range");
+    expect(setVisibleRange).toHaveBeenCalledTimes(1);
+    expect(setVisibleLogicalRange).not.toHaveBeenCalled();
   });
 });
 

@@ -17,7 +17,7 @@ export type RestoreVisibleRangeAfterWindowShiftParams = {
 };
 
 export type RestoreVisibleRangeResult = {
-  method: "logical-range" | "fitContent";
+  method: "time-range" | "logical-range" | "fitContent";
   logicalFrom?: number;
   logicalTo?: number;
 };
@@ -210,11 +210,85 @@ export function computeRestoredVisibleLogicalRange(
   };
 }
 
+/**
+ * Primary restore path: map time anchor to visible time range (not pre-swap logical indexes).
+ */
+export function restoreVisibleRangeByTimeAnchor(
+  chart: IChartApi,
+  params: RestoreVisibleRangeAfterWindowShiftParams,
+): RestoreVisibleRangeResult {
+  const { anchorTimeSec, newCandles, previousVisible, windowStartIndex = 0, fullLength } = params;
+  const timeScale = chart.timeScale();
+
+  if (newCandles.length === 0) {
+    timeScale.fitContent();
+    return { method: "fitContent" };
+  }
+
+  const visibleWidth = Math.max(1, previousVisible.to - previousVisible.from);
+  let anchorIndex = findBarIndexAtOrBefore(newCandles, anchorTimeSec);
+  if (!Number.isFinite(anchorIndex) || anchorIndex < 0) {
+    anchorIndex = 0;
+  }
+  if (anchorIndex >= newCandles.length) {
+    anchorIndex = newCandles.length - 1;
+  }
+
+  let fromIdx = anchorIndex - Math.floor(visibleWidth / 2);
+  let toIdx = fromIdx + visibleWidth;
+
+  if (fromIdx < 0) {
+    fromIdx = 0;
+    toIdx = Math.min(newCandles.length, visibleWidth);
+  }
+  if (toIdx > newCandles.length) {
+    toIdx = newCandles.length;
+    fromIdx = Math.max(0, toIdx - visibleWidth);
+  }
+
+  if (windowStartIndex === 0 && fromIdx < 0) {
+    fromIdx = 0;
+    toIdx = Math.min(newCandles.length, visibleWidth);
+  }
+
+  if (
+    fullLength !== undefined &&
+    windowStartIndex + newCandles.length >= fullLength &&
+    toIdx > newCandles.length
+  ) {
+    toIdx = newCandles.length;
+    fromIdx = Math.max(0, toIdx - visibleWidth);
+  }
+
+  if (fromIdx >= toIdx || toIdx > newCandles.length) {
+    timeScale.fitContent();
+    return { method: "fitContent" };
+  }
+
+  const fromBar = newCandles[fromIdx]!;
+  const toBar = newCandles[Math.min(newCandles.length - 1, toIdx - 1)]!;
+  timeScale.setVisibleRange({
+    from: fromBar.time as Time,
+    to: toBar.time as Time,
+  });
+
+  return {
+    method: "time-range",
+    logicalFrom: fromIdx,
+    logicalTo: toIdx,
+  };
+}
+
 /** Apply restored visible range after Context-driven setData. */
 export function restoreVisibleRangeAfterWindowShift(
   chart: IChartApi,
   params: RestoreVisibleRangeAfterWindowShiftParams,
 ): RestoreVisibleRangeResult {
+  const timeResult = restoreVisibleRangeByTimeAnchor(chart, params);
+  if (timeResult.method === "time-range") {
+    return timeResult;
+  }
+
   const result = computeRestoredVisibleLogicalRange(params);
   const timeScale = chart.timeScale();
 

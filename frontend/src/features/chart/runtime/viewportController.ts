@@ -8,6 +8,7 @@ import type {
 
 export type ViewportController = {
   getState(): ViewportControllerState;
+  setPlan(mode: ChartViewMode, centerTimeSec: number | null): void;
   dispatch(event: ChartInteractionEvent): ViewportCommand | null;
   onTraceReady(): ViewportCommand;
   onWindowSwapCommitted(params: {
@@ -15,6 +16,9 @@ export type ViewportController = {
     previousVisible: ChartLogicalRange;
     tradeFocusPending: boolean;
     entryTimeSec: number | null;
+    shiftSeq: number;
+    windowStartIndex?: number;
+    fullLength?: number;
   }): ViewportCommand;
 };
 
@@ -39,19 +43,27 @@ export function createViewportController(initial?: Partial<ViewportControllerSta
         case "wheel":
           state = { ...state, userPanning: false };
           return { type: "noViewportChange" };
-        case "trade_selected":
+        case "trade_selected": {
           if (state.userPanning || state.suppressTradeFocus) {
             return { type: "noViewportChange" };
           }
+          const entryTimeSec = event.entryTimeSec ?? state.centerTimeSec;
           state = {
             ...state,
             mode: "around-trade",
+            centerTimeSec: entryTimeSec,
             userPanning: false,
             suppressTradeFocus: false,
           };
-          return state.centerTimeSec !== null
-            ? { type: "focusTrade", entryTimeSec: state.centerTimeSec }
+          return entryTimeSec !== null
+            ? { type: "focusTrade", entryTimeSec }
             : { type: "noViewportChange" };
+        }
+        case "resize":
+          if (state.mode === "around-trade" && state.centerTimeSec !== null) {
+            return { type: "focusTrade", entryTimeSec: state.centerTimeSec };
+          }
+          return { type: "preserveUserRange" };
         case "programmatic_viewport_start":
           return { type: "noViewportChange" };
         case "programmatic_viewport_end":
@@ -70,22 +82,25 @@ export function createViewportController(initial?: Partial<ViewportControllerSta
       previousVisible,
       tradeFocusPending,
       entryTimeSec,
+      shiftSeq,
+      windowStartIndex,
+      fullLength,
     }): ViewportCommand {
+      const restoreCmd: ViewportCommand = {
+        type: "restoreAfterWindowSwap",
+        anchorTimeSec,
+        previousVisible,
+        shiftSeq,
+        windowStartIndex,
+        fullLength,
+      };
       if (state.userPanning || state.suppressTradeFocus) {
-        return {
-          type: "restoreAfterWindowSwap",
-          anchorTimeSec,
-          previousVisible,
-        };
+        return restoreCmd;
       }
       if (tradeFocusPending && entryTimeSec !== null) {
         return { type: "focusTrade", entryTimeSec };
       }
-      return {
-        type: "restoreAfterWindowSwap",
-        anchorTimeSec,
-        previousVisible,
-      };
+      return restoreCmd;
     },
   };
 }

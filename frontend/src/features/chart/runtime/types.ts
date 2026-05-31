@@ -34,13 +34,20 @@ export type ChartInteractionEvent =
   | { type: "programmatic_viewport_start" }
   | { type: "programmatic_viewport_end" }
   | { type: "visible_range_changed"; visible: ChartLogicalRange; anchorTimeSec: number | null }
-  | { type: "trade_selected" }
+  | { type: "trade_selected"; entryTimeSec: number | null }
   | { type: "resize" };
 
 export type ViewportCommand =
   | { type: "noViewportChange" }
   | { type: "focusTrade"; entryTimeSec: number }
-  | { type: "restoreAfterWindowSwap"; anchorTimeSec: number; previousVisible: ChartLogicalRange }
+  | {
+      type: "restoreAfterWindowSwap";
+      anchorTimeSec: number;
+      previousVisible: ChartLogicalRange;
+      windowStartIndex?: number;
+      fullLength?: number;
+      shiftSeq: number;
+    }
   | { type: "preserveUserRange" };
 
 export type ViewportControllerState = {

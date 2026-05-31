@@ -13,7 +13,7 @@ describe("viewportController", () => {
       centerTimeSec: 1_700_000_000,
     });
     controller.dispatch({ type: "pointerdown" });
-    const cmd = controller.dispatch({ type: "trade_selected" });
+    const cmd = controller.dispatch({ type: "trade_selected", entryTimeSec: 1_700_000_000 });
     expect(cmd?.type).toBe("noViewportChange");
   });
 });

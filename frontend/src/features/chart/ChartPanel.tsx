@@ -63,22 +63,13 @@ import {
 } from "@/features/chart/chartComponentEvents";
 
 import { buildChartDataKey, buildChartSeriesDataKey } from "@/features/chart/chartDataKey";
-import {
-  applyChartViewport,
-  buildTradeFocusIntentKey,
-  isStaleViewportCommand,
-  restoreVisibleRangeAfterWindowShift,
-  shouldBlockViewportApplyWhilePendingRestore,
-  shouldScheduleTradeViewportApply,
-  shouldSuppressPanShiftRequest,
-  tradeFocusIntentChanged as isTradeFocusIntentChanged,
-} from "@/features/chart/chartViewport";
+import { shouldSuppressPanShiftRequest } from "@/features/chart/chartViewport";
 import { createChartInteractionAdapter } from "@/features/chart/runtime/interactionAdapter";
+import { executeViewportCommand } from "@/features/chart/runtime/executeViewportCommand";
 import { CHART_RENDER_WINDOW_SIZE } from "@/features/chart/chartDataWindowManager";
-import { type ChartViewMode } from "@/features/chart/chartViewWindow";
 import { findTradeById } from "@/features/chart/tradeLookup";
 
-import { useWorkbench, type PendingViewportRestore } from "@/shared/context/WorkbenchContext";
+import { useWorkbench } from "@/shared/context/WorkbenchContext";
 
 
 
@@ -106,13 +97,6 @@ function overlaySeriesTitle(overlay: ChartEmaOverlay): string {
 
 }
 
-type ViewportPlan = {
-  key: string;
-  mode: ChartViewMode;
-  centerTimeSec: number | null;
-  candles: ChartBar[];
-};
-
 export function ChartPanel() {
   const containerRef = useRef<HTMLDivElement>(null);
   const panelBodyRef = useRef<HTMLDivElement>(null);
@@ -135,78 +119,10 @@ export function ChartPanel() {
 
   const auxEmaSeriesRef = useRef<Map<string, ISeriesApi<"Line">>>(new Map());
 
-  const viewportPlanRef = useRef<ViewportPlan | null>(null);
   const isApplyingViewportRef = useRef(false);
   const suppressPanShiftUntilRef = useRef(0);
   const visibleRangeHandlerRef = useRef<(() => void) | null>(null);
-  const viewportCommandSeqRef = useRef(0);
-  const pendingViewportRestoreRef = useRef<PendingViewportRestore | null>(null);
   const atomicShiftSeriesKeyRef = useRef<string | null>(null);
-
-  const bumpViewportCommandSeq = useCallback(() => {
-    viewportCommandSeqRef.current += 1;
-  }, []);
-
-  const applyViewportFromPlan = useCallback((chart: IChartApi) => {
-    if (shouldBlockViewportApplyWhilePendingRestore(pendingViewportRestoreRef.current)) {
-      dbgMark(DBG.chart.viewportApplySkippedPendingRestore);
-      return null;
-    }
-
-    const plan = viewportPlanRef.current;
-    if (!plan || plan.key === "" || plan.candles.length === 0) {
-      return null;
-    }
-
-    interactionAdapterRef.current.onProgrammaticViewportStart();
-    isApplyingViewportRef.current = true;
-    suppressPanShiftUntilRef.current = Date.now() + 250;
-
-    const result = dbgTimedSync(
-      DBG.chart.viewportApply,
-      () =>
-        applyChartViewport({
-          chart,
-          mode: plan.mode,
-          candles: plan.candles,
-          centerTimeSec: plan.centerTimeSec,
-        }),
-      () => ({ mode: plan.mode, candleCount: plan.candles.length, tradeFocus: plan.mode === "around-trade" }),
-    );
-
-    window.setTimeout(() => {
-      isApplyingViewportRef.current = false;
-      interactionAdapterRef.current.onProgrammaticViewportEnd();
-    }, 250);
-
-    return result;
-  }, []);
-
-  const scheduleViewportApply = useCallback(
-    (chart: IChartApi, options?: { tradeFocus?: boolean }) => {
-      if (shouldBlockViewportApplyWhilePendingRestore(pendingViewportRestoreRef.current)) {
-        dbgMark(DBG.chart.viewportApplySkippedPendingRestore);
-        return;
-      }
-
-      const commandSeq = viewportCommandSeqRef.current;
-      requestAnimationFrame(() => {
-        if (isStaleViewportCommand(commandSeq, viewportCommandSeqRef.current)) {
-          dbgMark(DBG.chart.viewportApplySkippedStaleRaf);
-          return;
-        }
-        if (shouldBlockViewportApplyWhilePendingRestore(pendingViewportRestoreRef.current)) {
-          dbgMark(DBG.chart.viewportApplySkippedPendingRestore);
-          return;
-        }
-        if (options?.tradeFocus) {
-          dbgMark(DBG.chart.viewportApplyTradeFocus);
-        }
-        applyViewportFromPlan(chart);
-      });
-    },
-    [applyViewportFromPlan],
-  );
 
   const {
 
@@ -282,9 +198,11 @@ export function ChartPanel() {
 
     dispatchChartInteraction,
 
-    pendingViewportRestore,
+    chartViewportCommand,
 
-    clearPendingViewportRestore,
+    chartViewportCommandSeq,
+
+    acknowledgeChartViewportCommand,
 
     displayApplyRevision,
 
@@ -307,11 +225,6 @@ export function ChartPanel() {
         ),
     }),
   );
-  const chartPointerPanActiveRef = useRef(false);
-  const lastTradeFocusIntentKeyRef = useRef<string | null>(null);
-
-
-
   const trades = selectedVariant?.trade_records ?? [];
 
   const selectedTrade = findTradeById(trades, selectedTradeId);
@@ -353,19 +266,6 @@ export function ChartPanel() {
       chartViewCenterTimeSec,
     ],
   );
-
-  const tradeFocusIntentKey = useMemo(
-    () =>
-      buildTradeFocusIntentKey({
-        selectedTradeId,
-        selectedVariantKey,
-        chartViewMode,
-        centerTimeSec: chartViewCenterTimeSec,
-      }),
-    [selectedTradeId, selectedVariantKey, chartViewMode, chartViewCenterTimeSec],
-  );
-
-
 
   const stackPeriodsLabel = useMemo(() => {
 
@@ -626,14 +526,8 @@ export function ChartPanel() {
 
     const adapter = interactionAdapterRef.current;
 
-    const onPointerDown = () => {
-      chartPointerPanActiveRef.current = true;
-      adapter.onPointerDown();
-    };
-    const onPointerUp = () => {
-      chartPointerPanActiveRef.current = false;
-      adapter.onPointerUp();
-    };
+    const onPointerDown = () => adapter.onPointerDown();
+    const onPointerUp = () => adapter.onPointerUp();
     const onWheel = () => adapter.onWheel();
 
     el.addEventListener("pointerdown", onPointerDown);
@@ -653,9 +547,6 @@ export function ChartPanel() {
         adapter.onProgrammaticViewportEnd();
         return;
       }
-      if (!isApplyingViewportRef.current) {
-        bumpViewportCommandSeq();
-      }
       adapter.onVisibleLogicalRangeChange(range);
     };
 
@@ -672,7 +563,7 @@ export function ChartPanel() {
 
       chart.applyOptions({ width, height });
 
-      scheduleViewportApply(chart);
+      dispatchChartInteractionRef.current({ type: "resize" });
 
     });
 
@@ -705,16 +596,7 @@ export function ChartPanel() {
 
     };
 
-  }, [selectBar, scheduleViewportApply, bumpViewportCommandSeq]);
-
-
-
-  useEffect(() => {
-    pendingViewportRestoreRef.current = pendingViewportRestore;
-    if (pendingViewportRestore !== null) {
-      bumpViewportCommandSeq();
-    }
-  }, [pendingViewportRestore, bumpViewportCommandSeq]);
+  }, [selectBar]);
 
   useLayoutEffect(() => {
     const chart = chartRef.current;
@@ -724,28 +606,7 @@ export function ChartPanel() {
       return;
     }
 
-    const restore = pendingViewportRestore;
-    const shiftRestore =
-      restore !== null &&
-      restore.shiftSeq === renderWindowShiftSeq &&
-      chartCandles.length > 0;
-
-    if (
-      restore !== null &&
-      restore.shiftSeq !== renderWindowShiftSeq
-    ) {
-      dbgMark(DBG.chart.viewportRestoreAfterShiftSkippedStale, {
-        expected: restore.shiftSeq,
-        current: renderWindowShiftSeq,
-      });
-      clearPendingViewportRestore();
-      return;
-    }
-
-    if (
-      !shiftRestore &&
-      atomicShiftSeriesKeyRef.current === chartSeriesDataKey
-    ) {
+    if (atomicShiftSeriesKeyRef.current === chartSeriesDataKey) {
       atomicShiftSeriesKeyRef.current = null;
       return;
     }
@@ -823,112 +684,67 @@ export function ChartPanel() {
       () => ({ overlayCount: chartDisplayAuxEmaOverlays.length }),
     );
 
-    viewportPlanRef.current = {
-      key: chartDataKey,
-      mode: chartViewMode,
-      centerTimeSec: chartViewCenterTimeSec,
-      candles: chartCandles,
-    };
-
-    if (shiftRestore && restore !== null) {
-      isApplyingViewportRef.current = true;
-      suppressPanShiftUntilRef.current = Date.now() + 300;
-
-      let restoreMethod = "fitContent";
-      dbgTimedSync(
-        DBG.chart.viewportRestoreAfterShift,
-        () => {
-          const result = restoreVisibleRangeAfterWindowShift(chart, {
-            anchorTimeSec: restore.anchorTimeSec,
-            newCandles: chartCandles,
-            previousVisible: restore.previousVisible,
-            windowStartIndex: restore.windowStartIndex,
-            fullLength: restore.fullLength,
-          });
-          restoreMethod = result.method;
-          return result;
-        },
-        () => ({ barCount: chartCandles.length, method: restoreMethod }),
-      );
-
-      atomicShiftSeriesKeyRef.current = chartSeriesDataKey;
-      clearPendingViewportRestore();
-
-      window.setTimeout(() => {
-        isApplyingViewportRef.current = false;
-      }, 300);
-    }
+    atomicShiftSeriesKeyRef.current = chartSeriesDataKey;
   }, [
     chartCandles,
     chartEmaOverlays,
     chartDisplayAuxEmaOverlays,
     chartSeriesDataKey,
     selectedVariant,
-    chartViewMode,
-    chartViewCenterTimeSec,
-    chartDataKey,
-    pendingViewportRestore,
-    renderWindowShiftSeq,
-    clearPendingViewportRestore,
   ]);
-
-  useEffect(() => {
-    chartPointerPanActiveRef.current = false;
-    lastTradeFocusIntentKeyRef.current = null;
-    bumpViewportCommandSeq();
-  }, [selectedTradeId, selectedVariantKey, bumpViewportCommandSeq]);
 
   useEffect(() => {
     const chart = chartRef.current;
-    if (!chart || chartCandles.length === 0) return;
-
-    if (shouldBlockViewportApplyWhilePendingRestore(pendingViewportRestore)) {
-      dbgMark(DBG.chart.viewportApplySkippedPendingRestore);
+    const command = chartViewportCommand;
+    if (!chart || !command || chartCandles.length === 0) {
       return;
     }
-
-    const intentChanged = isTradeFocusIntentChanged(
-      lastTradeFocusIntentKeyRef.current,
-      tradeFocusIntentKey,
-    );
-
-    viewportPlanRef.current = {
-      key: chartDataKey,
-      mode: chartViewMode,
-      centerTimeSec: chartViewCenterTimeSec,
-      candles: chartCandles,
-    };
 
     if (
-      !shouldScheduleTradeViewportApply({
-        userPanActive: chartPointerPanActiveRef.current,
-        tradeFocusIntentChanged: intentChanged,
-      })
+      command.type === "restoreAfterWindowSwap" &&
+      command.shiftSeq !== renderWindowShiftSeq
     ) {
-      if (chartPointerPanActiveRef.current && !intentChanged) {
-        dbgMark(DBG.chart.viewportApplySkippedUserPan, { mode: chartViewMode });
-      }
+      dbgMark(DBG.chart.viewportRestoreAfterShiftSkippedStale, {
+        expected: command.shiftSeq,
+        current: renderWindowShiftSeq,
+      });
+      acknowledgeChartViewportCommand();
       return;
     }
 
-    lastTradeFocusIntentKeyRef.current = tradeFocusIntentKey;
+    interactionAdapterRef.current.onProgrammaticViewportStart();
+    isApplyingViewportRef.current = true;
+    suppressPanShiftUntilRef.current = Date.now() + 300;
 
-    scheduleViewportApply(chart, {
-      tradeFocus: chartViewMode === "around-trade" && intentChanged,
-    });
+    if (command.type === "focusTrade") {
+      dbgMark(DBG.chart.viewportApplyTradeFocus);
+    }
+    const dbgStep =
+      command.type === "restoreAfterWindowSwap"
+        ? DBG.chart.viewportRestoreAfterShift
+        : DBG.chart.viewportApply;
+    dbgTimedSync(
+      dbgStep,
+      () => {
+        executeViewportCommand({ chart, command, candles: chartCandles });
+        return null;
+      },
+      () => ({ command: command.type, barCount: chartCandles.length }),
+    );
+
+    acknowledgeChartViewportCommand();
+
+    window.setTimeout(() => {
+      isApplyingViewportRef.current = false;
+      interactionAdapterRef.current.onProgrammaticViewportEnd();
+    }, 300);
   }, [
-    selectedTradeId,
-    selectedVariantKey,
-    chartViewCenterTimeSec,
-    chartViewMode,
-    chartDataKey,
+    chartViewportCommand,
+    chartViewportCommandSeq,
     chartCandles,
-    tradeFocusIntentKey,
-    pendingViewportRestore,
-    scheduleViewportApply,
+    renderWindowShiftSeq,
+    acknowledgeChartViewportCommand,
   ]);
-
-
 
   useEffect(() => {
 
