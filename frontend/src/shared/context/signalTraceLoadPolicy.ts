@@ -10,14 +10,14 @@ export type SignalTraceRequest = {
 
 export type SignalTraceLoadDecision =
   | { action: "skip_idle" }
-  | { action: "skip_already_loaded" }
+  | { action: "skip_display_cache_hit" }
   | { action: "skip_already_loading" }
   | { action: "skip_identical_in_flight" }
   | { action: "load_start"; request: SignalTraceRequest };
 
 export type DecideSignalTraceLoadInput = {
   chartWindowKey: string | null;
-  loadedTraceWindowKey: string | null;
+  displayCacheCoversWindow: boolean;
   loadingTraceWindowKey: string | null;
   signalTraceStatus: SignalTraceLoadStatus;
   inFlightRequest: SignalTraceRequest | null;
@@ -37,7 +37,7 @@ export function signalTraceRequestsEqual(
   );
 }
 
-/** Whether to start signalTrace fetch or skip (dedup / guards). */
+/** Whether to start signalTrace fetch or skip (display cache / dedup / guards). */
 export function decideSignalTraceLoad(
   input: DecideSignalTraceLoadInput,
 ): SignalTraceLoadDecision {
@@ -47,11 +47,8 @@ export function decideSignalTraceLoad(
 
   const { request } = input;
 
-  if (
-    input.chartWindowKey === input.loadedTraceWindowKey &&
-    input.signalTraceStatus === "ready"
-  ) {
-    return { action: "skip_already_loaded" };
+  if (input.displayCacheCoversWindow) {
+    return { action: "skip_display_cache_hit" };
   }
 
   if (

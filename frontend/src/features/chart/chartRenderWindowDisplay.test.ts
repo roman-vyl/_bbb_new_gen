@@ -8,6 +8,10 @@ import {
   displayComponentEventsForRenderWindow,
   stabilizeByWindowBoundsKey,
 } from "@/features/chart/chartRenderWindowDisplay";
+import {
+  createSignalTraceDisplayCache,
+  mergeDisplayChunkFromResponse,
+} from "@/features/chart/signalTraceDisplayCache";
 import { buildChartDataKey, buildChartSeriesDataKey } from "@/features/chart/chartDataKey";
 
 function makeBars(count: number, startTime: number): ChartBar[] {
@@ -30,6 +34,72 @@ function makeHtfOverlay(points: { time: number; value: number }[]): ChartAuxEmaO
     points: points.map((p) => ({ ...p, kind: CHART_OVERLAY_EMA_KIND })),
   };
 }
+
+describe("display cache pan-back", () => {
+  it("serves events from merged display cache across non-adjacent windows", () => {
+    const cache = createSignalTraceDisplayCache();
+    cache.reset("run:v1:");
+
+    const makeBundle = (times: number[], eventTime: number) => ({
+      times,
+      meta: {
+        variant: "v1",
+        component_ids: { direction: "d", setups: [], trigger: "t", risk: "r" },
+        setup_params: [],
+        blocker_instances: [],
+      },
+      long: {
+        direction_ok: times.map(() => false),
+        blockers_ok: times.map(() => true),
+        setup_ok: times.map(() => false),
+        trigger_ok: times.map(() => false),
+        risk_ok: times.map(() => true),
+        signal_entry: times.map(() => false),
+        stop_ready: times.map(() => true),
+        portfolio_entry: times.map(() => false),
+        internals: {},
+      },
+      short: {
+        direction_ok: times.map(() => false),
+        blockers_ok: times.map(() => true),
+        setup_ok: times.map(() => false),
+        trigger_ok: times.map(() => false),
+        risk_ok: times.map(() => true),
+        signal_entry: times.map(() => false),
+        stop_ready: times.map(() => true),
+        portfolio_entry: times.map(() => false),
+        internals: {},
+      },
+      component_events: [
+        {
+          time: eventTime,
+          event_type: "point" as const,
+          role: "exit_signal" as const,
+          side: "long" as const,
+          component_id: "x",
+          instance_id: "i",
+          label: String(eventTime),
+          span_id: null,
+          feature_family: null,
+          source_timeframe: null,
+          base_timeframe: null,
+          metadata: {},
+        },
+      ],
+    });
+
+    mergeDisplayChunkFromResponse(cache, makeBundle([1000, 1100], 1050));
+    mergeDisplayChunkFromResponse(cache, makeBundle([5000, 5100], 5050));
+
+    const earlyWindow = makeBars(5, 1000);
+    const lateWindow = makeBars(5, 5000);
+
+    expect(cache.sliceEventsForWindow(earlyWindow[0]!.time, earlyWindow[4]!.time)).toHaveLength(1);
+    expect(cache.sliceEventsForWindow(lateWindow[0]!.time, lateWindow[4]!.time)).toHaveLength(1);
+    expect(cache.coversRange(1000, 1100)).toBe(true);
+    expect(cache.coversRange(5000, 5100)).toBe(true);
+  });
+});
 
 describe("displayAuxOverlaysForRenderWindow", () => {
   it("re-slices frozen HTF to new render window when trace is stale", () => {

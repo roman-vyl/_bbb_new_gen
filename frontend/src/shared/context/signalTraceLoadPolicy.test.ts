@@ -14,22 +14,22 @@ const REQUEST: SignalTraceRequest = {
 };
 
 describe("decideSignalTraceLoad", () => {
-  it("scenario A: skips when window already loaded and ready", () => {
+  it("scenario A: skips when display cache covers render window", () => {
     const decision = decideSignalTraceLoad({
       chartWindowKey: REQUEST.windowKey,
-      loadedTraceWindowKey: REQUEST.windowKey,
+      displayCacheCoversWindow: true,
       loadingTraceWindowKey: null,
       signalTraceStatus: "ready",
       inFlightRequest: null,
       request: REQUEST,
     });
-    expect(decision).toEqual({ action: "skip_already_loaded" });
+    expect(decision).toEqual({ action: "skip_display_cache_hit" });
   });
 
   it("scenario B: skips when same window is already loading", () => {
     const decision = decideSignalTraceLoad({
       chartWindowKey: REQUEST.windowKey,
-      loadedTraceWindowKey: null,
+      displayCacheCoversWindow: false,
       loadingTraceWindowKey: REQUEST.windowKey,
       signalTraceStatus: "loading",
       inFlightRequest: REQUEST,
@@ -38,12 +38,12 @@ describe("decideSignalTraceLoad", () => {
     expect(decision).toEqual({ action: "skip_already_loading" });
   });
 
-  it("scenario C: starts load when chartWindowKey changes", () => {
+  it("scenario C: starts load when chartWindowKey changes and cache misses", () => {
     const nextKey = "run-a:exp_a:3000:4000";
     const nextRequest = { ...REQUEST, windowKey: nextKey, fromMs: 3_000_000, toOpenTimeMs: 4_000_000 };
     const decision = decideSignalTraceLoad({
       chartWindowKey: nextKey,
-      loadedTraceWindowKey: REQUEST.windowKey,
+      displayCacheCoversWindow: false,
       loadingTraceWindowKey: null,
       signalTraceStatus: "ready",
       inFlightRequest: null,
@@ -57,7 +57,7 @@ describe("decideSignalTraceLoad", () => {
     const nextRequest = { ...REQUEST, windowKey: nextKey, variant: "exp_b" };
     const decision = decideSignalTraceLoad({
       chartWindowKey: nextKey,
-      loadedTraceWindowKey: REQUEST.windowKey,
+      displayCacheCoversWindow: false,
       loadingTraceWindowKey: null,
       signalTraceStatus: "ready",
       inFlightRequest: null,
@@ -69,7 +69,7 @@ describe("decideSignalTraceLoad", () => {
   it("skips identical in-flight request", () => {
     const decision = decideSignalTraceLoad({
       chartWindowKey: REQUEST.windowKey,
-      loadedTraceWindowKey: null,
+      displayCacheCoversWindow: false,
       loadingTraceWindowKey: null,
       signalTraceStatus: "idle",
       inFlightRequest: REQUEST,
@@ -81,7 +81,7 @@ describe("decideSignalTraceLoad", () => {
   it("returns skip_idle when chartWindowKey is null", () => {
     const decision = decideSignalTraceLoad({
       chartWindowKey: null,
-      loadedTraceWindowKey: null,
+      displayCacheCoversWindow: false,
       loadingTraceWindowKey: null,
       signalTraceStatus: "idle",
       inFlightRequest: null,

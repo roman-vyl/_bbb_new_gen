@@ -267,6 +267,26 @@ def test_portfolio_entry_false_when_stop_not_ready() -> None:
         assert portfolio == (signal and stop_ok), f"bar {i}"
 
 
+def test_signal_trace_max_bars_supports_render_window_size() -> None:
+    """BFF window endpoint limit aligns with 50k chart render window."""
+    from research_api.services.signal_trace_service import MAX_SIGNAL_TRACE_BARS
+
+    assert MAX_SIGNAL_TRACE_BARS >= 50_000
+
+    spec = make_ema_pullback_strategy_spec()
+    plan = build_feature_plan_from_strategy_spec(spec)
+    df = add_feature_columns_from_plan(_ohlcv(periods=6000), plan)
+    full = build_signal_trace_from_spec(df, spec, plan)
+    sliced = slice_signal_trace(
+        full,
+        from_time_sec=full.times[0],
+        to_time_sec=full.times[-1],
+        max_bars=MAX_SIGNAL_TRACE_BARS,
+    )
+    assert len(sliced.times) > 5000
+    assert len(sliced.times) == len(full.times)
+
+
 def test_slice_signal_trace_respects_window() -> None:
     spec = make_ema_pullback_strategy_spec()
     plan = build_feature_plan_from_strategy_spec(spec)

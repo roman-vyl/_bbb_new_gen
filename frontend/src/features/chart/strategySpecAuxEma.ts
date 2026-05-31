@@ -1,4 +1,4 @@
-import type { AnchorStackPeriods, JsonObject } from "@/api/types";
+import type { AnchorStackPeriods, HtfContextTrace, JsonObject } from "@/api/types";
 import type { IndicatorPoint, SignalTraceBundle } from "@/api/types";
 import { CHART_OVERLAY_EMA_KIND } from "@/api/types";
 import { readContextProvider } from "@/features/chart/strategyContexts";
@@ -148,24 +148,50 @@ export function collectAuxEmaSpecs(
   return specs;
 }
 
+export function htfEmaPointsFromTimes(
+  times: readonly number[],
+  htf: HtfContextTrace,
+  role: "fast" | "anchor" | "slow",
+): IndicatorPoint[] {
+  const values = htf[role];
+  const points: IndicatorPoint[] = [];
+  for (let i = 0; i < times.length; i += 1) {
+    const value = values[i];
+    if (value === null || value === undefined || Number.isNaN(value)) continue;
+    points.push({
+      time: times[i]!,
+      value,
+      kind: CHART_OVERLAY_EMA_KIND,
+    });
+  }
+  return points;
+}
+
 export function htfEmaPointsFromSignalTrace(
   trace: SignalTraceBundle,
   role: "fast" | "anchor" | "slow",
 ): IndicatorPoint[] {
   const htf = trace.htf_context;
   if (!htf) return [];
-  const values = htf[role];
-  const points: IndicatorPoint[] = [];
-  for (let i = 0; i < trace.times.length; i += 1) {
-    const value = values[i];
-    if (value === null || value === undefined || Number.isNaN(value)) continue;
-    points.push({
-      time: trace.times[i]!,
-      value,
-      kind: CHART_OVERLAY_EMA_KIND,
-    });
-  }
-  return points;
+  return htfEmaPointsFromTimes(trace.times, htf, role);
+}
+
+export function auxOverlayFromHtfSlice(
+  spec: AuxEmaSpec,
+  times: readonly number[],
+  htf: HtfContextTrace | undefined,
+): { id: string; label: string; period: number; timeframe: string; points: IndicatorPoint[]; dashed: boolean } | null {
+  if (spec.source !== "htf_trace" || !spec.htfRole || !htf) return null;
+  const points = htfEmaPointsFromTimes(times, htf, spec.htfRole);
+  if (points.length === 0) return null;
+  return {
+    id: spec.id,
+    label: spec.label,
+    period: spec.period,
+    timeframe: spec.timeframe,
+    points,
+    dashed: true,
+  };
 }
 
 export function auxOverlayFromHtfTrace(

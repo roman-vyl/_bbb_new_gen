@@ -40,7 +40,7 @@ from research_api.services.market_params import MarketParamError, normalize_symb
 from research_api.services.market_reader import MarketDataNotFoundError, _open_db
 from research_api.services.results_reader import ResultsNotFoundError, load_run_report
 
-MAX_SIGNAL_TRACE_BARS = 5000
+MAX_SIGNAL_TRACE_BARS = 50_000
 
 
 class UnsupportedSignalTraceFamilyError(ValueError):
