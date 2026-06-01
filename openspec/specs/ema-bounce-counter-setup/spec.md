@@ -303,3 +303,46 @@ When `ema_bounce_counter_setup` appears in `strategy.setups`, signal trace inter
 - **THEN** each event includes `instance_id` matching the setup list entry
 - **AND** tooltip/metadata distinguishes instances without chart code branching on `component_id`
 
+### Requirement: Component event metadata carries bounce diagnostic snapshot
+
+For each `component_events[]` record emitted for `ema_bounce_counter_setup`, `metadata` SHALL include the diagnostic snapshot at the event bar index sufficient for Chart tooltips without reading trace internals:
+
+- `event_name`
+- `trend_active`, `trend_episode_id`
+- `armed`, `raw_touch`, `pending_bounce`, `in_touch_lookback`, `setup_allowed`
+- `touch_lookback_bars`, `touch_lookback_left`
+- `completed_bounce_count`, `effective_bounce_number`, `max_bounces`
+- `price_side_of_anchor`
+- `fast_ema`, `anchor_ema`, `slow_ema` (period integers)
+
+Trend point events MUST use `metadata.event_name` of `trend_start` or `trend_break`.
+
+#### Scenario: Bounce span start metadata includes lookback left
+
+- **GIVEN** a pending bounce window starts at base index `i0` with `touch_lookback_bars: N`
+- **WHEN** `span_start` is serialized at `times[i0]`
+- **THEN** `metadata.touch_lookback_left` equals the trace value at `i0`
+- **AND** `metadata.pending_bounce` is true at that bar
+
+#### Scenario: Source metadata includes raw touch and setup_allowed
+
+- **GIVEN** a bounce opportunity `source` event at bar index `i`
+- **WHEN** component events are serialized
+- **THEN** `metadata.raw_touch` matches trace `raw_touch` at `i`
+- **AND** `metadata.setup_allowed` matches trace `setup_allowed` at `i`
+- **AND** `metadata.armed` matches trace `armed` at `i`
+- **AND** `metadata.trend_active` matches trace `trend_active` at `i`
+
+#### Scenario: Span metadata includes in_touch_lookback
+
+- **GIVEN** a bar inside a pending bounce lookback window where `raw_touch` is false and `in_touch_lookback` is true
+- **WHEN** a bounce `span_start`, `span_end`, or related event is serialized at that bar index
+- **THEN** `metadata.in_touch_lookback` is true
+- **AND** `metadata.raw_touch` reflects the trace value at that bar (MAY be false)
+
+#### Scenario: Enriched metadata does not alter trading outputs
+
+- **GIVEN** two identical strategy configs and market data
+- **WHEN** one run uses the enriched metadata emitter and entries are compared
+- **THEN** `signal_entry`, `setup_allowed`, and backtest trade lists are unchanged
+

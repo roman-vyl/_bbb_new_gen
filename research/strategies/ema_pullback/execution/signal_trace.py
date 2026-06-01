@@ -518,6 +518,20 @@ def _rsi_blocker_threshold(rule: BlockerRuleSpec, side: TradeSide) -> float | No
     raise ValueError("side must be 'long' or 'short'")
 
 
+def _trace_bool_at(trace: dict[str, pd.Series], key: str, idx: int) -> bool:
+    value = trace[key].iloc[idx]
+    if pd.isna(value):
+        return False
+    return bool(value)
+
+
+def _trace_int_at(trace: dict[str, pd.Series], key: str, idx: int) -> int:
+    value = trace[key].iloc[idx]
+    if pd.isna(value):
+        return 0
+    return int(value)
+
+
 def _ema_bounce_metadata(
     rule: SetupRuleSpec,
     trace: dict[str, pd.Series],
@@ -529,15 +543,22 @@ def _ema_bounce_metadata(
         return {"event_name": event_name}
     return {
         "event_name": event_name,
+        "trend_active": _trace_bool_at(trace, "trend_active", idx),
+        "trend_episode_id": _trace_int_at(trace, "trend_episode_id", idx),
+        "armed": _trace_bool_at(trace, "armed", idx),
+        "raw_touch": _trace_bool_at(trace, "raw_touch", idx),
+        "pending_bounce": _trace_bool_at(trace, "pending_bounce", idx),
+        "in_touch_lookback": _trace_bool_at(trace, "in_touch_lookback", idx),
+        "setup_allowed": _trace_bool_at(trace, "setup_allowed", idx),
+        "touch_lookback_bars": int(rule.params.touch_lookback_bars),
+        "touch_lookback_left": _trace_int_at(trace, "touch_lookback_left", idx),
+        "completed_bounce_count": _trace_int_at(trace, "completed_bounce_count", idx),
+        "effective_bounce_number": _trace_int_at(trace, "effective_bounce_number", idx),
+        "max_bounces": int(rule.params.max_bounces),
+        "price_side_of_anchor": str(trace["price_side_of_anchor"].iloc[idx]),
         "fast_ema": int(rule.params.fast_ema.period),
         "anchor_ema": int(rule.params.anchor_ema.period),
         "slow_ema": int(rule.params.slow_ema.period),
-        "trend_episode_id": int(trace["trend_episode_id"].iloc[idx]),
-        "completed_bounce_count": int(trace["completed_bounce_count"].iloc[idx]),
-        "effective_bounce_number": int(trace["effective_bounce_number"].iloc[idx]),
-        "max_bounces": int(rule.params.max_bounces),
-        "touch_lookback_bars": int(rule.params.touch_lookback_bars),
-        "price_side_of_anchor": str(trace["price_side_of_anchor"].iloc[idx]),
     }
 
 

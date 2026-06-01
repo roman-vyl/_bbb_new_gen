@@ -1,6 +1,10 @@
 import type { SeriesMarker, Time } from "lightweight-charts";
 
 import type { ComponentEvent, ComponentEventRole, ComponentEventType } from "@/api/types";
+import {
+  formatEmaBounceCounterEventLabel,
+  formatEmaBounceCounterEventTooltip,
+} from "@/features/chart/emaBounceCounterComponentEventPresentation";
 
 export const COMPONENT_EVENT_LEGEND: {
   event_type: ComponentEventType;
@@ -44,11 +48,16 @@ function styleForEvent(
   return { color: "#a78bfa", shape: "square", position: above };
 }
 
+function componentEventDisplayLabel(event: ComponentEvent): string {
+  return formatEmaBounceCounterEventLabel(event) ?? event.label;
+}
+
 export function buildComponentEventChartMarkers(
   events: readonly ComponentEvent[],
   options: {
     showEntryBlock: boolean;
     showExitSignal: boolean;
+    showSetup: boolean;
   },
 ): SeriesMarker<Time>[] {
   const out: SeriesMarker<Time>[] = [];
@@ -59,13 +68,16 @@ export function buildComponentEventChartMarkers(
     if (event.role === "exit_signal" && !options.showExitSignal) {
       continue;
     }
+    if (event.role === "setup" && !options.showSetup) {
+      continue;
+    }
     const style = styleForEvent(event.event_type, event.role, event.side);
     out.push({
       time: event.time as Time,
       position: style.position,
       color: style.color,
       shape: style.shape,
-      text: event.label,
+      text: componentEventDisplayLabel(event),
     });
   }
   return out.sort((a, b) => (a.time as number) - (b.time as number));
@@ -84,6 +96,7 @@ export function buildComponentEventsForView(
   options: {
     showEntryBlock: boolean;
     showExitSignal: boolean;
+    showSetup: boolean;
     viewCandles: { time: number }[];
   },
 ): SeriesMarker<Time>[] {
@@ -96,10 +109,15 @@ export function buildComponentEventsForView(
   return buildComponentEventChartMarkers(inView, {
     showEntryBlock: options.showEntryBlock,
     showExitSignal: options.showExitSignal,
+    showSetup: options.showSetup,
   });
 }
 
 export function componentEventTooltip(event: ComponentEvent): string {
+  const formatted = formatEmaBounceCounterEventTooltip(event);
+  if (formatted) {
+    return formatted;
+  }
   if (event.tooltip) {
     return event.tooltip;
   }

@@ -141,6 +141,10 @@ export function ChartPanel() {
 
     setChartShowExitSignalMarkers,
 
+    chartShowSetupMarkers,
+
+    setChartShowSetupMarkers,
+
     candlesSource,
 
     marketError,
@@ -759,6 +763,7 @@ export function ChartPanel() {
         const componentMarkers = buildComponentEventsForView(chartDisplayComponentEvents, {
           showEntryBlock: chartShowEntryBlockMarkers,
           showExitSignal: chartShowExitSignalMarkers,
+          showSetup: chartShowSetupMarkers,
           viewCandles: chartCandles,
         });
         tradeMarkerCount = tradeMarkers.length;
@@ -780,6 +785,7 @@ export function ChartPanel() {
     displayApplyRevision,
     chartShowEntryBlockMarkers,
     chartShowExitSignalMarkers,
+    chartShowSetupMarkers,
   ]);
 
 
@@ -901,6 +907,8 @@ export function ChartPanel() {
         onShowEntryBlockMarkersChange={setChartShowEntryBlockMarkers}
         showExitSignalMarkers={chartShowExitSignalMarkers}
         onShowExitSignalMarkersChange={setChartShowExitSignalMarkers}
+        showSetupMarkers={chartShowSetupMarkers}
+        onShowSetupMarkersChange={setChartShowSetupMarkers}
         hasComponentEvents={chartDisplayComponentEvents.length > 0}
       />
 

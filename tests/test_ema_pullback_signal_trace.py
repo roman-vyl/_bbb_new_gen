@@ -524,7 +524,55 @@ def test_ema_bounce_counter_setup_trace_and_events() -> None:
     assert by_type["span_end"].time == trace.times[3]
     assert by_type["source"].feature_family == "ema"
     assert by_type["source"].component_id == "ema_bounce_counter_setup"
-    assert "anchor_ema" in by_type["source"].metadata
+    required_bounce_metadata = {
+        "event_name",
+        "trend_active",
+        "trend_episode_id",
+        "armed",
+        "raw_touch",
+        "pending_bounce",
+        "in_touch_lookback",
+        "setup_allowed",
+        "touch_lookback_bars",
+        "touch_lookback_left",
+        "completed_bounce_count",
+        "effective_bounce_number",
+        "max_bounces",
+        "price_side_of_anchor",
+        "fast_ema",
+        "anchor_ema",
+        "slow_ema",
+    }
+    for event in bounce_events:
+        assert required_bounce_metadata.issubset(event.metadata.keys())
+    source_meta = by_type["source"].metadata
+    assert source_meta["raw_touch"] is setup_internals["raw_touch"][1]
+    assert source_meta["trend_active"] is setup_internals["trend_active"][1]
+    assert source_meta["in_touch_lookback"] is setup_internals["in_touch_lookback"][1]
+    span_end_meta = by_type["span_end"].metadata
+    assert span_end_meta["in_touch_lookback"] is setup_internals["in_touch_lookback"][3]
+    assert span_end_meta["raw_touch"] is setup_internals["raw_touch"][3]
+    trend_events = [
+        event
+        for event in setup_events
+        if event.metadata.get("event_name") in {"trend_start", "trend_break"}
+    ]
+    for event in trend_events:
+        assert required_bounce_metadata.issubset(event.metadata.keys())
+        assert event.metadata["event_name"] in {"trend_start", "trend_break"}
+    # Metadata enrichment must not change trading outputs.
+    from research.strategies.ema_pullback.components.setup import ema_bounce_counter_setup_trace
+
+    direct_trace = ema_bounce_counter_setup_trace(
+        df,
+        bounce_cols["fast"],
+        bounce_cols["anchor"],
+        bounce_cols["slow"],
+        max_bounces=3,
+        touch_lookback_bars=3,
+        side="long",
+    )
+    assert list(setup_internals["setup_allowed"]) == direct_trace["setup_allowed"].tolist()
     # The raw touch at index 3 is the final active lookback bar; it closes the
     # first span but does not emit another source/span_start.
     assert [
