@@ -9,6 +9,8 @@ type ChartMarkerLegendProps = {
   onShowEntryBlockMarkersChange: (show: boolean) => void;
   showExitSignalMarkers: boolean;
   onShowExitSignalMarkersChange: (show: boolean) => void;
+  showSetupMarkers: boolean;
+  onShowSetupMarkersChange: (show: boolean) => void;
   hasComponentEvents: boolean;
 };
 
@@ -17,6 +19,8 @@ export function ChartMarkerLegend({
   onShowEntryBlockMarkersChange,
   showExitSignalMarkers,
   onShowExitSignalMarkersChange,
+  showSetupMarkers,
+  onShowSetupMarkersChange,
   hasComponentEvents,
 }: ChartMarkerLegendProps) {
   return (
@@ -70,6 +74,14 @@ export function ChartMarkerLegend({
               onChange={(event) => onShowExitSignalMarkersChange(event.target.checked)}
             />
             Show exit_signal
+          </label>
+          <label className="chart-legend__toggle">
+            <input
+              type="checkbox"
+              checked={showSetupMarkers}
+              onChange={(event) => onShowSetupMarkersChange(event.target.checked)}
+            />
+            Show setup
           </label>
         </div>
       )}

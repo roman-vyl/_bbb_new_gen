@@ -7,6 +7,13 @@ import {
   componentEventTooltip,
   hasHtfAlignedComponentEvents,
 } from "@/features/chart/chartComponentEvents";
+import { EMA_BOUNCE_COUNTER_SETUP_COMPONENT_ID } from "@/features/chart/emaBounceCounterComponentEventPresentation";
+
+const defaultMarkerOptions = {
+  showEntryBlock: true,
+  showExitSignal: true,
+  showSetup: true,
+};
 
 function sampleEvent(overrides: Partial<ComponentEvent> = {}): ComponentEvent {
   return {
@@ -24,6 +31,40 @@ function sampleEvent(overrides: Partial<ComponentEvent> = {}): ComponentEvent {
   };
 }
 
+function bounceEvent(
+  eventName: string,
+  eventType: ComponentEvent["event_type"],
+  overrides: Partial<ComponentEvent> = {},
+): ComponentEvent {
+  return sampleEvent({
+    event_type: eventType,
+    role: "setup",
+    component_id: EMA_BOUNCE_COUNTER_SETUP_COMPONENT_ID,
+    instance_id: "bounce_counter",
+    label: "Setup▶",
+    metadata: {
+      event_name: eventName,
+      effective_bounce_number: 2,
+      max_bounces: 3,
+      completed_bounce_count: 1,
+      trend_active: true,
+      trend_episode_id: 4,
+      armed: true,
+      raw_touch: false,
+      pending_bounce: true,
+      in_touch_lookback: true,
+      setup_allowed: true,
+      touch_lookback_bars: 10,
+      touch_lookback_left: 3,
+      fast_ema: 50,
+      anchor_ema: 200,
+      slow_ema: 500,
+      price_side_of_anchor: "above",
+    },
+    ...overrides,
+  });
+}
+
 describe("buildComponentEventChartMarkers", () => {
   it("renders by event_type and role without component_id branching", () => {
     const markers = [
@@ -36,10 +77,7 @@ describe("buildComponentEventChartMarkers", () => {
         time: 300,
       }),
     ];
-    const rendered = buildComponentEventChartMarkers(markers, {
-      showEntryBlock: true,
-      showExitSignal: true,
-    });
+    const rendered = buildComponentEventChartMarkers(markers, defaultMarkerOptions);
     expect(rendered).toHaveLength(3);
     expect(rendered.map((m) => m.text)).toEqual(["Src", "Block■", "Exit↓"]);
   });
@@ -47,11 +85,11 @@ describe("buildComponentEventChartMarkers", () => {
   it("styles depend on event_type not component_id", () => {
     const source = buildComponentEventChartMarkers(
       [sampleEvent({ event_type: "source", label: "Src" })],
-      { showEntryBlock: true, showExitSignal: true },
+      defaultMarkerOptions,
     );
     const spanStart = buildComponentEventChartMarkers(
       [sampleEvent({ event_type: "span_start" })],
-      { showEntryBlock: true, showExitSignal: true },
+      defaultMarkerOptions,
     );
     expect(source[0]?.color).not.toBe(spanStart[0]?.color);
     const otherComponent = buildComponentEventChartMarkers(
@@ -61,7 +99,7 @@ describe("buildComponentEventChartMarkers", () => {
           event_type: "span_start",
         }),
       ],
-      { showEntryBlock: true, showExitSignal: true },
+      defaultMarkerOptions,
     );
     expect(otherComponent[0]?.color).toBe(spanStart[0]?.color);
   });
@@ -74,32 +112,57 @@ describe("buildComponentEventChartMarkers", () => {
         role: "exit_signal",
         label: "Exit↓",
       }),
+      bounceEvent("pending_bounce_start", "span_start"),
     ];
     const entryOnly = buildComponentEventChartMarkers(markers, {
       showEntryBlock: true,
       showExitSignal: false,
+      showSetup: false,
     });
     expect(entryOnly).toHaveLength(1);
     expect(entryOnly[0]?.text).toBe("Block▶");
   });
 
-  it("renders setup events through generic role/event_type handling", () => {
+  it("hides setup role when showSetup is false", () => {
     const rendered = buildComponentEventChartMarkers(
+      [bounceEvent("pending_bounce_start", "span_start")],
+      { showEntryBlock: false, showExitSignal: false, showSetup: false },
+    );
+    expect(rendered).toHaveLength(0);
+  });
+
+  it("formats ema bounce counter setup labels from metadata", () => {
+    const rendered = buildComponentEventChartMarkers(
+      [
+        bounceEvent("bounce_opportunity_start", "source"),
+        bounceEvent("pending_bounce_start", "span_start"),
+        bounceEvent("pending_bounce_end", "span_end"),
+        bounceEvent("trend_start", "point"),
+        bounceEvent("trend_break", "point", { time: 200 }),
+      ],
+      { showEntryBlock: false, showExitSignal: false, showSetup: true },
+    );
+    expect(rendered.map((marker) => marker.text)).toEqual([
+      "B2 touch",
+      "B2▶",
+      "B2■",
+      "T+",
+      "T-",
+    ]);
+    const spanStart = rendered[1];
+    const genericSetup = buildComponentEventChartMarkers(
       [
         sampleEvent({
           event_type: "span_start",
           role: "setup",
-          component_id: "ema_bounce_counter_setup",
-          instance_id: "ema_bounce_counter_setup",
+          component_id: "untouched_anchor_setup",
           label: "Setup▶",
-          metadata: { event_name: "pending_bounce_start" },
         }),
       ],
-      { showEntryBlock: false, showExitSignal: false },
+      { showEntryBlock: false, showExitSignal: false, showSetup: true },
     );
-
-    expect(rendered).toHaveLength(1);
-    expect(rendered[0]?.text).toBe("Setup▶");
+    expect(spanStart?.color).toBe(genericSetup[0]?.color);
+    expect(spanStart?.shape).toBe(genericSetup[0]?.shape);
   });
 });
 
@@ -111,8 +174,7 @@ describe("buildComponentEventsForView", () => {
       sampleEvent({ time: 250 }),
     ];
     const rendered = buildComponentEventsForView(markers, {
-      showEntryBlock: true,
-      showExitSignal: true,
+      ...defaultMarkerOptions,
       viewCandles: [{ time: 100 }, { time: 200 }],
     });
     expect(rendered).toHaveLength(1);
@@ -123,6 +185,35 @@ describe("buildComponentEventsForView", () => {
 describe("componentEventTooltip", () => {
   it("uses tooltip when provided", () => {
     expect(componentEventTooltip(sampleEvent({ tooltip: "custom" }))).toBe("custom");
+  });
+
+  it("formats ema bounce counter tooltip with raw_touch and in_touch_lookback", () => {
+    const tooltip = componentEventTooltip(
+      bounceEvent("pending_bounce_end", "span_end", {
+        metadata: {
+          event_name: "pending_bounce_end",
+          effective_bounce_number: 1,
+          max_bounces: 3,
+          completed_bounce_count: 0,
+          trend_active: true,
+          trend_episode_id: 2,
+          armed: false,
+          raw_touch: false,
+          pending_bounce: true,
+          in_touch_lookback: true,
+          setup_allowed: false,
+          touch_lookback_bars: 10,
+          touch_lookback_left: 2,
+          fast_ema: 50,
+          anchor_ema: 200,
+          slow_ema: 500,
+          price_side_of_anchor: "below",
+        },
+      }),
+    );
+    expect(tooltip).toContain("raw_touch: no");
+    expect(tooltip).toContain("in_touch_lookback: yes");
+    expect(tooltip).toContain("setup_allowed: no");
   });
 });
 

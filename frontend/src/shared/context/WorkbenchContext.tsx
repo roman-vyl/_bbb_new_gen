@@ -160,6 +160,8 @@ type WorkbenchState = {
   setChartShowEntryBlockMarkers: (show: boolean) => void;
   chartShowExitSignalMarkers: boolean;
   setChartShowExitSignalMarkers: (show: boolean) => void;
+  chartShowSetupMarkers: boolean;
+  setChartShowSetupMarkers: (show: boolean) => void;
   chartViewMode: ChartViewMode;
   chartViewCenterTimeSec: number | null;
   chartViewFirstTimeSec: number | null;
@@ -253,6 +255,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
   const [chartDisplayComponentEvents, setChartDisplayComponentEvents] = useState<ComponentEvent[]>([]);
   const [chartShowEntryBlockMarkers, setChartShowEntryBlockMarkers] = useState(true);
   const [chartShowExitSignalMarkers, setChartShowExitSignalMarkers] = useState(true);
+  const [chartShowSetupMarkers, setChartShowSetupMarkers] = useState(true);
   const [runs, setRuns] = useState<RunSummary[]>([]);
   const [selectedRunId, setSelectedRunIdState] = useState<string | null>(null);
   const [report, setReport] = useState<RunReport | null>(null);
@@ -1739,6 +1742,8 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       setChartShowEntryBlockMarkers,
       chartShowExitSignalMarkers,
       setChartShowExitSignalMarkers,
+      chartShowSetupMarkers,
+      setChartShowSetupMarkers,
       chartViewMode: chartView.mode,
       chartViewCenterTimeSec: chartView.centerTimeSec,
       chartViewFirstTimeSec: chartView.firstTimeSec,
@@ -1809,6 +1814,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       renderWindowShiftSeq,
       chartShowEntryBlockMarkers,
       chartShowExitSignalMarkers,
+      chartShowSetupMarkers,
       chartView.mode,
       chartView.centerTimeSec,
       chartView.firstTimeSec,
