@@ -8,23 +8,17 @@ export type SignalTraceRequest = {
   toOpenTimeMs: number;
 };
 
+/** Policy gates only — durable network dedupe lives in SignalTraceRequestCoordinator. */
 export type SignalTraceLoadDecision =
   | { action: "skip_idle" }
-  | { action: "skip_display_cache_hit" }
   | { action: "restore_session_cache" }
-  | { action: "skip_already_loading" }
-  | { action: "skip_identical_in_flight" }
-  | { action: "load_start"; request: SignalTraceRequest };
+  | { action: "proceed" };
 
 export type DecideSignalTraceLoadInput = {
   chartWindowKey: string | null;
-  displayCacheCoversWindow: boolean;
   sessionCacheHasWindow: boolean;
   /** Window key for the current `signalTrace` bundle (lanes/diagnostics). */
   loadedSignalTraceWindowKey: string | null;
-  loadingTraceWindowKey: string | null;
-  signalTraceStatus: SignalTraceLoadStatus;
-  inFlightRequest: SignalTraceRequest | null;
   request: SignalTraceRequest | null;
 };
 
@@ -44,7 +38,6 @@ export function lanesSignalTraceStatus(
   if (signalTraceMatchesChartWindow(chartWindowKey, loadedSignalTraceWindowKey)) {
     return signalTraceStatus;
   }
-  // Stale status from another window (including its error) — current window refetch pending/active.
   return "loading";
 }
 
@@ -63,28 +56,11 @@ export function lanesSignalTraceError(
   return null;
 }
 
-export function signalTraceRequestsEqual(
-  a: SignalTraceRequest,
-  b: SignalTraceRequest,
-): boolean {
-  return (
-    a.windowKey === b.windowKey &&
-    a.runId === b.runId &&
-    a.variant === b.variant &&
-    a.fromMs === b.fromMs &&
-    a.toOpenTimeMs === b.toOpenTimeMs
-  );
-}
-
-/** Whether to start signalTrace fetch or skip (display cache / dedup / guards). */
-export function decideSignalTraceLoad(
-  input: DecideSignalTraceLoadInput,
-): SignalTraceLoadDecision {
+/** Bootstrap / session gates before coordinator network authorization. */
+export function decideSignalTraceLoad(input: DecideSignalTraceLoadInput): SignalTraceLoadDecision {
   if (input.chartWindowKey === null || input.request === null) {
     return { action: "skip_idle" };
   }
-
-  const { request } = input;
 
   if (
     input.sessionCacheHasWindow &&
@@ -93,23 +69,5 @@ export function decideSignalTraceLoad(
     return { action: "restore_session_cache" };
   }
 
-  if (input.displayCacheCoversWindow) {
-    return { action: "skip_display_cache_hit" };
-  }
-
-  if (
-    input.chartWindowKey === input.loadingTraceWindowKey &&
-    input.signalTraceStatus === "loading"
-  ) {
-    return { action: "skip_already_loading" };
-  }
-
-  if (
-    input.inFlightRequest !== null &&
-    signalTraceRequestsEqual(input.inFlightRequest, request)
-  ) {
-    return { action: "skip_identical_in_flight" };
-  }
-
-  return { action: "load_start", request };
+  return { action: "proceed" };
 }

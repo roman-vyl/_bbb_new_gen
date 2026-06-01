@@ -5,6 +5,7 @@ import {
   shouldBlockTraceFetchForActivePan,
   traceDisplayPlanTouchesViewport,
 } from "@/features/chart/runtime/traceDisplayOrchestrator";
+
 const READY_BOOTSTRAP = {
   ready: true as const,
   windowKey: "run-a:exp_a:1000:2000",
@@ -18,6 +19,15 @@ const READY_BOOTSTRAP = {
   fetchSource: "initial" as const,
 };
 
+const IDLE_PAN = {
+  interactionState: "idle_user_view" as const,
+  hasPendingShift: false,
+  displayCacheCoversWindow: false,
+  committedWindowKey: READY_BOOTSTRAP.windowKey,
+  loadedWindowKey: null,
+  status: "idle" as const,
+};
+
 describe("shouldBlockTraceFetchForActivePan", () => {
   it("allows cache-hit display refresh during pan", () => {
     expect(
@@ -27,7 +37,6 @@ describe("shouldBlockTraceFetchForActivePan", () => {
         displayCacheCoversWindow: true,
         committedWindowKey: READY_BOOTSTRAP.windowKey,
         loadedWindowKey: null,
-        loadingWindowKey: null,
         status: "ready",
       }),
     ).toBe(false);
@@ -41,16 +50,8 @@ describe("planTraceDisplayLoad", () => {
         bootstrap: READY_BOOTSTRAP,
         coalescedWindowKey: null,
         committedWindowKey: READY_BOOTSTRAP.windowKey,
-        panScheduling: {
-          interactionState: "idle_user_view",
-          hasPendingShift: false,
-          displayCacheCoversWindow: true,
-          committedWindowKey: READY_BOOTSTRAP.windowKey,
-          loadedWindowKey: null,
-          loadingWindowKey: null,
-          status: "ready",
-        },
-        loadDecision: { action: "skip_display_cache_hit" },
+        panScheduling: { ...IDLE_PAN, displayCacheCoversWindow: true },
+        loadDecision: { action: "proceed" },
       }),
       planTraceDisplayLoad({
         bootstrap: READY_BOOTSTRAP,
@@ -62,10 +63,9 @@ describe("planTraceDisplayLoad", () => {
           displayCacheCoversWindow: false,
           committedWindowKey: READY_BOOTSTRAP.windowKey,
           loadedWindowKey: null,
-          loadingWindowKey: null,
           status: "idle",
         },
-        loadDecision: { action: "load_start", request: READY_BOOTSTRAP.request },
+        loadDecision: { action: "proceed" },
       }),
     ];
     for (const plan of plans) {
@@ -73,7 +73,7 @@ describe("planTraceDisplayLoad", () => {
     }
   });
 
-  it("cache hit during pending shift applies display without fetch", () => {
+  it("cache hit during pending shift applies display without network evaluation", () => {
     const plan = planTraceDisplayLoad({
       bootstrap: READY_BOOTSTRAP,
       coalescedWindowKey: null,
@@ -84,15 +84,14 @@ describe("planTraceDisplayLoad", () => {
         displayCacheCoversWindow: true,
         committedWindowKey: READY_BOOTSTRAP.windowKey,
         loadedWindowKey: "other",
-        loadingWindowKey: null,
         status: "ready",
       },
-      loadDecision: { action: "skip_display_cache_hit" },
+      loadDecision: { action: "proceed" },
     });
     expect(plan).toEqual({ action: "display_cache_hit" });
   });
 
-  it("defers network fetch while pan is active", () => {
+  it("defers network evaluation while pan is active", () => {
     const plan = planTraceDisplayLoad({
       bootstrap: READY_BOOTSTRAP,
       coalescedWindowKey: null,
@@ -103,15 +102,14 @@ describe("planTraceDisplayLoad", () => {
         displayCacheCoversWindow: false,
         committedWindowKey: READY_BOOTSTRAP.windowKey,
         loadedWindowKey: null,
-        loadingWindowKey: null,
         status: "idle",
       },
-      loadDecision: { action: "load_start", request: READY_BOOTSTRAP.request },
+      loadDecision: { action: "proceed" },
     });
     expect(plan).toEqual({ action: "pan_block", applyDisplayFromCache: false });
   });
 
-  it("maps display cache hit without network", () => {
+  it("maps display cache hit without coordinator", () => {
     const plan = planTraceDisplayLoad({
       bootstrap: READY_BOOTSTRAP,
       coalescedWindowKey: null,
@@ -122,11 +120,21 @@ describe("planTraceDisplayLoad", () => {
         displayCacheCoversWindow: true,
         committedWindowKey: READY_BOOTSTRAP.windowKey,
         loadedWindowKey: "run-a:exp_a:3000:4000",
-        loadingWindowKey: null,
         status: "ready",
       },
-      loadDecision: { action: "skip_display_cache_hit" },
+      loadDecision: { action: "proceed" },
     });
     expect(plan).toEqual({ action: "display_cache_hit" });
+  });
+
+  it("routes uncovered idle window to evaluate_network", () => {
+    const plan = planTraceDisplayLoad({
+      bootstrap: READY_BOOTSTRAP,
+      coalescedWindowKey: null,
+      committedWindowKey: READY_BOOTSTRAP.windowKey,
+      panScheduling: IDLE_PAN,
+      loadDecision: { action: "proceed" },
+    });
+    expect(plan).toEqual({ action: "evaluate_network" });
   });
 });

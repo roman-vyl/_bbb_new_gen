@@ -110,6 +110,24 @@ copy(JSON.stringify(window.__pipelineDebugExport(), null, 2))
 | `api.fetchRunReport` / `api.fetchChartMarketBundle` / `api.fetchSignalTrace` | network |
 | `wb.load.*` / `wb.render_window.*` / `wb.chart_window_slice` | WorkbenchContext |
 | `wb.trace_display.*` / `wb.signal_trace.*` / `wb.pan.*` | cache / trace bootstrap / pan policy |
+| `wb.signal_trace_decision` | coordinator + policy gate (`traceRequestKey`, `decisionReason`, `skipReason`, ledger fields) |
+| `wb.signal_trace.fetch_start` | network start (`traceRequestKey`, `source`, `windowKey`) |
+
+### `wb.signal_trace_decision` metadata (coordinator)
+
+When `VITE_EMA_PIPELINE_DEBUG=true`, each decision includes:
+
+| field | meaning |
+|-------|---------|
+| `traceRequestKey` | BFF resource identity (`run_id`, `variant`, `from` ms, `to_open_time_ms`, `context_overlay_ref`) |
+| `decisionReason` | `fetch` or skip: `cache_hit`, `already_merged`, `in_flight`, `failed_same_key` |
+| `skipReason` | same as `decisionReason` when skipped |
+| `policyAction` | `proceed` / `restore_session_cache` / `skip_idle` (gates only) |
+| `cacheCoverage` | `hit` / `miss` from display cache `coversRange` (display-only) |
+| `mergedKeysHit` / `failedKeysHit` / `inFlightKeysCount` | coordinator ledger snapshot |
+| `requestedFrom` / `requestedTo` | committed fetch ms bounds |
+
+`selectedStrategyInstanceId` is display-only and must not appear in `traceRequestKey` unless BFF adds a query param.
 | `chart.setData.*` / `chart.markers.*` / `chart.viewport.*` | ChartPanel |
 
 ---
