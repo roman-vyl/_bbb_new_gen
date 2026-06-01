@@ -17,5 +17,5 @@
 
 - [x] 3.1 `pytest tests/test_ema_pullback_signal_trace.py -k bounce_counter` (or targeted test file)
 - [x] 3.2 `npm run test -- chartComponentEvents` in `frontend/`
-- [ ] 3.3 Manual Workbench (refresh trace/report first — stale cache shows generic labels): variant with `ema_bounce_counter_setup` — markers show `B{n}` / `T±`, tooltip shows bounce/lookback/gate fields and clearly distinguishes `raw_touch` vs `in_touch_lookback`, **Show setup** toggles all `role: setup` markers off (including other setup components — acceptable v1)
+- [x] 3.3 Manual Workbench (refresh trace/report first — stale cache shows generic labels): variant with `ema_bounce_counter_setup` — markers show `B{n}` / `T±`, tooltip shows bounce/lookback/gate fields and clearly distinguishes `raw_touch` vs `in_touch_lookback`, **Show setup** toggles all `role: setup` markers off (including other setup components — acceptable v1)
 - [x] 3.4 Verify HTF context EMA overlays unchanged (variant with `strategy.contexts`; no WorkbenchContext/signal_trace structural changes expected)
