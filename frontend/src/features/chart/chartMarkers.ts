@@ -3,7 +3,13 @@ import type { SeriesMarker, Time } from "lightweight-charts";
 import { msToChartTime, type TradeRecord } from "@/api/types";
 import { tradeIdsEqual } from "@/features/chart/tradeLookup";
 
-export type ExitReasonMarkerKind = "stop_loss" | "take_profit" | "signal" | "unknown" | "open";
+export type ExitReasonMarkerKind =
+  | "stop_loss"
+  | "take_profit"
+  | "signal"
+  | "break_even"
+  | "unknown"
+  | "open";
 
 export const EXIT_MARKER_LEGEND: {
   kind: ExitReasonMarkerKind | "entry";
@@ -15,6 +21,7 @@ export const EXIT_MARKER_LEGEND: {
   { kind: "stop_loss", label: "SL", description: "Exit · stop_loss:*" },
   { kind: "take_profit", label: "TP", description: "Exit · take_profit:*" },
   { kind: "signal", label: "SIG", description: "Exit · signal:*" },
+  { kind: "break_even", label: "BE", description: "Exit · break-even (moved stop)" },
   { kind: "unknown", label: "UNK", description: "Exit · unknown" },
 ];
 
@@ -24,6 +31,7 @@ export function classifyExitReason(exitReason: string): ExitReasonMarkerKind {
   if (exitReason.startsWith("stop_loss:")) return "stop_loss";
   if (exitReason.startsWith("take_profit:")) return "take_profit";
   if (exitReason.startsWith("signal:")) return "signal";
+  if (exitReason.startsWith("break_even:")) return "break_even";
   return "unknown";
 }
 
@@ -51,6 +59,8 @@ function exitMarkerColor(kind: ExitReasonMarkerKind, highlighted: boolean): stri
       return "#22c55e";
     case "signal":
       return "#38bdf8";
+    case "break_even":
+      return "#a78bfa";
     case "unknown":
       return "#94a3b8";
     default:

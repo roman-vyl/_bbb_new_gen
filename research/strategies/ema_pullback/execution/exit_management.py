@@ -10,8 +10,13 @@ import numpy as np
 import pandas as pd
 
 from research.strategies.ema_pullback.execution.exit_attribution import (
+    ExitAttributionResult,
+    ExitAttributionContext,
     _agg_sl_tp_at_entry,
+    _attribution_for_instance,
     _levels_from_ratios,
+    _null_attribution,
+    _pick_distance_instance,
     _stop_hit_long,
     _stop_hit_short,
 )
@@ -181,6 +186,134 @@ def _initial_stop_at_entry(
     return sl_level, sl_r, tp_r
 
 
+def _exit_at_break_even_stop(pos: _OpenPosition, effective_stop: float) -> bool:
+    if not pos.triggered or pos.stop_moved_to is None or pos.resolved is None:
+        return False
+    if math.isclose(effective_stop, pos.stop_moved_to, rel_tol=0.0, abs_tol=1e-8):
+        return True
+    return not math.isclose(effective_stop, pos.initial_stop_price, rel_tol=0.0, abs_tol=1e-8)
+
+
+def _classify_managed_bar_exit(
+    pos: _OpenPosition,
+    *,
+    bar_idx: int,
+    open_: float,
+    high: float,
+    low: float,
+    stop_anchor: float,
+    long_exit: bool,
+    short_exit: bool,
+    ctx: ExitAttributionContext | None,
+    component_map: dict[str, str] | None,
+) -> ExitAttributionResult | None:
+    """Classify why the position closes on this bar (signal, TP, SL, or break-even stop)."""
+
+    direction = pos.direction
+    profile = pos.locked_profile
+
+    if direction == "long" and long_exit:
+        if ctx is not None:
+            for i, series in enumerate(ctx.long_signal_by_rule):
+                if series is None or not bool(series.iloc[bar_idx]):
+                    continue
+                inst = ctx.instance_ids[i]
+                group = ctx.rule_groups[i] if i < len(ctx.rule_groups) else "always_on"
+                if group not in {"always_on", profile}:
+                    continue
+                return _attribution_for_instance(
+                    ctx, inst, prefix="signal", component_map=component_map
+                )
+        return _null_attribution("unknown")
+    if direction == "short" and short_exit:
+        if ctx is not None:
+            for i, series in enumerate(ctx.short_signal_by_rule):
+                if series is None or not bool(series.iloc[bar_idx]):
+                    continue
+                inst = ctx.instance_ids[i]
+                group = ctx.rule_groups[i] if i < len(ctx.rule_groups) else "always_on"
+                if group not in {"always_on", profile}:
+                    continue
+                return _attribution_for_instance(
+                    ctx, inst, prefix="signal", component_map=component_map
+                )
+        return _null_attribution("unknown")
+
+    sl_level, tp_level = _levels_from_ratios(
+        direction,
+        stop_anchor,
+        pos.sl_ratio,
+        pos.tp_ratio,
+    )
+    eff = pos.effective_stop
+
+    if direction == "long":
+        sl_hit = _stop_hit_long(open_, high, low, eff, is_loss=True)
+        tp_hit = (
+            tp_level is not None
+            and pos.tp_ratio is not None
+            and _stop_hit_long(open_, high, low, tp_level, is_loss=False)
+        )
+    else:
+        sl_hit = _stop_hit_short(open_, high, low, eff, is_loss=True)
+        tp_hit = (
+            tp_level is not None
+            and pos.tp_ratio is not None
+            and _stop_hit_short(open_, high, low, tp_level, is_loss=False)
+        )
+
+    if sl_hit:
+        if _exit_at_break_even_stop(pos, eff) and pos.resolved is not None:
+            inst = pos.resolved.rule.instance_id
+            component_id = (component_map or {}).get(inst, BREAK_EVEN_STOP_COMPONENT)
+            if pos.resolved.source == "always_on":
+                return ExitAttributionResult(
+                    f"break_even:{inst}",
+                    "always_on",
+                    None,
+                    component_id,
+                    inst,
+                    "break_even",
+                )
+            return ExitAttributionResult(
+                f"break_even:{inst}",
+                "profile",
+                profile,
+                component_id,
+                inst,
+                "break_even",
+            )
+        if ctx is not None and pos.sl_ratio is not None:
+            inst = _pick_distance_instance(
+                ctx,
+                pos.entry_idx,
+                exit_kind="stop_loss",
+                agg_value=float(pos.sl_ratio),
+                profile=profile,
+            )
+            if inst:
+                return _attribution_for_instance(
+                    ctx, inst, prefix="stop_loss", component_map=component_map
+                )
+        return _null_attribution("unknown")
+
+    if tp_hit and ctx is not None and pos.tp_ratio is not None:
+        inst = _pick_distance_instance(
+            ctx,
+            pos.entry_idx,
+            exit_kind="take_profit",
+            agg_value=float(pos.tp_ratio),
+            profile=profile,
+        )
+        if inst:
+            return _attribution_for_instance(
+                ctx, inst, prefix="take_profit", component_map=component_map
+            )
+        return _null_attribution("unknown")
+
+    return None
+
+
 def _check_bar_exits(
     pos: _OpenPosition,
     *,
@@ -192,32 +325,21 @@ def _check_bar_exits(
     stop_anchor: float,
     long_exit: bool,
     short_exit: bool,
-) -> bool:
-    direction = pos.direction
-    if direction == "long" and long_exit:
-        return True
-    if direction == "short" and short_exit:
-        return True
-    sl_level, tp_level = _levels_from_ratios(
-        direction,
-        stop_anchor,
-        pos.sl_ratio,
-        pos.tp_ratio,
+    ctx: ExitAttributionContext | None = None,
+    component_map: dict[str, str] | None = None,
+) -> ExitAttributionResult | None:
+    return _classify_managed_bar_exit(
+        pos,
+        bar_idx=bar_idx,
+        open_=open_,
+        high=high,
+        low=low,
+        stop_anchor=stop_anchor,
+        long_exit=long_exit,
+        short_exit=short_exit,
+        ctx=ctx,
+        component_map=component_map,
     )
-    eff = pos.effective_stop
-    if direction == "long":
-        if _stop_hit_long(open_, high, low, eff, is_loss=True):
-            return True
-        if tp_level is not None and pos.tp_ratio is not None:
-            if _stop_hit_long(open_, high, low, tp_level, is_loss=False):
-                return True
-        return False
-    if _stop_hit_short(open_, high, low, eff, is_loss=True):
-        return True
-    if tp_level is not None and pos.tp_ratio is not None:
-        if _stop_hit_short(open_, high, low, tp_level, is_loss=False):
-            return True
-    return False
 
 
 def _bar_trace(pos: _OpenPosition | None) -> BarManagementTrace | None:
@@ -300,6 +422,7 @@ def run_managed_bar_loop(
     short_entries: pd.Series,
     exit_outputs: PortfolioExitOutputs,
     index_ms: np.ndarray | None = None,
+    component_map: dict[str, str] | None = None,
 ) -> tuple[list[dict[str, Any]], list[BarManagementTrace | None]]:
     """Bar-by-bar simulation when exit_management rules are present."""
 
@@ -336,7 +459,7 @@ def run_managed_bar_loop(
             long_x = bool(exit_outputs.long_exits_by_profile[prof].iloc[i])
             short_x = bool(exit_outputs.short_exits_by_profile[prof].iloc[i])
             anchor = float(close.iloc[open_pos.entry_idx])
-            if _check_bar_exits(
+            exit_attr = _check_bar_exits(
                 open_pos,
                 bar_idx=i,
                 open_=o,
@@ -346,12 +469,16 @@ def run_managed_bar_loop(
                 stop_anchor=anchor,
                 long_exit=long_x,
                 short_exit=short_x,
-            ):
+                ctx=exit_outputs.attribution,
+                component_map=component_map,
+            )
+            if exit_attr is not None:
                 closed.append(
                     {
                         "position": open_pos,
                         "exit_idx": i,
                         "exit_price": c,
+                        "exit_attribution": exit_attr,
                     }
                 )
                 open_pos = None

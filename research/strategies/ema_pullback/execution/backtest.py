@@ -206,6 +206,7 @@ def _run_managed_strategy_spec(
         entries=entries_for_portfolio,
         short_entries=short_entries_for_portfolio,
         exit_outputs=exit_outputs,
+        component_map=build_exit_instance_component_map(spec),
     )
     trade_records = build_managed_trade_records(
         closed,

@@ -624,6 +624,14 @@ def build_managed_trade_records(
         entry_ms = _index_to_open_time_ms(index, entry_idx)
         exit_ms = _index_to_open_time_ms(index, exit_idx) if status == "closed" else None
 
+        exit_attr = item.get("exit_attribution")
+        if is_open:
+            exit_reason = "open"
+        elif exit_attr is not None:
+            exit_reason = exit_attr.exit_reason
+        else:
+            exit_reason = "unknown"
+
         record: dict[str, Any] = {
             "trade_id": i + 1,
             "direction": direction,
@@ -635,10 +643,17 @@ def build_managed_trade_records(
             "size": 1.0,
             "pnl": pnl,
             "return_pct": ret_pct,
-            "exit_reason": "open" if is_open else "unknown",
+            "exit_reason": exit_reason,
             "entry_idx": entry_idx,
             "exit_idx": exit_idx,
         }
+
+        if status == "closed" and exit_attr is not None:
+            record["exit_group"] = exit_attr.exit_group
+            record["exit_profile"] = exit_attr.exit_profile
+            record["exit_component_id"] = exit_attr.exit_component_id
+            record["exit_instance_id"] = exit_attr.exit_instance_id
+            record["exit_kind"] = exit_attr.exit_kind
 
         if status == "closed" and gross_pnl is not None:
             record["gross_pnl"] = gross_pnl
