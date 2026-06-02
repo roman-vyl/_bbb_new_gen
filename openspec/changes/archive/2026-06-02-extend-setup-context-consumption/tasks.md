@@ -10,7 +10,7 @@
 - [x] 2.2 Ensure setup runtime composition receives side-aware evaluation context and `ContextBundle` for per-rule external gating.
 - [x] 2.3 Keep setup composition semantics unchanged (`compose_setup_masks` AND behavior), but compose gated per-rule masks.
 - [x] 2.4 Verify setup components (`untouched_anchor_setup`, `ema_bounce_counter_setup`) remain context-unaware and keep existing setup-instance-ID feature planning behavior.
-- [ ] 2.5 Add explicit guardrails/tests that `evaluate_context_consumption` is NOT called inside `untouched_anchor_setup` or `ema_bounce_counter_setup`.
+- [x] 2.5 Add explicit guardrails/tests that `evaluate_context_consumption` is NOT called inside `untouched_anchor_setup` or `ema_bounce_counter_setup`.
 
 ## 3. Catalog and API parity
 
@@ -23,7 +23,7 @@
 - [x] 4.2 Add runtime tests proving context gate is applied outside setup components and can block an otherwise-true local setup mask.
 - [x] 4.3 Add both-side tests showing side-relative `htf_regime_gate` produces different gated setup masks for `long` vs `short` on the same raw HTF state.
 - [x] 4.4 Add diagnostics/trace assertions for separate setup states: `local_setup_allowed`, `context_gate_allowed`, `final_setup_allowed` plus `context_ref`, `policy_id`, `allowed_regimes`, `raw_state`, `resolved_regime`, `evaluated_side`.
-- [ ] 4.5 Ensure setup `component_events[]` remain local setup events even when context gate blocks final setup mask; assert context block is shown in context diagnostics/consumption trace.
+- [x] 4.5 Ensure setup `component_events[]` remain local setup events even when context gate blocks final setup mask; assert context block is shown in context diagnostics/consumption trace.
 
 ## 5. Frontend Composer authoring
 
