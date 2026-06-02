@@ -25,134 +25,44 @@ const WINDOW_B: SignalTraceRequest = {
 };
 
 describe("decideSignalTraceLoad", () => {
-  it("scenario A: skips fetch when display cache covers committed window", () => {
+  it("returns skip_idle when chartWindowKey is null", () => {
     const decision = decideSignalTraceLoad({
-      chartWindowKey: REQUEST.windowKey,
-      displayCacheCoversWindow: true,
-      sessionCacheHasWindow: true,
-      loadedSignalTraceWindowKey: REQUEST.windowKey,
-      loadingTraceWindowKey: null,
-      signalTraceStatus: "ready",
-      inFlightRequest: null,
-      request: REQUEST,
+      chartWindowKey: null,
+      sessionCacheHasWindow: false,
+      loadedSignalTraceWindowKey: null,
+      request: null,
     });
-    expect(decision).toEqual({ action: "skip_display_cache_hit" });
+    expect(decision).toEqual({ action: "skip_idle" });
   });
 
-  it("regression: cache covers window A but session has A — restore without fetch", () => {
+  it("returns restore_session_cache when session has window but loaded trace is stale", () => {
     const decision = decideSignalTraceLoad({
       chartWindowKey: REQUEST.windowKey,
-      displayCacheCoversWindow: true,
       sessionCacheHasWindow: true,
       loadedSignalTraceWindowKey: WINDOW_B.windowKey,
-      loadingTraceWindowKey: null,
-      signalTraceStatus: "ready",
-      inFlightRequest: null,
       request: REQUEST,
     });
     expect(decision).toEqual({ action: "restore_session_cache" });
   });
 
-  it("pan-back: cache covers window A while loaded trace is window B — display hit without fetch", () => {
+  it("returns proceed for normal load path (coordinator authorizes network)", () => {
     const decision = decideSignalTraceLoad({
       chartWindowKey: REQUEST.windowKey,
-      displayCacheCoversWindow: true,
-      sessionCacheHasWindow: false,
-      loadedSignalTraceWindowKey: WINDOW_B.windowKey,
-      loadingTraceWindowKey: null,
-      signalTraceStatus: "ready",
-      inFlightRequest: null,
-      request: REQUEST,
-    });
-    expect(decision).toEqual({ action: "skip_display_cache_hit" });
-  });
-
-  it("scenario B: skips when same window is already loading", () => {
-    const decision = decideSignalTraceLoad({
-      chartWindowKey: REQUEST.windowKey,
-      displayCacheCoversWindow: false,
       sessionCacheHasWindow: false,
       loadedSignalTraceWindowKey: null,
-      loadingTraceWindowKey: REQUEST.windowKey,
-      signalTraceStatus: "loading",
-      inFlightRequest: REQUEST,
       request: REQUEST,
     });
-    expect(decision).toEqual({ action: "skip_already_loading" });
+    expect(decision).toEqual({ action: "proceed" });
   });
 
-  it("starts load on initial cache miss without loaded window", () => {
+  it("returns proceed when session matches loaded window", () => {
     const decision = decideSignalTraceLoad({
       chartWindowKey: REQUEST.windowKey,
-      displayCacheCoversWindow: false,
-      sessionCacheHasWindow: false,
-      loadedSignalTraceWindowKey: null,
-      loadingTraceWindowKey: null,
-      signalTraceStatus: "idle",
-      inFlightRequest: null,
-      request: REQUEST,
-    });
-    expect(decision).toEqual({ action: "load_start", request: REQUEST });
-  });
-
-  it("scenario C: starts load when chartWindowKey changes and cache misses", () => {
-    const nextKey = "run-a:exp_a:3000:4000";
-    const nextRequest = { ...REQUEST, windowKey: nextKey, fromMs: 3_000_000, toOpenTimeMs: 4_000_000 };
-    const decision = decideSignalTraceLoad({
-      chartWindowKey: nextKey,
-      displayCacheCoversWindow: false,
-      sessionCacheHasWindow: false,
+      sessionCacheHasWindow: true,
       loadedSignalTraceWindowKey: REQUEST.windowKey,
-      loadingTraceWindowKey: null,
-      signalTraceStatus: "ready",
-      inFlightRequest: null,
-      request: nextRequest,
-    });
-    expect(decision).toEqual({ action: "load_start", request: nextRequest });
-  });
-
-  it("scenario D: starts load when variant changes (new window key)", () => {
-    const nextKey = "run-a:exp_b:1000:2000";
-    const nextRequest = { ...REQUEST, windowKey: nextKey, variant: "exp_b" };
-    const decision = decideSignalTraceLoad({
-      chartWindowKey: nextKey,
-      displayCacheCoversWindow: false,
-      sessionCacheHasWindow: false,
-      loadedSignalTraceWindowKey: REQUEST.windowKey,
-      loadingTraceWindowKey: null,
-      signalTraceStatus: "ready",
-      inFlightRequest: null,
-      request: nextRequest,
-    });
-    expect(decision).toEqual({ action: "load_start", request: nextRequest });
-  });
-
-  it("skips identical in-flight request", () => {
-    const decision = decideSignalTraceLoad({
-      chartWindowKey: REQUEST.windowKey,
-      displayCacheCoversWindow: false,
-      sessionCacheHasWindow: false,
-      loadedSignalTraceWindowKey: null,
-      loadingTraceWindowKey: null,
-      signalTraceStatus: "idle",
-      inFlightRequest: REQUEST,
       request: REQUEST,
     });
-    expect(decision).toEqual({ action: "skip_identical_in_flight" });
-  });
-
-  it("returns skip_idle when chartWindowKey is null", () => {
-    const decision = decideSignalTraceLoad({
-      chartWindowKey: null,
-      displayCacheCoversWindow: false,
-      sessionCacheHasWindow: false,
-      loadedSignalTraceWindowKey: null,
-      loadingTraceWindowKey: null,
-      signalTraceStatus: "idle",
-      inFlightRequest: null,
-      request: null,
-    });
-    expect(decision).toEqual({ action: "skip_idle" });
+    expect(decision).toEqual({ action: "proceed" });
   });
 });
 

@@ -1,4 +1,4 @@
-import type { ChartBar, RunReport, RunVariant } from "@/api/types";
+import type { ChartBar, RunReport } from "@/api/types";
 
 import type { SignalTraceRequest } from "@/shared/context/signalTraceLoadPolicy";
 
@@ -41,7 +41,7 @@ export function resolveSignalTraceFetchSource(
 export function evaluateSignalTraceBootstrap(input: {
   report: RunReport | null;
   selectedRunId: string | null;
-  selectedVariant: RunVariant | null;
+  selectedVariantKey: string | null;
   marketLoadStatus: SignalTraceBootstrapMarketStatus;
   chartWindowKey: string | null;
   candles: readonly ChartBar[];
@@ -54,7 +54,7 @@ export function evaluateSignalTraceBootstrap(input: {
   if (input.selectedRunId === null) {
     return { ready: false, reason: "no_run" };
   }
-  if (input.selectedVariant === null) {
+  if (input.selectedVariantKey === null || input.selectedVariantKey === "") {
     return { ready: false, reason: "no_variant" };
   }
   if (input.marketLoadStatus !== "ready") {
@@ -73,7 +73,7 @@ export function evaluateSignalTraceBootstrap(input: {
   const request: SignalTraceRequest = {
     windowKey,
     runId: input.selectedRunId,
-    variant: input.selectedVariant.variant,
+    variant: input.selectedVariantKey,
     fromMs,
     toOpenTimeMs,
   };

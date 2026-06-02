@@ -51,7 +51,7 @@ describe("signalTraceBootstrap", () => {
     const result = evaluateSignalTraceBootstrap({
       report: REPORT,
       selectedRunId: "run-a",
-      selectedVariant: VARIANT,
+      selectedVariantKey: VARIANT.variant,
       marketLoadStatus: "loading",
       chartWindowKey: "run-a:exp_a:1:2:",
       candles,
@@ -69,7 +69,7 @@ describe("signalTraceBootstrap", () => {
     const result = evaluateSignalTraceBootstrap({
       report: REPORT,
       selectedRunId: "run-a",
-      selectedVariant: VARIANT,
+      selectedVariantKey: VARIANT.variant,
       marketLoadStatus: "ready",
       chartWindowKey: windowKey,
       candles,
