@@ -106,6 +106,69 @@ def test_signal_trace_endpoint_returns_bundle(monkeypatch: pytest.MonkeyPatch) -
     assert body["component_events"][0]["metadata"]["threshold"] == 80.0
 
 
+def test_context_consumption_trace_record_accepts_setup_instance_id() -> None:
+    bundle = SignalTraceBundle(
+        times=[1],
+        meta={
+            "variant": "v1",
+            "component_ids": {
+                "direction": "ema_anchor_stack_trend",
+                "setups": [{"instance_id": "setup_ctx", "component_id": "untouched_anchor_setup"}],
+                "trigger": "reclaim_anchor",
+                "risk": "no_risk_filter",
+            },
+            "setup_params": [
+                {
+                    "instance_id": "setup_ctx",
+                    "component_id": "untouched_anchor_setup",
+                    "lookback": 50,
+                    "active_bars": 3,
+                }
+            ],
+            "blocker_instances": [],
+        },
+        context_consumption_trace=[
+            {
+                "role": "setup",
+                "component_id": "untouched_anchor_setup",
+                "instance_id": "setup_ctx",
+                "setup_instance_id": "setup_ctx",
+                "context_ref": "htf",
+                "policy_id": "htf_regime_gate",
+                "context_applied": [False],
+                "outcome": {
+                    "local_setup_allowed": [True],
+                    "context_gate_allowed": [False],
+                    "final_setup_allowed": [False],
+                },
+            }
+        ],
+        long={
+            "direction_ok": [True],
+            "blockers_ok": [True],
+            "setup_ok": [False],
+            "trigger_ok": [True],
+            "risk_ok": [True],
+            "signal_entry": [False],
+            "stop_ready": [True],
+            "portfolio_entry": [False],
+            "internals": {},
+        },
+        short={
+            "direction_ok": [False],
+            "blockers_ok": [True],
+            "setup_ok": [False],
+            "trigger_ok": [False],
+            "risk_ok": [True],
+            "signal_entry": [False],
+            "stop_ready": [True],
+            "portfolio_entry": [False],
+            "internals": {},
+        },
+    )
+    assert bundle.context_consumption_trace[0].setup_instance_id == "setup_ctx"
+
+
 def test_signal_trace_warmup_ignores_htf_without_context_consumption() -> None:
     """always_on-only spec: no strategy.contexts → warmup is anchor/setup only."""
     spec = make_ema_pullback_strategy_spec(

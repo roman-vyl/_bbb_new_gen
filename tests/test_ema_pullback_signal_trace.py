@@ -181,6 +181,87 @@ def test_strategy_spec_roundtrip_preserves_blocker_htf_regime_gate_params() -> N
     assert dict(legacy_consumption.policy.params) == {"allowed_regimes": ["aligned", "neutral"]}
 
 
+def test_strategy_spec_roundtrip_preserves_setup_context_consumption() -> None:
+    from dataclasses import asdict
+
+    from research.strategies.ema_pullback.component_builders import (
+        context_consumption,
+        setup_rule,
+        untouched_anchor_setup_spec,
+    )
+    from tests.ema_pullback_context_helpers import htf_strategy_contexts
+
+    base = make_ema_pullback_strategy_spec(contexts=htf_strategy_contexts(context_ref="htf"))
+    spec = replace(
+        base,
+        setups=(
+            setup_rule(
+                instance_id="setup_ctx",
+                component_id="untouched_anchor_setup",
+                params=untouched_anchor_setup_spec(lookback=50, active_bars=3),
+                context_consumption=context_consumption(
+                    context_ref="htf",
+                    policy_id="htf_regime_gate",
+                    params=(("allowed_regimes", ["aligned"]),),
+                ),
+            ),
+        ),
+    )
+    wire = strategy_spec_to_dict(spec)
+    setup_wire = wire["setups"][0]
+    assert setup_wire["context_consumption"]["context_ref"] == "htf"
+    assert setup_wire["context_consumption"]["policy"]["policy_id"] == "htf_regime_gate"
+
+    restored = strategy_spec_from_report_dict(wire)
+    restored_consumption = restored.setups[0].context_consumption
+    assert restored_consumption is not None
+    assert restored_consumption.context_ref == "htf"
+    assert restored_consumption.policy.policy_id == "htf_regime_gate"
+    assert dict(restored_consumption.policy.params) == {"allowed_regimes": ["aligned"]}
+
+    legacy_wire = asdict(spec)
+    restored_legacy = strategy_spec_from_report_dict(legacy_wire)
+    legacy_consumption = restored_legacy.setups[0].context_consumption
+    assert legacy_consumption is not None
+    assert legacy_consumption.context_ref == "htf"
+    assert legacy_consumption.policy.policy_id == "htf_regime_gate"
+    assert dict(legacy_consumption.policy.params) == {"allowed_regimes": ["aligned"]}
+
+
+def test_signal_trace_after_setup_context_report_roundtrip() -> None:
+    from research.strategies.ema_pullback.component_builders import (
+        context_consumption,
+        setup_rule,
+        untouched_anchor_setup_spec,
+    )
+    from tests.ema_pullback_context_helpers import htf_strategy_contexts
+
+    base = make_ema_pullback_strategy_spec(contexts=htf_strategy_contexts(context_ref="htf"))
+    spec = replace(
+        base,
+        setups=(
+            setup_rule(
+                instance_id="setup_ctx",
+                component_id="untouched_anchor_setup",
+                params=untouched_anchor_setup_spec(lookback=50, active_bars=3),
+                context_consumption=context_consumption(
+                    context_ref="htf",
+                    policy_id="htf_regime_gate",
+                    params=(("allowed_regimes", ["aligned"]),),
+                ),
+            ),
+        ),
+    )
+
+    restored = strategy_spec_from_report_dict(strategy_spec_to_dict(spec))
+    assert restored.setups[0].context_consumption is not None
+    plan = build_feature_plan_from_strategy_spec(restored)
+    df = add_feature_columns_from_plan(_ohlcv(periods=30), plan)
+    trace = build_signal_trace_from_spec(df, restored, plan, context_overlay_ref="htf")
+    setup_records = [r for r in trace.context_consumption_trace if r.get("role") == "setup"]
+    assert any(r.get("instance_id") == "setup_ctx" for r in setup_records)
+
+
 def test_signal_trace_after_htf_regime_gate_report_roundtrip() -> None:
     from tests.ema_pullback_context_helpers import (
         blocker_htf_regime_gate,

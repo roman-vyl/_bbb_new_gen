@@ -45,7 +45,7 @@ from research.strategies.ema_pullback.execution.signals import compose_blocker_s
 from research.strategies.ema_pullback.features.plan import FeaturePlan
 from research.strategies.ema_pullback.setup_runtime import (
     compose_setup_masks,
-    run_setup_mask,
+    run_setup_rule_masks,
     run_setup_trace,
 )
 from research.strategies.ema_pullback.spec import (
@@ -276,7 +276,6 @@ def _build_side_trace(
     blockers = compose_blocker_signals(tuple(blocker_signals))
 
     setup_traces: dict[str, dict[str, pd.Series]] = {}
-    setup_gated_masks: list[pd.Series] = []
     for setup_rule in spec.setups:
         local_trace = run_setup_trace(
             df,
@@ -285,37 +284,19 @@ def _build_side_trace(
             anchor_col=anchor_col,
             side=side,
         )
-        local_mask = run_setup_mask(
+        masks = run_setup_rule_masks(
             df,
             setup_rule,
             plan,
             anchor_col=anchor_col,
             side=side,
-        ).fillna(False).astype(bool)
-        gate_mask = pd.Series(True, index=df.index, dtype=bool)
-        if setup_rule.context_consumption is not None and context_bundle is not None:
-            result = evaluate_context_consumption(
-                setup_rule.context_consumption,
-                SideAwareEvaluationContext(
-                    context_bundle=context_bundle,
-                    index=df.index,
-                    evaluated_side=side,
-                ),
-            )
-            gate = result.allowed_mask
-            if gate is None:
-                raise ValueError(
-                    "context consumption result missing allowed_mask for "
-                    f"{setup_rule.context_consumption.policy.policy_id!r}"
-                )
-            gate_mask = gate.fillna(False).astype(bool)
-        final_mask = (local_mask & gate_mask).fillna(False).astype(bool)
-        setup_gated_masks.append(final_mask)
+            context_bundle=context_bundle,
+        )
         setup_traces[setup_rule.instance_id] = {
             **local_trace,
-            "local_setup_allowed": local_mask,
-            "context_gate_allowed": gate_mask,
-            "final_setup_allowed": final_mask,
+            "local_setup_allowed": masks.local_setup_allowed,
+            "context_gate_allowed": masks.context_gate_allowed,
+            "final_setup_allowed": masks.final_setup_allowed,
         }
     setup = compose_setup_masks(
         df,
@@ -325,11 +306,6 @@ def _build_side_trace(
         side=side,
         context_bundle=context_bundle,
     )
-    if setup_gated_masks:
-        recomposed = setup_gated_masks[0]
-        for mask in setup_gated_masks[1:]:
-            recomposed = recomposed & mask
-        setup = recomposed.fillna(False).astype(bool)
 
     if isinstance(trigger_rule, ReclaimTriggerSpec):
         trigger_trace = reclaim_anchor_trace(

@@ -65,6 +65,7 @@ class ContextConsumptionTraceRecord(BaseModel):
     policy_id: str
     context_applied: list[bool]
     instance_id: str | None = None
+    setup_instance_id: str | None = None
     outcome: dict[str, Any] | None = None
 
 

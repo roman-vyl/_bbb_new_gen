@@ -100,6 +100,24 @@ def _parse_blocker_context_consumption(value: Any) -> ContextConsumptionSpec | N
     )
 
 
+def _parse_setup_context_consumption(value: Any) -> ContextConsumptionSpec | None:
+    if value is None:
+        return None
+    consumption = _require_mapping("setup.context_consumption", value)
+    policy = _require_mapping("setup.context_consumption.policy", consumption.get("policy"))
+    params = _parse_policy_params(
+        "setup.context_consumption.policy.params",
+        policy.get("params", {}),
+    )
+    return ContextConsumptionSpec(
+        context_ref=str(consumption["context_ref"]),
+        policy=ContextConsumptionPolicySpec(
+            policy_id=str(policy["policy_id"]),
+            params=params,
+        ),
+    )
+
+
 def _blocker_rule(payload: Mapping[str, Any]) -> BlockerRuleSpec:
     return BlockerRuleSpec(
         instance_id=str(payload["instance_id"]),
@@ -187,6 +205,9 @@ def _parse_report_setups(raw: list[Any]) -> tuple[SetupRuleSpec, ...]:
                 instance_id=instance_id,
                 component_id=component_id,
                 params=params,
+                context_consumption=_parse_setup_context_consumption(
+                    payload.get("context_consumption")
+                ),
             )
         )
     return tuple(rules)

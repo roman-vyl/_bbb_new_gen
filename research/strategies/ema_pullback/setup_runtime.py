@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 import pandas as pd
 
 from research.strategies.ema_pullback.components.registry import (
@@ -21,6 +22,13 @@ from research.strategies.ema_pullback.spec import (
     TradeSide,
     UntouchedAnchorSetupSpec,
 )
+
+
+@dataclass(frozen=True)
+class SetupRuleMasks:
+    local_setup_allowed: pd.Series
+    context_gate_allowed: pd.Series
+    final_setup_allowed: pd.Series
 
 
 def run_setup_mask(
@@ -122,27 +130,27 @@ def compose_setup_masks(
 ) -> pd.Series:
     if not rules:
         raise ValueError("at least one setup rule is required")
-    out = _run_gated_setup_mask(
+    out = run_setup_rule_masks(
         df,
         rules[0],
         plan,
         anchor_col=anchor_col,
         side=side,
         context_bundle=context_bundle,
-    )
+    ).final_setup_allowed
     for rule in rules[1:]:
-        out = out & _run_gated_setup_mask(
+        out = out & run_setup_rule_masks(
             df,
             rule,
             plan,
             anchor_col=anchor_col,
             side=side,
             context_bundle=context_bundle,
-        )
+        ).final_setup_allowed
     return out.fillna(False).astype(bool)
 
 
-def _run_gated_setup_mask(
+def run_setup_rule_masks(
     df: pd.DataFrame,
     rule: SetupRuleSpec,
     plan: FeaturePlan,
@@ -150,11 +158,16 @@ def _run_gated_setup_mask(
     anchor_col: str,
     side: TradeSide,
     context_bundle: ContextBundle | None = None,
-) -> pd.Series:
-    local_mask = run_setup_mask(df, rule, plan, anchor_col=anchor_col, side=side)
+) -> SetupRuleMasks:
+    local_mask = run_setup_mask(df, rule, plan, anchor_col=anchor_col, side=side).fillna(False).astype(bool)
     consumption = rule.context_consumption
+    gate_mask = pd.Series(True, index=local_mask.index, dtype=bool)
     if consumption is None:
-        return local_mask
+        return SetupRuleMasks(
+            local_setup_allowed=local_mask,
+            context_gate_allowed=gate_mask,
+            final_setup_allowed=local_mask,
+        )
     if context_bundle is None:
         raise ValueError(
             f"setups[{rule.instance_id!r}] requires context_bundle when context_consumption is configured"
@@ -173,4 +186,9 @@ def _run_gated_setup_mask(
             "context consumption result missing allowed_mask for "
             f"{consumption.policy.policy_id!r}"
         )
-    return local_mask & gate.fillna(False).astype(bool)
+    gate_mask = gate.fillna(False).astype(bool)
+    return SetupRuleMasks(
+        local_setup_allowed=local_mask,
+        context_gate_allowed=gate_mask,
+        final_setup_allowed=(local_mask & gate_mask).fillna(False).astype(bool),
+    )

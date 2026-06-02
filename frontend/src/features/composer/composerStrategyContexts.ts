@@ -318,7 +318,7 @@ export function collectEntryContextConsumptionErrors(
     errors.push(...collectContextConsumptionPolicyParamErrors(policyId, params, slotPath));
   };
 
-  for (const role of ["direction", "setup", "trigger"] as const) {
+  for (const role of ["direction", "trigger"] as const) {
     const slot = strategy[role];
     if (!slot || typeof slot !== "object" || Array.isArray(slot)) {
       continue;
@@ -328,6 +328,28 @@ export function collectEntryContextConsumptionErrors(
       slotObj,
       `${pathPrefix}.${role}.context_consumption`,
       role,
+      String(slotObj.component_id ?? ""),
+    );
+  }
+
+  const setups = (strategy.setups as JsonObject[] | undefined) ?? [];
+  setups.forEach((slot, index) => {
+    checkSlot(
+      slot,
+      `${pathPrefix}.setups[${index}].context_consumption`,
+      "setup",
+      String(slot.component_id ?? ""),
+    );
+  });
+
+  // Legacy singleton path support in draft state (should be migrated by normalizer).
+  const legacySetup = strategy.setup;
+  if (legacySetup && typeof legacySetup === "object" && !Array.isArray(legacySetup)) {
+    const slotObj = legacySetup as JsonObject;
+    checkSlot(
+      slotObj,
+      `${pathPrefix}.setup.context_consumption`,
+      "setup",
       String(slotObj.component_id ?? ""),
     );
   }
@@ -368,7 +390,7 @@ export function collectUndefinedConsumerContextRefErrors(
     `${pathPrefix}.trade_management.exit_policy.context_consumption.context_ref`,
   );
 
-  for (const role of ["direction", "setup", "trigger"] as const) {
+  for (const role of ["direction", "trigger"] as const) {
     const slot = strategy[role];
     if (!slot || typeof slot !== "object" || Array.isArray(slot)) {
       continue;
@@ -376,6 +398,22 @@ export function collectUndefinedConsumerContextRefErrors(
     check(
       readContextConsumptionRef((slot as JsonObject).context_consumption),
       `${pathPrefix}.${role}.context_consumption.context_ref`,
+    );
+  }
+
+  const setups = (strategy.setups as JsonObject[] | undefined) ?? [];
+  setups.forEach((slot, index) => {
+    check(
+      readContextConsumptionRef(slot.context_consumption),
+      `${pathPrefix}.setups[${index}].context_consumption.context_ref`,
+    );
+  });
+
+  const legacySetup = strategy.setup;
+  if (legacySetup && typeof legacySetup === "object" && !Array.isArray(legacySetup)) {
+    check(
+      readContextConsumptionRef((legacySetup as JsonObject).context_consumption),
+      `${pathPrefix}.setup.context_consumption.context_ref`,
     );
   }
 
@@ -445,7 +483,7 @@ export function collectUnsupportedEntryContextConsumptionErrors(
     return [];
   }
   const errors: ValidationErrorItem[] = [];
-  for (const role of ["direction", "setup", "trigger"] as const) {
+  for (const role of ["direction", "trigger"] as const) {
     const block = strategy[role];
     if (!block || typeof block !== "object" || Array.isArray(block)) {
       continue;
@@ -459,6 +497,35 @@ export function collectUnsupportedEntryContextConsumptionErrors(
       errors.push({
         path: `${pathPrefix}.${role}.context_consumption`,
         message: `context_consumption is not supported for ${role} component ${componentId}`,
+      });
+    }
+  }
+
+  const setups = (strategy.setups as JsonObject[] | undefined) ?? [];
+  setups.forEach((slot, index) => {
+    const componentId = String(slot.component_id ?? "");
+    if (
+      slot.context_consumption &&
+      !supportsEntryContextConsumption(catalog, "setup", componentId)
+    ) {
+      errors.push({
+        path: `${pathPrefix}.setups[${index}].context_consumption`,
+        message: `context_consumption is not supported for setup component ${componentId}`,
+      });
+    }
+  });
+
+  const legacySetup = strategy.setup;
+  if (legacySetup && typeof legacySetup === "object" && !Array.isArray(legacySetup)) {
+    const slot = legacySetup as JsonObject;
+    const componentId = String(slot.component_id ?? "");
+    if (
+      slot.context_consumption &&
+      !supportsEntryContextConsumption(catalog, "setup", componentId)
+    ) {
+      errors.push({
+        path: `${pathPrefix}.setup.context_consumption`,
+        message: `context_consumption is not supported for setup component ${componentId}`,
       });
     }
   }
