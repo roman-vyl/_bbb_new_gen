@@ -109,3 +109,22 @@ def rsi_lookback_extreme_blocker(
     return rsi_lookback_extreme_blocker_trace(
         df, side=side, rule=rule, rsi_col=rsi_col
     )["allowed"]
+
+
+from research.strategies.ema_pullback.components.trend_strength_episode import (  # noqa: E402
+    build_trend_strength_blocker_counters,
+    trend_strength_episode_blocker,
+    trend_strength_episode_blocker_trace,
+)
+
+__all__ = [
+    "no_blockers",
+    "no_blockers_trace",
+    "counter_candle_blocker",
+    "counter_candle_blocker_trace",
+    "rsi_lookback_extreme_blocker",
+    "rsi_lookback_extreme_blocker_trace",
+    "trend_strength_episode_blocker",
+    "trend_strength_episode_blocker_trace",
+    "build_trend_strength_blocker_counters",
+]

@@ -21,6 +21,7 @@ from research.strategies.ema_pullback.components.registry import (
     RECLAIM_ANCHOR_COMPONENT,
     STRONG_RECLAIM_ANCHOR_COMPONENT,
     RSI_LOOKBACK_EXTREME_BLOCKER_COMPONENT,
+    TREND_STRENGTH_EPISODE_BLOCKER_COMPONENT,
     EMA_CLOSE_LOSS_EXIT_COMPONENT,
     EMA_CROSS_LOSS_EXIT_COMPONENT,
     RSI_SIGNAL_EXIT_COMPONENT,
@@ -638,6 +639,53 @@ def _parse_blocker(index: int, value: Any) -> BlockerRuleSpec:
             short_block_below=_optional_number(payload, "short_block_below", default=20.0),
             context_consumption=context_consumption,
         )
+    if component_id == TREND_STRENGTH_EPISODE_BLOCKER_COMPONENT:
+        allowed = common | {
+            "timeframe",
+            "adx_period",
+            "min_adx_peak",
+            "peak_lookback_bars",
+            "max_bars_since_peak",
+            "min_current_adx",
+            "require_di_alignment_on_peak",
+            "block_on_opposite_di_flip",
+            "opposite_di_margin",
+            "require_ema_stack_direction",
+            "context_consumption",
+        }
+        _reject_unknown_fields(f"blockers[{index}]", payload, allowed)
+        context_consumption = _parse_context_consumption(
+            payload.get("context_consumption"),
+            path=f"blockers[{index}].context_consumption",
+            allowed_policy_ids=(HTF_REGIME_GATE_POLICY,),
+        )
+        try:
+            return builders.blocker_trend_strength_episode(
+                instance_id=instance_id,
+                timeframe=str(payload.get("timeframe", "base")),
+                adx_period=_optional_positive_int(payload, "adx_period", default=14),
+                min_adx_peak=float(payload.get("min_adx_peak", 25.0)),
+                peak_lookback_bars=_optional_positive_int(
+                    payload, "peak_lookback_bars", default=60
+                ),
+                max_bars_since_peak=_optional_positive_int(
+                    payload, "max_bars_since_peak", default=40
+                ),
+                min_current_adx=float(payload.get("min_current_adx", 12.0)),
+                require_di_alignment_on_peak=bool(
+                    payload.get("require_di_alignment_on_peak", True)
+                ),
+                block_on_opposite_di_flip=bool(
+                    payload.get("block_on_opposite_di_flip", True)
+                ),
+                opposite_di_margin=float(payload.get("opposite_di_margin", 5.0)),
+                require_ema_stack_direction=bool(
+                    payload.get("require_ema_stack_direction", True)
+                ),
+                context_consumption=context_consumption,
+            )
+        except ValueError as exc:
+            raise EmaPullbackInstanceValidationError(str(exc)) from exc
     raise EmaPullbackInstanceValidationError(f"unsupported blocker component_id {component_id!r}")
 
 

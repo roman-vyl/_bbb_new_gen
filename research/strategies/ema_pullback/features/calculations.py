@@ -31,6 +31,44 @@ def _rsi_rolling_mean(close: pd.Series, *, period: int) -> pd.Series:
     return 100 - (100 / (1 + rs))
 
 
+def _wilder_smooth(series: pd.Series, *, period: int) -> pd.Series:
+    """Wilder smoothing (alpha = 1/period), consistent with standard ADX/DMI."""
+    return series.ewm(alpha=1.0 / period, adjust=False).mean()
+
+
+def _compute_adx_dmi(
+    high: pd.Series,
+    low: pd.Series,
+    close: pd.Series,
+    *,
+    period: int,
+) -> tuple[pd.Series, pd.Series, pd.Series]:
+    up_move = high.diff()
+    down_move = -low.diff()
+    plus_dm = pd.Series(
+        0.0,
+        index=high.index,
+        dtype=float,
+    )
+    minus_dm = pd.Series(0.0, index=high.index, dtype=float)
+    plus_mask = (up_move > down_move) & (up_move > 0)
+    minus_mask = (down_move > up_move) & (down_move > 0)
+    plus_dm.loc[plus_mask] = up_move.loc[plus_mask]
+    minus_dm.loc[minus_mask] = down_move.loc[minus_mask]
+
+    tr = _true_range(high, low, close)
+    smooth_tr = _wilder_smooth(tr, period=period)
+    smooth_plus = _wilder_smooth(plus_dm, period=period)
+    smooth_minus = _wilder_smooth(minus_dm, period=period)
+
+    di_plus = 100.0 * smooth_plus / smooth_tr
+    di_minus = 100.0 * smooth_minus / smooth_tr
+    di_sum = di_plus + di_minus
+    dx = 100.0 * (di_plus - di_minus).abs() / di_sum.replace(0, float("nan"))
+    adx = _wilder_smooth(dx, period=period)
+    return adx, di_plus, di_minus
+
+
 def _resample_ohlcv(df: pd.DataFrame, timeframe: str) -> pd.DataFrame:
     freq = pandas_freq_alias(timeframe)
     resampled = df.resample(freq, label="left", closed="left").agg(
@@ -60,6 +98,7 @@ def _align_completed_feature_to_base(
 def add_feature_columns_from_plan(df: pd.DataFrame, plan: FeaturePlan) -> pd.DataFrame:
     out = df.copy()
     frames: dict[str, pd.DataFrame] = {"base": out}
+    computed_adx_dmi: set[tuple[str, int]] = set()
 
     for feature in plan.features:
         feature_frame = frames.get(feature.timeframe)
@@ -106,6 +145,35 @@ def add_feature_columns_from_plan(df: pd.DataFrame, plan: FeaturePlan) -> pd.Dat
                     base_index=out.index,
                 )
             out[feature.feature_id] = values
+            continue
+        if feature.kind in {"adx", "di_plus", "di_minus"}:
+            assert feature.period is not None
+            key = (feature.timeframe, feature.period)
+            if key in computed_adx_dmi:
+                continue
+            adx, di_plus, di_minus = _compute_adx_dmi(
+                high, low, close, period=feature.period
+            )
+            if feature.timeframe != "base":
+                adx = _align_completed_feature_to_base(
+                    adx, timeframe=feature.timeframe, base_index=out.index
+                )
+                di_plus = _align_completed_feature_to_base(
+                    di_plus, timeframe=feature.timeframe, base_index=out.index
+                )
+                di_minus = _align_completed_feature_to_base(
+                    di_minus, timeframe=feature.timeframe, base_index=out.index
+                )
+            from research.strategies.ema_pullback.features.plan import (
+                _adx_feature_id,
+                _di_minus_feature_id,
+                _di_plus_feature_id,
+            )
+
+            out[_adx_feature_id(feature.timeframe, feature.period)] = adx
+            out[_di_plus_feature_id(feature.timeframe, feature.period)] = di_plus
+            out[_di_minus_feature_id(feature.timeframe, feature.period)] = di_minus
+            computed_adx_dmi.add(key)
             continue
         raise ValueError(f"unsupported feature kind: {feature.kind!r}")
     return out

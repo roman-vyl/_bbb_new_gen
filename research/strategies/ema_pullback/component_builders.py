@@ -21,6 +21,7 @@ from research.strategies.ema_pullback.components.registry import (
     UNTOUCHED_ANCHOR_SETUP_COMPONENT,
     RECLAIM_ANCHOR_COMPONENT,
     RSI_LOOKBACK_EXTREME_BLOCKER_COMPONENT,
+    TREND_STRENGTH_EPISODE_BLOCKER_COMPONENT,
     EMA_CLOSE_LOSS_EXIT_COMPONENT,
     EMA_CROSS_LOSS_EXIT_COMPONENT,
     RSI_SIGNAL_EXIT_COMPONENT,
@@ -31,6 +32,7 @@ from research.strategies.ema_pullback.spec import (
     AtrDistanceSpec,
     BlockerRuleSpec,
     ComponentStackSpec,
+    TrendStrengthEpisodeBlockerParams,
     EmaBounceCounterSetupSpec,
     EmaSpec,
     ExitPolicyGroupSpec,
@@ -171,6 +173,40 @@ def blocker_extreme_rsi(
         lookback=lookback,
         long_block_above=long_block_above,
         short_block_below=short_block_below,
+        context_consumption=context_consumption,
+    )
+
+
+def blocker_trend_strength_episode(
+    *,
+    instance_id: str = "trend_strength_episode_blocker",
+    timeframe: str = "base",
+    adx_period: int = 14,
+    min_adx_peak: float = 25.0,
+    peak_lookback_bars: int = 60,
+    max_bars_since_peak: int = 40,
+    min_current_adx: float = 12.0,
+    require_di_alignment_on_peak: bool = True,
+    block_on_opposite_di_flip: bool = True,
+    opposite_di_margin: float = 5.0,
+    require_ema_stack_direction: bool = True,
+    context_consumption: ContextConsumptionSpec | None = None,
+) -> BlockerRuleSpec:
+    return BlockerRuleSpec(
+        instance_id=instance_id,
+        component_id=TREND_STRENGTH_EPISODE_BLOCKER_COMPONENT,
+        trend_strength=TrendStrengthEpisodeBlockerParams(
+            timeframe=timeframe,
+            adx_period=adx_period,
+            min_adx_peak=min_adx_peak,
+            peak_lookback_bars=peak_lookback_bars,
+            max_bars_since_peak=max_bars_since_peak,
+            min_current_adx=min_current_adx,
+            require_di_alignment_on_peak=require_di_alignment_on_peak,
+            block_on_opposite_di_flip=block_on_opposite_di_flip,
+            opposite_di_margin=opposite_di_margin,
+            require_ema_stack_direction=require_ema_stack_direction,
+        ),
         context_consumption=context_consumption,
     )
 

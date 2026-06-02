@@ -624,6 +624,48 @@ def test_runner_applies_run_level_execution_from_external_config(
     assert captured == {"init_cash": 10000.0, "fees": 0.0006, "slippage": 0.0001}
 
 
+def test_load_external_config_supports_trend_strength_episode_blocker() -> None:
+    instance = _instance("trend_strength_blocker")
+    strategy = instance["strategy"]
+    assert isinstance(strategy, dict)
+    strategy["blockers"] = [
+        {
+            "instance_id": "trend_strength",
+            "component_id": "trend_strength_episode_blocker",
+            "timeframe": "base",
+            "adx_period": 14,
+            "min_adx_peak": 25,
+            "peak_lookback_bars": 60,
+            "max_bars_since_peak": 40,
+            "min_current_adx": 12,
+        }
+    ]
+
+    loaded = load_strategy_config(_bundle([instance]))
+    rule = loaded.specs[0].components.blockers[0]
+
+    assert rule.component_id == "trend_strength_episode_blocker"
+    assert rule.trend_strength is not None
+    assert rule.trend_strength.min_adx_peak == 25.0
+    assert rule.trend_strength.peak_lookback_bars == 60
+
+
+def test_load_external_config_rejects_htf_trend_strength_timeframe() -> None:
+    instance = _instance("trend_strength_htf")
+    strategy = instance["strategy"]
+    assert isinstance(strategy, dict)
+    strategy["blockers"] = [
+        {
+            "instance_id": "trend_strength",
+            "component_id": "trend_strength_episode_blocker",
+            "timeframe": "1h",
+        }
+    ]
+
+    with pytest.raises(EmaPullbackInstanceValidationError, match="MVP requires timeframe"):
+        load_strategy_config(_bundle([instance]))
+
+
 def test_instance_loader_rejects_top_level_component_shape() -> None:
     instance = _instance()
     strategy = instance["strategy"]

@@ -255,6 +255,23 @@ def get_component_catalog(*, family: str = "ema_pullback") -> ComponentCatalog:
             },
         ),
         ComponentSchema(
+            component_id="trend_strength_episode_blocker",
+            role="blockers",
+            label="Trend strength episode blocker",
+            list_slot=True,
+            supports_context_consumption=True,
+            context_consumption_policies=_BLOCKER_CONTEXT_POLICIES,
+            params_schema={
+                "timeframe": _tf_param("ADX/DMI timeframe", default="base"),
+                "adx_period": _int_param("ADX period", default=14),
+                "min_adx_peak": _num_param("Min ADX at strength confirmation", default=25.0),
+                "peak_lookback_bars": _int_param("Peak lookback bars", default=60),
+                "max_bars_since_peak": _int_param("Max bars since peak", default=40),
+                "min_current_adx": _num_param("Min current ADX", default=12.0),
+                "opposite_di_margin": _num_param("Opposite DI margin", default=5.0),
+            },
+        ),
+        ComponentSchema(
             component_id="no_risk_filter",
             role="risk",
             label="No risk filter",

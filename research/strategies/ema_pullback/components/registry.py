@@ -9,6 +9,7 @@ from research.strategies.ema_pullback.components.blockers import (
     counter_candle_blocker,
     no_blockers,
     rsi_lookback_extreme_blocker,
+    trend_strength_episode_blocker,
 )
 from research.strategies.ema_pullback.components.direction import (
     ema_anchor_stack_trend,
@@ -50,6 +51,7 @@ EMA_ANCHOR_STACK_TREND_COMPONENT = "ema_anchor_stack_trend"
 NO_BLOCKERS_COMPONENT = "no_blockers"
 COUNTER_CANDLE_BLOCKER_COMPONENT = "counter_candle_blocker"
 RSI_LOOKBACK_EXTREME_BLOCKER_COMPONENT = "rsi_lookback_extreme_blocker"
+TREND_STRENGTH_EPISODE_BLOCKER_COMPONENT = "trend_strength_episode_blocker"
 UNTOUCHED_ANCHOR_SETUP_COMPONENT = "untouched_anchor_setup"
 EMA_BOUNCE_COUNTER_SETUP_COMPONENT = "ema_bounce_counter_setup"
 RECLAIM_ANCHOR_COMPONENT = "reclaim_anchor"
@@ -104,6 +106,15 @@ COMPONENT_REGISTRY: dict[str, dict[str, ComponentDefinition]] = {
             description=(
                 "Block long after overbought RSI extreme or short after oversold "
                 "extreme within lookback."
+            ),
+        ),
+        TREND_STRENGTH_EPISODE_BLOCKER_COMPONENT: ComponentDefinition(
+            role="blockers",
+            component_id=TREND_STRENGTH_EPISODE_BLOCKER_COMPONENT,
+            func=trend_strength_episode_blocker,
+            description=(
+                "Allow pullback entries only while a recent side-aware ADX/DMI "
+                "strength episode is still active (not raw ADX on entry bar)."
             ),
         ),
     },
@@ -263,6 +274,7 @@ __all__ = [
     "STRONG_RECLAIM_ANCHOR_COMPONENT",
     "REQUIRED_COMPONENT_ROLES",
     "RSI_LOOKBACK_EXTREME_BLOCKER_COMPONENT",
+    "TREND_STRENGTH_EPISODE_BLOCKER_COMPONENT",
     "RSI_SIGNAL_EXIT_COMPONENT",
     "EMA_CLOSE_LOSS_EXIT_COMPONENT",
     "EMA_CROSS_LOSS_EXIT_COMPONENT",

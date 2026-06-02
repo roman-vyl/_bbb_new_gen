@@ -396,10 +396,10 @@ rsi_lookback_extreme_blocker
   высокий RSI сам по себе не блокирует short; низкий RSI не блокирует long
   lookback: rolling max по булевому extreme — экстремум на предыдущих барах, не только текущий
 
-planned:
 trend_strength_episode_blocker
-  episode/memory gate по ADX/DMI: недавний side-aware strength peak + живой режим на pullback
-  не требует высокого ADX на свече входа; см. docs/research/19_trend_strength_episode_blocker.md
+  episode/memory gate по ADX/DMI: недавний side-aware strength confirmation + живой режим на pullback
+  не требует высокого ADX на свече входа; component_counters с blocked_reason_breakdown
+  см. docs/research/19_trend_strength_episode_blocker.md
 ```
 
 ### Risk
