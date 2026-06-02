@@ -8,6 +8,12 @@ import {
   formatChartPrice,
   ohlcPriceDecimals,
 } from "@/features/chart/signalTraceLookup";
+import {
+  exitManagementActiveAtBar,
+  exitManagementFieldLabel,
+  formatExitManagementFieldValue,
+  readExitManagementInternals,
+} from "@/features/chart/exitManagementBarInspector";
 import { formatGateDecisionLabel } from "@/features/chart/tradeContextCausalDiagnostics";
 
 function traceOutcomeAtBar(outcome: Record<string, unknown> | null | undefined, key: string, index: number): string | null {
@@ -91,16 +97,48 @@ function readInternals(side: SideSignalTrace): {
   };
 }
 
+function ExitManagementBlock({
+  fields,
+  index,
+  priceDecimals,
+}: {
+  fields: NonNullable<ReturnType<typeof readExitManagementInternals>>;
+  index: number;
+  priceDecimals: number;
+}) {
+  if (!exitManagementActiveAtBar(fields, index)) {
+    return null;
+  }
+  return (
+    <details className="bar-inspector__details" open>
+      <summary>Exit management (break-even)</summary>
+      <dl className="bar-inspector__dl">
+        {Object.entries(fields).map(([key, values]) => {
+          const raw = values[index];
+          return (
+            <div key={key}>
+              <dt>{exitManagementFieldLabel(key)}</dt>
+              <dd>{formatExitManagementFieldValue(key, raw, priceDecimals)}</dd>
+            </div>
+          );
+        })}
+      </dl>
+    </details>
+  );
+}
+
 function SideBlock({
   label,
   side,
   index,
   trace,
+  priceDecimals,
 }: {
   label: string;
   side: SideSignalTrace;
   index: number;
   trace: SignalTraceBundle;
+  priceDecimals: number;
 }) {
   const blocker = firstBlockingGate(side, index);
   const {
@@ -109,6 +147,7 @@ function SideBlock({
     direction: directionFields,
     blockers: blockersByInstance,
   } = readInternals(side);
+  const exitManagement = readExitManagementInternals(side);
 
   return (
     <div className="bar-inspector__side">
@@ -161,6 +200,9 @@ function SideBlock({
             index={index}
           />
         ))}
+      {exitManagement && (
+        <ExitManagementBlock fields={exitManagement} index={index} priceDecimals={priceDecimals} />
+      )}
     </div>
   );
 }
@@ -313,8 +355,20 @@ export function ChartBarInspector({
             </>
           )}
           <h4 className="bar-inspector__section">Final entry</h4>
-          <SideBlock label="Long" side={signalTrace.long} index={index} trace={signalTrace} />
-          <SideBlock label="Short" side={signalTrace.short} index={index} trace={signalTrace} />
+          <SideBlock
+            label="Long"
+            side={signalTrace.long}
+            index={index}
+            trace={signalTrace}
+            priceDecimals={priceDecimals}
+          />
+          <SideBlock
+            label="Short"
+            side={signalTrace.short}
+            index={index}
+            trace={signalTrace}
+            priceDecimals={priceDecimals}
+          />
         </>
       )}
       {signalTrace && index < 0 && (

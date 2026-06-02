@@ -9,7 +9,7 @@ Displayed fields SHALL include:
 - `triggered`
 - `trigger_r`
 - `trigger_price`
-- `trigger_time`
+- `trigger_time_ms`
 - `stop_moved_to`
 - `initial_stop_price`
 - `initial_risk`

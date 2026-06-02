@@ -14,6 +14,7 @@ This change establishes a small Exit Management Combiner for `break_even_stop` s
 - Keep the current `vectorbt` path for configs without stateful exit-management rules.
 - Route managed configs through the combiner path and emit trade records compatible with existing metrics/report builders.
 - Add backend diagnostics for closed trades through optional `trade_records[].break_even`.
+- Attribute managed-path exits (including `exit_reason: break_even:<instance_id>` when the moved stop closes the trade); chart exit marker **BE**, not `unknown`/UNK.
 - Add Signal Trace optional read-only fields sourced from the same combiner diagnostics.
 - Add API/frontend read-only passthrough/display for the diagnostics only after backend behavior is stable.
 - Remove the old `break-even-stop-management-v1` direction as a source of truth.

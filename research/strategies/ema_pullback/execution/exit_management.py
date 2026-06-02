@@ -19,6 +19,7 @@ from research.strategies.ema_pullback.execution.exit_attribution import (
     _pick_distance_instance,
     _stop_hit_long,
     _stop_hit_short,
+    fill_price_for_distance_exit,
 )
 from research.strategies.ema_pullback.execution.exits import PortfolioExitOutputs, PROFILE_ORDER
 from research.strategies.ema_pullback.spec import (
@@ -194,24 +195,19 @@ def _exit_at_break_even_stop(pos: _OpenPosition, effective_stop: float) -> bool:
     return not math.isclose(effective_stop, pos.initial_stop_price, rel_tol=0.0, abs_tol=1e-8)
 
 
-def _classify_managed_bar_exit(
+def _managed_signal_exit_attribution(
     pos: _OpenPosition,
     *,
     bar_idx: int,
-    open_: float,
-    high: float,
-    low: float,
-    stop_anchor: float,
     long_exit: bool,
     short_exit: bool,
     ctx: ExitAttributionContext | None,
     component_map: dict[str, str] | None,
 ) -> ExitAttributionResult | None:
-    """Classify why the position closes on this bar (signal, TP, SL, or break-even stop)."""
+    """Signal exit when no distance stop/TP hit on this bar (vectorbt order)."""
 
     direction = pos.direction
     profile = pos.locked_profile
-
     if direction == "long" and long_exit:
         if ctx is not None:
             for i, series in enumerate(ctx.long_signal_by_rule):
@@ -238,6 +234,26 @@ def _classify_managed_bar_exit(
                     ctx, inst, prefix="signal", component_map=component_map
                 )
         return _null_attribution("unknown")
+    return None
+
+
+def _classify_managed_bar_exit(
+    pos: _OpenPosition,
+    *,
+    bar_idx: int,
+    open_: float,
+    high: float,
+    low: float,
+    stop_anchor: float,
+    long_exit: bool,
+    short_exit: bool,
+    ctx: ExitAttributionContext | None,
+    component_map: dict[str, str] | None,
+) -> ExitAttributionResult | None:
+    """Classify bar exit: distance SL/TP (and BE stop) before signal (task 3.5 / vectorbt)."""
+
+    direction = pos.direction
+    profile = pos.locked_profile
 
     sl_level, tp_level = _levels_from_ratios(
         direction,
@@ -311,7 +327,14 @@ def _classify_managed_bar_exit(
             )
         return _null_attribution("unknown")
 
-    return None
+    return _managed_signal_exit_attribution(
+        pos,
+        bar_idx=bar_idx,
+        long_exit=long_exit,
+        short_exit=short_exit,
+        ctx=ctx,
+        component_map=component_map,
+    )
 
 
 def _check_bar_exits(
@@ -340,6 +363,51 @@ def _check_bar_exits(
         ctx=ctx,
         component_map=component_map,
     )
+
+
+def _managed_exit_fill_price(
+    pos: _OpenPosition,
+    *,
+    open_: float,
+    high: float,
+    low: float,
+    close: float,
+    stop_anchor: float,
+    exit_attr: ExitAttributionResult,
+) -> float:
+    """Exit fill: stop/TP/BE at level (vectorbt semantics); signal exits at bar close."""
+
+    reason = exit_attr.exit_reason
+    kind = exit_attr.exit_kind
+
+    if kind in ("stop_loss", "break_even") or reason.startswith(("stop_loss:", "break_even:")):
+        return fill_price_for_distance_exit(
+            pos.direction,
+            open_=open_,
+            high=high,
+            low=low,
+            level=pos.effective_stop,
+            is_loss=True,
+        )
+
+    if kind == "take_profit" or reason.startswith("take_profit:"):
+        _sl_level, tp_level = _levels_from_ratios(
+            pos.direction,
+            stop_anchor,
+            pos.sl_ratio,
+            pos.tp_ratio,
+        )
+        if tp_level is not None:
+            return fill_price_for_distance_exit(
+                pos.direction,
+                open_=open_,
+                high=high,
+                low=low,
+                level=tp_level,
+                is_loss=False,
+            )
+
+    return close
 
 
 def _bar_trace(pos: _OpenPosition | None) -> BarManagementTrace | None:
@@ -473,11 +541,20 @@ def run_managed_bar_loop(
                 component_map=component_map,
             )
             if exit_attr is not None:
+                exit_px = _managed_exit_fill_price(
+                    open_pos,
+                    open_=o,
+                    high=h,
+                    low=l,
+                    close=c,
+                    stop_anchor=anchor,
+                    exit_attr=exit_attr,
+                )
                 closed.append(
                     {
                         "position": open_pos,
                         "exit_idx": i,
-                        "exit_price": c,
+                        "exit_price": exit_px,
                         "exit_attribution": exit_attr,
                     }
                 )

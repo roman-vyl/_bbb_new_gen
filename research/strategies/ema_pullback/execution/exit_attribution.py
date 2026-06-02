@@ -226,6 +226,42 @@ def _stop_hit_short(
     return l <= stop_price <= h
 
 
+def fill_price_for_distance_exit(
+    direction: Literal["long", "short"],
+    *,
+    open_: float,
+    high: float,
+    low: float,
+    level: float,
+    is_loss: bool,
+) -> float:
+    """Fill price when a distance stop/TP level is hit (mirrors ``get_stop_price_nb``)."""
+
+    if direction == "long":
+        if is_loss:
+            if open_ <= level:
+                return open_
+            if low <= level <= high:
+                return level
+        else:
+            if level <= open_:
+                return open_
+            if low <= level <= high:
+                return level
+    else:
+        if is_loss:
+            if level <= open_:
+                return open_
+            if low <= level <= high:
+                return level
+        else:
+            if open_ <= level:
+                return open_
+            if low <= level <= high:
+                return level
+    return level
+
+
 def _levels_from_ratios(
     direction: str,
     stop_anchor: float,

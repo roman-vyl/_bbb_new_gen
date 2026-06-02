@@ -310,7 +310,7 @@ def _parse_exit_management_group(value: Any, *, path: str) -> ExitManagementGrou
     rules_raw = payload.get("rules", [])
     if rules_raw is None:
         rules_raw = []
-    if not isinstance(rules_raw, list):
+    if not isinstance(rules_raw, (list, tuple)):
         raise EmaPullbackInstanceValidationError(f"{path}.rules must be a list")
     rules: list[ExitManagementRuleSpec] = []
     for i, item in enumerate(rules_raw):

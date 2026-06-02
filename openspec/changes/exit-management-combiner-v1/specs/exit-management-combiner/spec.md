@@ -114,3 +114,12 @@ The combiner SHALL emit trade-level and bar-level diagnostics that downstream re
 - **GIVEN** a trade opens under a config with no active `break_even_stop` rule
 - **WHEN** diagnostics are emitted
 - **THEN** break-even diagnostics are absent or marked disabled
+
+### Requirement: Managed exits attribute break-even stop hits
+When the managed path closes a trade because the **effective** stop was hit at the break-even moved level (after `break_even_stop` triggered), the trade record SHALL use `exit_reason` `break_even:<instance_id>`, `exit_kind` `break_even`, and structured exit metadata consistent with other attributed exits. Chart exit markers SHALL classify this reason (not `unknown` / UNK).
+
+#### Scenario: Exit by moved break-even stop is labeled
+- **GIVEN** a closed trade exited on a bar where the effective stop equals the combiner moved break-even stop
+- **WHEN** managed trade records are built
+- **THEN** `exit_reason` starts with `break_even:`
+- **AND** `exit_kind` is `break_even`

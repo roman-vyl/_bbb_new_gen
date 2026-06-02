@@ -249,3 +249,19 @@ Rollback is straightforward while the feature is additive: disable configs with 
 
 - Whether v1 managed path should compute portfolio-level metrics directly from managed trade rows or adapt them through a minimal portfolio-like result object.
 - Whether `active_stop_management_source` should be renamed to `active_exit_management_source` before implementation. The diagnostics request uses the stop-management name, but the new architecture is exit-management.
+
+## Implementation notes (as built)
+
+Aligned with code on branch; update this section when behavior changes.
+
+| Topic | Spec / doc | As built |
+|-------|------------|----------|
+| Report `break_even` trigger timestamp | `trigger_time` in early drafts | `trigger_time_ms` (matches `entry_time_ms`) |
+| Signal Trace exit-management fields | Listed as logical per-bar fields | `long` / `short` → `internals.exit_management` parallel arrays |
+| Signal Trace API contract | Optional fields | Passed via existing `SideSignalTrace.internals` (`extra` allowed on dict values) |
+| Managed `exit_reason` | Not in original slice | `break_even:<instance_id>` when exit hits moved BE stop; SL/TP/signal via attribution; chart marker **BE** |
+| Managed `exit_price` | Implicit bar close | SL/TP/BE fills at stop **level** (or **open** on gap through), mirroring `get_stop_price_nb`; signal exits at bar **close** |
+| Trade record bar indices | Not in v1 specs | Optional `entry_idx` / `exit_idx` on managed-path records; `TradeRecord` API model |
+| Example fixture | Task 1.7 | `research/experiments/configs/fixtures/exit_management_be_profile_override.json` aligned with JSON example in this file |
+| Chart Bar Inspector | Signal Trace spec | `ChartBarInspector` + `exitManagementBarInspector.ts` read `internals.exit_management` per selected bar (no candle recompute) |
+| Parity / Composer tests | Tasks 3.6, 6.7, 5.5–5.6, 2.8 | Extended in `test_exit_management_extended.py`, `composerExitManagement.test.ts`, partial API trace passthrough |

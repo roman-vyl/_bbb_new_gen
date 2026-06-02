@@ -746,6 +746,21 @@ def strategy_spec_to_dict(spec: EmaPullbackStrategySpec) -> dict[str, Any]:
         exit_policy = trade_management.get("exit_policy")
         if isinstance(exit_policy, dict):
             _normalize_context_consumption_wire(exit_policy.get("context_consumption"))
+        exit_management = trade_management.get("exit_management")
+        if isinstance(exit_management, dict):
+
+            def _rules_to_list(group: Any) -> None:
+                if not isinstance(group, dict):
+                    return
+                rules = group.get("rules")
+                if isinstance(rules, tuple):
+                    group["rules"] = list(rules)
+
+            _rules_to_list(exit_management.get("always_on"))
+            profiles = exit_management.get("profiles")
+            if isinstance(profiles, dict):
+                for bucket in ("aligned", "countertrend", "neutral"):
+                    _rules_to_list(profiles.get(bucket))
     setups = payload.get("setups")
     if isinstance(setups, (list, tuple)):
         for setup in setups:

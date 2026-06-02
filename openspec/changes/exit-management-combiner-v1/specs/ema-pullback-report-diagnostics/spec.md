@@ -10,7 +10,7 @@ When present, `break_even` SHALL include:
 - `trigger_r`
 - `trigger_price`
 - `triggered`
-- `trigger_time`
+- `trigger_time_ms` (unix ms, aligned with `entry_time_ms` / `exit_time_ms`)
 - `stop_moved_to`
 - `initial_stop_price`
 - `initial_risk`
@@ -22,7 +22,7 @@ When present, `break_even` SHALL include:
 - **WHEN** the report builds `trade_records`
 - **THEN** the trade record includes `break_even.enabled` as true
 - **AND** `break_even.triggered` is true
-- **AND** `break_even.trigger_time` is set
+- **AND** `break_even.trigger_time_ms` is set
 - **AND** `break_even.stop_moved_to` equals the combiner moved stop
 - **AND** `break_even.initial_risk` equals the entry-time stop distance
 
@@ -32,7 +32,7 @@ When present, `break_even` SHALL include:
 - **WHEN** the report builds `trade_records`
 - **THEN** the trade record includes `break_even.enabled` as true
 - **AND** `break_even.triggered` is false
-- **AND** `break_even.trigger_time` is null
+- **AND** `break_even.trigger_time_ms` is null
 - **AND** `break_even.stop_moved_to` is null
 
 #### Scenario: No active management omits diagnostics

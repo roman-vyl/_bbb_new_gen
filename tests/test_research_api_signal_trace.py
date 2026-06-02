@@ -381,3 +381,65 @@ def test_to_open_time_ms_exclusive_end_returns_full_50k_window(
     assert len(bundle.times) == n
     assert bundle.times[0] == t_first_sec
     assert bundle.times[-1] == t_last_sec
+
+
+def test_to_contract_preserves_exit_management_internals() -> None:
+    from research.strategies.ema_pullback.execution.signal_trace import (
+        SideSignalTrace,
+        SignalTraceBundleData,
+    )
+    from research_api.services.signal_trace_service import _to_contract
+
+    trace = SignalTraceBundleData(
+        times=[100, 101],
+        meta={
+            "variant": "v1",
+            "component_ids": {
+                "direction": "ema_anchor_stack_trend",
+                "setups": [{"instance_id": "setup", "component_id": "untouched_anchor_setup"}],
+                "trigger": "reclaim_anchor",
+                "risk": "no_risk_filter",
+            },
+            "setup_params": [],
+            "blocker_instances": [],
+        },
+        htf_context={"state": [], "fast": [], "anchor": [], "slow": [], "meta": {}},
+        context_consumption_trace=[],
+        long=SideSignalTrace(
+            direction_ok=[True, True],
+            blockers_ok=[True, True],
+            setup_ok=[False, False],
+            trigger_ok=[False, False],
+            risk_ok=[True, True],
+            signal_entry=[False, False],
+            stop_ready=[True, True],
+            portfolio_entry=[False, False],
+            internals={
+                "exit_management": {
+                    "effective_stop_price": [90.0, 100.0],
+                    "pending_stop_price": [100.0, None],
+                    "break_even_active": [True, True],
+                    "break_even_triggered_on_bar": [True, False],
+                    "active_stop_management_source": ["always_on", "always_on"],
+                },
+            },
+        ),
+        short=SideSignalTrace(
+            direction_ok=[False, False],
+            blockers_ok=[True, True],
+            setup_ok=[False, False],
+            trigger_ok=[False, False],
+            risk_ok=[True, True],
+            signal_entry=[False, False],
+            stop_ready=[True, True],
+            portfolio_entry=[False, False],
+            internals={},
+        ),
+        component_events=[],
+    )
+    bundle = _to_contract(trace)
+    em = bundle.long.internals["exit_management"]
+    assert em["effective_stop_price"][0] == 90.0
+    assert em["pending_stop_price"][0] == 100.0
+    assert em["break_even_triggered_on_bar"][0] is True
+    assert em["effective_stop_price"][1] == 100.0

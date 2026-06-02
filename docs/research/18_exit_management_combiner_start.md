@@ -177,7 +177,7 @@ break_even:
   trigger_r
   trigger_price
   triggered
-  trigger_time
+  trigger_time_ms
   stop_moved_to
   initial_stop_price
   initial_risk

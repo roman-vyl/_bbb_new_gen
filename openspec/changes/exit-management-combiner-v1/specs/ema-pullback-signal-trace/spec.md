@@ -3,7 +3,9 @@
 ### Requirement: Signal Trace exposes exit-management diagnostics
 When a traced `ema_pullback` run uses stateful exit-management rules, Signal Trace SHALL expose optional per-bar exit-management diagnostic fields sourced from the Exit Management Combiner.
 
-Optional fields:
+Wire format (v1): parallel per-bar arrays under `long.internals.exit_management` and `short.internals.exit_management` (one value per trace bar). The BFF passes `internals` through unchanged.
+
+Optional field keys (each a per-bar array, or null/absent when no active management on that bar):
 
 - `effective_stop_price`
 - `pending_stop_price`
