@@ -27,7 +27,12 @@ from research.strategies.ema_pullback.execution.results import (
 )
 from research.strategies.ema_pullback.components.setup import ema_bounce_counter_setup_trace
 from research.strategies.ema_pullback.context.pipeline import build_context_bundle_for_spec
+from research.strategies.ema_pullback.execution.exit_management import (
+    has_exit_management_rules,
+    run_managed_bar_loop,
+)
 from research.strategies.ema_pullback.execution.exits import build_exit_outputs_from_spec
+from research.strategies.ema_pullback.execution.results import build_managed_trade_records
 from research.strategies.ema_pullback.execution.signals import build_signals_from_spec
 from research.strategies.ema_pullback.features.calculations import add_feature_columns_from_plan
 from research.strategies.ema_pullback.features.plan import build_feature_plan_from_strategy_spec
@@ -139,6 +144,100 @@ def build_trade_side_metrics(
     )
 
 
+def _equity_metrics_from_trades(
+    trade_records: list[dict[str, Any]],
+    *,
+    init_cash: float,
+    n_bars: int,
+) -> tuple[float, float]:
+    equity = float(init_cash)
+    peak = equity
+    max_dd = 0.0
+    for rec in trade_records:
+        if rec.get("status") != "closed":
+            continue
+        pnl = float(rec.get("pnl") or 0.0)
+        equity += pnl
+        if equity > peak:
+            peak = equity
+        if peak > 0:
+            dd = (equity / peak) - 1.0
+            if dd < max_dd:
+                max_dd = dd
+    closed_pnls = [
+        float(r.get("pnl") or 0.0) for r in trade_records if r.get("status") == "closed"
+    ]
+    if len(closed_pnls) < 2:
+        return 0.0, ensure_finite_metric("max_drawdown", max_dd)
+    import numpy as np
+
+    arr = np.asarray(closed_pnls, dtype=float)
+    std = float(arr.std())
+    sharpe = float(arr.mean() / std * np.sqrt(len(arr))) if std > 0 else 0.0
+    return ensure_finite_metric("sharpe_ratio", sharpe), ensure_finite_metric(
+        "max_drawdown", max_dd
+    )
+
+
+def _run_managed_strategy_spec(
+    spec: EmaPullbackStrategySpec,
+    enriched: pd.DataFrame,
+    plan: Any,
+    *,
+    signals: Any,
+    exit_outputs: Any,
+    context_bundle: Any,
+    init_cash: float,
+    fees: float,
+    slippage: float,
+) -> VariantResult:
+    open_s, high_s, low_s = _open_high_low_for_vectorbt(enriched)
+    close = enriched["close"].astype(float)
+    entries_for_portfolio = signals.entries.fillna(False).astype(bool) & exit_outputs.stop_ready_long
+    short_entries_for_portfolio = (
+        signals.short_entries.fillna(False).astype(bool) & exit_outputs.stop_ready_short
+    )
+    closed, _traces = run_managed_bar_loop(
+        spec=spec,
+        close=close,
+        open_=open_s,
+        high=high_s,
+        low=low_s,
+        entries=entries_for_portfolio,
+        short_entries=short_entries_for_portfolio,
+        exit_outputs=exit_outputs,
+    )
+    trade_records = build_managed_trade_records(
+        closed,
+        index=close.index,
+        close=close,
+        fees_rate=float(fees),
+        base_timeframe=spec.base_timeframe,
+        profile_long=exit_outputs.profile_long,
+        profile_short=exit_outputs.profile_short,
+        context_state=exit_outputs.context_state,
+    )
+    sharpe, max_dd = _equity_metrics_from_trades(
+        trade_records, init_cash=float(init_cash), n_bars=len(close)
+    )
+    return VariantResult(
+        variant=spec.variant,
+        config_id=strategy_spec_config_id(spec),
+        symbol=spec.symbol.strip().upper(),
+        timeframe=spec.base_timeframe.strip(),
+        strategy_spec=strategy_spec_to_dict(spec),
+        metrics=build_trade_side_metrics(
+            trade_records,
+            float(init_cash),
+            sharpe=sharpe,
+            max_drawdown=max_dd,
+            fees_rate=float(fees),
+        ),
+        component_counters=list(signals.output_counters + exit_outputs.output_counters),
+        trade_records=trade_records,
+    )
+
+
 def run_strategy_spec(
     spec: EmaPullbackStrategySpec,
     ohlcv: Any,
@@ -166,6 +265,19 @@ def run_strategy_spec(
     exit_outputs = build_exit_outputs_from_spec(
         enriched, spec, plan, context_bundle=context_bundle
     )
+
+    if has_exit_management_rules(spec):
+        return _run_managed_strategy_spec(
+            spec,
+            enriched,
+            plan,
+            signals=signals,
+            exit_outputs=exit_outputs,
+            context_bundle=context_bundle,
+            init_cash=init_cash,
+            fees=fees,
+            slippage=slippage,
+        )
 
     close = enriched["close"].astype(float)
     if close.isna().any():

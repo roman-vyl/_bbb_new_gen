@@ -44,7 +44,12 @@ from research.strategies.ema_pullback.spec import (
     ExitPolicySpec,
     ExitPolicyProfilesSpec,
     ExitPolicyGroupSpec,
+    ExitManagementGroupSpec,
+    ExitManagementProfilesSpec,
+    ExitManagementRuleSpec,
+    ExitManagementSpec,
     TradeManagementSpec,
+    empty_exit_management,
     ExitRuleSpec,
     SetupRuleSpec,
     SetupSpec,
@@ -201,7 +206,7 @@ def _parse_strategy(value: Any) -> Mapping[str, Any]:
 
 def _parse_trade_management(value: Any) -> TradeManagementSpec:
     payload = _require_mapping("trade_management", value)
-    _reject_unknown_fields("trade_management", payload, {"exit_policy"})
+    _reject_unknown_fields("trade_management", payload, {"exit_policy", "exit_management"})
     exit_policy_payload = _require_mapping(
         "trade_management.exit_policy",
         _require_present(payload, "exit_policy"),
@@ -249,13 +254,97 @@ def _parse_trade_management(value: Any) -> TradeManagementSpec:
         ),
     )
     _validate_profile_exits_require_consumption(profiles, context_consumption)
+    exit_management = empty_exit_management()
+    if "exit_management" in payload:
+        exit_management = _parse_exit_management(payload["exit_management"])
     return TradeManagementSpec(
         exit_policy=ExitPolicySpec(
             always_on=always_on,
             profiles=profiles,
             context_consumption=context_consumption,
-        )
+        ),
+        exit_management=exit_management,
     )
+
+
+def _parse_exit_management(value: Any) -> ExitManagementSpec:
+    payload = _require_mapping("trade_management.exit_management", value)
+    _reject_unknown_fields(
+        "trade_management.exit_management",
+        payload,
+        {"always_on", "profiles"},
+    )
+    always_on = _parse_exit_management_group(
+        _require_present(payload, "always_on"),
+        path="trade_management.exit_management.always_on",
+    )
+    profiles_payload = _require_mapping(
+        "trade_management.exit_management.profiles",
+        _require_present(payload, "profiles"),
+    )
+    _reject_unknown_fields(
+        "trade_management.exit_management.profiles",
+        profiles_payload,
+        {"aligned", "countertrend", "neutral"},
+    )
+    profiles = ExitManagementProfilesSpec(
+        aligned=_parse_exit_management_group(
+            _require_present(profiles_payload, "aligned"),
+            path="trade_management.exit_management.profiles.aligned",
+        ),
+        countertrend=_parse_exit_management_group(
+            _require_present(profiles_payload, "countertrend"),
+            path="trade_management.exit_management.profiles.countertrend",
+        ),
+        neutral=_parse_exit_management_group(
+            _require_present(profiles_payload, "neutral"),
+            path="trade_management.exit_management.profiles.neutral",
+        ),
+    )
+    return ExitManagementSpec(always_on=always_on, profiles=profiles)
+
+
+def _parse_exit_management_group(value: Any, *, path: str) -> ExitManagementGroupSpec:
+    payload = _require_mapping(path, value)
+    _reject_unknown_fields(path, payload, {"rules"})
+    rules_raw = payload.get("rules", [])
+    if rules_raw is None:
+        rules_raw = []
+    if not isinstance(rules_raw, list):
+        raise EmaPullbackInstanceValidationError(f"{path}.rules must be a list")
+    rules: list[ExitManagementRuleSpec] = []
+    for i, item in enumerate(rules_raw):
+        rules.append(_parse_exit_management_rule(item, path=f"{path}.rules[{i}]"))
+    return ExitManagementGroupSpec(rules=tuple(rules))
+
+
+def _parse_exit_management_rule(value: Any, *, path: str) -> ExitManagementRuleSpec:
+    payload = _require_mapping(path, value)
+    _reject_unknown_fields(
+        path,
+        payload,
+        {"instance_id", "component_id", "trigger_r", "offset_r", "apply_once"},
+    )
+    component_id = _require_non_empty_str(payload, "component_id")
+    if component_id != "break_even_stop":
+        raise EmaPullbackInstanceValidationError(
+            f"{path}.component_id must be 'break_even_stop' in v1; got {component_id!r}"
+        )
+    trigger_r = float(payload["trigger_r"])
+    offset_r = float(payload.get("offset_r", 0.0))
+    apply_once = payload.get("apply_once", True)
+    if apply_once is not True:
+        raise EmaPullbackInstanceValidationError(f"{path}.apply_once must be true in v1")
+    try:
+        return ExitManagementRuleSpec(
+            instance_id=_require_non_empty_str(payload, "instance_id"),
+            component_id=component_id,
+            trigger_r=trigger_r,
+            offset_r=offset_r,
+            apply_once=True,
+        )
+    except ValueError as exc:
+        raise EmaPullbackInstanceValidationError(str(exc)) from exc
 
 
 def _parse_context_consumption(

@@ -20,6 +20,7 @@ import { TradeDirectionChip } from "@/features/reports/TradeDirectionChip";
 import { TradeStatusChip } from "@/features/reports/TradeStatusChip";
 import {
   buildContextConsumptionDiagnosticFields,
+  buildBreakEvenDiagnosticFields,
   buildTradeDiagnosticFields,
   EM_DASH,
   type TradeDiagnosticField,
@@ -162,6 +163,7 @@ export function ChartTradeDiagnostics({
   }
 
   const { core, diagnostics } = buildTradeDiagnosticFields(trade);
+  const breakEvenFields = buildBreakEvenDiagnosticFields(trade);
   const coreFields = core.filter(
     (f) =>
       f.key !== "trade_id" &&
@@ -222,6 +224,9 @@ export function ChartTradeDiagnostics({
       ) : (
         <p className="chart-trade-diagnostics__hint">Schema v4 diagnostics not present on this trade.</p>
       )}
+      {breakEvenFields.length > 0 ? (
+        <DiagnosticDl title="Break-even" fields={breakEvenFields} />
+      ) : null}
       {trade.entry_context_consumption ? (
         <DiagnosticDl
           title="Entry context consumption (configured)"

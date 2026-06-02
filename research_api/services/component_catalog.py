@@ -115,6 +115,34 @@ def get_component_catalog(*, family: str = "ema_pullback") -> ComponentCatalog:
             role="exits",
             list_slot=True,
         ),
+        ComposerSectionSchema(
+            section_id="exit_management_always_on",
+            label="Exit management always-on rules",
+            role="exit_management",
+            list_slot=True,
+        ),
+        ComposerSectionSchema(
+            section_id="exit_management_profiles",
+            label="Exit management profiles",
+        ),
+        ComposerSectionSchema(
+            section_id="exit_management_profile_aligned",
+            label="Profile aligned management rules",
+            role="exit_management",
+            list_slot=True,
+        ),
+        ComposerSectionSchema(
+            section_id="exit_management_profile_countertrend",
+            label="Profile countertrend management rules",
+            role="exit_management",
+            list_slot=True,
+        ),
+        ComposerSectionSchema(
+            section_id="exit_management_profile_neutral",
+            label="Profile neutral management rules",
+            role="exit_management",
+            list_slot=True,
+        ),
     ]
 
     components = [
@@ -311,6 +339,25 @@ def get_component_catalog(*, family: str = "ema_pullback") -> ComponentCatalog:
             list_slot=True,
             params_schema={
                 "usd_distance": _num_param("USD distance", default=200.0),
+            },
+        ),
+        ComponentSchema(
+            component_id="break_even_stop",
+            role="exit_management",
+            label="Break-even stop",
+            list_slot=True,
+            params_schema={
+                "trigger_r": ParamFieldSchema(
+                    type="number", label="Trigger (R)", default=1.0, min=0.0001
+                ),
+                "offset_r": ParamFieldSchema(
+                    type="number", label="Offset (R)", default=0.0, min=0.0
+                ),
+                "apply_once": ParamFieldSchema(
+                    type="boolean",
+                    label="Apply once",
+                    default=True,
+                ),
             },
         ),
     ]

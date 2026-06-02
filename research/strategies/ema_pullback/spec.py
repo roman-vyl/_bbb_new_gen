@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 import hashlib
 import json
 from typing import Any, Literal
+
+BREAK_EVEN_STOP_COMPONENT = "break_even_stop"
+PROFILE_ORDER = ("aligned", "countertrend", "neutral")
 
 
 @dataclass(frozen=True)
@@ -460,8 +463,192 @@ class ExitPolicySpec:
 
 
 @dataclass(frozen=True)
+class ExitManagementRuleSpec:
+    instance_id: str
+    component_id: str
+    trigger_r: float
+    offset_r: float = 0.0
+    apply_once: bool = True
+
+    def __post_init__(self) -> None:
+        if not self.instance_id.strip():
+            raise ValueError("exit_management instance_id must be non-empty")
+        if not self.component_id.strip():
+            raise ValueError("exit_management component_id must be non-empty")
+        if self.component_id != BREAK_EVEN_STOP_COMPONENT:
+            raise ValueError(
+                f"exit_management v1 supports only {BREAK_EVEN_STOP_COMPONENT!r}; "
+                f"got {self.component_id!r}"
+            )
+        if self.trigger_r <= 0:
+            raise ValueError("break_even_stop trigger_r must be > 0")
+        if self.offset_r < 0:
+            raise ValueError("break_even_stop offset_r must be >= 0")
+        if not self.apply_once:
+            raise ValueError("break_even_stop apply_once must be true in v1")
+
+
+@dataclass(frozen=True)
+class ExitManagementGroupSpec:
+    rules: tuple[ExitManagementRuleSpec, ...] = ()
+
+    def __post_init__(self) -> None:
+        be_count = sum(1 for r in self.rules if r.component_id == BREAK_EVEN_STOP_COMPONENT)
+        if be_count > 1:
+            raise ValueError(
+                "exit_management group allows at most one break_even_stop rule"
+            )
+
+
+@dataclass(frozen=True)
+class ExitManagementProfilesSpec:
+    aligned: ExitManagementGroupSpec
+    countertrend: ExitManagementGroupSpec
+    neutral: ExitManagementGroupSpec
+
+
+def _empty_exit_management_profiles() -> ExitManagementProfilesSpec:
+    empty = ExitManagementGroupSpec(rules=())
+    return ExitManagementProfilesSpec(
+        aligned=empty,
+        countertrend=empty,
+        neutral=empty,
+    )
+
+
+def empty_exit_management() -> "ExitManagementSpec":
+    return ExitManagementSpec(
+        always_on=ExitManagementGroupSpec(rules=()),
+        profiles=_empty_exit_management_profiles(),
+    )
+
+
+@dataclass(frozen=True)
+class ExitManagementSpec:
+    always_on: ExitManagementGroupSpec
+    profiles: ExitManagementProfilesSpec
+
+    def __post_init__(self) -> None:
+        scopes: list[tuple[str, tuple[ExitManagementRuleSpec, ...]]] = [
+            ("trade_management.exit_management.always_on.rules", self.always_on.rules),
+            (
+                "trade_management.exit_management.profiles.aligned.rules",
+                self.profiles.aligned.rules,
+            ),
+            (
+                "trade_management.exit_management.profiles.countertrend.rules",
+                self.profiles.countertrend.rules,
+            ),
+            (
+                "trade_management.exit_management.profiles.neutral.rules",
+                self.profiles.neutral.rules,
+            ),
+        ]
+        seen: set[str] = set()
+        for scope, rules in scopes:
+            for rule in rules:
+                if rule.instance_id in seen:
+                    raise ValueError(
+                        "trade_management.exit_management instance_id must be globally unique: "
+                        f"{rule.instance_id!r}"
+                    )
+                seen.add(rule.instance_id)
+
+
+def _effective_exit_group_has_stop_loss(
+    exit_policy: ExitPolicySpec,
+    profile: str,
+) -> bool:
+    """True when always_on ∪ profile bucket has at least one stop_loss rule."""
+
+    groups = [exit_policy.always_on.exits]
+    if profile == "aligned":
+        groups.append(exit_policy.profiles.aligned.exits)
+    elif profile == "countertrend":
+        groups.append(exit_policy.profiles.countertrend.exits)
+    elif profile == "neutral":
+        groups.append(exit_policy.profiles.neutral.exits)
+    for exits in groups:
+        if any(r.exit_kind == "stop_loss" for r in exits):
+            return True
+    return False
+
+
+def _validate_exit_management_requires_initial_stop(
+    exit_policy: ExitPolicySpec,
+    exit_management: ExitManagementSpec,
+) -> None:
+    has_any_be = any(
+        r.component_id == BREAK_EVEN_STOP_COMPONENT
+        for rules in (
+            exit_management.always_on.rules,
+            exit_management.profiles.aligned.rules,
+            exit_management.profiles.countertrend.rules,
+            exit_management.profiles.neutral.rules,
+        )
+        for r in rules
+    )
+    if not has_any_be:
+        return
+    profile_checks: list[tuple[str, tuple[ExitManagementRuleSpec, ...]]] = [
+        ("always_on", exit_management.always_on.rules),
+        ("aligned", exit_management.profiles.aligned.rules),
+        ("countertrend", exit_management.profiles.countertrend.rules),
+        ("neutral", exit_management.profiles.neutral.rules),
+    ]
+    for bucket, rules in profile_checks:
+        if not any(r.component_id == BREAK_EVEN_STOP_COMPONENT for r in rules):
+            continue
+        if bucket == "always_on":
+            if not any(r.exit_kind == "stop_loss" for r in exit_policy.always_on.exits):
+                raise ValueError(
+                    "break_even_stop in exit_management.always_on requires stop_loss in "
+                    "exit_policy.always_on"
+                )
+        elif not _effective_exit_group_has_stop_loss(exit_policy, bucket):
+            raise ValueError(
+                f"break_even_stop in exit_management.profiles.{bucket} requires stop_loss in "
+                f"exit_policy always_on or profiles.{bucket}"
+            )
+
+
+@dataclass(frozen=True)
 class TradeManagementSpec:
     exit_policy: ExitPolicySpec
+    exit_management: ExitManagementSpec = field(default_factory=empty_exit_management)
+
+    def __post_init__(self) -> None:
+        exit_ids: set[str] = set()
+        for rules in (
+            self.exit_policy.always_on.exits,
+            self.exit_policy.profiles.aligned.exits,
+            self.exit_policy.profiles.countertrend.exits,
+            self.exit_policy.profiles.neutral.exits,
+        ):
+            for rule in rules:
+                if rule.instance_id in exit_ids:
+                    raise ValueError(
+                        "trade_management.exit_policy instance_id must be globally unique: "
+                        f"{rule.instance_id!r}"
+                    )
+                exit_ids.add(rule.instance_id)
+        for rules in (
+            self.exit_management.always_on.rules,
+            self.exit_management.profiles.aligned.rules,
+            self.exit_management.profiles.countertrend.rules,
+            self.exit_management.profiles.neutral.rules,
+        ):
+            for rule in rules:
+                if rule.instance_id in exit_ids:
+                    raise ValueError(
+                        "instance_id must be unique across exit_policy and exit_management: "
+                        f"{rule.instance_id!r}"
+                    )
+                exit_ids.add(rule.instance_id)
+        _validate_exit_management_requires_initial_stop(
+            self.exit_policy,
+            self.exit_management,
+        )
 
 
 @dataclass(frozen=True)

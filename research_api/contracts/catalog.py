@@ -51,7 +51,9 @@ class ComponentSchema(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     component_id: str
-    role: Literal["direction", "setup", "trigger", "blockers", "exits", "risk"]
+    role: Literal[
+        "direction", "setup", "trigger", "blockers", "exits", "risk", "exit_management"
+    ]
     label: str
     description: str | None = None
     params_schema: dict[str, ParamFieldSchema] = Field(default_factory=dict)

@@ -79,6 +79,19 @@ export type SetupEntryDiagnostics = {
   side?: "long" | "short" | null;
 };
 
+export type BreakEvenDiagnostics = {
+  enabled: boolean;
+  instance_id: string;
+  trigger_r: number;
+  trigger_price?: number | null;
+  triggered: boolean;
+  trigger_time_ms?: number | null;
+  stop_moved_to?: number | null;
+  initial_stop_price: number;
+  initial_risk: number;
+  active_stop_management_source: "profile" | "always_on";
+};
+
 export type TradeRecord = TradeOverlay & {
   size: number | null;
   pnl: number | null;
@@ -119,6 +132,8 @@ export type TradeRecord = TradeOverlay & {
   exit_context_consumption?: ContextConsumptionAttribution | null;
   /** Namespaced setup diagnostics keyed by setup instance_id. */
   entry_setup_diagnostics?: Record<string, SetupEntryDiagnostics>;
+  /** Exit management combiner — break_even_stop when present on trade record. */
+  break_even?: BreakEvenDiagnostics;
 };
 
 export type ContextConsumptionAttribution = {
@@ -315,7 +330,14 @@ export type ContextProviderSchema = {
 
 export type ComponentSchema = {
   component_id: string;
-  role: "direction" | "setup" | "trigger" | "blockers" | "exits" | "risk";
+  role:
+    | "direction"
+    | "setup"
+    | "trigger"
+    | "blockers"
+    | "exits"
+    | "risk"
+    | "exit_management";
   label: string;
   description?: string | null;
   params_schema?: Record<string, ParamFieldSchema>;

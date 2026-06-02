@@ -30,6 +30,7 @@ from research.strategies.ema_pullback.spec import (
     StrongReclaimTriggerSpec,
     RsiFeatureSpec,
     TradeManagementSpec,
+    empty_exit_management,
     TradeSideSpec,
     TriggerSpec,
     UntouchedAnchorSetupSpec,
@@ -288,6 +289,12 @@ def strategy_spec_from_report_dict(payload: Mapping[str, Any]) -> EmaPullbackStr
         legacy_context=ep_raw.get("context"),
         has_profile_exits=_report_has_profile_exits(profiles_raw),
     )
+    from research.strategies.ema_pullback.instance_loader import _parse_exit_management
+
+    exit_management = empty_exit_management()
+    if "exit_management" in tm_raw:
+        exit_management = _parse_exit_management(tm_raw["exit_management"])
+
     trade_management = TradeManagementSpec(
         exit_policy=ExitPolicySpec(
             always_on=_exit_policy_group(
@@ -312,7 +319,8 @@ def strategy_spec_from_report_dict(payload: Mapping[str, Any]) -> EmaPullbackStr
                 ),
             ),
             context_consumption=context_consumption,
-        )
+        ),
+        exit_management=exit_management,
     )
 
     return EmaPullbackStrategySpec(
