@@ -154,6 +154,7 @@ def _build_side_signals(
         plan,
         anchor_col=anchor_col,
         side=side,
+        context_bundle=bundle,
     )
     trigger_rule = spec.components.trigger
     if isinstance(trigger_rule, ReclaimTriggerSpec | StrongReclaimTriggerSpec):

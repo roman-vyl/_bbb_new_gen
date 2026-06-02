@@ -63,26 +63,28 @@ describe("collectComposerStrategyErrors", () => {
     expect(errors.some((e) => e.path.includes("context_consumption"))).toBe(true);
   });
 
-  it("rejects unsupported setup.context_consumption when catalog disallows it", () => {
+  it("rejects unsupported setups[].context_consumption when catalog disallows it", () => {
     const strategy = {
-      setup: {
-        component_id: "untouched_anchor_setup",
-        lookback: 50,
-        active_bars: 3,
-        context_consumption: {
-          context_ref: "htf",
-          policy: { policy_id: "htf_state_gate" },
+      setups: [
+        {
+          component_id: "untouched_anchor_setup",
+          lookback: 50,
+          active_bars: 3,
+          context_consumption: {
+            context_ref: "htf",
+            policy: { policy_id: "htf_state_gate" },
+          },
         },
-      },
+      ],
     };
     const errors = collectComposerStrategyErrors(
       strategy,
       "instances[0].strategy",
       CATALOG_STUB,
     );
-    expect(errors.some((e) => e.path === "instances[0].strategy.setup.context_consumption")).toBe(
-      true,
-    );
+    expect(
+      errors.some((e) => e.path === "instances[0].strategy.setups[0].context_consumption"),
+    ).toBe(true);
   });
 });
 

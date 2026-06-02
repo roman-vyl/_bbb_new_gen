@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 import pandas as pd
 
 from research.strategies.ema_pullback.components.registry import (
@@ -10,12 +11,24 @@ from research.strategies.ema_pullback.components.registry import (
     resolve_component,
 )
 from research.strategies.ema_pullback.features.plan import FeaturePlan
+from research.strategies.ema_pullback.context.bundle import ContextBundle
+from research.strategies.ema_pullback.context.evaluation import (
+    SideAwareEvaluationContext,
+    evaluate_context_consumption,
+)
 from research.strategies.ema_pullback.spec import (
     EmaBounceCounterSetupSpec,
     SetupRuleSpec,
     TradeSide,
     UntouchedAnchorSetupSpec,
 )
+
+
+@dataclass(frozen=True)
+class SetupRuleMasks:
+    local_setup_allowed: pd.Series
+    context_gate_allowed: pd.Series
+    final_setup_allowed: pd.Series
 
 
 def run_setup_mask(
@@ -113,10 +126,69 @@ def compose_setup_masks(
     *,
     anchor_col: str,
     side: TradeSide,
+    context_bundle: ContextBundle | None = None,
 ) -> pd.Series:
     if not rules:
         raise ValueError("at least one setup rule is required")
-    out = run_setup_mask(df, rules[0], plan, anchor_col=anchor_col, side=side)
+    out = run_setup_rule_masks(
+        df,
+        rules[0],
+        plan,
+        anchor_col=anchor_col,
+        side=side,
+        context_bundle=context_bundle,
+    ).final_setup_allowed
     for rule in rules[1:]:
-        out = out & run_setup_mask(df, rule, plan, anchor_col=anchor_col, side=side)
+        out = out & run_setup_rule_masks(
+            df,
+            rule,
+            plan,
+            anchor_col=anchor_col,
+            side=side,
+            context_bundle=context_bundle,
+        ).final_setup_allowed
     return out.fillna(False).astype(bool)
+
+
+def run_setup_rule_masks(
+    df: pd.DataFrame,
+    rule: SetupRuleSpec,
+    plan: FeaturePlan,
+    *,
+    anchor_col: str,
+    side: TradeSide,
+    context_bundle: ContextBundle | None = None,
+) -> SetupRuleMasks:
+    local_mask = run_setup_mask(df, rule, plan, anchor_col=anchor_col, side=side).fillna(False).astype(bool)
+    consumption = rule.context_consumption
+    gate_mask = pd.Series(True, index=local_mask.index, dtype=bool)
+    if consumption is None:
+        return SetupRuleMasks(
+            local_setup_allowed=local_mask,
+            context_gate_allowed=gate_mask,
+            final_setup_allowed=local_mask,
+        )
+    if context_bundle is None:
+        raise ValueError(
+            f"setups[{rule.instance_id!r}] requires context_bundle when context_consumption is configured"
+        )
+    result = evaluate_context_consumption(
+        consumption,
+        SideAwareEvaluationContext(
+            context_bundle=context_bundle,
+            index=local_mask.index,
+            evaluated_side=side,
+        ),
+    )
+    gate = result.allowed_mask
+    if gate is None:
+        raise ValueError(
+            "context consumption result missing allowed_mask for "
+            f"{consumption.policy.policy_id!r}"
+        )
+    gate_mask = gate.fillna(False).astype(bool)
+    return SetupRuleMasks(
+        local_setup_allowed=local_mask,
+        context_gate_allowed=gate_mask,
+        final_setup_allowed=(local_mask & gate_mask).fillna(False).astype(bool),
+    )

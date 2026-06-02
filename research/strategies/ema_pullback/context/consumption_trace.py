@@ -14,7 +14,13 @@ from research.strategies.ema_pullback.context.evaluation import (
 from research.strategies.ema_pullback.context.policies import HTF_REGIME_GATE_POLICY
 from research.strategies.ema_pullback.execution.exits import PortfolioExitOutputs
 from research.strategies.ema_pullback.features.plan import FeaturePlan
-from research.strategies.ema_pullback.spec import BlockerRuleSpec, EmaPullbackStrategySpec, TradeSide
+from research.strategies.ema_pullback.setup_runtime import run_setup_mask
+from research.strategies.ema_pullback.spec import (
+    BlockerRuleSpec,
+    EmaPullbackStrategySpec,
+    SetupRuleSpec,
+    TradeSide,
+)
 
 
 def _bool_list(series: pd.Series) -> list[bool]:
@@ -54,6 +60,58 @@ def _blocker_trace_record(
         "context_ref": consumption.context_ref,
         "policy_id": consumption.policy.policy_id,
         "context_applied": _bool_list(gate),
+        "outcome": outcome,
+    }
+
+
+def _setup_trace_record(
+    rule: SetupRuleSpec,
+    *,
+    df: pd.DataFrame,
+    plan: FeaturePlan,
+    anchor_col: str,
+    context_bundle: ContextBundle,
+    evaluated_side: TradeSide,
+    regime_cache: dict | None = None,
+) -> dict[str, Any] | None:
+    consumption = rule.context_consumption
+    if consumption is None:
+        return None
+    local_mask = run_setup_mask(
+        df,
+        rule,
+        plan,
+        anchor_col=anchor_col,
+        side=evaluated_side,
+    ).fillna(False).astype(bool)
+    result = evaluate_context_consumption(
+        consumption,
+        SideAwareEvaluationContext(
+            context_bundle=context_bundle,
+            index=df.index,
+            evaluated_side=evaluated_side,
+            regime_cache=regime_cache,
+        ),
+    )
+    gate = result.allowed_mask
+    if gate is None:
+        return None
+    gate_mask = gate.fillna(False).astype(bool)
+    final_mask = local_mask & gate_mask
+    outcome: dict[str, Any] = dict(result.outcome)
+    if consumption.policy.policy_id == HTF_REGIME_GATE_POLICY:
+        outcome.setdefault("evaluated_side", evaluated_side)
+    outcome["local_setup_allowed"] = _bool_list(local_mask)
+    outcome["context_gate_allowed"] = _bool_list(gate_mask)
+    outcome["final_setup_allowed"] = _bool_list(final_mask)
+    return {
+        "role": "setup",
+        "component_id": rule.component_id,
+        "instance_id": rule.instance_id,
+        "setup_instance_id": rule.instance_id,
+        "context_ref": consumption.context_ref,
+        "policy_id": consumption.policy.policy_id,
+        "context_applied": _bool_list(gate_mask),
         "outcome": outcome,
     }
 
@@ -102,6 +160,22 @@ def build_context_consumption_trace(
                 rule,
                 context_bundle=context_bundle,
                 index=index,
+                evaluated_side=side,
+                regime_cache=regime_cache,
+            )
+            if record is not None:
+                records.append(record)
+    anchor_col = plan.anchor_columns["anchor"]
+    for rule in spec.setups:
+        if rule.context_consumption is None:
+            continue
+        for side in spec.trade_sides.enabled:
+            record = _setup_trace_record(
+                rule,
+                df=df,
+                plan=plan,
+                anchor_col=anchor_col,
+                context_bundle=context_bundle,
                 evaluated_side=side,
                 regime_cache=regime_cache,
             )

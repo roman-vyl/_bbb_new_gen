@@ -113,6 +113,12 @@ def test_component_catalog_returns_ema_pullback_components(client: TestClient) -
     assert bounce_params["fast_ema"]["default"] == 50
     assert bounce_params["raw_touch_mode"]["enum"] == ["range_cross"]
     assert setup_components[1].get("params_storage") == "nested"
+    assert all(component.get("supports_context_consumption") is True for component in setup_components)
+    for component in setup_components:
+        setup_policy_ids = [
+            p["policy_id"] for p in component.get("context_consumption_policies") or []
+        ]
+        assert "htf_regime_gate" in setup_policy_ids
     reclaim_components = [c for c in body["components"] if c.get("component_id") == "reclaim_anchor"]
     assert len(reclaim_components) == 1
     reclaim_params = reclaim_components[0]["params_schema"]
@@ -182,6 +188,9 @@ def test_component_catalog_strategy_contexts_section(client: TestClient) -> None
     ]
     no_blockers = next(c for c in body["components"] if c["component_id"] == "no_blockers")
     assert no_blockers.get("supports_context_consumption") is not True
+    setup_roles = [r for r in body["context_consumption_roles"] if r["role"] == "setup"]
+    assert len(setup_roles) == 1
+    assert [p["policy_id"] for p in setup_roles[0]["policies"]] == ["htf_regime_gate"]
 
 
 def test_validate_rejects_htf_state_gate_on_blocker(client: TestClient) -> None:
@@ -295,6 +304,16 @@ def test_validate_setup_context_consumption_has_structured_path(client: TestClie
     instances = list(draft["instances"])  # type: ignore[index]
     inst = dict(instances[0])  # type: ignore[arg-type]
     strategy = dict(inst["strategy"])  # type: ignore[arg-type]
+    strategy["contexts"] = {
+        "htf": {
+            "component_id": "htf_context",
+            "timeframe": "4h",
+            "source": "close",
+            "fast_period": 100,
+            "anchor_period": 200,
+            "slow_period": 1000,
+        }
+    }
     setups = list(strategy["setups"])  # type: ignore[arg-type]
     setup = dict(setups[0])  # type: ignore[arg-type]
     setup["context_consumption"] = {

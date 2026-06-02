@@ -447,6 +447,7 @@ export type ContextConsumptionTraceRecord = {
   policy_id: string;
   context_applied: boolean[];
   instance_id?: string | null;
+  setup_instance_id?: string | null;
   outcome?: Record<string, unknown> | null;
 };
 

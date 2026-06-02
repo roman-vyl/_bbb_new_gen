@@ -43,7 +43,11 @@ from research.strategies.ema_pullback.context.evaluation import (
 from research.strategies.ema_pullback.execution.exits import build_exit_outputs_from_spec
 from research.strategies.ema_pullback.execution.signals import compose_blocker_signals, compose_final_signals
 from research.strategies.ema_pullback.features.plan import FeaturePlan
-from research.strategies.ema_pullback.setup_runtime import compose_setup_masks, run_setup_trace
+from research.strategies.ema_pullback.setup_runtime import (
+    compose_setup_masks,
+    run_setup_rule_masks,
+    run_setup_trace,
+)
 from research.strategies.ema_pullback.spec import (
     BlockerRuleSpec,
     EmaBounceCounterSetupSpec,
@@ -273,19 +277,34 @@ def _build_side_trace(
 
     setup_traces: dict[str, dict[str, pd.Series]] = {}
     for setup_rule in spec.setups:
-        setup_traces[setup_rule.instance_id] = run_setup_trace(
+        local_trace = run_setup_trace(
             df,
             setup_rule,
             plan,
             anchor_col=anchor_col,
             side=side,
         )
+        masks = run_setup_rule_masks(
+            df,
+            setup_rule,
+            plan,
+            anchor_col=anchor_col,
+            side=side,
+            context_bundle=context_bundle,
+        )
+        setup_traces[setup_rule.instance_id] = {
+            **local_trace,
+            "local_setup_allowed": masks.local_setup_allowed,
+            "context_gate_allowed": masks.context_gate_allowed,
+            "final_setup_allowed": masks.final_setup_allowed,
+        }
     setup = compose_setup_masks(
         df,
         spec.setups,
         plan,
         anchor_col=anchor_col,
         side=side,
+        context_bundle=context_bundle,
     )
 
     if isinstance(trigger_rule, ReclaimTriggerSpec):

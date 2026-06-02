@@ -34,7 +34,7 @@ _PATH_RE = re.compile(
     r"^(?P<prefix>(?:instances\[\d+\]|blockers\[\d+\]|exits\[\d+\]|"
     r"strategy|trade_management|exit_policy|profiles|always_on|context|contexts|"
     r"context_consumption|market|execution|experiment_id|family|schema_version|"
-    r"setup|trigger|direction|risk)[^\s]*)?"
+    r"setup|setups\[\d+\]|trigger|direction|risk)[^\s]*)?"
 )
 SUPPORTED_CONFIG_FAMILIES = {"ema_pullback"}
 

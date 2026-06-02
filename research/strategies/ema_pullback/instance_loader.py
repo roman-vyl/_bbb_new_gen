@@ -409,11 +409,17 @@ def _parse_setup_rule(index: int, value: Any) -> SetupRuleSpec:
             "touch_lookback_bars",
             "trend_start_confirmation_bars",
             "trend_break_confirmation_bars",
+            "context_consumption",
         },
     )
     instance_id = _require_non_empty_str(payload, "instance_id")
     component_id = _require_non_empty_str(payload, "component_id")
     _assert_known_component("setup", component_id)
+    context_consumption = _parse_context_consumption(
+        payload.get("context_consumption"),
+        path=f"{path}.context_consumption",
+        allowed_policy_ids=(HTF_REGIME_GATE_POLICY,),
+    )
     if component_id == UNTOUCHED_ANCHOR_SETUP_COMPONENT:
         lookback = _optional_positive_int(payload, "lookback", default=50)
         active_bars = _optional_positive_int(payload, "active_bars", default=3)
@@ -424,6 +430,7 @@ def _parse_setup_rule(index: int, value: Any) -> SetupRuleSpec:
                 lookback=lookback,
                 active_bars=active_bars,
             ),
+            context_consumption=context_consumption,
         )
     if component_id == EMA_BOUNCE_COUNTER_SETUP_COMPONENT:
         params_raw = payload.get("params", {})
@@ -453,6 +460,7 @@ def _parse_setup_rule(index: int, value: Any) -> SetupRuleSpec:
             instance_id=instance_id,
             component_id=component_id,
             params=setup_spec,
+            context_consumption=context_consumption,
         )
     raise EmaPullbackInstanceValidationError(f"unsupported setup component_id {component_id!r}")
 

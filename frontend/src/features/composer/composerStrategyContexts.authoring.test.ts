@@ -19,6 +19,21 @@ const catalog: ComponentCatalog = {
   sections: [],
   components: [
     {
+      role: "setup",
+      component_id: "untouched_anchor_setup",
+      label: "Untouched anchor setup",
+      supports_context_consumption: true,
+      context_consumption_policies: [
+        {
+          policy_id: "htf_regime_gate",
+          label: "HTF regime gate",
+          params_schema: {
+            allowed_regimes: { type: "array", enum: ["aligned", "countertrend", "neutral"] },
+          },
+        },
+      ],
+    },
+    {
       role: "blockers",
       component_id: "counter_candle_blocker",
       label: "Counter candle",
@@ -172,5 +187,67 @@ describe("strategy context authoring helpers", () => {
     };
     const errors = collectUndefinedConsumerContextRefErrors(strategy, "instances[0].strategy");
     expect(errors.some((e) => e.path.includes("blockers[0]"))).toBe(true);
+  });
+
+  it("flags setups[] with orphan context_ref", () => {
+    const strategy = {
+      contexts: {},
+      setups: [
+        {
+          instance_id: "setup_ctx",
+          component_id: "untouched_anchor_setup",
+          context_consumption: {
+            context_ref: "htf_1",
+            policy: { policy_id: "htf_regime_gate", params: { allowed_regimes: ["aligned"] } },
+          },
+        },
+      ],
+      trade_management: {
+        exit_policy: {
+          profiles: {
+            aligned: { exits: [] },
+            countertrend: { exits: [] },
+            neutral: { exits: [] },
+          },
+        },
+      },
+    };
+    const errors = collectUndefinedConsumerContextRefErrors(strategy, "instances[0].strategy");
+    expect(errors.some((e) => e.path.includes("setups[0]"))).toBe(true);
+  });
+
+  it("flags setups[] unsupported context consumption when catalog disallows", () => {
+    const restrictedCatalog: ComponentCatalog = {
+      ...catalog,
+      components: catalog.components.map((component) =>
+        component.role === "setup"
+          ? { ...component, supports_context_consumption: false, context_consumption_policies: [] }
+          : component,
+      ),
+    };
+    const strategy = {
+      contexts: { htf_1: { component_id: "htf_context" } },
+      setups: [
+        {
+          instance_id: "setup_ctx",
+          component_id: "untouched_anchor_setup",
+          context_consumption: {
+            context_ref: "htf_1",
+            policy: { policy_id: "htf_regime_gate", params: { allowed_regimes: ["aligned"] } },
+          },
+        },
+      ],
+      trade_management: {
+        exit_policy: {
+          profiles: {
+            aligned: { exits: [] },
+            countertrend: { exits: [] },
+            neutral: { exits: [] },
+          },
+        },
+      },
+    };
+    const errors = collectComposerStrategyErrors(strategy, "instances[0].strategy", restrictedCatalog);
+    expect(errors.some((e) => e.path.includes("setups[0].context_consumption"))).toBe(true);
   });
 });

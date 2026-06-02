@@ -2193,10 +2193,10 @@ export function ListComponentSection({
               onChange={(next) => onChange(slotIndex, next)}
             />
           )}
-          {strategy && role === "blockers" ? (
+          {strategy && (role === "blockers" || role === "setup") ? (
             <EntryContextConsumptionFields
               catalog={catalog}
-              role="blockers"
+              role={role === "setup" ? "setup" : "blockers"}
               strategy={strategy}
               value={slot}
               pathPrefix={path}
