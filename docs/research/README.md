@@ -413,4 +413,5 @@ docs/research/07_first_real_component_variant.md
 docs/research/08_trade_management_sl_tp.md
 docs/research/09_json_run_report.md
 docs/research/18_exit_management_combiner_start.md
+docs/research/19_trend_strength_episode_blocker.md
 ```
