@@ -64,7 +64,6 @@ export type TraceDisplayLoadPlan =
   | { action: "bootstrap_blocked" }
   | { action: "fetch_superseded" }
   | { action: "pan_block"; applyDisplayFromCache: boolean }
-  | { action: "display_cache_hit" }
   | { action: "restore_session" }
   | { action: "evaluate_network" }
   | { action: "defer"; reason: SignalTraceLoadDecision["action"] };
@@ -103,9 +102,6 @@ export function planTraceDisplayLoad(input: {
     case "skip_idle":
       return { action: "defer", reason: "skip_idle" };
     case "proceed":
-      if (input.panScheduling.displayCacheCoversWindow) {
-        return { action: "display_cache_hit" };
-      }
       return { action: "evaluate_network" };
     default:
       return { action: "defer", reason: "skip_idle" };

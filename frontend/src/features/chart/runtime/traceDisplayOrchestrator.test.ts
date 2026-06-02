@@ -73,7 +73,7 @@ describe("planTraceDisplayLoad", () => {
     }
   });
 
-  it("cache hit during pending shift applies display without network evaluation", () => {
+  it("cache hit during pending shift still goes through network evaluation stage", () => {
     const plan = planTraceDisplayLoad({
       bootstrap: READY_BOOTSTRAP,
       coalescedWindowKey: null,
@@ -88,7 +88,7 @@ describe("planTraceDisplayLoad", () => {
       },
       loadDecision: { action: "proceed" },
     });
-    expect(plan).toEqual({ action: "display_cache_hit" });
+    expect(plan).toEqual({ action: "evaluate_network" });
   });
 
   it("defers network evaluation while pan is active", () => {
@@ -109,7 +109,7 @@ describe("planTraceDisplayLoad", () => {
     expect(plan).toEqual({ action: "pan_block", applyDisplayFromCache: false });
   });
 
-  it("maps display cache hit without coordinator", () => {
+  it("routes covered idle window to evaluate_network for coordinator decision", () => {
     const plan = planTraceDisplayLoad({
       bootstrap: READY_BOOTSTRAP,
       coalescedWindowKey: null,
@@ -124,7 +124,7 @@ describe("planTraceDisplayLoad", () => {
       },
       loadDecision: { action: "proceed" },
     });
-    expect(plan).toEqual({ action: "display_cache_hit" });
+    expect(plan).toEqual({ action: "evaluate_network" });
   });
 
   it("routes uncovered idle window to evaluate_network", () => {

@@ -1594,12 +1594,6 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
 
     previousChartWindowKeyRef.current = committedWindowKey;
 
-    if (plan.action === "display_cache_hit") {
-      dbgMark(DBG.traceDisplay.cacheHit, { windowKey: committedWindowKey, traceRequestKey });
-      finalizeTraceDisplayUpdate();
-      return;
-    }
-
     if (plan.action === "restore_session") {
       const sessionBundle = signalTraceBundleSessionCacheRef.current.get(committedWindowKey);
       if (sessionBundle === null) {
@@ -1664,6 +1658,12 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
         coordDecision.reason === "already_merged" ||
         coordDecision.reason === "cache_hit"
       ) {
+        dbgMark(DBG.traceDisplay.cacheHit, {
+          windowKey: committedWindowKey,
+          traceRequestKey,
+          source: "coordinator_skip",
+          reason: coordDecision.reason,
+        });
         finalizeTraceDisplayUpdate();
       }
       if (!displayCacheCoversWindow) {
