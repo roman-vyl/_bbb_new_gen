@@ -86,6 +86,50 @@ def test_parse_run_report_accepts_v5_minimal_payload() -> None:
     assert report.variants[0].trade_records[0].trade_id == 1
 
 
+def test_trade_record_accepts_managed_path_bar_indices_and_break_even() -> None:
+    trade = TradeRecord.model_validate(
+        _minimal_trade(
+            entry_idx=835,
+            exit_idx=846,
+            break_even={
+                "enabled": True,
+                "instance_id": "be_ao",
+                "trigger_r": 1.0,
+                "trigger_price": 101.5,
+                "triggered": True,
+                "trigger_time_ms": 1_050_000,
+                "stop_moved_to": 100.0,
+                "initial_stop_price": 98.0,
+                "initial_risk": 2.0,
+                "active_stop_management_source": "always_on",
+            },
+        )
+    )
+    assert trade.entry_idx == 835
+    assert trade.break_even is not None
+    assert trade.break_even.triggered is True
+    report = parse_run_report(
+        _minimal_report_payload(
+            trade_records=[
+                _minimal_trade(
+                    entry_idx=10,
+                    exit_idx=20,
+                    break_even={
+                        "enabled": True,
+                        "instance_id": "be_al",
+                        "trigger_r": 2.0,
+                        "triggered": False,
+                        "initial_stop_price": 50.0,
+                        "initial_risk": 5.0,
+                        "active_stop_management_source": "profile",
+                    },
+                )
+            ],
+        )
+    )
+    assert report.variants[0].trade_records[0].break_even is not None
+
+
 def test_parse_run_report_rejects_prototype_trade_context_ref() -> None:
     payload = _minimal_report_payload(
         trade_records=[_minimal_trade(context_ref="htf")],
