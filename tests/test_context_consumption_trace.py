@@ -5,12 +5,17 @@ from __future__ import annotations
 import pytest
 
 from research.strategies.ema_pullback.component_builders import (
+    blocker_none,
     component_stack,
+    context_consumption,
     direction_ema_anchor_stack,
     risk_no_filter,
+    setup_rule,
+    untouched_anchor_setup_spec,
     setup_untouched_anchor,
     trigger_reclaim_anchor,
 )
+from research.strategies.ema_pullback.context.policies import HTF_REGIME_GATE_POLICY
 from research.strategies.ema_pullback.execution.results import extract_trade_records
 from research.strategies.ema_pullback.execution.signal_trace import build_signal_trace_from_spec
 from research.strategies.ema_pullback.features.calculations import add_feature_columns_from_plan
@@ -75,6 +80,63 @@ def test_signal_trace_emits_context_consumption_trace() -> None:
     assert blocker_record["outcome"]["raw_state"] == ["up", "down", "neutral"]
     assert blocker_record["outcome"]["allowed_regimes"] == ["aligned"]
     assert blocker_record["outcome"]["resolved_regime"] == ["aligned", "countertrend", "neutral"]
+
+
+def test_signal_trace_emits_setup_context_diagnostics_split_fields() -> None:
+    pytest.importorskip("pandas")
+    import pandas as pd
+
+    spec = make_ema_pullback_strategy_spec(
+        contexts=htf_strategy_contexts(),
+        setups=(
+            setup_rule(
+                instance_id="setup_ctx",
+                component_id=setup_untouched_anchor(),
+                params=untouched_anchor_setup_spec(lookback=1, active_bars=3),
+                context_consumption=context_consumption(
+                    context_ref="htf",
+                    policy_id=HTF_REGIME_GATE_POLICY,
+                    params=(("allowed_regimes", ["aligned"]),),
+                ),
+            ),
+        ),
+        components=component_stack(
+            direction=direction_ema_anchor_stack(),
+            blockers=(blocker_none(),),
+            trigger=trigger_reclaim_anchor(),
+            risk=risk_no_filter(),
+        ),
+    )
+    plan = build_feature_plan_from_strategy_spec(spec)
+    idx = pd.date_range("2024-01-01", periods=3, freq="h", tz="UTC")
+    close = pd.Series([100.0, 101.0, 102.0], index=idx)
+    ohlcv = pd.DataFrame(
+        {"close": close, "open": close, "high": close, "low": close, "volume": 1.0},
+        index=idx,
+    )
+    df = add_feature_columns_from_plan(ohlcv, plan)
+    cols = plan.htf_context_columns_for("htf")
+    df[cols["fast"]] = [103.0, 101.0, 102.0]
+    df[cols["anchor"]] = [102.0, 102.0, 102.0]
+    df[cols["slow"]] = [101.0, 103.0, 102.0]
+
+    trace = build_signal_trace_from_spec(df, spec, plan, context_overlay_ref="htf")
+    setup_record = next(
+        r
+        for r in trace.context_consumption_trace
+        if r["role"] == "setup"
+        and r["instance_id"] == "setup_ctx"
+        and r.get("outcome", {}).get("evaluated_side") == "long"
+    )
+    outcome = setup_record["outcome"]
+    assert setup_record["setup_instance_id"] == "setup_ctx"
+    assert setup_record["policy_id"] == "htf_regime_gate"
+    assert outcome["allowed_regimes"] == ["aligned"]
+    assert outcome["raw_state"] == ["up", "down", "neutral"]
+    assert outcome["resolved_regime"] == ["aligned", "countertrend", "neutral"]
+    assert len(outcome["local_setup_allowed"]) == len(trace.times)
+    assert outcome["context_gate_allowed"] == [True, False, False]
+    assert len(outcome["final_setup_allowed"]) == len(trace.times)
 
 
 def test_trade_records_include_separate_entry_and_exit_consumption() -> None:

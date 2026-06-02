@@ -10,6 +10,11 @@ from research.strategies.ema_pullback.components.registry import (
     resolve_component,
 )
 from research.strategies.ema_pullback.features.plan import FeaturePlan
+from research.strategies.ema_pullback.context.bundle import ContextBundle
+from research.strategies.ema_pullback.context.evaluation import (
+    SideAwareEvaluationContext,
+    evaluate_context_consumption,
+)
 from research.strategies.ema_pullback.spec import (
     EmaBounceCounterSetupSpec,
     SetupRuleSpec,
@@ -113,10 +118,59 @@ def compose_setup_masks(
     *,
     anchor_col: str,
     side: TradeSide,
+    context_bundle: ContextBundle | None = None,
 ) -> pd.Series:
     if not rules:
         raise ValueError("at least one setup rule is required")
-    out = run_setup_mask(df, rules[0], plan, anchor_col=anchor_col, side=side)
+    out = _run_gated_setup_mask(
+        df,
+        rules[0],
+        plan,
+        anchor_col=anchor_col,
+        side=side,
+        context_bundle=context_bundle,
+    )
     for rule in rules[1:]:
-        out = out & run_setup_mask(df, rule, plan, anchor_col=anchor_col, side=side)
+        out = out & _run_gated_setup_mask(
+            df,
+            rule,
+            plan,
+            anchor_col=anchor_col,
+            side=side,
+            context_bundle=context_bundle,
+        )
     return out.fillna(False).astype(bool)
+
+
+def _run_gated_setup_mask(
+    df: pd.DataFrame,
+    rule: SetupRuleSpec,
+    plan: FeaturePlan,
+    *,
+    anchor_col: str,
+    side: TradeSide,
+    context_bundle: ContextBundle | None = None,
+) -> pd.Series:
+    local_mask = run_setup_mask(df, rule, plan, anchor_col=anchor_col, side=side)
+    consumption = rule.context_consumption
+    if consumption is None:
+        return local_mask
+    if context_bundle is None:
+        raise ValueError(
+            f"setups[{rule.instance_id!r}] requires context_bundle when context_consumption is configured"
+        )
+    result = evaluate_context_consumption(
+        consumption,
+        SideAwareEvaluationContext(
+            context_bundle=context_bundle,
+            index=local_mask.index,
+            evaluated_side=side,
+        ),
+    )
+    gate = result.allowed_mask
+    if gate is None:
+        raise ValueError(
+            "context consumption result missing allowed_mask for "
+            f"{consumption.policy.policy_id!r}"
+        )
+    return local_mask & gate.fillna(False).astype(bool)

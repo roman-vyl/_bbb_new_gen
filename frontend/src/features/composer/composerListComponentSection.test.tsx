@@ -69,6 +69,55 @@ const catalog: ComponentCatalog = {
   context_consumption_roles: [],
 };
 
+const setupCatalog: ComponentCatalog = {
+  ...catalog,
+  components: [
+    {
+      component_id: "untouched_anchor_setup",
+      role: "setup",
+      label: "Untouched anchor setup",
+      list_slot: true,
+      supports_context_consumption: true,
+      context_consumption_policies: [
+        {
+          policy_id: "htf_regime_gate",
+          label: "HTF regime gate",
+          params_schema: {
+            allowed_regimes: {
+              type: "array",
+              label: "Allowed regimes",
+              enum: ["aligned", "countertrend", "neutral"],
+            },
+          },
+        },
+      ],
+      params_schema: {
+        lookback: { type: "integer", label: "Lookback", default: 50 },
+      },
+    },
+    {
+      component_id: "ema_bounce_counter_setup",
+      role: "setup",
+      label: "EMA bounce counter setup",
+      list_slot: true,
+      supports_context_consumption: true,
+      context_consumption_policies: [
+        {
+          policy_id: "htf_regime_gate",
+          label: "HTF regime gate",
+          params_schema: {
+            allowed_regimes: {
+              type: "array",
+              label: "Allowed regimes",
+              enum: ["aligned", "countertrend", "neutral"],
+            },
+          },
+        },
+      ],
+    },
+  ],
+};
+
 function StatefulBlockersList({
   initialSlots,
   strategy,
@@ -97,6 +146,32 @@ function StatefulBlockersList({
 
 function renderBlockers(slots: JsonObject[], strategy: JsonObject) {
   render(<StatefulBlockersList initialSlots={slots} strategy={strategy} />);
+}
+
+function StatefulSetupsList({
+  initialSlots,
+  strategy,
+}: {
+  initialSlots: JsonObject[];
+  strategy: JsonObject;
+}) {
+  const [slots, setSlots] = useState(initialSlots);
+  return (
+    <ListComponentSection
+      title="Setup"
+      role="setup"
+      catalog={setupCatalog}
+      strategy={strategy}
+      slots={slots}
+      instanceIndex={0}
+      errors={[]}
+      onAdd={() => undefined}
+      onRemove={() => undefined}
+      onChange={(index, next) =>
+        setSlots((prev) => prev.map((slot, i) => (i === index ? next : slot)))
+      }
+    />
+  );
 }
 
 describe("ListComponentSection blockers context consumption", () => {
@@ -196,5 +271,20 @@ describe("ListComponentSection blockers context consumption", () => {
       (o) => o.textContent,
     );
     expect(options).not.toContain("12");
+  });
+});
+
+describe("ListComponentSection setup context consumption", () => {
+  it("renders context consumption controls for setup list item", () => {
+    render(
+      <StatefulSetupsList
+        initialSlots={[{ instance_id: "s1", component_id: "untouched_anchor_setup", lookback: 50 }]}
+        strategy={{ contexts: { htf_1: { component_id: "htf_context", timeframe: "4h" } } }}
+      />,
+    );
+    expect(screen.getByText("Context consumption")).toBeTruthy();
+    fireEvent.click(screen.getByRole("checkbox", { name: /Context consumption/i }));
+    expect(screen.getAllByText("context_ref").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("policy_id").length).toBeGreaterThan(0);
   });
 });

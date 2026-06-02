@@ -204,6 +204,7 @@ class SetupRuleSpec:
     instance_id: str
     component_id: str
     params: SetupSpec
+    context_consumption: ContextConsumptionSpec | None = None
 
     def __post_init__(self) -> None:
         if not self.instance_id.strip():
@@ -222,6 +223,11 @@ class SetupRuleSpec:
             raise ValueError(
                 "setup params must be UntouchedAnchorSetupSpec for untouched_anchor_setup"
             )
+        from research.strategies.ema_pullback.context.consumption_validation import (
+            validate_setup_context_consumption,
+        )
+
+        validate_setup_context_consumption(self)
 
 
 @dataclass(frozen=True)
@@ -503,6 +509,15 @@ class EmaPullbackStrategySpec:
                     f"blockers[{rule.instance_id!r}].context_consumption.context_ref "
                     f"{blocker_consumption.context_ref!r} is not defined in strategy.contexts"
                 )
+        for rule in self.setups:
+            setup_consumption = rule.context_consumption
+            if setup_consumption is None:
+                continue
+            if setup_consumption.context_ref not in seen_refs:
+                raise ValueError(
+                    f"setups[{rule.instance_id!r}].context_consumption.context_ref "
+                    f"{setup_consumption.context_ref!r} is not defined in strategy.contexts"
+                )
 
 
 def _normalize_policy_params_wire(params: Any) -> dict[str, Any]:
@@ -544,6 +559,11 @@ def strategy_spec_to_dict(spec: EmaPullbackStrategySpec) -> dict[str, Any]:
         exit_policy = trade_management.get("exit_policy")
         if isinstance(exit_policy, dict):
             _normalize_context_consumption_wire(exit_policy.get("context_consumption"))
+    setups = payload.get("setups")
+    if isinstance(setups, (list, tuple)):
+        for setup in setups:
+            if isinstance(setup, dict):
+                _normalize_context_consumption_wire(setup.get("context_consumption"))
     return payload
 
 

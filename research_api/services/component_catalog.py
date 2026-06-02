@@ -40,6 +40,19 @@ _BLOCKER_CONTEXT_POLICIES = [
         },
     ),
 ]
+_SETUP_CONTEXT_POLICIES = [
+    ContextConsumptionPolicySchema(
+        policy_id="htf_regime_gate",
+        label="HTF regime gate",
+        params_schema={
+            "allowed_regimes": ParamFieldSchema(
+                type="array",
+                label="Allowed regimes",
+                enum=["aligned", "countertrend", "neutral"],
+            ),
+        },
+    ),
+]
 
 
 def get_component_catalog(*, family: str = "ema_pullback") -> ComponentCatalog:
@@ -123,6 +136,8 @@ def get_component_catalog(*, family: str = "ema_pullback") -> ComponentCatalog:
                 "lookback": _int_param("Untouched lookback bars", default=50),
                 "active_bars": _int_param("Active bars after first touch", default=3),
             },
+            supports_context_consumption=True,
+            context_consumption_policies=_SETUP_CONTEXT_POLICIES,
         ),
         ComponentSchema(
             component_id="ema_bounce_counter_setup",
@@ -152,6 +167,8 @@ def get_component_catalog(*, family: str = "ema_pullback") -> ComponentCatalog:
                     "Trend break confirmation bars", default=1
                 ),
             },
+            supports_context_consumption=True,
+            context_consumption_policies=_SETUP_CONTEXT_POLICIES,
         ),
         ComponentSchema(
             component_id="reclaim_anchor",
@@ -332,6 +349,16 @@ def get_component_catalog(*, family: str = "ema_pullback") -> ComponentCatalog:
         ContextConsumptionRoleSchema(
             role="blockers",
             label="Blockers",
+            policies=[
+                ContextConsumptionPolicySchema(
+                    policy_id="htf_regime_gate",
+                    label="HTF regime gate",
+                ),
+            ],
+        ),
+        ContextConsumptionRoleSchema(
+            role="setup",
+            label="Setup",
             policies=[
                 ContextConsumptionPolicySchema(
                     policy_id="htf_regime_gate",

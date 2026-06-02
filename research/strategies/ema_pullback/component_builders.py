@@ -456,6 +456,7 @@ def setup_rule(
     instance_id: str,
     component_id: str,
     params: SetupSpec,
+    context_consumption: ContextConsumptionSpec | None = None,
 ) -> SetupRuleSpec:
     from research.strategies.ema_pullback.spec import SetupRuleSpec
 
@@ -463,6 +464,7 @@ def setup_rule(
         instance_id=instance_id,
         component_id=component_id,
         params=params,
+        context_consumption=context_consumption,
     )
 
 
