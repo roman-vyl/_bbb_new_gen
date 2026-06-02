@@ -53,6 +53,60 @@ export function hasTradeDiagnostics(trade: TradeRecord): boolean {
   );
 }
 
+export function buildBreakEvenDiagnosticFields(trade: TradeRecord): TradeDiagnosticField[] {
+  const be = trade.break_even;
+  if (!be) {
+    return [];
+  }
+  const hint = "From exit management combiner (break_even_stop)";
+  return [
+    field("break_even.instance_id", "instance_id", be.instance_id, hint),
+    field("break_even.trigger_r", "trigger_r", formatNum(be.trigger_r, 2), hint),
+    field(
+      "break_even.triggered",
+      "triggered",
+      be.triggered ? "yes" : "no",
+      hint,
+    ),
+    field(
+      "break_even.trigger_price",
+      "trigger_price",
+      formatPrice(be.trigger_price ?? null),
+      hint,
+    ),
+    field(
+      "break_even.trigger_time_ms",
+      "trigger_time_ms",
+      formatMs(be.trigger_time_ms ?? null),
+      hint,
+    ),
+    field(
+      "break_even.stop_moved_to",
+      "stop_moved_to",
+      formatPrice(be.stop_moved_to ?? null),
+      hint,
+    ),
+    field(
+      "break_even.initial_stop_price",
+      "initial_stop_price",
+      formatPrice(be.initial_stop_price),
+      hint,
+    ),
+    field(
+      "break_even.initial_risk",
+      "initial_risk",
+      formatPrice(be.initial_risk),
+      hint,
+    ),
+    field(
+      "break_even.active_stop_management_source",
+      "management_source",
+      be.active_stop_management_source,
+      hint,
+    ),
+  ];
+}
+
 function buildSetupDiagnosticFields(trade: TradeRecord): TradeDiagnosticField[] {
   const out: TradeDiagnosticField[] = [];
   for (const [instanceId, diag] of setupDiagnosticsEntries(trade)) {

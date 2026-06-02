@@ -32,7 +32,7 @@ _SELECTION_FILE: Path | None = None
 _CONFIG_EXTENSIONS = frozenset({".json", ".yaml", ".yml"})
 _PATH_RE = re.compile(
     r"^(?P<prefix>(?:instances\[\d+\]|blockers\[\d+\]|exits\[\d+\]|"
-    r"strategy|trade_management|exit_policy|profiles|always_on|context|contexts|"
+    r"strategy|trade_management|exit_policy|exit_management|profiles|always_on|context|contexts|"
     r"context_consumption|market|execution|experiment_id|family|schema_version|"
     r"setup|setups\[\d+\]|trigger|direction|risk)[^\s]*)?"
 )

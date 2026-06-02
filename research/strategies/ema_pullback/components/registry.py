@@ -13,6 +13,10 @@ from research.strategies.ema_pullback.components.blockers import (
 from research.strategies.ema_pullback.components.direction import (
     ema_anchor_stack_trend,
 )
+from research.strategies.ema_pullback.components.exit_management import (
+    BREAK_EVEN_STOP_COMPONENT,
+    break_even_stop_placeholder,
+)
 from research.strategies.ema_pullback.components.exits import (
     atr_distance_exit,
     constant_usd_distance_exit,
@@ -207,6 +211,17 @@ COMPONENT_REGISTRY: dict[str, dict[str, ComponentDefinition]] = {
             component_id=NO_RISK_FILTER_COMPONENT,
             func=no_risk_filter,
             description="No risk gate filter (all True).",
+        ),
+    },
+    "exit_management": {
+        BREAK_EVEN_STOP_COMPONENT: ComponentDefinition(
+            role="exit_management",
+            component_id=BREAK_EVEN_STOP_COMPONENT,
+            func=break_even_stop_placeholder,
+            description=(
+                "Move stop to break-even (or offset) after price reaches trigger_r × initial risk; "
+                "effective on the next bar."
+            ),
         ),
     },
 }

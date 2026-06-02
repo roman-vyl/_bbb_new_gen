@@ -27,6 +27,9 @@ export function buildExitPriceLineTitle(trade: TradeRecord): string {
   if (kind === "open" || kind === "unknown") {
     return `Exit #${trade.trade_id}`;
   }
+  if (kind === "break_even") {
+    return `Exit #${trade.trade_id} · break-even`;
+  }
   return `Exit #${trade.trade_id} · ${kind}`;
 }
 

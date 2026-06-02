@@ -72,6 +72,49 @@ const strategySpec = {
 };
 
 describe("ChartTradeDiagnostics", () => {
+  it("renders break-even section when trade has break_even diagnostics", () => {
+    render(
+      <ChartTradeDiagnostics
+        trade={{
+          ...trade,
+          break_even: {
+            enabled: true,
+            instance_id: "be_ao",
+            trigger_r: 1,
+            triggered: true,
+            trigger_price: 63000,
+            trigger_time_ms: 1714562000000,
+            stop_moved_to: 62800,
+            initial_stop_price: 62000,
+            initial_risk: 800,
+            active_stop_management_source: "always_on",
+          },
+        }}
+        selectedTradeId={2}
+        strategySpec={strategySpec}
+        chartEmaOverlays={[]}
+        focusWarning={null}
+        {...traceDefaults}
+      />,
+    );
+    expect(screen.getByText("Break-even")).toBeTruthy();
+    expect(screen.getByText("be_ao")).toBeTruthy();
+  });
+
+  it("omits break-even section when break_even is absent", () => {
+    render(
+      <ChartTradeDiagnostics
+        trade={trade}
+        selectedTradeId={2}
+        strategySpec={strategySpec}
+        chartEmaOverlays={[]}
+        focusWarning={null}
+        {...traceDefaults}
+      />,
+    );
+    expect(screen.queryByText("Break-even")).toBeNull();
+  });
+
   it("renders v4 trade fields", () => {
     render(
       <ChartTradeDiagnostics

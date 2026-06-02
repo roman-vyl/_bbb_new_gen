@@ -24,6 +24,23 @@ class TradeOverlay(BaseModel):
     exit_reason: str
 
 
+class BreakEvenDiagnostics(BaseModel):
+    """Exit-management combiner output for ``break_even_stop`` (managed path)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool
+    instance_id: str
+    trigger_r: float
+    trigger_price: float | None = None
+    triggered: bool
+    trigger_time_ms: int | None = None
+    stop_moved_to: float | None = None
+    initial_stop_price: float
+    initial_risk: float
+    active_stop_management_source: Literal["profile", "always_on"]
+
+
 class TradeRecord(TradeOverlay):
     model_config = ConfigDict(extra="forbid")
 
@@ -63,6 +80,9 @@ class TradeRecord(TradeOverlay):
     bars_from_mfe_to_exit: int | None = None
     quality_flags: list[str] | None = None
     entry_setup_diagnostics: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    entry_idx: int | None = None
+    exit_idx: int | None = None
+    break_even: BreakEvenDiagnostics | None = None
 
 
 class SideMetrics(BaseModel):

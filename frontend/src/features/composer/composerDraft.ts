@@ -69,6 +69,14 @@ export function createDefaultInstance(instanceId: string): StrategyInstanceDraft
             neutral: { exits: [] },
           },
         },
+        exit_management: {
+          always_on: { rules: [] },
+          profiles: {
+            aligned: { rules: [] },
+            countertrend: { rules: [] },
+            neutral: { rules: [] },
+          },
+        },
       },
     },
   };
@@ -226,7 +234,11 @@ export function listSlotPath(
     | "always_on_exits"
     | "aligned_exits"
     | "countertrend_exits"
-    | "neutral_exits",
+    | "neutral_exits"
+    | "always_on_management"
+    | "aligned_management"
+    | "countertrend_management"
+    | "neutral_management",
   slot: number,
 ): string {
   if (role === "setups") {
@@ -244,5 +256,17 @@ export function listSlotPath(
   if (role === "countertrend_exits") {
     return `${strategyPath(index)}.trade_management.exit_policy.profiles.countertrend.exits[${slot}]`;
   }
-  return `${strategyPath(index)}.trade_management.exit_policy.profiles.neutral.exits[${slot}]`;
+  if (role === "neutral_exits") {
+    return `${strategyPath(index)}.trade_management.exit_policy.profiles.neutral.exits[${slot}]`;
+  }
+  if (role === "always_on_management") {
+    return `${strategyPath(index)}.trade_management.exit_management.always_on.rules[${slot}]`;
+  }
+  if (role === "aligned_management") {
+    return `${strategyPath(index)}.trade_management.exit_management.profiles.aligned.rules[${slot}]`;
+  }
+  if (role === "countertrend_management") {
+    return `${strategyPath(index)}.trade_management.exit_management.profiles.countertrend.rules[${slot}]`;
+  }
+  return `${strategyPath(index)}.trade_management.exit_management.profiles.neutral.rules[${slot}]`;
 }

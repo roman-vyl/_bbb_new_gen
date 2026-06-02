@@ -41,7 +41,12 @@ from research.strategies.ema_pullback.spec import (
     ExitPolicySpec,
     ExitKind,
     ExitRuleSpec,
+    ExitManagementGroupSpec,
+    ExitManagementProfilesSpec,
+    ExitManagementRuleSpec,
+    ExitManagementSpec,
     TradeManagementSpec,
+    empty_exit_management,
     UntouchedAnchorSetupSpec,
     RsiFeatureSpec,
     SetupSpec,
@@ -403,8 +408,71 @@ def exit_policy(
     )
 
 
-def trade_management(*, exit_policy_spec: ExitPolicySpec) -> TradeManagementSpec:
-    return TradeManagementSpec(exit_policy=exit_policy_spec)
+def exit_management_group(
+    rules: Sequence[ExitManagementRuleSpec],
+) -> ExitManagementGroupSpec:
+    return ExitManagementGroupSpec(
+        rules=_normalize_sequence("trade_management.exit_management.rules", rules)
+    )
+
+
+def exit_management_profiles(
+    *,
+    aligned: Sequence[ExitManagementRuleSpec] = (),
+    countertrend: Sequence[ExitManagementRuleSpec] = (),
+    neutral: Sequence[ExitManagementRuleSpec] = (),
+) -> ExitManagementProfilesSpec:
+    return ExitManagementProfilesSpec(
+        aligned=exit_management_group(aligned),
+        countertrend=exit_management_group(countertrend),
+        neutral=exit_management_group(neutral),
+    )
+
+
+def exit_management(
+    *,
+    always_on: Sequence[ExitManagementRuleSpec] = (),
+    aligned: Sequence[ExitManagementRuleSpec] = (),
+    countertrend: Sequence[ExitManagementRuleSpec] = (),
+    neutral: Sequence[ExitManagementRuleSpec] = (),
+) -> ExitManagementSpec:
+    return ExitManagementSpec(
+        always_on=exit_management_group(always_on),
+        profiles=exit_management_profiles(
+            aligned=aligned,
+            countertrend=countertrend,
+            neutral=neutral,
+        ),
+    )
+
+
+def break_even_stop_rule(
+    *,
+    instance_id: str,
+    trigger_r: float,
+    offset_r: float = 0.0,
+    apply_once: bool = True,
+) -> ExitManagementRuleSpec:
+    return ExitManagementRuleSpec(
+        instance_id=instance_id,
+        component_id="break_even_stop",
+        trigger_r=trigger_r,
+        offset_r=offset_r,
+        apply_once=apply_once,
+    )
+
+
+def trade_management(
+    *,
+    exit_policy_spec: ExitPolicySpec,
+    exit_management_spec: ExitManagementSpec | None = None,
+) -> TradeManagementSpec:
+    return TradeManagementSpec(
+        exit_policy=exit_policy_spec,
+        exit_management=exit_management_spec
+        if exit_management_spec is not None
+        else empty_exit_management(),
+    )
 
 
 def _normalize_sequence(name: str, values: Sequence[T]) -> tuple[T, ...]:
