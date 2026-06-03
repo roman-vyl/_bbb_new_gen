@@ -2,7 +2,7 @@
 
 ### Requirement: Signal Trace exposes trend strength episode blocker diagnostics
 
-When a traced `ema_pullback` run includes `trend_strength_episode_blocker`, Signal Trace SHALL expose per-bar blocker diagnostics for that blocker instance. The trace record MUST include an `allowed` boolean series aligned with the runtime blocker mask used in entry composition. The trace MUST expose the diagnostic keys defined in `trend-strength-episode-blocker` (ADX peak/current, DI values, `trend_strength_active`, `blocked_reason`, `ema_stack_direction_ok`, `opposite_di_flip`) under the blocker consumer path for the configured `instance_id`.
+When a traced `ema_pullback` run includes `trend_strength_episode_blocker`, Signal Trace SHALL expose per-bar blocker diagnostics for that blocker instance. The trace record MUST include an `allowed` boolean series aligned with the runtime blocker mask used in entry composition. The trace MUST expose the diagnostic keys defined in `trend-strength-episode-blocker` (ADX peak/current, DI values, `trend_strength_active`, `blocked_reason`, `opposite_di_flip`) under the blocker consumer path for the configured `instance_id`.
 
 #### Scenario: Blocker trace allowed matches runtime mask
 

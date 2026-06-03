@@ -50,7 +50,7 @@ Add planned feature kind `adx_dmi` (or three linked columns under one plan entry
 
 ### Decision: extend `BlockerRuleSpec` with optional trend-strength params
 
-Add a frozen `TrendStrengthEpisodeBlockerParams` dataclass (or equivalent fields on `BlockerRuleSpec`) validated when `component_id == "trend_strength_episode_blocker"`. Required fields: `timeframe`, `adx_period`, `min_adx_peak`, `peak_lookback_bars`, `max_bars_since_peak`, `min_current_adx`, `require_di_alignment_on_peak`, `block_on_opposite_di_flip`, `opposite_di_margin`, `require_ema_stack_direction`. Reject non-`base` timeframe in MVP. Types: `adx_period` / `peak_lookback_bars` / `max_bars_since_peak` as positive ints; `min_adx_peak` as float with `> 0`; `min_current_adx` and `opposite_di_margin` as non-negative floats.
+Add a frozen `TrendStrengthEpisodeBlockerParams` dataclass (or equivalent fields on `BlockerRuleSpec`) validated when `component_id == "trend_strength_episode_blocker"`. Required fields: `timeframe`, `adx_period`, `min_adx_peak`, `peak_lookback_bars`, `max_bars_since_peak`, `min_current_adx`, `require_di_alignment_on_peak`, `block_on_opposite_di_flip`, `opposite_di_margin`. Reject non-`base` timeframe in MVP. Legacy `require_ema_stack_direction` in YAML is accepted and ignored (direction component owns EMA stack). Types: `adx_period` / `peak_lookback_bars` / `max_bars_since_peak` as positive ints; `min_adx_peak` as float with `> 0`; `min_current_adx` and `opposite_di_margin` as non-negative floats.
 
 **Rationale:** mirrors RSI fields on `BlockerRuleSpec` for `rsi_lookback_extreme_blocker` without a second rule type in the tuple.
 
@@ -62,7 +62,7 @@ Add a frozen `TrendStrengthEpisodeBlockerParams` dataclass (or equivalent fields
 
 Scan backward from current bar `t` over `t - peak_lookback_bars + 1 .. t` (inclusive). A bar **qualifies** when `ADX >= min_adx_peak` and, if `require_di_alignment_on_peak`, side-aware DI holds. Use the **latest** qualifying index as `adx_peak_idx`. Compute `bars_since_adx_peak = t - adx_peak_idx`. Store that bar’s ADX/DI values in `adx_peak`, `di_plus_at_peak`, `di_minus_at_peak`.
 
-If no qualifying bar exists → block with `blocked_reason=no_recent_adx_peak`. If `bars_since_adx_peak > max_bars_since_peak` → `peak_too_old`. If `adx_current < min_current_adx` → `current_adx_too_low`. Opposite flip and EMA-stack checks per research doc.
+If no qualifying bar exists → block with `blocked_reason=no_recent_adx_peak`. If `bars_since_adx_peak > max_bars_since_peak` → `peak_too_old`. If `adx_current < min_current_adx` → `current_adx_too_low`. Opposite flip per research doc.
 
 **Rationale:** pullback entries need the freshest recent impulse confirmation, not the highest ADX print in the window and not a chart-local extremum.
 
@@ -88,11 +88,11 @@ Out of scope for this change; document for follow-up:
 
 **Alternative:** implement HTF ADX in MVP via ad-hoc resample in the blocker. Rejected—risks lookahead, inconsistent trace, and duplicate feature-plan logic.
 
-### Decision: EMA-stack direction reuses anchor stack columns from spec
+### Decision: EMA-stack direction is not duplicated in this blocker
 
-When `require_ema_stack_direction=true`, read fast/anchor/slow EMA columns already planned from `anchor_stack` (same as direction component). Long: `fast > anchor > slow`; short: `fast < anchor < slow` on the current bar.
+EMA ordering (`fast > anchor > slow` for long, etc.) is enforced by the **direction** component only. This blocker does not read anchor-stack EMA columns. Legacy `require_ema_stack_direction` in saved configs is ignored at runtime.
 
-**Rationale:** avoids duplicating period configuration; aligns blocker with trade side semantics.
+**Rationale:** avoids overlapping gates and duplicate params in Composer; matches `docs/research/19_trend_strength_episode_blocker.md`.
 
 ### Decision: blocker output shape matches existing trace contract
 
@@ -113,7 +113,7 @@ Extend the existing `component_counters[]` payload (written to variant JSON via 
 - `blocked_count` — bars where `allowed` is false
 - `blocked_reason_breakdown` — map of reason string → bar count on **blocked** bars only
 
-Reason keys (MVP): `no_recent_adx_peak`, `peak_too_old`, `current_adx_too_low`, `opposite_di_flip`, `ema_stack_direction_broken`, `indicator_not_ready` (ADX/DMI NaN or insufficient warmup). Sum of breakdown values MUST equal `blocked_count` when every blocked bar has exactly one reason.
+Reason keys (MVP): `no_recent_adx_peak`, `peak_too_old`, `current_adx_too_low`, `opposite_di_flip`, `indicator_not_ready` (ADX/DMI NaN or insufficient warmup). Sum of breakdown values MUST equal `blocked_count` when every blocked bar has exactly one reason.
 
 Implementation: derive breakdown from the same trace output used for Signal Trace (`blocked_reason` series), not a second independent evaluation path.
 
@@ -121,9 +121,17 @@ Implementation: derive breakdown from the same trace output used for Signal Trac
 
 **Alternative:** only generic `allowed_count` / `blocked_count` (already emitted for all blockers). Rejected—insufficient for parameter tuning.
 
-### Decision: optional report entry diagnostics (same change, lower priority task)
+### Decision: report entry diagnostics deferred
 
-When building closed-trade records, if trace/state exists at `entry_idx`, attach optional fields: `adx_peak`, `bars_since_adx_peak`, `blocked_reason` (should be empty/allow at entry), `trend_strength_active`. Do not bump `report_schema_version` unless required; prefer optional keys on existing v3/v4 payloads.
+Optional closed-trade fields at `entry_idx` (`entry_adx_peak`, `entry_bars_since_adx_peak`, etc.) were not implemented in this slice. MVP uses Signal Trace blocker internals and `component_counters`. See `specs/ema-pullback-report-diagnostics/spec.md` (deferred).
+
+## Follow-up slices (out of this archive)
+
+| Slice | Notes |
+|-------|--------|
+| Workbench Chart `component_events` | `entry_block` spans/sources on the candle chart (RSI-blocker pattern); no ADX indicator pane in MVP |
+| Closed-trade entry snapshots | Optional `entry_*` fields on trade records |
+| HTF ADX/DMI (`timeframe != base`) | v2 alignment contract |
 
 ## Risks / Trade-offs
 

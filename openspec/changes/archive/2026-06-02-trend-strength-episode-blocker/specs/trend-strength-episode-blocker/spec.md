@@ -20,7 +20,7 @@ The `ema_pullback` strategy family SHALL expose `trend_strength_episode_blocker`
 
 ### Requirement: Blocker configuration and validation
 
-The component SHALL accept params: `timeframe`, `adx_period`, `min_adx_peak`, `peak_lookback_bars`, `max_bars_since_peak`, `min_current_adx`, `require_di_alignment_on_peak`, `block_on_opposite_di_flip`, `opposite_di_margin`, and `require_ema_stack_direction`. For MVP, `timeframe` MUST be `base`. Type constraints:
+The component SHALL accept params: `timeframe`, `adx_period`, `min_adx_peak`, `peak_lookback_bars`, `max_bars_since_peak`, `min_current_adx`, `require_di_alignment_on_peak`, `block_on_opposite_di_flip`, and `opposite_di_margin`. For MVP, `timeframe` MUST be `base`. Legacy configs MAY include `require_ema_stack_direction`; the loader SHALL accept the key and MUST ignore it at runtime (EMA stack direction is enforced by the direction component only — see `docs/research/19_trend_strength_episode_blocker.md`). Type constraints:
 
 - `adx_period`, `peak_lookback_bars`, `max_bars_since_peak`: positive integers
 - `min_adx_peak`: positive float (ADX threshold; MUST be `> 0`, not `>= 0`)
@@ -157,28 +157,9 @@ When `block_on_opposite_di_flip` is true, the blocker SHALL block long entries w
 - **WHEN** peak and ADX floor conditions pass
 - **THEN** opposite flip does not by itself set `blocked_reason=opposite_di_flip`
 
-### Requirement: Optional EMA stack direction guard
-
-When `require_ema_stack_direction` is true, the blocker SHALL require the strategy `anchor_stack` EMA ordering on the current bar: long `fast > anchor > slow`, short `fast < anchor < slow`. Violation MUST set `blocked_reason=ema_stack_direction_broken` and `ema_stack_direction_ok` false.
-
-#### Scenario: Long allows when stack intact
-
-- **GIVEN** `require_ema_stack_direction` is true
-- **AND** fast, anchor, slow EMAs satisfy `fast > anchor > slow` on bar `t`
-- **WHEN** other episode conditions pass for long
-- **THEN** `ema_stack_direction_ok` is true
-
-#### Scenario: Long blocks when stack broken
-
-- **GIVEN** `require_ema_stack_direction` is true
-- **AND** fast EMA is not above anchor on bar `t`
-- **WHEN** long side is evaluated
-- **THEN** `blocked_reason` is `ema_stack_direction_broken`
-- **AND** `allowed` is false
-
 ### Requirement: Episode active flag and allow mask
 
-The blocker SHALL expose `trend_strength_active` true on bars where `allowed` is true due to this component (all episode conditions satisfied). The runtime function SHALL return `allowed` as a boolean `pd.Series` aligned to the market index. A companion trace function SHALL return diagnostics including at minimum: `trend_strength_active`, `blocked_reason`, `adx_current`, `adx_peak`, `adx_peak_idx`, `bars_since_adx_peak`, `di_plus_current`, `di_minus_current`, `di_plus_at_peak`, `di_minus_at_peak`, `di_alignment_at_peak`, `opposite_di_flip`, `ema_stack_direction_ok`.
+The blocker SHALL expose `trend_strength_active` true on bars where `allowed` is true due to this component (all episode conditions satisfied). The runtime function SHALL return `allowed` as a boolean `pd.Series` aligned to the market index. A companion trace function SHALL return diagnostics including at minimum: `trend_strength_active`, `blocked_reason`, `adx_current`, `adx_peak`, `adx_peak_idx`, `bars_since_adx_peak`, `di_plus_current`, `di_minus_current`, `di_plus_at_peak`, `di_minus_at_peak`, `di_alignment_at_peak`, `opposite_di_flip`.
 
 #### Scenario: Allowed bar has empty blocked reason
 
@@ -205,7 +186,6 @@ For each enabled trade side, when `trend_strength_episode_blocker` is configured
 - `peak_too_old`
 - `current_adx_too_low`
 - `opposite_di_flip`
-- `ema_stack_direction_broken`
 - `indicator_not_ready` (ADX/DMI not finite or within indicator warmup)
 
 The sum of breakdown counts MUST equal `blocked_count` when each blocked bar has exactly one reason. Other blocker components MUST NOT be required to emit `blocked_reason_breakdown`.

@@ -370,6 +370,14 @@ blocked_reason_breakdown            # = intrinsic (для sweep)
 
 ---
 
+## Workbench Chart (вне MVP этого blocker)
+
+- **Signal Trace / Bar Inspector:** per-bar diagnostics (`adx_current`, `adx_peak`, `blocked_reason`, …) в `internals.blockers[<instance_id>]`; агрегат `blockers_ok` в lanes под свечами.
+- **Маркеры на свечах (`component_events`, role `entry_block`):** пока только для `rsi_lookback_extreme_blocker`; для `trend_strength_episode_blocker` — отдельный follow-up slice.
+- **Отдельная панель ADX/DI под свечами:** не реализована.
+
+---
+
 ## Что смотреть в результатах
 
 - trades count;
