@@ -41,4 +41,4 @@
 
 - [x] 7.1 Run targeted pytest for new and affected modules
 - [x] 7.2 Optional: add experiment YAML example under `research/experiments/configs/ema_pullback/`
-- [ ] 7.3 Archive change via `/opsx:archive` after review
+- [x] 7.3 Archive change via `/opsx:archive` after review
