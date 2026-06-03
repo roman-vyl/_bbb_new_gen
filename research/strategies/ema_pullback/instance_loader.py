@@ -118,9 +118,9 @@ def load_ema_pullback_instance(instance: Mapping[str, Any]) -> EmaPullbackStrate
 
     market = _parse_market(payload["market"])
     strategy = _parse_strategy(payload["strategy"])
-    periods = _parse_anchor_stack(strategy["anchor_stack"])
+    anchor_stack = _parse_anchor_stack(strategy["anchor_stack"])
     direction = _parse_direction(strategy["direction"])
-    setups = _parse_setups(strategy["setups"])
+    setups = _parse_setups(strategy["setups"], anchor_stack=anchor_stack)
     trigger = _parse_trigger(strategy["trigger"])
     blockers = _parse_blockers(strategy["blockers"])
     risk = _parse_risk(strategy["risk"])
@@ -138,11 +138,11 @@ def load_ema_pullback_instance(instance: Mapping[str, Any]) -> EmaPullbackStrate
         variant=variant if variant else None,
         symbol=market["symbol"],
         base_timeframe=market["base_timeframe"],
-        fast_period=periods["fast"],
-        anchor_period=periods["anchor"],
-        slow_period=periods["slow"],
-        anchor_source=periods["source"],
-        anchor_timeframe=periods["timeframe"],
+        fast_period=anchor_stack["fast"],
+        anchor_period=anchor_stack["anchor"],
+        slow_period=anchor_stack["slow"],
+        anchor_source=anchor_stack["source"],
+        anchor_timeframe=anchor_stack["timeframe"],
         enabled_sides=_parse_trade_sides(strategy["trade_sides"]),
         components=components,
         setups=setups,
@@ -476,13 +476,25 @@ def _migrate_legacy_setup_to_setups(strategy: dict[str, Any]) -> None:
     strategy["setups"] = [migrated]
 
 
-def _parse_setups(value: Any) -> tuple[SetupRuleSpec, ...]:
+def _parse_setups(
+    value: Any,
+    *,
+    anchor_stack: Mapping[str, Any],
+) -> tuple[SetupRuleSpec, ...]:
     if not isinstance(value, list) or not value:
         raise EmaPullbackInstanceValidationError("setups must be a non-empty list")
-    return tuple(_parse_setup_rule(index, item) for index, item in enumerate(value))
+    return tuple(
+        _parse_setup_rule(index, item, anchor_stack=anchor_stack)
+        for index, item in enumerate(value)
+    )
 
 
-def _parse_setup_rule(index: int, value: Any) -> SetupRuleSpec:
+def _parse_setup_rule(
+    index: int,
+    value: Any,
+    *,
+    anchor_stack: Mapping[str, Any],
+) -> SetupRuleSpec:
     path = f"setups[{index}]"
     payload = _component_mapping(
         path,
@@ -532,12 +544,15 @@ def _parse_setup_rule(index: int, value: Any) -> SetupRuleSpec:
         params_raw = payload.get("params", {})
         params = _require_mapping(f"{path}.params", params_raw) if params_raw else {}
         merged = {**payload, **params}
+        _validate_legacy_bounce_setup_emas_match_anchor_stack(
+            merged,
+            anchor_stack=anchor_stack,
+            instance_id=instance_id,
+            path=path,
+        )
         raw_touch_mode = str(merged.get("raw_touch_mode", "range_cross"))
         try:
             setup_spec = builders.ema_bounce_counter_setup_spec(
-                fast_ema=_optional_positive_int(merged, "fast_ema", default=50),
-                anchor_ema=_optional_positive_int(merged, "anchor_ema", default=200),
-                slow_ema=_optional_positive_int(merged, "slow_ema", default=500),
                 max_bounces=_optional_positive_int(merged, "max_bounces", default=3),
                 raw_touch_mode=raw_touch_mode,
                 touch_lookback_bars=_optional_positive_int(
@@ -792,6 +807,72 @@ def _parse_exit(index: int, value: Any, *, path: str = "exits") -> ExitRuleSpec:
             confirm_bars=confirm_bars,
         )
     raise EmaPullbackInstanceValidationError(f"unsupported exit component_id {component_id!r}")
+
+
+def _anchor_stack_ema_spec(anchor_stack: Mapping[str, Any], *, leg: str) -> EmaSpec:
+    period_key = {"fast": "fast", "anchor": "anchor", "slow": "slow"}[leg]
+    return builders.ema(
+        int(anchor_stack[period_key]),
+        timeframe=str(anchor_stack["timeframe"]),
+        source=str(anchor_stack["source"]),
+    )
+
+
+def _optional_legacy_bounce_setup_ema(
+    merged: Mapping[str, Any],
+    key: str,
+    *,
+    path: str,
+) -> EmaSpec | None:
+    if key not in merged:
+        return None
+    raw = merged[key]
+    if isinstance(raw, bool):
+        raise EmaPullbackInstanceValidationError(f"{path}.{key} must be an EMA period or object")
+    if isinstance(raw, int):
+        if raw <= 0:
+            raise EmaPullbackInstanceValidationError(f"{path}.{key} must be > 0")
+        return builders.ema(raw, timeframe="base", source="close")
+    ema_payload = _require_mapping(f"{path}.{key}", raw)
+    _reject_unknown_fields(f"{path}.{key}", ema_payload, {"timeframe", "period", "source"})
+    source = _optional_non_empty_str(ema_payload, "source", default="close")
+    if source != "close":
+        raise EmaPullbackInstanceValidationError(f"{path}.{key}.source must be 'close'")
+    return builders.ema(
+        _require_positive_int(ema_payload, "period"),
+        timeframe=_optional_non_empty_str(ema_payload, "timeframe", default="base"),
+        source=source,
+    )
+
+
+def _validate_legacy_bounce_setup_emas_match_anchor_stack(
+    merged: Mapping[str, Any],
+    *,
+    anchor_stack: Mapping[str, Any],
+    instance_id: str,
+    path: str,
+) -> None:
+    checks = (
+        ("fast_ema", "fast"),
+        ("anchor_ema", "anchor"),
+        ("slow_ema", "slow"),
+    )
+    mismatches: list[str] = []
+    for setup_key, leg in checks:
+        legacy = _optional_legacy_bounce_setup_ema(merged, setup_key, path=path)
+        if legacy is None:
+            continue
+        expected = _anchor_stack_ema_spec(anchor_stack, leg=leg)
+        if legacy != expected:
+            mismatches.append(
+                f"{setup_key}={legacy.period}@{legacy.timeframe} "
+                f"(expected strategy.anchor_stack {leg}={expected.period}@{expected.timeframe})"
+            )
+    if mismatches:
+        raise EmaPullbackInstanceValidationError(
+            f"{path} (instance_id={instance_id!r}) legacy setup EMA params do not match "
+            f"strategy.anchor_stack: {'; '.join(mismatches)}"
+        )
 
 
 def _parse_ema_block(payload: Mapping[str, Any], *, key: str, path: str) -> EmaSpec:

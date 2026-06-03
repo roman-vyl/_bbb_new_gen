@@ -534,14 +534,24 @@ def _collect_rsi_exit_rules(spec: EmaPullbackStrategySpec) -> list[tuple[str, Ex
     return out
 
 
-def _setup_params_meta_for_rule(rule: SetupRuleSpec) -> dict[str, Any]:
+def _anchor_stack_period_meta(spec: EmaPullbackStrategySpec) -> dict[str, int]:
+    stack = spec.anchor_stack
+    return {
+        "fast_ema": stack.fast.period,
+        "anchor_ema": stack.anchor.period,
+        "slow_ema": stack.slow.period,
+    }
+
+
+def _setup_params_meta_for_rule(
+    rule: SetupRuleSpec,
+    spec: EmaPullbackStrategySpec,
+) -> dict[str, Any]:
     if isinstance(rule.params, EmaBounceCounterSetupSpec):
         return {
             "instance_id": rule.instance_id,
             "component_id": rule.component_id,
-            "fast_ema": rule.params.fast_ema.period,
-            "anchor_ema": rule.params.anchor_ema.period,
-            "slow_ema": rule.params.slow_ema.period,
+            **_anchor_stack_period_meta(spec),
             "max_bounces": rule.params.max_bounces,
             "raw_touch_mode": rule.params.raw_touch_mode,
             "touch_lookback_bars": rule.params.touch_lookback_bars,
@@ -569,7 +579,7 @@ def _setup_params_meta_for_rule(rule: SetupRuleSpec) -> dict[str, Any]:
 
 
 def _setup_params_meta(spec: EmaPullbackStrategySpec) -> list[dict[str, Any]]:
-    return [_setup_params_meta_for_rule(rule) for rule in spec.setups]
+    return [_setup_params_meta_for_rule(rule, spec) for rule in spec.setups]
 
 
 def _rsi_blocker_threshold(rule: BlockerRuleSpec, side: TradeSide) -> float | None:
@@ -598,11 +608,13 @@ def _ema_bounce_metadata(
     rule: SetupRuleSpec,
     trace: dict[str, pd.Series],
     idx: int,
+    spec: EmaPullbackStrategySpec,
     *,
     event_name: str,
 ) -> dict[str, Any]:
     if not isinstance(rule.params, EmaBounceCounterSetupSpec):
         return {"event_name": event_name}
+    periods = _anchor_stack_period_meta(spec)
     return {
         "event_name": event_name,
         "trend_active": _trace_bool_at(trace, "trend_active", idx),
@@ -618,9 +630,9 @@ def _ema_bounce_metadata(
         "effective_bounce_number": _trace_int_at(trace, "effective_bounce_number", idx),
         "max_bounces": int(rule.params.max_bounces),
         "price_side_of_anchor": str(trace["price_side_of_anchor"].iloc[idx]),
-        "fast_ema": int(rule.params.fast_ema.period),
-        "anchor_ema": int(rule.params.anchor_ema.period),
-        "slow_ema": int(rule.params.slow_ema.period),
+        "fast_ema": periods["fast_ema"],
+        "anchor_ema": periods["anchor_ema"],
+        "slow_ema": periods["slow_ema"],
     }
 
 
@@ -674,6 +686,7 @@ def _append_ema_bounce_counter_events(
                     rule,
                     trace,
                     start_idx,
+                    spec,
                     event_name="bounce_opportunity_start",
                 )
                 events.append(
@@ -705,7 +718,9 @@ def _append_ema_bounce_counter_events(
                     ("span_start", start_idx, "pending_bounce_start"),
                     ("span_end", end_idx, "pending_bounce_end"),
                 ):
-                    metadata = _ema_bounce_metadata(rule, trace, idx, event_name=event_name)
+                    metadata = _ema_bounce_metadata(
+                        rule, trace, idx, spec, event_name=event_name
+                    )
                     events.append(
                         ComponentEventData(
                             time=times[idx],
@@ -738,7 +753,9 @@ def _append_ema_bounce_counter_events(
                 for idx, active in enumerate(trace[key].fillna(False).astype(bool).to_list()):
                     if not active:
                         continue
-                    metadata = _ema_bounce_metadata(rule, trace, idx, event_name=event_name)
+                    metadata = _ema_bounce_metadata(
+                        rule, trace, idx, spec, event_name=event_name
+                    )
                     events.append(
                         ComponentEventData(
                             time=times[idx],

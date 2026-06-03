@@ -32,7 +32,7 @@ def _ohlcv(periods: int = 40) -> pd.DataFrame:
 
 
 def test_load_dual_setup_stack() -> None:
-    instance = _instance("dual_setup")
+    instance = _instance("dual_setup", fast=50, anchor=200, slow=500)
     strategy = instance["strategy"]
     assert isinstance(strategy, dict)
     strategy["setups"] = [
@@ -98,3 +98,80 @@ def test_dual_setup_and_gate_blocks_when_one_setup_denies() -> None:
     assert "untouched_anchor" in trace.long.internals["setups"]
     assert "bounce_counter" in trace.long.internals["setups"]
     assert not any(signals.entries.fillna(False).astype(bool))
+
+
+def test_bounce_and_width_setup_and_gate() -> None:
+    from dataclasses import replace
+
+    from research.strategies.ema_pullback.component_builders import (
+        anchor_stack_width_setup_spec,
+        ema_bounce_counter_setup_spec,
+        setup_rule,
+    )
+    from research.strategies.ema_pullback.components.setup import (
+        anchor_stack_width_setup_trace,
+        ema_bounce_counter_setup_trace,
+    )
+    from research.strategies.ema_pullback.spec_instances import make_ema_pullback_strategy_spec
+
+    spec = replace(
+        make_ema_pullback_strategy_spec(
+            enabled_sides=("long",),
+            fast_period=50,
+            anchor_period=200,
+            slow_period=500,
+        ),
+        setups=(
+            setup_rule(
+                instance_id="bounce_counter",
+                component_id="ema_bounce_counter_setup",
+                params=ema_bounce_counter_setup_spec(max_bounces=3),
+            ),
+            setup_rule(
+                instance_id="anchor_stack_width",
+                component_id="anchor_stack_width_setup",
+                params=anchor_stack_width_setup_spec(
+                    min_current_width_atr=0.01,
+                    min_recent_width_atr=0.01,
+                    width_lookback_bars=3,
+                ),
+            ),
+        ),
+    )
+    plan = build_feature_plan_from_strategy_spec(spec)
+    df = add_feature_columns_from_plan(_ohlcv(periods=12), plan)
+    bounce_cols = plan.setup_columns_for("bounce_counter")
+    width_cols = plan.setup_columns_for("anchor_stack_width")
+    df[bounce_cols["fast"]] = 110.0
+    df[bounce_cols["anchor"]] = 100.0
+    df[bounce_cols["slow"]] = 90.0
+    df[width_cols["fast"]] = df[bounce_cols["fast"]]
+    df[width_cols["anchor"]] = df[bounce_cols["anchor"]]
+    df[width_cols["slow"]] = df[bounce_cols["slow"]]
+    df[width_cols["atr"]] = 1.0
+
+    bounce_trace = ema_bounce_counter_setup_trace(
+        df,
+        bounce_cols["fast"],
+        bounce_cols["anchor"],
+        bounce_cols["slow"],
+        max_bounces=3,
+        touch_lookback_bars=10,
+        side="long",
+    )
+    width_trace = anchor_stack_width_setup_trace(
+        df,
+        width_cols["fast"],
+        width_cols["anchor"],
+        width_cols["slow"],
+        width_cols["atr"],
+        min_current_width_atr=0.01,
+        min_recent_width_atr=0.01,
+        width_lookback_bars=3,
+    )
+    combined = bounce_trace["setup_allowed"] & width_trace["setup_allowed"]
+    assert combined.tolist() == (
+        bounce_trace["setup_allowed"] & width_trace["setup_allowed"]
+    ).tolist()
+    if bounce_trace["setup_allowed"].any() and not width_trace["setup_allowed"].any():
+        assert not combined.any()

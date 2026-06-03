@@ -102,16 +102,13 @@ def test_component_catalog_returns_ema_pullback_components(client: TestClient) -
     assert params["active_bars"]["default"] == 3
     bounce_params = setup_components[1]["params_schema"]
     assert set(bounce_params) == {
-        "fast_ema",
-        "anchor_ema",
-        "slow_ema",
         "max_bounces",
         "raw_touch_mode",
         "touch_lookback_bars",
         "trend_start_confirmation_bars",
         "trend_break_confirmation_bars",
     }
-    assert bounce_params["fast_ema"]["default"] == 50
+    assert "anchor_stack" in setup_components[1]["description"]
     assert bounce_params["raw_touch_mode"]["enum"] == ["range_cross"]
     assert setup_components[1].get("params_storage") == "nested"
     assert all(component.get("supports_context_consumption") is True for component in setup_components)

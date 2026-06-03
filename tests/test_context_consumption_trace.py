@@ -159,9 +159,6 @@ def test_setup_component_events_persist_when_context_gate_blocks_final_mask() ->
         instance_id="bounce_counter",
         component_id="ema_bounce_counter_setup",
         params=ema_bounce_counter_setup_spec(
-            fast_ema=50,
-            anchor_ema=200,
-            slow_ema=500,
             max_bounces=3,
             touch_lookback_bars=3,
         ),
