@@ -2,6 +2,10 @@ import type { SeriesMarker, Time } from "lightweight-charts";
 
 import type { ComponentEvent, ComponentEventRole, ComponentEventType } from "@/api/types";
 import {
+  formatAnchorStackWidthEventLabel,
+  formatAnchorStackWidthEventTooltip,
+} from "@/features/chart/anchorStackWidthComponentEventPresentation";
+import {
   formatEmaBounceCounterEventLabel,
   formatEmaBounceCounterEventTooltip,
 } from "@/features/chart/emaBounceCounterComponentEventPresentation";
@@ -49,7 +53,11 @@ function styleForEvent(
 }
 
 function componentEventDisplayLabel(event: ComponentEvent): string {
-  return formatEmaBounceCounterEventLabel(event) ?? event.label;
+  return (
+    formatAnchorStackWidthEventLabel(event) ??
+    formatEmaBounceCounterEventLabel(event) ??
+    event.label
+  );
 }
 
 export function buildComponentEventChartMarkers(
@@ -114,7 +122,8 @@ export function buildComponentEventsForView(
 }
 
 export function componentEventTooltip(event: ComponentEvent): string {
-  const formatted = formatEmaBounceCounterEventTooltip(event);
+  const formatted =
+    formatAnchorStackWidthEventTooltip(event) ?? formatEmaBounceCounterEventTooltip(event);
   if (formatted) {
     return formatted;
   }

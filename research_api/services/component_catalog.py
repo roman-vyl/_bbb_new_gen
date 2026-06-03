@@ -203,6 +203,37 @@ def get_component_catalog(*, family: str = "ema_pullback") -> ComponentCatalog:
             context_consumption_policies=_SETUP_CONTEXT_POLICIES,
         ),
         ComponentSchema(
+            component_id="anchor_stack_width_setup",
+            role="setup",
+            label="Anchor stack width setup",
+            description=(
+                "Checks whether the anchor EMA stack is wide enough for an EMA-pullback "
+                "setup. Does not count touches or create an entry trigger; verifies fast "
+                "and slow EMA are sufficiently separated relative to ATR. Current width "
+                "checks the stack on the entry bar; recent width checks expansion within "
+                "the lookback window."
+            ),
+            params_storage="nested",
+            params_schema={
+                "atr_timeframe": ParamFieldSchema(
+                    type="string",
+                    label="ATR timeframe",
+                    enum=["base"],
+                    default="base",
+                ),
+                "atr_period": _int_param("ATR period", default=14),
+                "min_current_width_atr": _num_param(
+                    "Min current width (ATR)", default=2.0
+                ),
+                "min_recent_width_atr": _num_param(
+                    "Min recent width (ATR)", default=4.0
+                ),
+                "width_lookback_bars": _int_param("Width lookback bars", default=80),
+            },
+            supports_context_consumption=True,
+            context_consumption_policies=_SETUP_CONTEXT_POLICIES,
+        ),
+        ComponentSchema(
             component_id="reclaim_anchor",
             role="trigger",
             label="Reclaim anchor",

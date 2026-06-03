@@ -248,7 +248,33 @@ class EmaBounceCounterSetupSpec:
             raise ValueError("setup.trend_break_confirmation_bars must be > 0")
 
 
-SetupSpec = UntouchedAnchorSetupSpec | EmaBounceCounterSetupSpec
+ANCHOR_STACK_WIDTH_SETUP_COMPONENT = "anchor_stack_width_setup"
+
+
+@dataclass(frozen=True)
+class AnchorStackWidthSetupSpec:
+    atr_timeframe: str = "base"
+    atr_period: int = 14
+    min_current_width_atr: float = 2.0
+    min_recent_width_atr: float = 4.0
+    width_lookback_bars: int = 80
+
+    def __post_init__(self) -> None:
+        if self.atr_timeframe.strip() != "base":
+            raise ValueError("anchor_stack_width_setup MVP requires atr_timeframe='base'")
+        if self.atr_period <= 0:
+            raise ValueError("atr_period must be > 0")
+        if self.min_current_width_atr <= 0:
+            raise ValueError("min_current_width_atr must be > 0")
+        if self.min_recent_width_atr <= 0:
+            raise ValueError("min_recent_width_atr must be > 0")
+        if self.width_lookback_bars <= 0:
+            raise ValueError("width_lookback_bars must be > 0")
+
+
+SetupSpec = (
+    UntouchedAnchorSetupSpec | EmaBounceCounterSetupSpec | AnchorStackWidthSetupSpec
+)
 
 
 @dataclass(frozen=True)
@@ -274,6 +300,12 @@ class SetupRuleSpec:
         ):
             raise ValueError(
                 "setup params must be UntouchedAnchorSetupSpec for untouched_anchor_setup"
+            )
+        if self.component_id == ANCHOR_STACK_WIDTH_SETUP_COMPONENT and not isinstance(
+            self.params, AnchorStackWidthSetupSpec
+        ):
+            raise ValueError(
+                "setup params must be AnchorStackWidthSetupSpec for anchor_stack_width_setup"
             )
         from research.strategies.ema_pullback.context.consumption_validation import (
             validate_setup_context_consumption,

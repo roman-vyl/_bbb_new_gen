@@ -65,6 +65,36 @@ const SETUP_CATALOG: ComponentCatalog = {
         },
       },
     },
+    {
+      component_id: "anchor_stack_width_setup",
+      role: "setup",
+      label: "Anchor stack width setup",
+      params_storage: "nested",
+      params_schema: {
+        atr_timeframe: {
+          type: "string",
+          label: "ATR timeframe",
+          enum: ["base"],
+          default: "base",
+        },
+        atr_period: { type: "integer", label: "ATR period", default: 14 },
+        min_current_width_atr: {
+          type: "number",
+          label: "Min current width ATR",
+          default: 2,
+        },
+        min_recent_width_atr: {
+          type: "number",
+          label: "Min recent width ATR",
+          default: 4,
+        },
+        width_lookback_bars: {
+          type: "integer",
+          label: "Width lookback bars",
+          default: 80,
+        },
+      },
+    },
   ],
   context_providers: [],
   context_consumption_roles: [],
@@ -107,6 +137,7 @@ describe("ListComponentSection setup catalog", () => {
     expect(options.map((o) => o.component_id)).toEqual([
       "untouched_anchor_setup",
       "ema_bounce_counter_setup",
+      "anchor_stack_width_setup",
     ]);
 
     render(
@@ -253,6 +284,30 @@ describe("setup component slot normalization", () => {
       active_bars: 5,
     };
     expect(normalizeComponentSlotForApi(slot, untouchedSchema)).toEqual(slot);
+  });
+
+  it("writes anchor_stack_width_setup nested params on save", () => {
+    const widthSchema = findComponentSchema(SETUP_CATALOG, "anchor_stack_width_setup");
+    const editingSlot: JsonObject = {
+      instance_id: "anchor_stack_width",
+      component_id: "anchor_stack_width_setup",
+      atr_timeframe: "base",
+      atr_period: 14,
+      min_current_width_atr: 2.5,
+      min_recent_width_atr: 4.5,
+      width_lookback_bars: 80,
+    };
+    const apiSlot = normalizeComponentSlotForApi(editingSlot, widthSchema);
+    expect(apiSlot.params).toEqual({
+      atr_timeframe: "base",
+      atr_period: 14,
+      min_current_width_atr: 2.5,
+      min_recent_width_atr: 4.5,
+      width_lookback_bars: 80,
+    });
+    const loaded = normalizeComponentSlotForEditing(apiSlot, widthSchema);
+    expect(loaded.min_current_width_atr).toBe(2.5);
+    expect(loaded.width_lookback_bars).toBe(80);
   });
 
   it("surfaces backend validation errors under setups path", () => {

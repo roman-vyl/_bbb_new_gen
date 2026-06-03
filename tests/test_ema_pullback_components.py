@@ -53,6 +53,7 @@ def test_registry_resolves_new_stage10_components() -> None:
     assert callable(resolve_component("blockers", "rsi_lookback_extreme_blocker").func)
     assert callable(resolve_component("setup", "untouched_anchor_setup").func)
     assert callable(resolve_component("setup", "ema_bounce_counter_setup").func)
+    assert callable(resolve_component("setup", "anchor_stack_width_setup").func)
     assert callable(resolve_component("trigger", "reclaim_anchor").func)
     assert callable(resolve_component("trigger", "strong_reclaim_anchor").func)
     assert callable(resolve_component("trigger", "touch_anchor").func)
