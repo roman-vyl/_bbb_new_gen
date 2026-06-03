@@ -30,6 +30,8 @@ from research.strategies.ema_pullback.spec import (
     StrongReclaimTriggerSpec,
     RsiFeatureSpec,
     TradeManagementSpec,
+    TrendStrengthEpisodeBlockerParams,
+    TREND_STRENGTH_EPISODE_BLOCKER_COMPONENT,
     empty_exit_management,
     TradeSideSpec,
     TriggerSpec,
@@ -119,14 +121,40 @@ def _parse_setup_context_consumption(value: Any) -> ContextConsumptionSpec | Non
     )
 
 
+def _trend_strength_params(payload: Any) -> TrendStrengthEpisodeBlockerParams | None:
+    if payload is None:
+        return None
+    ts = _require_mapping("trend_strength", payload)
+    return TrendStrengthEpisodeBlockerParams(
+        timeframe=str(ts.get("timeframe", "base")),
+        adx_period=int(ts.get("adx_period", 14)),
+        min_adx_peak=float(ts.get("min_adx_peak", 25.0)),
+        peak_lookback_bars=int(ts.get("peak_lookback_bars", 60)),
+        max_bars_since_peak=int(ts.get("max_bars_since_peak", 40)),
+        min_current_adx=float(ts.get("min_current_adx", 12.0)),
+        require_di_alignment_on_peak=bool(
+            ts.get("require_di_alignment_on_peak", True)
+        ),
+        block_on_opposite_di_flip=bool(ts.get("block_on_opposite_di_flip", True)),
+        opposite_di_margin=float(ts.get("opposite_di_margin", 5.0)),
+    )
+
+
 def _blocker_rule(payload: Mapping[str, Any]) -> BlockerRuleSpec:
+    component_id = str(payload["component_id"])
+    trend_strength = (
+        _trend_strength_params(payload.get("trend_strength"))
+        if component_id == TREND_STRENGTH_EPISODE_BLOCKER_COMPONENT
+        else None
+    )
     return BlockerRuleSpec(
         instance_id=str(payload["instance_id"]),
-        component_id=str(payload["component_id"]),
+        component_id=component_id,
         rsi=_rsi_spec(payload.get("rsi")),
         lookback=int(payload.get("lookback", 20)),
         long_block_above=payload.get("long_block_above"),
         short_block_below=payload.get("short_block_below"),
+        trend_strength=trend_strength,
         context_consumption=_parse_blocker_context_consumption(payload.get("context_consumption")),
     )
 

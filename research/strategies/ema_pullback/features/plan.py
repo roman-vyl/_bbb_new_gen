@@ -11,6 +11,8 @@ from research.strategies.ema_pullback.spec import (
     EmaSpec,
     ExitRuleSpec,
     SetupRuleSpec,
+    TREND_STRENGTH_EPISODE_BLOCKER_COMPONENT,
+    TrendStrengthEpisodeBlockerParams,
 )
 
 
@@ -25,8 +27,10 @@ class PlannedFeature:
     multiplier: float | None
 
     def __post_init__(self) -> None:
-        if self.kind not in {"ema", "atr", "atr_distance", "rsi"}:
-            raise ValueError("planned feature kind must be ema|atr|atr_distance|rsi")
+        if self.kind not in {"ema", "atr", "atr_distance", "rsi", "adx", "di_plus", "di_minus"}:
+            raise ValueError(
+                "planned feature kind must be ema|atr|atr_distance|rsi|adx|di_plus|di_minus"
+            )
 
 
 @dataclass(frozen=True)
@@ -35,6 +39,7 @@ class FeaturePlan:
     anchor_columns: dict[str, str]
     exit_distance_columns: dict[str, str]
     rsi_columns: dict[tuple[str, int], str]
+    adx_dmi_columns: dict[tuple[str, int], dict[str, str]] = field(default_factory=dict)
     setup_columns_by_instance_id: dict[str, dict[str, str]] = field(default_factory=dict)
     ema_columns: dict[tuple[str, int], str] = field(default_factory=dict)
     htf_context_columns_by_ref: dict[str, dict[str, str]] = field(default_factory=dict)
@@ -65,6 +70,15 @@ class FeaturePlan:
             raise KeyError(f"EMA column not planned for timeframe={ema.timeframe!r} period={ema.period}")
         return self.ema_columns[key]
 
+    def adx_dmi_columns_for(self, params: TrendStrengthEpisodeBlockerParams) -> dict[str, str]:
+        key = (params.timeframe, params.adx_period)
+        if key not in self.adx_dmi_columns:
+            raise KeyError(
+                f"ADX/DMI columns not planned for timeframe={params.timeframe!r} "
+                f"period={params.adx_period}"
+            )
+        return self.adx_dmi_columns[key]
+
 
 def _ema_feature_id(timeframe: str, period: int) -> str:
     return f"ema_close_{timeframe}_{period}"
@@ -76,6 +90,48 @@ def _atr_feature_id(timeframe: str, period: int) -> str:
 
 def _rsi_feature_id(timeframe: str, period: int) -> str:
     return f"rsi_close_{timeframe}_{period}"
+
+
+def _adx_feature_id(timeframe: str, period: int) -> str:
+    return f"adx_close_{timeframe}_{period}"
+
+
+def _di_plus_feature_id(timeframe: str, period: int) -> str:
+    return f"di_plus_close_{timeframe}_{period}"
+
+
+def _di_minus_feature_id(timeframe: str, period: int) -> str:
+    return f"di_minus_close_{timeframe}_{period}"
+
+
+def _add_adx_dmi_features(
+    add: Callable[[PlannedFeature], None],
+    params: TrendStrengthEpisodeBlockerParams,
+    adx_dmi_columns: dict[tuple[str, int], dict[str, str]],
+) -> None:
+    tf = params.timeframe
+    period = params.adx_period
+    for kind, feature_id in (
+        ("adx", _adx_feature_id(tf, period)),
+        ("di_plus", _di_plus_feature_id(tf, period)),
+        ("di_minus", _di_minus_feature_id(tf, period)),
+    ):
+        add(
+            PlannedFeature(
+                feature_id=feature_id,
+                kind=kind,
+                source="close",
+                timeframe=tf,
+                period=period,
+                base_feature_id=None,
+                multiplier=None,
+            )
+        )
+    adx_dmi_columns[(tf, period)] = {
+        "adx": _adx_feature_id(tf, period),
+        "di_plus": _di_plus_feature_id(tf, period),
+        "di_minus": _di_minus_feature_id(tf, period),
+    }
 
 
 def _multiplier_token(multiplier: float) -> str:
@@ -222,10 +278,16 @@ def build_feature_plan_from_strategy_spec(spec: EmaPullbackStrategySpec) -> Feat
         exit_columns.setdefault(rule.exit_kind, distance_id)
 
     rsi_columns: dict[tuple[str, int], str] = {}
+    adx_dmi_columns: dict[tuple[str, int], dict[str, str]] = {}
     rsi_specs = []
     for rule in spec.components.blockers:
         if rule.rsi is not None:
             rsi_specs.append(rule.rsi)
+        if (
+            rule.component_id == TREND_STRENGTH_EPISODE_BLOCKER_COMPONENT
+            and rule.trend_strength is not None
+        ):
+            _add_adx_dmi_features(add, rule.trend_strength, adx_dmi_columns)
     for rule in all_exit_rules:
         if rule.rsi is not None:
             rsi_specs.append(rule.rsi)
@@ -258,5 +320,6 @@ def build_feature_plan_from_strategy_spec(spec: EmaPullbackStrategySpec) -> Feat
         htf_context_columns_by_ref=htf_context_columns_by_ref,
         exit_distance_columns=exit_columns,
         rsi_columns=rsi_columns,
+        adx_dmi_columns=adx_dmi_columns,
         ema_columns=ema_columns,
     )

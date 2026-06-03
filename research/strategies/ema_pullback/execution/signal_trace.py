@@ -11,6 +11,7 @@ from research.strategies.ema_pullback.components.blockers import (
     counter_candle_blocker_trace,
     no_blockers_trace,
     rsi_lookback_extreme_blocker_trace,
+    trend_strength_episode_blocker_trace,
 )
 from research.strategies.ema_pullback.components.direction import ema_anchor_stack_trend_trace
 from research.strategies.ema_pullback.components.registry import (
@@ -18,6 +19,7 @@ from research.strategies.ema_pullback.components.registry import (
     EMA_BOUNCE_COUNTER_SETUP_COMPONENT,
     NO_BLOCKERS_COMPONENT,
     RSI_LOOKBACK_EXTREME_BLOCKER_COMPONENT,
+    TREND_STRENGTH_EPISODE_BLOCKER_COMPONENT,
     RSI_SIGNAL_EXIT_COMPONENT,
     TOUCH_ANCHOR_COMPONENT,
     UNTOUCHED_ANCHOR_SETUP_COMPONENT,
@@ -78,6 +80,7 @@ _BLOCKER_TRACE: dict[str, Callable[..., dict[str, pd.Series]]] = {
     NO_BLOCKERS_COMPONENT: no_blockers_trace,
     COUNTER_CANDLE_BLOCKER_COMPONENT: counter_candle_blocker_trace,
     RSI_LOOKBACK_EXTREME_BLOCKER_COMPONENT: rsi_lookback_extreme_blocker_trace,
+    TREND_STRENGTH_EPISODE_BLOCKER_COMPONENT: trend_strength_episode_blocker_trace,
 }
 
 _SETUP_TRACE: dict[str, Callable[..., dict[str, pd.Series]]] = {
@@ -256,6 +259,18 @@ def _build_side_trace(
                 side=side,
                 rule=rule,
                 rsi_col=_rsi_column(plan, rule.rsi),
+            )
+        elif rule.component_id == TREND_STRENGTH_EPISODE_BLOCKER_COMPONENT:
+            if rule.trend_strength is None:
+                raise ValueError("trend_strength_episode_blocker requires trend_strength params")
+            cols = plan.adx_dmi_columns_for(rule.trend_strength)
+            trace = trace_fn(
+                df,
+                side=side,
+                rule=rule,
+                adx_col=cols["adx"],
+                di_plus_col=cols["di_plus"],
+                di_minus_col=cols["di_minus"],
             )
         else:
             trace = trace_fn(df, side=side)

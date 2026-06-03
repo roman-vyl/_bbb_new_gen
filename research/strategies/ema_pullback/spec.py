@@ -89,6 +89,40 @@ class RsiFeatureSpec:
             raise ValueError("rsi period must be > 0")
 
 
+TREND_STRENGTH_EPISODE_BLOCKER_COMPONENT = "trend_strength_episode_blocker"
+
+
+@dataclass(frozen=True)
+class TrendStrengthEpisodeBlockerParams:
+    timeframe: str = "base"
+    adx_period: int = 14
+    min_adx_peak: float = 25.0
+    peak_lookback_bars: int = 60
+    max_bars_since_peak: int = 40
+    min_current_adx: float = 12.0
+    require_di_alignment_on_peak: bool = True
+    block_on_opposite_di_flip: bool = True
+    opposite_di_margin: float = 5.0
+
+    def __post_init__(self) -> None:
+        if self.timeframe.strip() != "base":
+            raise ValueError(
+                "trend_strength_episode_blocker MVP requires timeframe='base'"
+            )
+        if self.adx_period <= 0:
+            raise ValueError("adx_period must be > 0")
+        if self.peak_lookback_bars <= 0:
+            raise ValueError("peak_lookback_bars must be > 0")
+        if self.max_bars_since_peak <= 0:
+            raise ValueError("max_bars_since_peak must be > 0")
+        if self.min_adx_peak <= 0:
+            raise ValueError("min_adx_peak must be > 0")
+        if self.min_current_adx < 0:
+            raise ValueError("min_current_adx must be >= 0")
+        if self.opposite_di_margin < 0:
+            raise ValueError("opposite_di_margin must be >= 0")
+
+
 @dataclass(frozen=True)
 class BlockerRuleSpec:
     instance_id: str
@@ -97,6 +131,7 @@ class BlockerRuleSpec:
     lookback: int = 20
     long_block_above: float | None = None
     short_block_below: float | None = None
+    trend_strength: TrendStrengthEpisodeBlockerParams | None = None
     context_consumption: ContextConsumptionSpec | None = None
 
     def __post_init__(self) -> None:
@@ -106,10 +141,24 @@ class BlockerRuleSpec:
             raise ValueError("blocker component_id must be non-empty")
         if self.lookback <= 0:
             raise ValueError("blocker lookback must be > 0")
-        for field_name in ("long_block_above", "short_block_below"):
-            value = getattr(self, field_name)
-            if value is not None and not (0 <= value <= 100):
-                raise ValueError(f"blocker {field_name} must be between 0 and 100")
+        if self.component_id == TREND_STRENGTH_EPISODE_BLOCKER_COMPONENT:
+            if self.trend_strength is None:
+                raise ValueError(
+                    "trend_strength_episode_blocker requires trend_strength params"
+                )
+            if self.rsi is not None:
+                raise ValueError(
+                    "trend_strength_episode_blocker must not set rsi params"
+                )
+        elif self.component_id == "rsi_lookback_extreme_blocker":
+            for field_name in ("long_block_above", "short_block_below"):
+                value = getattr(self, field_name)
+                if value is not None and not (0 <= value <= 100):
+                    raise ValueError(f"blocker {field_name} must be between 0 and 100")
+        if self.trend_strength is not None and self.component_id != TREND_STRENGTH_EPISODE_BLOCKER_COMPONENT:
+            raise ValueError(
+                "trend_strength params only allowed for trend_strength_episode_blocker"
+            )
         from research.strategies.ema_pullback.context.consumption_validation import (
             validate_blocker_context_consumption,
         )

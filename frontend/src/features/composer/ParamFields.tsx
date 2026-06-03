@@ -2,6 +2,26 @@ import type { JsonObject, ParamFieldSchema } from "@/api/types";
 
 import { readParamValue, writeParamValue } from "./composerDraft";
 
+/** Catalog / legacy configs may store booleans as strings; `Boolean("false")` is true. */
+export function coerceParamBoolean(value: unknown, defaultValue = false): boolean {
+  if (value === undefined || value === null) {
+    return defaultValue;
+  }
+  if (typeof value === "boolean") {
+    return value;
+  }
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === "true" || normalized === "1" || normalized === "yes") {
+      return true;
+    }
+    if (normalized === "false" || normalized === "0" || normalized === "no") {
+      return false;
+    }
+  }
+  return Boolean(value);
+}
+
 type ParamFieldsProps = {
   paramsSchema: Record<string, ParamFieldSchema>;
   value: JsonObject;
@@ -44,10 +64,12 @@ function ParamInput({
   disabled?: boolean;
 }) {
   if (field.type === "boolean") {
+    const defaultBool =
+      typeof field.default === "boolean" ? field.default : false;
     return (
       <input
         type="checkbox"
-        checked={Boolean(value)}
+        checked={coerceParamBoolean(value, defaultBool)}
         disabled={disabled}
         onChange={(e) => onChange(e.target.checked)}
       />

@@ -624,6 +624,122 @@ def test_runner_applies_run_level_execution_from_external_config(
     assert captured == {"init_cash": 10000.0, "fees": 0.0006, "slippage": 0.0001}
 
 
+def test_load_external_config_supports_trend_strength_episode_blocker() -> None:
+    instance = _instance("trend_strength_blocker")
+    strategy = instance["strategy"]
+    assert isinstance(strategy, dict)
+    strategy["blockers"] = [
+        {
+            "instance_id": "trend_strength",
+            "component_id": "trend_strength_episode_blocker",
+            "timeframe": "base",
+            "adx_period": 14,
+            "min_adx_peak": 25,
+            "peak_lookback_bars": 60,
+            "max_bars_since_peak": 40,
+            "min_current_adx": 12,
+        }
+    ]
+
+    loaded = load_strategy_config(_bundle([instance]))
+    rule = loaded.specs[0].components.blockers[0]
+
+    assert rule.component_id == "trend_strength_episode_blocker"
+    assert rule.trend_strength is not None
+    assert rule.trend_strength.min_adx_peak == 25.0
+    assert rule.trend_strength.peak_lookback_bars == 60
+
+
+def test_load_external_config_parses_trend_strength_bool_false_string() -> None:
+    instance = _instance("trend_strength_bool")
+    strategy = instance["strategy"]
+    assert isinstance(strategy, dict)
+    strategy["blockers"] = [
+        {
+            "instance_id": "trend_strength",
+            "component_id": "trend_strength_episode_blocker",
+            "require_di_alignment_on_peak": "false",
+            "block_on_opposite_di_flip": "false",
+        }
+    ]
+
+    loaded = load_strategy_config(_bundle([instance]))
+    params = loaded.specs[0].components.blockers[0].trend_strength
+    assert params is not None
+    assert params.require_di_alignment_on_peak is False
+    assert params.block_on_opposite_di_flip is False
+
+
+def test_load_trend_strength_defaults_true_when_bool_keys_omitted() -> None:
+    instance = _instance("trend_strength_defaults")
+    strategy = instance["strategy"]
+    assert isinstance(strategy, dict)
+    strategy["blockers"] = [
+        {
+            "instance_id": "trend_strength",
+            "component_id": "trend_strength_episode_blocker",
+        }
+    ]
+    loaded = load_strategy_config(_bundle([instance]))
+    params = loaded.specs[0].components.blockers[0].trend_strength
+    assert params is not None
+    assert params.require_di_alignment_on_peak is True
+    assert params.block_on_opposite_di_flip is True
+
+
+def test_load_trend_strength_honors_explicit_false_bools() -> None:
+    instance = _instance("trend_strength_false")
+    strategy = instance["strategy"]
+    assert isinstance(strategy, dict)
+    strategy["blockers"] = [
+        {
+            "instance_id": "trend_strength",
+            "component_id": "trend_strength_episode_blocker",
+            "require_di_alignment_on_peak": False,
+            "block_on_opposite_di_flip": False,
+        }
+    ]
+    loaded = load_strategy_config(_bundle([instance]))
+    params = loaded.specs[0].components.blockers[0].trend_strength
+    assert params is not None
+    assert params.require_di_alignment_on_peak is False
+    assert params.block_on_opposite_di_flip is False
+
+
+def test_load_external_config_ignores_legacy_require_ema_stack_direction() -> None:
+    instance = _instance("trend_strength_legacy_ema")
+    strategy = instance["strategy"]
+    assert isinstance(strategy, dict)
+    strategy["blockers"] = [
+        {
+            "instance_id": "trend_strength",
+            "component_id": "trend_strength_episode_blocker",
+            "require_ema_stack_direction": "false",
+        }
+    ]
+
+    loaded = load_strategy_config(_bundle([instance]))
+    params = loaded.specs[0].components.blockers[0].trend_strength
+    assert params is not None
+    assert not hasattr(params, "require_ema_stack_direction")
+
+
+def test_load_external_config_rejects_htf_trend_strength_timeframe() -> None:
+    instance = _instance("trend_strength_htf")
+    strategy = instance["strategy"]
+    assert isinstance(strategy, dict)
+    strategy["blockers"] = [
+        {
+            "instance_id": "trend_strength",
+            "component_id": "trend_strength_episode_blocker",
+            "timeframe": "1h",
+        }
+    ]
+
+    with pytest.raises(EmaPullbackInstanceValidationError, match="MVP requires timeframe"):
+        load_strategy_config(_bundle([instance]))
+
+
 def test_instance_loader_rejects_top_level_component_shape() -> None:
     instance = _instance()
     strategy = instance["strategy"]

@@ -7,7 +7,18 @@ from typing import Any, Callable
 
 import pandas as pd
 
+from research.strategies.ema_pullback.components.blockers import (
+    build_trend_strength_blocker_counters,
+    counter_candle_blocker,
+    no_blockers,
+    rsi_lookback_extreme_blocker,
+    trend_strength_episode_blocker_trace,
+)
 from research.strategies.ema_pullback.components.registry import (
+    COUNTER_CANDLE_BLOCKER_COMPONENT,
+    NO_BLOCKERS_COMPONENT,
+    RSI_LOOKBACK_EXTREME_BLOCKER_COMPONENT,
+    TREND_STRENGTH_EPISODE_BLOCKER_COMPONENT,
     resolve_component,
 )
 from research.strategies.ema_pullback.context.bundle import ContextBundle
@@ -100,6 +111,71 @@ def _rsi_column(plan: FeaturePlan, rsi: RsiFeatureSpec | None) -> str | None:
     return plan.rsi_columns[(rsi.timeframe, rsi.period)]
 
 
+def _evaluate_blocker(
+    df: pd.DataFrame,
+    *,
+    rule: BlockerRuleSpec,
+    plan: FeaturePlan,
+    side: TradeSide,
+    fast_col: str,
+    anchor_col: str,
+    slow_col: str,
+) -> tuple[pd.Series, dict[str, Any] | None]:
+    if rule.component_id == TREND_STRENGTH_EPISODE_BLOCKER_COMPONENT:
+        if rule.trend_strength is None:
+            raise ValueError("trend_strength_episode_blocker requires trend_strength params")
+        cols = plan.adx_dmi_columns_for(rule.trend_strength)
+        trace = trend_strength_episode_blocker_trace(
+            df,
+            side=side,
+            rule=rule,
+            adx_col=cols["adx"],
+            di_plus_col=cols["di_plus"],
+            di_minus_col=cols["di_minus"],
+        )
+        return trace["allowed"], {"trend_strength_trace": trace}
+    if rule.component_id == RSI_LOOKBACK_EXTREME_BLOCKER_COMPONENT:
+        signal = rsi_lookback_extreme_blocker(
+            df, side=side, rule=rule, rsi_col=_rsi_column(plan, rule.rsi)
+        )
+        return signal, None
+    if rule.component_id == COUNTER_CANDLE_BLOCKER_COMPONENT:
+        return counter_candle_blocker(df, side=side), None
+    if rule.component_id == NO_BLOCKERS_COMPONENT:
+        return no_blockers(df, side=side), None
+    fn = resolve_component("blockers", rule.component_id).func
+    return fn(df, side=side, rule=rule, rsi_col=_rsi_column(plan, rule.rsi)), None
+
+
+def _blocker_counter_entry(
+    rule: BlockerRuleSpec,
+    side: TradeSide,
+    signal: pd.Series,
+    extra_counters: dict[str, Any] | None,
+) -> dict[str, Any]:
+    allowed = signal.fillna(False).astype(bool)
+    counters: dict[str, Any] = {
+        "allowed_count": int(allowed.sum()),
+        "blocked_count": int((~allowed).sum()),
+    }
+    if extra_counters is not None:
+        trace = extra_counters.get("trend_strength_trace")
+        if trace is not None:
+            counters = build_trend_strength_blocker_counters(
+                trace, final_allowed=allowed
+            )
+        else:
+            counters.update(extra_counters)
+    return {
+        "role": "blockers",
+        "component_id": rule.component_id,
+        "instance_id": rule.instance_id,
+        "side": side,
+        "output_type": "allow_mask",
+        "counters": counters,
+    }
+
+
 def _build_side_signals(
     *,
     df: pd.DataFrame,
@@ -110,7 +186,6 @@ def _build_side_signals(
     anchor_col: str,
     slow_col: str,
     direction_fn: Callable[..., pd.Series],
-    blockers_fns: tuple[Callable[..., pd.Series], ...],
     trigger_fn: Callable[..., pd.Series],
     risk_fn: Callable[..., pd.Series],
     context_bundle: ContextBundle | None,
@@ -121,32 +196,26 @@ def _build_side_signals(
     direction = direction_fn(df, fast_col, anchor_col, slow_col, side=side)
     bundle = require_context_bundle(spec, context_bundle)
     blocker_signals_list: list[pd.Series] = []
-    for blockers_fn, rule in zip(blockers_fns, spec.components.blockers, strict=True):
-        signal = blockers_fn(
+    blocker_counters_list: list[dict[str, Any]] = []
+    for rule in spec.components.blockers:
+        signal, extra_counters = _evaluate_blocker(
             df,
-            side=side,
             rule=rule,
-            rsi_col=_rsi_column(plan, rule.rsi),
+            plan=plan,
+            side=side,
+            fast_col=fast_col,
+            anchor_col=anchor_col,
+            slow_col=slow_col,
         )
         if rule.context_consumption is not None:
             assert bundle is not None
             signal = _apply_blocker_context_gate(signal, rule=rule, bundle=bundle, side=side)
         blocker_signals_list.append(signal)
+        blocker_counters_list.append(
+            _blocker_counter_entry(rule, side, signal, extra_counters)
+        )
     blocker_signals = tuple(blocker_signals_list)
-    blocker_counters = tuple(
-        {
-            "role": "blockers",
-            "component_id": rule.component_id,
-            "instance_id": rule.instance_id,
-            "side": side,
-            "output_type": "allow_mask",
-            "counters": {
-                "allowed_count": int(signal.fillna(False).astype(bool).sum()),
-                "blocked_count": int((~signal.fillna(False).astype(bool)).sum()),
-            },
-        }
-        for rule, signal in zip(spec.components.blockers, blocker_signals, strict=True)
-    )
+    blocker_counters = tuple(blocker_counters_list)
     blockers = compose_blocker_signals(blocker_signals)
     setup = compose_setup_masks(
         df,
@@ -186,9 +255,6 @@ def build_signals_from_spec(
 
     require_context_bundle(spec, context_bundle)
     direction_fn = resolve_component("direction", spec.components.direction).func
-    blockers_fns = tuple(
-        resolve_component("blockers", rule.component_id).func for rule in spec.components.blockers
-    )
     trigger_fn = resolve_component("trigger", spec.components.trigger.component_id).func
     risk_fn = resolve_component("risk", spec.components.risk).func
 
@@ -205,7 +271,6 @@ def build_signals_from_spec(
         anchor_col=anchor_col,
         slow_col=slow_col,
         direction_fn=direction_fn,
-        blockers_fns=blockers_fns,
         trigger_fn=trigger_fn,
         risk_fn=risk_fn,
         context_bundle=context_bundle,
@@ -219,7 +284,6 @@ def build_signals_from_spec(
         anchor_col=anchor_col,
         slow_col=slow_col,
         direction_fn=direction_fn,
-        blockers_fns=blockers_fns,
         trigger_fn=trigger_fn,
         risk_fn=risk_fn,
         context_bundle=context_bundle,
