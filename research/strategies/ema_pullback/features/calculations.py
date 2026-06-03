@@ -57,7 +57,7 @@ def _wilder_rma(series: pd.Series, *, period: int) -> pd.Series:
         if not np.isfinite(prev) or not np.isfinite(current):
             out[i] = np.nan
             continue
-        out[i] = prev - (prev / period) + current
+        out[i] = ((prev * (period - 1)) + current) / period
 
     return pd.Series(out, index=series.index, dtype=float)
 

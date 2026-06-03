@@ -22,6 +22,7 @@ from research.strategies.ema_pullback.components.trend_strength_episode import (
 )
 from research.strategies.ema_pullback.features.calculations import (
     _compute_adx_dmi,
+    _wilder_rma,
     add_feature_columns_from_plan,
 )
 from research.strategies.ema_pullback.features.plan import build_feature_plan_from_strategy_spec
@@ -59,6 +60,15 @@ def test_min_adx_peak_must_be_positive() -> None:
         TrendStrengthEpisodeBlockerParams(min_adx_peak=0)
 
 
+def test_wilder_rma_constant_series_stays_flat_after_seed() -> None:
+    period = 14
+    values = pd.Series([5.0] * 30)
+    smoothed = _wilder_rma(values, period=period)
+    first_finite = int(np.argmax(np.isfinite(smoothed.to_numpy())))
+    tail = smoothed.iloc[first_finite:].to_numpy()
+    assert np.allclose(tail, 5.0, rtol=0, atol=1e-9)
+
+
 def test_adx_dmi_warmup_not_finite_on_early_bars() -> None:
     n = 40
     idx = pd.date_range("2024-01-01", periods=n, freq="h")
@@ -78,7 +88,7 @@ def test_adx_dmi_warmup_not_finite_on_early_bars() -> None:
     first_finite = int(np.argmax(np.isfinite(adx.to_numpy())))
     assert first_finite >= 2 * period - 2
     assert np.isfinite(adx.iloc[first_finite])
-    assert not (adx.iloc[first_finite : first_finite + 3] == 100.0).all()
+    assert 0.0 <= float(adx.iloc[first_finite]) <= 100.0
 
 
 def test_rejects_non_base_timeframe() -> None:

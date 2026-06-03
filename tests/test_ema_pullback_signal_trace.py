@@ -181,6 +181,45 @@ def test_strategy_spec_roundtrip_preserves_blocker_htf_regime_gate_params() -> N
     assert dict(legacy_consumption.policy.params) == {"allowed_regimes": ["aligned", "neutral"]}
 
 
+def test_strategy_spec_roundtrip_preserves_trend_strength_blocker_params() -> None:
+    from dataclasses import asdict, replace
+
+    from research.strategies.ema_pullback.component_builders import (
+        blocker_trend_strength_episode,
+    )
+    from research.strategies.ema_pullback.spec import strategy_spec_to_dict
+
+    base = make_ema_pullback_strategy_spec()
+    spec = replace(
+        base,
+        components=replace(
+            base.components,
+            blockers=(
+                blocker_trend_strength_episode(
+                    instance_id="ts1",
+                    min_adx_peak=27.5,
+                    peak_lookback_bars=55,
+                ),
+            ),
+        ),
+    )
+    wire = strategy_spec_to_dict(spec)
+    ts_wire = wire["components"]["blockers"][0]["trend_strength"]
+    assert ts_wire["min_adx_peak"] == 27.5
+    assert ts_wire["peak_lookback_bars"] == 55
+
+    restored = strategy_spec_from_report_dict(wire)
+    params = restored.components.blockers[0].trend_strength
+    assert params is not None
+    assert params.min_adx_peak == 27.5
+    assert params.peak_lookback_bars == 55
+
+    restored_legacy = strategy_spec_from_report_dict(asdict(spec))
+    legacy_params = restored_legacy.components.blockers[0].trend_strength
+    assert legacy_params is not None
+    assert legacy_params.min_adx_peak == 27.5
+
+
 def test_strategy_spec_roundtrip_preserves_setup_context_consumption() -> None:
     from dataclasses import asdict
 
