@@ -137,7 +137,6 @@ def _trend_strength_params(payload: Any) -> TrendStrengthEpisodeBlockerParams | 
         ),
         block_on_opposite_di_flip=bool(ts.get("block_on_opposite_di_flip", True)),
         opposite_di_margin=float(ts.get("opposite_di_margin", 5.0)),
-        require_ema_stack_direction=bool(ts.get("require_ema_stack_direction", True)),
     )
 
 

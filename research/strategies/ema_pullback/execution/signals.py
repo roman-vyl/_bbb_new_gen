@@ -132,9 +132,6 @@ def _evaluate_blocker(
             adx_col=cols["adx"],
             di_plus_col=cols["di_plus"],
             di_minus_col=cols["di_minus"],
-            fast_col=fast_col,
-            anchor_col=anchor_col,
-            slow_col=slow_col,
         )
         return trace["allowed"], {"trend_strength_trace": trace}
     if rule.component_id == RSI_LOOKBACK_EXTREME_BLOCKER_COMPONENT:

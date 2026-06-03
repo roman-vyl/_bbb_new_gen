@@ -18,7 +18,6 @@ REASON_NO_RECENT_PEAK = "no_recent_adx_peak"
 REASON_PEAK_TOO_OLD = "peak_too_old"
 REASON_CURRENT_ADX_TOO_LOW = "current_adx_too_low"
 REASON_OPPOSITE_DI_FLIP = "opposite_di_flip"
-REASON_EMA_STACK_BROKEN = "ema_stack_direction_broken"
 
 ALL_BLOCKED_REASONS = (
     REASON_INDICATOR_NOT_READY,
@@ -26,7 +25,6 @@ ALL_BLOCKED_REASONS = (
     REASON_PEAK_TOO_OLD,
     REASON_CURRENT_ADX_TOO_LOW,
     REASON_OPPOSITE_DI_FLIP,
-    REASON_EMA_STACK_BROKEN,
 )
 
 
@@ -55,17 +53,6 @@ def _opposite_di_flip(
     return di_plus > di_minus + margin
 
 
-def _ema_stack_ok(
-    side: TradeSide,
-    fast: float,
-    anchor: float,
-    slow: float,
-) -> bool:
-    if side == "long":
-        return fast > anchor > slow
-    return fast < anchor < slow
-
-
 def _qualifies_peak(
     side: TradeSide,
     adx: float,
@@ -90,17 +77,11 @@ def trend_strength_episode_blocker_trace(
     adx_col: str,
     di_plus_col: str,
     di_minus_col: str,
-    fast_col: str,
-    anchor_col: str,
-    slow_col: str,
 ) -> dict[str, pd.Series]:
     params = _params(rule)
     adx = df[adx_col].astype(float).to_numpy()
     di_plus = df[di_plus_col].astype(float).to_numpy()
     di_minus = df[di_minus_col].astype(float).to_numpy()
-    fast = df[fast_col].astype(float).to_numpy()
-    anchor = df[anchor_col].astype(float).to_numpy()
-    slow = df[slow_col].astype(float).to_numpy()
 
     n = len(df)
     allowed = np.zeros(n, dtype=bool)
@@ -113,7 +94,6 @@ def trend_strength_episode_blocker_trace(
     di_minus_at_peak = np.full(n, np.nan)
     di_alignment_at_peak = np.zeros(n, dtype=bool)
     opposite_flip = np.zeros(n, dtype=bool)
-    ema_stack_ok = np.zeros(n, dtype=bool)
 
     lookback = params.peak_lookback_bars
 
@@ -162,25 +142,9 @@ def trend_strength_episode_blocker_trace(
             blocked_reason[t] = REASON_OPPOSITE_DI_FLIP
             continue
 
-        stack_ok = True
-        if params.require_ema_stack_direction:
-            if not (
-                np.isfinite(fast[t])
-                and np.isfinite(anchor[t])
-                and np.isfinite(slow[t])
-            ):
-                stack_ok = False
-            else:
-                stack_ok = _ema_stack_ok(side, fast[t], anchor[t], slow[t])
-            ema_stack_ok[t] = stack_ok
-            if not stack_ok:
-                blocked_reason[t] = REASON_EMA_STACK_BROKEN
-                continue
-
         allowed[t] = True
         trend_active[t] = True
         blocked_reason[t] = BLOCKED_REASON_ALLOW
-        ema_stack_ok[t] = stack_ok if params.require_ema_stack_direction else True
 
     index = df.index
     return {
@@ -197,7 +161,6 @@ def trend_strength_episode_blocker_trace(
         "di_minus_at_peak": pd.Series(di_minus_at_peak, index=index, dtype=float),
         "di_alignment_at_peak": pd.Series(di_alignment_at_peak, index=index, dtype=bool),
         "opposite_di_flip": pd.Series(opposite_flip, index=index, dtype=bool),
-        "ema_stack_direction_ok": pd.Series(ema_stack_ok, index=index, dtype=bool),
     }
 
 
@@ -209,9 +172,6 @@ def trend_strength_episode_blocker(
     adx_col: str,
     di_plus_col: str,
     di_minus_col: str,
-    fast_col: str,
-    anchor_col: str,
-    slow_col: str,
 ) -> pd.Series:
     return trend_strength_episode_blocker_trace(
         df,
@@ -220,9 +180,6 @@ def trend_strength_episode_blocker(
         adx_col=adx_col,
         di_plus_col=di_plus_col,
         di_minus_col=di_minus_col,
-        fast_col=fast_col,
-        anchor_col=anchor_col,
-        slow_col=slow_col,
     )["allowed"]
 
 

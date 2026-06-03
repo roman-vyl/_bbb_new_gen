@@ -103,7 +103,6 @@ class TrendStrengthEpisodeBlockerParams:
     require_di_alignment_on_peak: bool = True
     block_on_opposite_di_flip: bool = True
     opposite_di_margin: float = 5.0
-    require_ema_stack_direction: bool = True
 
     def __post_init__(self) -> None:
         if self.timeframe.strip() != "base":

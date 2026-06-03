@@ -139,9 +139,9 @@ params:
   require_di_alignment_on_peak: true
   block_on_opposite_di_flip: true
   opposite_di_margin: 5
-
-  require_ema_stack_direction: true
 ```
+
+EMA-stack direction is enforced by the **direction** component only; this blocker does not duplicate it. Legacy configs may still list `require_ema_stack_direction`; the field is ignored at runtime.
 
 ---
 
@@ -158,7 +158,6 @@ params:
 | `require_di_alignment_on_peak` | Peak засчитывается только при DI в сторону сделки. |
 | `block_on_opposite_di_flip` | Блок, если текущий DI явно развернулся против стороны. |
 | `opposite_di_margin` | Минимальное преимущество противоположного DI для opposite flip. |
-| `require_ema_stack_direction` | Текущий EMA-stack должен совпадать со стороной сделки. |
 
 ---
 
@@ -172,8 +171,6 @@ Long-вход разрешён, если:
 4. Текущий `ADX >= min_current_adx`.
 5. Если `block_on_opposite_di_flip = true`, нет сильного opposite flip:  
    `-DI > +DI + opposite_di_margin`.
-6. Если `require_ema_stack_direction = true`, EMA-stack long:  
-   `fast EMA > anchor EMA > slow EMA`.
 
 ---
 
@@ -187,8 +184,6 @@ Short-вход разрешён, если:
 4. Текущий `ADX >= min_current_adx`.
 5. Если `block_on_opposite_di_flip = true`, нет сильного opposite flip:  
    `+DI > -DI + opposite_di_margin`.
-6. Если `require_ema_stack_direction = true`, EMA-stack short:  
-   `fast EMA < anchor EMA < slow EMA`.
 
 Long и short — зеркальная семантика.
 
@@ -246,7 +241,6 @@ short:
 bars_since_strength <= max_bars_since_peak
 current_adx >= min_current_adx
 нет opposite DI flip (если block_on_opposite_di_flip)
-EMA-stack не сломан (если require_ema_stack_direction)
 ```
 
 ### Episode неактивен, если
@@ -254,8 +248,7 @@ EMA-stack не сломан (если require_ema_stack_direction)
 - strength peak не найден в lookback;
 - peak был слишком давно;
 - `current_adx < min_current_adx`;
-- противоположный DI явно доминирует;
-- EMA-stack больше не совпадает со стороной сделки.
+- противоположный DI явно доминирует.
 
 ---
 
@@ -280,7 +273,6 @@ di_minus_at_peak
 
 di_alignment_at_peak
 opposite_di_flip
-ema_stack_direction_ok
 ```
 
 ### Значения `blocked_reason`
@@ -290,7 +282,6 @@ no_recent_adx_peak
 peak_too_old
 current_adx_too_low
 opposite_di_flip
-ema_stack_direction_broken
 indicator_not_ready
 ```
 
@@ -306,7 +297,7 @@ indicator_not_ready
 4. ADX peak **side-aware**: long — `+DI > -DI` на peak; short — `-DI > +DI` на peak (когда `require_di_alignment_on_peak`).
 5. Компонент **не требует** высокого ADX на текущей свече; разрешает pullback при недавнем сильном episode.
 6. При явном opposite DI flip вход блокируется (если `block_on_opposite_di_flip`).
-7. При `require_ema_stack_direction = true` текущий EMA-stack должен совпадать со стороной.
+7. EMA-stack direction **не** проверяется этим blocker (только direction component).
 8. Компонент отдаёт diagnostics (см. выше).
 9. Компонент отдаёт `component_counters` с `blocked_reason_breakdown` на run variant.
 10. Старые стратегии **без** этого blocker работают без изменений (opt-in через spec / config).
@@ -320,7 +311,6 @@ indicator_not_ready
 ```text
 ADX(adx_period) на выбранном timeframe
 +DI, -DI (тот же период)
-EMA fast / anchor / slow для require_ema_stack_direction
 ```
 
 Расчёт ADX/DMI — в `features/calculations.py`; компонент только читает колонки по binding из spec.
@@ -351,7 +341,6 @@ min_current_adx:            8 / 10 / 12 / 15
 opposite_di_margin:         0 / 5 / 10
 require_di_alignment_on_peak: true
 block_on_opposite_di_flip:  true / false
-require_ema_stack_direction: true
 ```
 
 ---
@@ -374,7 +363,6 @@ blocked_reason_breakdown            # = intrinsic (для sweep)
   peak_too_old: <bars>
   current_adx_too_low: <bars>
   opposite_di_flip: <bars>
-  ema_stack_direction_broken: <bars>
   indicator_not_ready: <bars>
 ```
 

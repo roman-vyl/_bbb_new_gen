@@ -650,7 +650,7 @@ def _parse_blocker(index: int, value: Any) -> BlockerRuleSpec:
             "require_di_alignment_on_peak",
             "block_on_opposite_di_flip",
             "opposite_di_margin",
-            "require_ema_stack_direction",
+            "require_ema_stack_direction",  # legacy; ignored at runtime
             "context_consumption",
         }
         _reject_unknown_fields(f"blockers[{index}]", payload, allowed)
@@ -679,9 +679,6 @@ def _parse_blocker(index: int, value: Any) -> BlockerRuleSpec:
                     payload, "block_on_opposite_di_flip", default=True
                 ),
                 opposite_di_margin=float(payload.get("opposite_di_margin", 5.0)),
-                require_ema_stack_direction=_optional_bool(
-                    payload, "require_ema_stack_direction", default=True
-                ),
                 context_consumption=context_consumption,
             )
         except ValueError as exc:

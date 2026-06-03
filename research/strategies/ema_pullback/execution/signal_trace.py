@@ -271,9 +271,6 @@ def _build_side_trace(
                 adx_col=cols["adx"],
                 di_plus_col=cols["di_plus"],
                 di_minus_col=cols["di_minus"],
-                fast_col=fast_col,
-                anchor_col=anchor_col,
-                slow_col=slow_col,
             )
         else:
             trace = trace_fn(df, side=side)

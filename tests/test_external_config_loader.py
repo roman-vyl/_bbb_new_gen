@@ -660,7 +660,6 @@ def test_load_external_config_parses_trend_strength_bool_false_string() -> None:
             "component_id": "trend_strength_episode_blocker",
             "require_di_alignment_on_peak": "false",
             "block_on_opposite_di_flip": "false",
-            "require_ema_stack_direction": "false",
         }
     ]
 
@@ -669,7 +668,60 @@ def test_load_external_config_parses_trend_strength_bool_false_string() -> None:
     assert params is not None
     assert params.require_di_alignment_on_peak is False
     assert params.block_on_opposite_di_flip is False
-    assert params.require_ema_stack_direction is False
+
+
+def test_load_trend_strength_defaults_true_when_bool_keys_omitted() -> None:
+    instance = _instance("trend_strength_defaults")
+    strategy = instance["strategy"]
+    assert isinstance(strategy, dict)
+    strategy["blockers"] = [
+        {
+            "instance_id": "trend_strength",
+            "component_id": "trend_strength_episode_blocker",
+        }
+    ]
+    loaded = load_strategy_config(_bundle([instance]))
+    params = loaded.specs[0].components.blockers[0].trend_strength
+    assert params is not None
+    assert params.require_di_alignment_on_peak is True
+    assert params.block_on_opposite_di_flip is True
+
+
+def test_load_trend_strength_honors_explicit_false_bools() -> None:
+    instance = _instance("trend_strength_false")
+    strategy = instance["strategy"]
+    assert isinstance(strategy, dict)
+    strategy["blockers"] = [
+        {
+            "instance_id": "trend_strength",
+            "component_id": "trend_strength_episode_blocker",
+            "require_di_alignment_on_peak": False,
+            "block_on_opposite_di_flip": False,
+        }
+    ]
+    loaded = load_strategy_config(_bundle([instance]))
+    params = loaded.specs[0].components.blockers[0].trend_strength
+    assert params is not None
+    assert params.require_di_alignment_on_peak is False
+    assert params.block_on_opposite_di_flip is False
+
+
+def test_load_external_config_ignores_legacy_require_ema_stack_direction() -> None:
+    instance = _instance("trend_strength_legacy_ema")
+    strategy = instance["strategy"]
+    assert isinstance(strategy, dict)
+    strategy["blockers"] = [
+        {
+            "instance_id": "trend_strength",
+            "component_id": "trend_strength_episode_blocker",
+            "require_ema_stack_direction": "false",
+        }
+    ]
+
+    loaded = load_strategy_config(_bundle([instance]))
+    params = loaded.specs[0].components.blockers[0].trend_strength
+    assert params is not None
+    assert not hasattr(params, "require_ema_stack_direction")
 
 
 def test_load_external_config_rejects_htf_trend_strength_timeframe() -> None:

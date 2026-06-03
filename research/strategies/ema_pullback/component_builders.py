@@ -189,7 +189,6 @@ def blocker_trend_strength_episode(
     require_di_alignment_on_peak: bool = True,
     block_on_opposite_di_flip: bool = True,
     opposite_di_margin: float = 5.0,
-    require_ema_stack_direction: bool = True,
     context_consumption: ContextConsumptionSpec | None = None,
 ) -> BlockerRuleSpec:
     return BlockerRuleSpec(
@@ -205,7 +204,6 @@ def blocker_trend_strength_episode(
             require_di_alignment_on_peak=require_di_alignment_on_peak,
             block_on_opposite_di_flip=block_on_opposite_di_flip,
             opposite_di_margin=opposite_di_margin,
-            require_ema_stack_direction=require_ema_stack_direction,
         ),
         context_consumption=context_consumption,
     )

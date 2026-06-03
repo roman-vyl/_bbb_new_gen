@@ -275,8 +275,7 @@ def get_component_catalog(*, family: str = "ema_pullback") -> ComponentCatalog:
                 "min_current_adx — floor for current ADX (may be below peak after fade).\n"
                 "require_di_alignment_on_peak — peak counts only when DI favors the side.\n"
                 "block_on_opposite_di_flip — block when opposite DI dominates.\n"
-                "opposite_di_margin — minimum opposite-DI lead for a flip block.\n"
-                "require_ema_stack_direction — fast/anchor/slow must match trade side."
+                "opposite_di_margin — minimum opposite-DI lead for a flip block."
             ),
             list_slot=True,
             supports_context_consumption=True,
@@ -294,10 +293,6 @@ def get_component_catalog(*, family: str = "ema_pullback") -> ComponentCatalog:
                 ),
                 "block_on_opposite_di_flip": _bool_param(
                     "Block on opposite DI flip", default=True
-                ),
-                "require_ema_stack_direction": _bool_param(
-                    "Require EMA stack direction (redundant if direction already on)",
-                    default=True,
                 ),
             },
         ),
