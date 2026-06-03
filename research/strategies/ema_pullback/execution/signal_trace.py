@@ -15,6 +15,7 @@ from research.strategies.ema_pullback.components.blockers import (
 )
 from research.strategies.ema_pullback.components.direction import ema_anchor_stack_trend_trace
 from research.strategies.ema_pullback.components.registry import (
+    ANCHOR_STACK_WIDTH_SETUP_COMPONENT,
     COUNTER_CANDLE_BLOCKER_COMPONENT,
     EMA_BOUNCE_COUNTER_SETUP_COMPONENT,
     NO_BLOCKERS_COMPONENT,
@@ -25,6 +26,7 @@ from research.strategies.ema_pullback.components.registry import (
     UNTOUCHED_ANCHOR_SETUP_COMPONENT,
 )
 from research.strategies.ema_pullback.components.setup import (
+    anchor_stack_width_setup_trace,
     ema_bounce_counter_setup_trace,
     untouched_anchor_setup_trace,
 )
@@ -59,6 +61,7 @@ from research.strategies.ema_pullback.setup_runtime import (
     run_setup_trace,
 )
 from research.strategies.ema_pullback.spec import (
+    AnchorStackWidthSetupSpec,
     BlockerRuleSpec,
     EmaBounceCounterSetupSpec,
     EmaPullbackStrategySpec,
@@ -86,6 +89,7 @@ _BLOCKER_TRACE: dict[str, Callable[..., dict[str, pd.Series]]] = {
 _SETUP_TRACE: dict[str, Callable[..., dict[str, pd.Series]]] = {
     UNTOUCHED_ANCHOR_SETUP_COMPONENT: untouched_anchor_setup_trace,
     EMA_BOUNCE_COUNTER_SETUP_COMPONENT: ema_bounce_counter_setup_trace,
+    ANCHOR_STACK_WIDTH_SETUP_COMPONENT: anchor_stack_width_setup_trace,
 }
 
 _TRIGGER_TRACE: dict[str, Callable[..., dict[str, pd.Series]]] = {
@@ -405,6 +409,12 @@ def _contiguous_blocked_runs(blocked: list[bool]) -> list[tuple[int, int]]:
     return runs
 
 
+def _contiguous_true_runs(values: list[bool]) -> list[tuple[int, int]]:
+    """Inclusive (start, end) indices where values is True."""
+
+    return _contiguous_blocked_runs(values)
+
+
 def _span_id(instance_id: str, side: TradeSide, span_start_time: int) -> str:
     return f"{instance_id}:{side}:{span_start_time}"
 
@@ -544,6 +554,16 @@ def _setup_params_meta_for_rule(rule: SetupRuleSpec) -> dict[str, Any]:
             "component_id": rule.component_id,
             "lookback": rule.params.lookback,
             "active_bars": rule.params.active_bars,
+        }
+    if isinstance(rule.params, AnchorStackWidthSetupSpec):
+        return {
+            "instance_id": rule.instance_id,
+            "component_id": rule.component_id,
+            "atr_timeframe": rule.params.atr_timeframe,
+            "atr_period": rule.params.atr_period,
+            "min_current_width_atr": rule.params.min_current_width_atr,
+            "min_recent_width_atr": rule.params.min_recent_width_atr,
+            "width_lookback_bars": rule.params.width_lookback_bars,
         }
     return {"instance_id": rule.instance_id, "component_id": rule.component_id}
 
@@ -745,6 +765,150 @@ def _append_ema_bounce_counter_events(
                     )
 
 
+def _format_width_tooltip(lines: list[str]) -> str:
+    return "\n".join(line for line in lines if line)
+
+
+def _width_trace_float(trace: dict[str, pd.Series], key: str, idx: int) -> float | None:
+    value = trace[key].iloc[idx]
+    if pd.isna(value):
+        return None
+    return float(value)
+
+
+def _anchor_stack_width_span_start_tooltip(
+    trace: dict[str, pd.Series],
+    idx: int,
+    rule: SetupRuleSpec,
+) -> str:
+    assert isinstance(rule.params, AnchorStackWidthSetupSpec)
+    params = rule.params
+    lines = [
+        "Anchor stack width setup",
+        f"current_width_atr: {_width_trace_float(trace, 'current_width_atr', idx)}",
+        f"recent_max_width_atr: {_width_trace_float(trace, 'recent_max_width_atr', idx)}",
+        f"min_current_width_atr: {params.min_current_width_atr}",
+        f"min_recent_width_atr: {params.min_recent_width_atr}",
+        f"width_lookback_bars: {params.width_lookback_bars}",
+        f"fast_ema: {_width_trace_float(trace, 'fast_ema', idx)}",
+        f"anchor_ema: {_width_trace_float(trace, 'anchor_ema', idx)}",
+        f"slow_ema: {_width_trace_float(trace, 'slow_ema', idx)}",
+        f"atr_value: {_width_trace_float(trace, 'atr_value', idx)}",
+    ]
+    return _format_width_tooltip(lines)
+
+
+def _anchor_stack_width_span_end_tooltip(
+    trace: dict[str, pd.Series],
+    last_allowed_idx: int,
+    end_idx: int,
+) -> str:
+    reason = str(trace["blocked_reason"].iloc[end_idx] or "")
+    lines = [
+        "Anchor stack width ended",
+        f"last_current_width_atr: {_width_trace_float(trace, 'current_width_atr', last_allowed_idx)}",
+        f"last_recent_max_width_atr: {_width_trace_float(trace, 'recent_max_width_atr', last_allowed_idx)}",
+        f"blocked_reason: {reason}",
+    ]
+    return _format_width_tooltip(lines)
+
+
+def _append_anchor_stack_width_setup_events(
+    events: list[ComponentEventData],
+    *,
+    df: pd.DataFrame,
+    spec: EmaPullbackStrategySpec,
+    plan: FeaturePlan,
+    times: list[int],
+    base_timeframe: str,
+) -> None:
+    width_rules = [
+        rule
+        for rule in spec.setups
+        if rule.component_id == ANCHOR_STACK_WIDTH_SETUP_COMPONENT
+    ]
+    if not width_rules:
+        return
+    source_timeframe = base_timeframe
+    for rule in width_rules:
+        if not isinstance(rule.params, AnchorStackWidthSetupSpec):
+            continue
+        instance_id = rule.instance_id
+        cols = plan.setup_columns_for(instance_id)
+        for side in _sides_for_spec(spec):
+            trace = anchor_stack_width_setup_trace(
+                df,
+                cols["fast"],
+                cols["anchor"],
+                cols["slow"],
+                cols["atr"],
+                min_current_width_atr=rule.params.min_current_width_atr,
+                min_recent_width_atr=rule.params.min_recent_width_atr,
+                width_lookback_bars=rule.params.width_lookback_bars,
+                side=side,
+            )
+            allowed = trace["setup_allowed"].fillna(False).astype(bool).tolist()
+            for start, end in _contiguous_true_runs(allowed):
+                run_span_id = _span_id(instance_id, side, times[start])
+                start_metadata = {
+                    "event_name": "width_ok",
+                    "current_width_atr": _width_trace_float(trace, "current_width_atr", start),
+                    "recent_max_width_atr": _width_trace_float(
+                        trace, "recent_max_width_atr", start
+                    ),
+                    "min_current_width_atr": rule.params.min_current_width_atr,
+                    "min_recent_width_atr": rule.params.min_recent_width_atr,
+                    "width_lookback_bars": rule.params.width_lookback_bars,
+                }
+                events.append(
+                    ComponentEventData(
+                        time=times[start],
+                        event_type="span_start",
+                        role="setup",
+                        side=side,
+                        component_id=ANCHOR_STACK_WIDTH_SETUP_COMPONENT,
+                        instance_id=instance_id,
+                        label="Width ok",
+                        tooltip=_anchor_stack_width_span_start_tooltip(trace, start, rule),
+                        span_id=run_span_id,
+                        feature_family="ema",
+                        source_timeframe=source_timeframe,
+                        base_timeframe=base_timeframe,
+                        metadata=start_metadata,
+                    )
+                )
+                if end + 1 >= len(times):
+                    continue
+                end_idx = end + 1
+                end_metadata = {
+                    "event_name": "width_end",
+                    "last_current_width_atr": _width_trace_float(
+                        trace, "current_width_atr", end
+                    ),
+                    "last_recent_max_width_atr": _width_trace_float(
+                        trace, "recent_max_width_atr", end
+                    ),
+                    "blocked_reason": str(trace["blocked_reason"].iloc[end_idx] or ""),
+                }
+                events.append(
+                    ComponentEventData(
+                        time=times[end_idx],
+                        event_type="span_end",
+                        role="setup",
+                        side=side,
+                        component_id=ANCHOR_STACK_WIDTH_SETUP_COMPONENT,
+                        instance_id=instance_id,
+                        label="Width end",
+                        tooltip=_anchor_stack_width_span_end_tooltip(trace, end, end_idx),
+                        span_id=run_span_id,
+                        feature_family="ema",
+                        source_timeframe=source_timeframe,
+                        base_timeframe=base_timeframe,
+                        metadata=end_metadata,
+                    )
+                )
+
+
 def build_component_events(
     df: pd.DataFrame,
     spec: EmaPullbackStrategySpec,
@@ -760,6 +924,14 @@ def build_component_events(
     events: list[ComponentEventData] = []
 
     _append_ema_bounce_counter_events(
+        events,
+        df=df,
+        spec=spec,
+        plan=plan,
+        times=times,
+        base_timeframe=base_timeframe,
+    )
+    _append_anchor_stack_width_setup_events(
         events,
         df=df,
         spec=spec,

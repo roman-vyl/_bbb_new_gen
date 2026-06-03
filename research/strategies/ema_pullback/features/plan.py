@@ -6,6 +6,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from research.strategies.ema_pullback.spec import (
+    AnchorStackWidthSetupSpec,
     EmaBounceCounterSetupSpec,
     EmaPullbackStrategySpec,
     EmaSpec,
@@ -160,9 +161,31 @@ def _add_ema_feature(
 def _add_setup_features(
     add: Callable[[PlannedFeature], None],
     rule: SetupRuleSpec,
+    spec: EmaPullbackStrategySpec,
     ema_columns: dict[tuple[str, int], str],
     setup_columns_by_instance_id: dict[str, dict[str, str]],
 ) -> None:
+    if isinstance(rule.params, AnchorStackWidthSetupSpec):
+        params = rule.params
+        stack = spec.anchor_stack
+        setup_columns_by_instance_id[rule.instance_id] = {
+            "fast": _ema_feature_id(stack.fast.timeframe, stack.fast.period),
+            "anchor": _ema_feature_id(stack.anchor.timeframe, stack.anchor.period),
+            "slow": _ema_feature_id(stack.slow.timeframe, stack.slow.period),
+            "atr": _atr_feature_id(params.atr_timeframe, params.atr_period),
+        }
+        add(
+            PlannedFeature(
+                feature_id=_atr_feature_id(params.atr_timeframe, params.atr_period),
+                kind="atr",
+                source="close",
+                timeframe=params.atr_timeframe,
+                period=params.atr_period,
+                base_feature_id=None,
+                multiplier=None,
+            )
+        )
+        return
     if not isinstance(rule.params, EmaBounceCounterSetupSpec):
         return
     columns: dict[str, str] = {}
@@ -243,6 +266,7 @@ def build_feature_plan_from_strategy_spec(spec: EmaPullbackStrategySpec) -> Feat
         _add_setup_features(
             add,
             setup_rule,
+            spec,
             ema_columns,
             setup_columns_by_instance_id,
         )

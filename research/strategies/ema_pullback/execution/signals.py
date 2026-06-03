@@ -15,11 +15,15 @@ from research.strategies.ema_pullback.components.blockers import (
     trend_strength_episode_blocker_trace,
 )
 from research.strategies.ema_pullback.components.registry import (
+    ANCHOR_STACK_WIDTH_SETUP_COMPONENT,
     COUNTER_CANDLE_BLOCKER_COMPONENT,
     NO_BLOCKERS_COMPONENT,
     RSI_LOOKBACK_EXTREME_BLOCKER_COMPONENT,
     TREND_STRENGTH_EPISODE_BLOCKER_COMPONENT,
     resolve_component,
+)
+from research.strategies.ema_pullback.components.setup import (
+    build_anchor_stack_width_setup_counters,
 )
 from research.strategies.ema_pullback.context.bundle import ContextBundle
 from research.strategies.ema_pullback.context.pipeline import require_context_bundle
@@ -29,7 +33,7 @@ from research.strategies.ema_pullback.context.evaluation import (
 )
 from research.strategies.ema_pullback.spec import BlockerRuleSpec
 from research.strategies.ema_pullback.features.plan import FeaturePlan
-from research.strategies.ema_pullback.setup_runtime import compose_setup_masks
+from research.strategies.ema_pullback.setup_runtime import compose_setup_masks, run_setup_trace
 from research.strategies.ema_pullback.spec import EmaPullbackStrategySpec
 from research.strategies.ema_pullback.spec import ReclaimTriggerSpec, StrongReclaimTriggerSpec
 from research.strategies.ema_pullback.spec import RsiFeatureSpec
@@ -225,6 +229,27 @@ def _build_side_signals(
         side=side,
         context_bundle=bundle,
     )
+    setup_counter_entries: list[dict[str, Any]] = []
+    for rule in spec.setups:
+        if rule.component_id != ANCHOR_STACK_WIDTH_SETUP_COMPONENT:
+            continue
+        trace = run_setup_trace(
+            df,
+            rule,
+            plan,
+            anchor_col=anchor_col,
+            side=side,
+        )
+        setup_counter_entries.append(
+            {
+                "role": "setup",
+                "component_id": rule.component_id,
+                "instance_id": rule.instance_id,
+                "side": side,
+                "output_type": "allow_mask",
+                "counters": build_anchor_stack_width_setup_counters(trace),
+            }
+        )
     trigger_rule = spec.components.trigger
     if isinstance(trigger_rule, ReclaimTriggerSpec | StrongReclaimTriggerSpec):
         trigger = trigger_fn(df, anchor_col, trigger_rule.lookback, side=side)
@@ -240,7 +265,7 @@ def _build_side_signals(
             trigger_ok=trigger,
             risk_ok=risk,
         ),
-        output_counters=blocker_counters,
+        output_counters=blocker_counters + tuple(setup_counter_entries),
     )
 
 

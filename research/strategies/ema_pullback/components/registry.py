@@ -28,6 +28,7 @@ from research.strategies.ema_pullback.components.exits import (
 )
 from research.strategies.ema_pullback.components.risk import no_risk_filter
 from research.strategies.ema_pullback.components.setup import (
+    anchor_stack_width_setup,
     ema_bounce_counter_setup,
     untouched_anchor_setup,
 )
@@ -54,6 +55,7 @@ RSI_LOOKBACK_EXTREME_BLOCKER_COMPONENT = "rsi_lookback_extreme_blocker"
 TREND_STRENGTH_EPISODE_BLOCKER_COMPONENT = "trend_strength_episode_blocker"
 UNTOUCHED_ANCHOR_SETUP_COMPONENT = "untouched_anchor_setup"
 EMA_BOUNCE_COUNTER_SETUP_COMPONENT = "ema_bounce_counter_setup"
+ANCHOR_STACK_WIDTH_SETUP_COMPONENT = "anchor_stack_width_setup"
 RECLAIM_ANCHOR_COMPONENT = "reclaim_anchor"
 STRONG_RECLAIM_ANCHOR_COMPONENT = "strong_reclaim_anchor"
 TOUCH_ANCHOR_COMPONENT = "touch_anchor"
@@ -135,6 +137,15 @@ COMPONENT_REGISTRY: dict[str, dict[str, ComponentDefinition]] = {
             description=(
                 "Allow entries while anchor EMA bounce interactions inside a base "
                 "EMA-stack trend episode have not exhausted max_bounces."
+            ),
+        ),
+        ANCHOR_STACK_WIDTH_SETUP_COMPONENT: ComponentDefinition(
+            role="setup",
+            component_id=ANCHOR_STACK_WIDTH_SETUP_COMPONENT,
+            func=anchor_stack_width_setup,
+            description=(
+                "Allow entries when fast/slow anchor stack width is sufficient on the "
+                "entry bar and was expanded within the lookback window (ATR-normalized)."
             ),
         ),
     },
@@ -265,6 +276,7 @@ __all__ = [
     "ComponentDefinition",
     "COUNTER_CANDLE_BLOCKER_COMPONENT",
     "EMA_ANCHOR_STACK_TREND_COMPONENT",
+    "ANCHOR_STACK_WIDTH_SETUP_COMPONENT",
     "EMA_BOUNCE_COUNTER_SETUP_COMPONENT",
     "NO_BLOCKERS_COMPONENT",
     "NO_SIGNAL_EXIT_COMPONENT",

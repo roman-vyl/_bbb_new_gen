@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import pandas as pd
 
 from research.strategies.ema_pullback.spec import TradeSide
@@ -280,3 +282,139 @@ def ema_bounce_counter_setup(
         trend_break_confirmation_bars=trend_break_confirmation_bars,
         side=side,
     )["setup_allowed"]
+
+
+REASON_INDICATOR_NOT_READY = "indicator_not_ready"
+REASON_CURRENT_WIDTH_TOO_NARROW = "current_width_too_narrow"
+REASON_RECENT_WIDTH_NEVER_EXPANDED = "recent_width_never_expanded"
+
+
+def anchor_stack_width_setup_trace(
+    df: pd.DataFrame,
+    fast_col: str,
+    anchor_col: str,
+    slow_col: str,
+    atr_col: str,
+    *,
+    min_current_width_atr: float,
+    min_recent_width_atr: float,
+    width_lookback_bars: int,
+    side: TradeSide = "long",
+) -> dict[str, pd.Series]:
+    """Per-bar anchor stack width gate (side-neutral geometry; side kept for API parity)."""
+
+    del side
+    if min_current_width_atr <= 0:
+        raise ValueError("min_current_width_atr must be > 0")
+    if min_recent_width_atr <= 0:
+        raise ValueError("min_recent_width_atr must be > 0")
+    if width_lookback_bars <= 0:
+        raise ValueError("width_lookback_bars must be > 0")
+
+    fast = df[fast_col].astype(float)
+    anchor = df[anchor_col].astype(float)
+    slow = df[slow_col].astype(float)
+    atr = df[atr_col].astype(float)
+
+    width = (fast - slow).abs()
+    width_atr = width / atr
+    current_width_atr = width_atr
+    recent_max_width_atr = width_atr.rolling(
+        width_lookback_bars, min_periods=width_lookback_bars
+    ).max()
+
+    indicator_not_ready = (
+        fast.isna()
+        | slow.isna()
+        | anchor.isna()
+        | atr.isna()
+        | (atr <= 0)
+        | recent_max_width_atr.isna()
+    )
+    current_width_ok = current_width_atr >= min_current_width_atr
+    recent_width_ok = recent_max_width_atr >= min_recent_width_atr
+    setup_allowed = (~indicator_not_ready & current_width_ok & recent_width_ok).astype(bool)
+
+    blocked_values: list[str] = []
+    for not_ready, cur_ok, rec_ok in zip(
+        indicator_not_ready.tolist(),
+        current_width_ok.tolist(),
+        recent_width_ok.tolist(),
+        strict=True,
+    ):
+        if not_ready:
+            blocked_values.append(REASON_INDICATOR_NOT_READY)
+        elif not cur_ok:
+            blocked_values.append(REASON_CURRENT_WIDTH_TOO_NARROW)
+        elif not rec_ok:
+            blocked_values.append(REASON_RECENT_WIDTH_NEVER_EXPANDED)
+        else:
+            blocked_values.append("")
+
+    return {
+        "setup_allowed": setup_allowed,
+        "setup": setup_allowed,
+        "blocked_reason": _str_series(df.index, blocked_values),
+        "current_width_atr": current_width_atr,
+        "recent_max_width_atr": recent_max_width_atr,
+        "width_lookback_bars": _int_series(
+            df.index, [width_lookback_bars] * len(df)
+        ),
+        "min_current_width_atr": pd.Series(
+            min_current_width_atr, index=df.index, dtype=float
+        ),
+        "min_recent_width_atr": pd.Series(
+            min_recent_width_atr, index=df.index, dtype=float
+        ),
+        "current_width_ok": current_width_ok.astype(bool),
+        "recent_width_ok": recent_width_ok.astype(bool),
+        "fast_ema": fast,
+        "anchor_ema": anchor,
+        "slow_ema": slow,
+        "atr_value": atr,
+    }
+
+
+def anchor_stack_width_setup(
+    df: pd.DataFrame,
+    fast_col: str,
+    anchor_col: str,
+    slow_col: str,
+    atr_col: str,
+    *,
+    min_current_width_atr: float,
+    min_recent_width_atr: float,
+    width_lookback_bars: int,
+    side: TradeSide = "long",
+) -> pd.Series:
+    """Return setup_allowed for anchor stack width setup."""
+
+    return anchor_stack_width_setup_trace(
+        df,
+        fast_col,
+        anchor_col,
+        slow_col,
+        atr_col,
+        min_current_width_atr=min_current_width_atr,
+        min_recent_width_atr=min_recent_width_atr,
+        width_lookback_bars=width_lookback_bars,
+        side=side,
+    )["setup_allowed"]
+
+
+def build_anchor_stack_width_setup_counters(
+    trace: dict[str, pd.Series],
+) -> dict[str, Any]:
+    allowed = trace["setup_allowed"].fillna(False).astype(bool)
+    blocked_reason = trace["blocked_reason"].fillna("").astype(str)
+    breakdown: dict[str, int] = {}
+    for reason, is_blocked in zip(blocked_reason, ~allowed, strict=True):
+        if not is_blocked:
+            continue
+        key = reason if reason else REASON_INDICATOR_NOT_READY
+        breakdown[key] = breakdown.get(key, 0) + 1
+    return {
+        "allowed_count": int(allowed.sum()),
+        "blocked_count": int((~allowed).sum()),
+        "blocked_reason_breakdown": dict(sorted(breakdown.items())),
+    }

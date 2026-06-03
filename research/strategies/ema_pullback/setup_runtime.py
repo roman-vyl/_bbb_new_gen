@@ -6,6 +6,7 @@ from dataclasses import dataclass
 import pandas as pd
 
 from research.strategies.ema_pullback.components.registry import (
+    ANCHOR_STACK_WIDTH_SETUP_COMPONENT,
     EMA_BOUNCE_COUNTER_SETUP_COMPONENT,
     UNTOUCHED_ANCHOR_SETUP_COMPONENT,
     resolve_component,
@@ -17,6 +18,7 @@ from research.strategies.ema_pullback.context.evaluation import (
     evaluate_context_consumption,
 )
 from research.strategies.ema_pullback.spec import (
+    AnchorStackWidthSetupSpec,
     EmaBounceCounterSetupSpec,
     SetupRuleSpec,
     TradeSide,
@@ -58,6 +60,23 @@ def run_setup_mask(
             trend_break_confirmation_bars=rule.params.trend_break_confirmation_bars,
             side=side,
         )
+    if rule.component_id == ANCHOR_STACK_WIDTH_SETUP_COMPONENT:
+        if not isinstance(rule.params, AnchorStackWidthSetupSpec):
+            raise TypeError(
+                f"setup {rule.instance_id!r} expects AnchorStackWidthSetupSpec params"
+            )
+        cols = plan.setup_columns_for(rule.instance_id)
+        return fn(
+            df,
+            cols["fast"],
+            cols["anchor"],
+            cols["slow"],
+            cols["atr"],
+            min_current_width_atr=rule.params.min_current_width_atr,
+            min_recent_width_atr=rule.params.min_recent_width_atr,
+            width_lookback_bars=rule.params.width_lookback_bars,
+            side=side,
+        )
     if rule.component_id == UNTOUCHED_ANCHOR_SETUP_COMPONENT:
         if not isinstance(rule.params, UntouchedAnchorSetupSpec):
             raise TypeError(
@@ -82,6 +101,7 @@ def run_setup_trace(
     side: TradeSide,
 ) -> dict[str, pd.Series]:
     from research.strategies.ema_pullback.components.setup import (
+        anchor_stack_width_setup_trace,
         ema_bounce_counter_setup_trace,
         untouched_anchor_setup_trace,
     )
@@ -102,6 +122,23 @@ def run_setup_trace(
             touch_lookback_bars=rule.params.touch_lookback_bars,
             trend_start_confirmation_bars=rule.params.trend_start_confirmation_bars,
             trend_break_confirmation_bars=rule.params.trend_break_confirmation_bars,
+            side=side,
+        )
+    if rule.component_id == ANCHOR_STACK_WIDTH_SETUP_COMPONENT:
+        if not isinstance(rule.params, AnchorStackWidthSetupSpec):
+            raise TypeError(
+                f"setup {rule.instance_id!r} expects AnchorStackWidthSetupSpec params"
+            )
+        cols = plan.setup_columns_for(rule.instance_id)
+        return anchor_stack_width_setup_trace(
+            df,
+            cols["fast"],
+            cols["anchor"],
+            cols["slow"],
+            cols["atr"],
+            min_current_width_atr=rule.params.min_current_width_atr,
+            min_recent_width_atr=rule.params.min_recent_width_atr,
+            width_lookback_bars=rule.params.width_lookback_bars,
             side=side,
         )
     if rule.component_id == UNTOUCHED_ANCHOR_SETUP_COMPONENT:

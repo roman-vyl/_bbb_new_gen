@@ -115,6 +115,14 @@ def setup_ema_bounce_counter() -> str:
     return EMA_BOUNCE_COUNTER_SETUP_COMPONENT
 
 
+def setup_anchor_stack_width() -> str:
+    from research.strategies.ema_pullback.components.registry import (
+        ANCHOR_STACK_WIDTH_SETUP_COMPONENT,
+    )
+
+    return ANCHOR_STACK_WIDTH_SETUP_COMPONENT
+
+
 def risk_no_filter() -> str:
     return NO_RISK_FILTER_COMPONENT
 
@@ -523,6 +531,25 @@ def untouched_anchor_setup_spec(
     *, lookback: int = 50, active_bars: int = 3
 ) -> UntouchedAnchorSetupSpec:
     return UntouchedAnchorSetupSpec(lookback=lookback, active_bars=active_bars)
+
+
+def anchor_stack_width_setup_spec(
+    *,
+    atr_timeframe: str = "base",
+    atr_period: int = 14,
+    min_current_width_atr: float = 2.0,
+    min_recent_width_atr: float = 4.0,
+    width_lookback_bars: int = 80,
+) -> AnchorStackWidthSetupSpec:
+    from research.strategies.ema_pullback.spec import AnchorStackWidthSetupSpec
+
+    return AnchorStackWidthSetupSpec(
+        atr_timeframe=atr_timeframe,
+        atr_period=atr_period,
+        min_current_width_atr=min_current_width_atr,
+        min_recent_width_atr=min_recent_width_atr,
+        width_lookback_bars=width_lookback_bars,
+    )
 
 
 def ema_bounce_counter_setup_spec(

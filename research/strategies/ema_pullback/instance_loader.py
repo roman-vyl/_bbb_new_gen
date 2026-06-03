@@ -13,6 +13,7 @@ from research.strategies.ema_pullback.components.registry import (
     CONSTANT_USD_TAKE_PROFIT_COMPONENT,
     COUNTER_CANDLE_BLOCKER_COMPONENT,
     EMA_ANCHOR_STACK_TREND_COMPONENT,
+    ANCHOR_STACK_WIDTH_SETUP_COMPONENT,
     EMA_BOUNCE_COUNTER_SETUP_COMPONENT,
     NO_BLOCKERS_COMPONENT,
     NO_RISK_FILTER_COMPONENT,
@@ -499,6 +500,11 @@ def _parse_setup_rule(index: int, value: Any) -> SetupRuleSpec:
             "touch_lookback_bars",
             "trend_start_confirmation_bars",
             "trend_break_confirmation_bars",
+            "atr_timeframe",
+            "atr_period",
+            "min_current_width_atr",
+            "min_recent_width_atr",
+            "width_lookback_bars",
             "context_consumption",
         },
     )
@@ -542,6 +548,31 @@ def _parse_setup_rule(index: int, value: Any) -> SetupRuleSpec:
                 ),
                 trend_break_confirmation_bars=_optional_positive_int(
                     merged, "trend_break_confirmation_bars", default=1
+                ),
+            )
+        except ValueError as exc:
+            raise EmaPullbackInstanceValidationError(str(exc)) from exc
+        return SetupRuleSpec(
+            instance_id=instance_id,
+            component_id=component_id,
+            params=setup_spec,
+            context_consumption=context_consumption,
+        )
+    if component_id == ANCHOR_STACK_WIDTH_SETUP_COMPONENT:
+        params_raw = payload.get("params", {})
+        params = _require_mapping(f"{path}.params", params_raw) if params_raw else {}
+        merged = {**payload, **params}
+        atr_timeframe = str(merged.get("atr_timeframe", "base")).strip()
+        try:
+            setup_spec = builders.anchor_stack_width_setup_spec(
+                atr_timeframe=atr_timeframe,
+                atr_period=_optional_positive_int(merged, "atr_period", default=14),
+                min_current_width_atr=float(
+                    merged.get("min_current_width_atr", 2.0)
+                ),
+                min_recent_width_atr=float(merged.get("min_recent_width_atr", 4.0)),
+                width_lookback_bars=_optional_positive_int(
+                    merged, "width_lookback_bars", default=80
                 ),
             )
         except ValueError as exc:

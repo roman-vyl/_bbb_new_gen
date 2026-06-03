@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, Mapping
 
 from research.strategies.ema_pullback.components.registry import (
+    ANCHOR_STACK_WIDTH_SETUP_COMPONENT,
     EMA_BOUNCE_COUNTER_SETUP_COMPONENT,
     RECLAIM_ANCHOR_COMPONENT,
     STRONG_RECLAIM_ANCHOR_COMPONENT,
@@ -16,6 +17,7 @@ from research.strategies.ema_pullback.spec import (
     BlockerRuleSpec,
     ComponentStackSpec,
     EmaPullbackStrategySpec,
+    AnchorStackWidthSetupSpec,
     EmaBounceCounterSetupSpec,
     EmaSpec,
     ExitPolicyGroupSpec,
@@ -251,8 +253,18 @@ def _setup_params_payload(payload: Mapping[str, Any]) -> Mapping[str, Any]:
     return payload
 
 
-def _setup_spec(component_id: str, payload: Mapping[str, Any]) -> UntouchedAnchorSetupSpec | EmaBounceCounterSetupSpec:
+def _setup_spec(
+    component_id: str, payload: Mapping[str, Any]
+) -> UntouchedAnchorSetupSpec | EmaBounceCounterSetupSpec | AnchorStackWidthSetupSpec:
     source = _setup_params_payload(payload)
+    if component_id == ANCHOR_STACK_WIDTH_SETUP_COMPONENT:
+        return AnchorStackWidthSetupSpec(
+            atr_timeframe=str(source.get("atr_timeframe", "base")),
+            atr_period=int(source.get("atr_period", 14)),
+            min_current_width_atr=float(source.get("min_current_width_atr", 2.0)),
+            min_recent_width_atr=float(source.get("min_recent_width_atr", 4.0)),
+            width_lookback_bars=int(source.get("width_lookback_bars", 80)),
+        )
     if component_id == EMA_BOUNCE_COUNTER_SETUP_COMPONENT:
         return EmaBounceCounterSetupSpec(
             fast_ema=_setup_ema_spec("setup.fast_ema", source.get("fast_ema"), default_period=50),

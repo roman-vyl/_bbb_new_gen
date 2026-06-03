@@ -94,6 +94,7 @@ def test_component_catalog_returns_ema_pullback_components(client: TestClient) -
     assert [c["component_id"] for c in setup_components] == [
         "untouched_anchor_setup",
         "ema_bounce_counter_setup",
+        "anchor_stack_width_setup",
     ]
     params = setup_components[0]["params_schema"]
     assert set(params) == {"lookback", "active_bars"}
