@@ -218,9 +218,6 @@ class UntouchedAnchorSetupSpec:
 
 @dataclass(frozen=True)
 class EmaBounceCounterSetupSpec:
-    fast_ema: EmaSpec
-    anchor_ema: EmaSpec
-    slow_ema: EmaSpec
     max_bounces: int = 3
     raw_touch_mode: str = "range_cross"
     touch_lookback_bars: int = 10
@@ -228,14 +225,6 @@ class EmaBounceCounterSetupSpec:
     trend_break_confirmation_bars: int = 1
 
     def __post_init__(self) -> None:
-        for field_name in ("fast_ema", "anchor_ema", "slow_ema"):
-            ema = getattr(self, field_name)
-            if ema.timeframe != "base":
-                raise ValueError(f"setup.{field_name}.timeframe must be 'base' for MVP")
-            if ema.source != "close":
-                raise ValueError(f"setup.{field_name}.source must be 'close'")
-        if not (self.fast_ema.period < self.anchor_ema.period < self.slow_ema.period):
-            raise ValueError("setup EMA periods must satisfy fast < anchor < slow")
         if self.max_bounces <= 0:
             raise ValueError("setup.max_bounces must be > 0")
         if self.raw_touch_mode != "range_cross":

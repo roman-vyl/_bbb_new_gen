@@ -232,6 +232,54 @@ def test_ema_bounce_counter_blocks_after_limit_completion() -> None:
     ]
 
 
+def test_bounce_counter_feature_plan_uses_anchor_stack_columns() -> None:
+    from dataclasses import replace
+
+    from research.strategies.ema_pullback.component_builders import (
+        anchor_stack_width_setup_spec,
+        ema_bounce_counter_setup_spec,
+        setup_rule,
+    )
+    from research.strategies.ema_pullback.features.plan import (
+        _ema_feature_id,
+        build_feature_plan_from_strategy_spec,
+    )
+    from research.strategies.ema_pullback.spec_instances import make_ema_pullback_strategy_spec
+
+    spec = replace(
+        make_ema_pullback_strategy_spec(
+            fast_period=50,
+            anchor_period=200,
+            slow_period=500,
+        ),
+        setups=(
+            setup_rule(
+                instance_id="bounce_counter",
+                component_id="ema_bounce_counter_setup",
+                params=ema_bounce_counter_setup_spec(max_bounces=3),
+            ),
+            setup_rule(
+                instance_id="anchor_stack_width",
+                component_id="anchor_stack_width_setup",
+                params=anchor_stack_width_setup_spec(),
+            ),
+        ),
+    )
+    plan = build_feature_plan_from_strategy_spec(spec)
+    stack = spec.anchor_stack
+    expected_fast = _ema_feature_id(stack.fast.timeframe, stack.fast.period)
+    bounce_cols = plan.setup_columns_for("bounce_counter")
+    width_cols = plan.setup_columns_for("anchor_stack_width")
+    assert bounce_cols == {
+        "fast": expected_fast,
+        "anchor": _ema_feature_id(stack.anchor.timeframe, stack.anchor.period),
+        "slow": _ema_feature_id(stack.slow.timeframe, stack.slow.period),
+    }
+    assert width_cols["fast"] == expected_fast
+    ema_features = [f for f in plan.features if f.kind == "ema"]
+    assert len(ema_features) == 3
+
+
 def test_ema_bounce_counter_short_side_mirror() -> None:
     idx = pd.date_range("2024-01-01", periods=5, freq="h", tz="UTC")
     df = pd.DataFrame(

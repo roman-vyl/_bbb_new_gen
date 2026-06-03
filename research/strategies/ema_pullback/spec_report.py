@@ -267,9 +267,6 @@ def _setup_spec(
         )
     if component_id == EMA_BOUNCE_COUNTER_SETUP_COMPONENT:
         return EmaBounceCounterSetupSpec(
-            fast_ema=_setup_ema_spec("setup.fast_ema", source.get("fast_ema"), default_period=50),
-            anchor_ema=_setup_ema_spec("setup.anchor_ema", source.get("anchor_ema"), default_period=200),
-            slow_ema=_setup_ema_spec("setup.slow_ema", source.get("slow_ema"), default_period=500),
             max_bounces=int(source.get("max_bounces", 3)),
             raw_touch_mode=str(source.get("raw_touch_mode", "range_cross")),
             touch_lookback_bars=int(source.get("touch_lookback_bars", 10)),

@@ -117,14 +117,15 @@ def test_strategy_spec_roundtrip_preserves_ema_bounce_counter_nested_params() ->
     from research.strategies.ema_pullback.spec import EmaBounceCounterSetupSpec
 
     params = ema_bounce_counter_setup_spec(
-        fast_ema=60,
-        anchor_ema=200,
-        slow_ema=600,
         max_bounces=7,
         touch_lookback_bars=13,
     )
     spec = replace(
-        make_ema_pullback_strategy_spec(),
+        make_ema_pullback_strategy_spec(
+            fast_period=60,
+            anchor_period=200,
+            slow_period=600,
+        ),
         setups=(
             setup_rule(
                 instance_id="bc",
@@ -142,9 +143,10 @@ def test_strategy_spec_roundtrip_preserves_ema_bounce_counter_nested_params() ->
     assert len(restored.setups) == 1
     restored_params = restored.setups[0].params
     assert isinstance(restored_params, EmaBounceCounterSetupSpec)
-    assert restored_params.fast_ema.period == 60
-    assert restored_params.anchor_ema.period == 200
-    assert restored_params.slow_ema.period == 600
+    assert restored.setups[0].params.max_bounces == 7
+    assert restored.anchor_stack.fast.period == 60
+    assert restored.anchor_stack.anchor.period == 200
+    assert restored.anchor_stack.slow.period == 600
     assert restored_params.max_bounces == 7
     assert restored_params.touch_lookback_bars == 13
 
@@ -577,7 +579,12 @@ def test_ema_bounce_counter_setup_trace_and_events() -> None:
         trigger_reclaim_anchor,
     )
 
-    base = make_ema_pullback_strategy_spec(enabled_sides=("long",))
+    base = make_ema_pullback_strategy_spec(
+        enabled_sides=("long",),
+        fast_period=50,
+        anchor_period=200,
+        slow_period=500,
+    )
     spec = replace(
         base,
         components=component_stack(
@@ -590,9 +597,6 @@ def test_ema_bounce_counter_setup_trace_and_events() -> None:
                 instance_id="bounce_counter",
                 component_id="ema_bounce_counter_setup",
                 params=ema_bounce_counter_setup_spec(
-                    fast_ema=50,
-                    anchor_ema=200,
-                    slow_ema=500,
                     max_bounces=3,
                     touch_lookback_bars=3,
                 ),

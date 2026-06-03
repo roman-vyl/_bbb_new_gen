@@ -186,17 +186,14 @@ def _add_setup_features(
             )
         )
         return
-    if not isinstance(rule.params, EmaBounceCounterSetupSpec):
+    if isinstance(rule.params, EmaBounceCounterSetupSpec):
+        stack = spec.anchor_stack
+        setup_columns_by_instance_id[rule.instance_id] = {
+            "fast": _ema_feature_id(stack.fast.timeframe, stack.fast.period),
+            "anchor": _ema_feature_id(stack.anchor.timeframe, stack.anchor.period),
+            "slow": _ema_feature_id(stack.slow.timeframe, stack.slow.period),
+        }
         return
-    columns: dict[str, str] = {}
-    for name, ema in (
-        ("fast", rule.params.fast_ema),
-        ("anchor", rule.params.anchor_ema),
-        ("slow", rule.params.slow_ema),
-    ):
-        _add_ema_feature(add, ema, ema_columns)
-        columns[name] = _ema_feature_id(ema.timeframe, ema.period)
-    setup_columns_by_instance_id[rule.instance_id] = columns
 
 
 def _ema_specs_from_exit_rule(rule: ExitRuleSpec) -> list[EmaSpec]:

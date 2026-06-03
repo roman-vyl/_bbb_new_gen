@@ -42,9 +42,6 @@ const SETUP_CATALOG: ComponentCatalog = {
       label: "EMA bounce counter setup",
       params_storage: "nested",
       params_schema: {
-        fast_ema: { type: "integer", label: "Fast EMA", default: 50 },
-        anchor_ema: { type: "integer", label: "Anchor EMA", default: 200 },
-        slow_ema: { type: "integer", label: "Slow EMA", default: 500 },
         max_bounces: { type: "integer", label: "Max bounces", default: 3 },
         raw_touch_mode: {
           type: "string",
@@ -179,7 +176,7 @@ describe("ListComponentSection setup catalog", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "+ component" }));
 
-    expect(screen.getByText("Fast EMA")).toBeTruthy();
+    expect(screen.queryByText("Fast EMA")).toBeNull();
     expect(screen.getByText("Max bounces")).toBeTruthy();
   });
 });
@@ -187,13 +184,10 @@ describe("ListComponentSection setup catalog", () => {
 describe("setup component slot normalization", () => {
   const bounceSchema = findComponentSchema(SETUP_CATALOG, "ema_bounce_counter_setup");
 
-  it("writes backend-compatible nested params on save", () => {
+  it("writes backend-compatible nested params on save without legacy EMA keys", () => {
     const editingSlot: JsonObject = {
       instance_id: "bounce_counter",
       component_id: "ema_bounce_counter_setup",
-      fast_ema: 50,
-      anchor_ema: 200,
-      slow_ema: 500,
       max_bounces: 3,
       raw_touch_mode: "range_cross",
       touch_lookback_bars: 10,
@@ -206,9 +200,6 @@ describe("setup component slot normalization", () => {
       instance_id: "bounce_counter",
       component_id: "ema_bounce_counter_setup",
       params: {
-        fast_ema: 50,
-        anchor_ema: 200,
-        slow_ema: 500,
         max_bounces: 3,
         raw_touch_mode: "range_cross",
         touch_lookback_bars: 10,
@@ -270,9 +261,14 @@ describe("setup component slot normalization", () => {
     expect(Array.isArray(setups)).toBe(true);
     expect(setups[0]!.instance_id).toBe("setup");
     const editingSlot = normalizeComponentSlotForEditing(setups[0] as JsonObject, bounceSchema);
-    expect(editingSlot.fast_ema).toBe(55);
+    expect(editingSlot.fast_ema).toBeUndefined();
     expect(editingSlot.max_bounces).toBe(4);
     expect(normalized.instances[0]!.strategy.setup).toBeUndefined();
+
+    const apiSlot = normalizeComponentSlotForApi(editingSlot, bounceSchema);
+    expect(apiSlot.params).not.toHaveProperty("fast_ema");
+    expect(apiSlot.params).not.toHaveProperty("anchor_ema");
+    expect(apiSlot.params).not.toHaveProperty("slow_ema");
   });
 
   it("keeps untouched_anchor_setup flat on save", () => {

@@ -83,9 +83,6 @@ def test_run_setup_mask_and_trace_never_call_evaluate_context_consumption(
         instance_id="bounce_counter",
         component_id=EMA_BOUNCE_COUNTER_SETUP_COMPONENT,
         params=ema_bounce_counter_setup_spec(
-            fast_ema=50,
-            anchor_ema=200,
-            slow_ema=500,
             max_bounces=3,
             touch_lookback_bars=3,
         ),
