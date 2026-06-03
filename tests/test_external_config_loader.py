@@ -650,6 +650,28 @@ def test_load_external_config_supports_trend_strength_episode_blocker() -> None:
     assert rule.trend_strength.peak_lookback_bars == 60
 
 
+def test_load_external_config_parses_trend_strength_bool_false_string() -> None:
+    instance = _instance("trend_strength_bool")
+    strategy = instance["strategy"]
+    assert isinstance(strategy, dict)
+    strategy["blockers"] = [
+        {
+            "instance_id": "trend_strength",
+            "component_id": "trend_strength_episode_blocker",
+            "require_di_alignment_on_peak": "false",
+            "block_on_opposite_di_flip": "false",
+            "require_ema_stack_direction": "false",
+        }
+    ]
+
+    loaded = load_strategy_config(_bundle([instance]))
+    params = loaded.specs[0].components.blockers[0].trend_strength
+    assert params is not None
+    assert params.require_di_alignment_on_peak is False
+    assert params.block_on_opposite_di_flip is False
+    assert params.require_ema_stack_direction is False
+
+
 def test_load_external_config_rejects_htf_trend_strength_timeframe() -> None:
     instance = _instance("trend_strength_htf")
     strategy = instance["strategy"]

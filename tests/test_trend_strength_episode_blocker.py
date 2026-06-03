@@ -20,7 +20,10 @@ from research.strategies.ema_pullback.components.trend_strength_episode import (
     build_trend_strength_blocker_counters,
     trend_strength_episode_blocker_trace,
 )
-from research.strategies.ema_pullback.features.calculations import add_feature_columns_from_plan
+from research.strategies.ema_pullback.features.calculations import (
+    _compute_adx_dmi,
+    add_feature_columns_from_plan,
+)
 from research.strategies.ema_pullback.features.plan import build_feature_plan_from_strategy_spec
 from research.strategies.ema_pullback.spec import TrendStrengthEpisodeBlockerParams
 from research.strategies.ema_pullback.spec_instances import make_ema_pullback_strategy_spec
@@ -54,6 +57,28 @@ def _prepare(df: pd.DataFrame, rule) -> tuple[pd.DataFrame, dict[str, str], dict
 def test_min_adx_peak_must_be_positive() -> None:
     with pytest.raises(ValueError, match="min_adx_peak"):
         TrendStrengthEpisodeBlockerParams(min_adx_peak=0)
+
+
+def test_adx_dmi_warmup_not_finite_on_early_bars() -> None:
+    n = 40
+    idx = pd.date_range("2024-01-01", periods=n, freq="h")
+    close = np.linspace(100.0, 130.0, n)
+    high = close + 1.0
+    low = close - 1.0
+    df = pd.DataFrame(
+        {"open": close, "high": high, "low": low, "close": close, "volume": 1.0},
+        index=idx,
+    )
+    period = 14
+    adx, di_plus, di_minus = _compute_adx_dmi(
+        df["high"], df["low"], df["close"], period=period
+    )
+    assert np.isnan(adx.iloc[0])
+    assert np.isnan(adx.iloc[1])
+    first_finite = int(np.argmax(np.isfinite(adx.to_numpy())))
+    assert first_finite >= 2 * period - 2
+    assert np.isfinite(adx.iloc[first_finite])
+    assert not (adx.iloc[first_finite : first_finite + 3] == 100.0).all()
 
 
 def test_rejects_non_base_timeframe() -> None:
@@ -286,10 +311,34 @@ def test_counter_breakdown_sums_to_blocked_count() -> None:
         slow_col="ema_close_base_500",
     )
     counters = build_trend_strength_blocker_counters(trace)
-    assert REASON_NO_RECENT_PEAK in counters["blocked_reason_breakdown"]
-    breakdown = counters["blocked_reason_breakdown"]
-    assert sum(breakdown.values()) == counters["blocked_count"]
-    assert counters["allowed_count"] + counters["blocked_count"] == len(df)
+    assert REASON_NO_RECENT_PEAK in counters["intrinsic_blocked_reason_breakdown"]
+    breakdown = counters["intrinsic_blocked_reason_breakdown"]
+    assert sum(breakdown.values()) == counters["intrinsic_blocked_count"]
+    assert counters["intrinsic_allowed_count"] + counters["intrinsic_blocked_count"] == len(df)
+
+
+def test_counters_split_intrinsic_and_final_after_context() -> None:
+    n = 10
+    idx = pd.date_range("2024-01-01", periods=n, freq="h")
+    intrinsic = pd.Series(
+        [True, False, True, False, True, False, True, False, True, False], index=idx
+    )
+    final = intrinsic & pd.Series(
+        [True, False, False, False, True, False, False, False, True, False],
+        index=idx,
+    )
+    trace = {
+        "allowed": intrinsic,
+        "blocked_reason": pd.Series(
+            ["", REASON_NO_RECENT_PEAK, "", REASON_PEAK_TOO_OLD, "", "", "", "", "", ""],
+            index=idx,
+        ),
+    }
+    counters = build_trend_strength_blocker_counters(trace, final_allowed=final)
+    assert counters["intrinsic_allowed_count"] == 5
+    assert counters["final_allowed_count_after_context"] == 3
+    assert counters["allowed_count"] == 3
+    assert counters["blocked_count"] == 7
 
 
 def test_short_symmetry_di_on_peak() -> None:

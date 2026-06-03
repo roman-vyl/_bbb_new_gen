@@ -226,20 +226,38 @@ def trend_strength_episode_blocker(
     )["allowed"]
 
 
-def build_trend_strength_blocker_counters(
-    trace: dict[str, pd.Series],
-) -> dict[str, Any]:
+def _blocked_reason_breakdown(trace: dict[str, pd.Series]) -> dict[str, int]:
     allowed = trace["allowed"].fillna(False).astype(bool)
     blocked_reason = trace["blocked_reason"].astype(str)
-    blocked = ~allowed
     breakdown: Counter[str] = Counter()
-    for reason, is_blocked in zip(blocked_reason, blocked, strict=True):
+    for reason, is_blocked in zip(blocked_reason, ~allowed, strict=True):
         if not is_blocked:
             continue
         key = reason if reason else REASON_INDICATOR_NOT_READY
         breakdown[key] += 1
-    return {
-        "allowed_count": int(allowed.sum()),
-        "blocked_count": int(blocked.sum()),
-        "blocked_reason_breakdown": dict(sorted(breakdown.items())),
+    return dict(sorted(breakdown.items()))
+
+
+def build_trend_strength_blocker_counters(
+    trace: dict[str, pd.Series],
+    *,
+    final_allowed: pd.Series | None = None,
+) -> dict[str, Any]:
+    intrinsic = trace["allowed"].fillna(False).astype(bool)
+    intrinsic_breakdown = _blocked_reason_breakdown(trace)
+    counters: dict[str, Any] = {
+        "intrinsic_allowed_count": int(intrinsic.sum()),
+        "intrinsic_blocked_count": int((~intrinsic).sum()),
+        "intrinsic_blocked_reason_breakdown": intrinsic_breakdown,
+        "blocked_reason_breakdown": intrinsic_breakdown,
     }
+    if final_allowed is not None:
+        final = final_allowed.fillna(False).astype(bool)
+        counters["final_allowed_count_after_context"] = int(final.sum())
+        counters["final_blocked_count_after_context"] = int((~final).sum())
+        counters["allowed_count"] = counters["final_allowed_count_after_context"]
+        counters["blocked_count"] = counters["final_blocked_count_after_context"]
+    else:
+        counters["allowed_count"] = counters["intrinsic_allowed_count"]
+        counters["blocked_count"] = counters["intrinsic_blocked_count"]
+    return counters

@@ -21,6 +21,7 @@ import type {
 } from "@/api/types";
 import { useWorkbench } from "@/shared/context/WorkbenchContext";
 
+import { ComponentHelpHint } from "./ComponentHelpHint";
 import {
   applyComponentDefaults,
   componentsForRole,
@@ -2296,7 +2297,10 @@ export function SingletonComponentSection({
     <>
       <SectionErrors errors={errors} pathPrefix={pathPrefix} />
       <label className="field">
-        <span>component</span>
+        <span className="field__label-row">
+          <span>component</span>
+          <ComponentHelpHint description={schema?.description} />
+        </span>
         <select value={componentId} onChange={(e) => onSelect(e.target.value)}>
           {options.map((o) => (
             <option key={o.component_id} value={o.component_id}>
@@ -2406,8 +2410,11 @@ export function ListComponentSection({
         return (
           <div key={`${componentId}-${slotIndex}`} className="composer-slot">
         <div className="composer-slot__head">
-          <span className="composer-slot__label" title={slotLabel}>
-            {slotLabel}
+          <span className="composer-slot__label-row">
+            <span className="composer-slot__label" title={slotLabel}>
+              {slotLabel}
+            </span>
+            <ComponentHelpHint description={schema?.description} />
           </span>
           <button type="button" onClick={() => onRemove(slotIndex)}>
             Remove

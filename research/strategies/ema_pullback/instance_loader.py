@@ -672,15 +672,15 @@ def _parse_blocker(index: int, value: Any) -> BlockerRuleSpec:
                     payload, "max_bars_since_peak", default=40
                 ),
                 min_current_adx=float(payload.get("min_current_adx", 12.0)),
-                require_di_alignment_on_peak=bool(
-                    payload.get("require_di_alignment_on_peak", True)
+                require_di_alignment_on_peak=_optional_bool(
+                    payload, "require_di_alignment_on_peak", default=True
                 ),
-                block_on_opposite_di_flip=bool(
-                    payload.get("block_on_opposite_di_flip", True)
+                block_on_opposite_di_flip=_optional_bool(
+                    payload, "block_on_opposite_di_flip", default=True
                 ),
                 opposite_di_margin=float(payload.get("opposite_di_margin", 5.0)),
-                require_ema_stack_direction=bool(
-                    payload.get("require_ema_stack_direction", True)
+                require_ema_stack_direction=_optional_bool(
+                    payload, "require_ema_stack_direction", default=True
                 ),
                 context_consumption=context_consumption,
             )
@@ -899,4 +899,22 @@ def _optional_number(payload: Mapping[str, Any], key: str, *, default: float) ->
     if not isinstance(value, (int, float)) or isinstance(value, bool):
         raise EmaPullbackInstanceValidationError(f"{key} must be a number")
     return float(value)
+
+
+def _optional_bool(payload: Mapping[str, Any], key: str, *, default: bool) -> bool:
+    if key not in payload:
+        return default
+    value = payload[key]
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"true", "1", "yes"}:
+            return True
+        if normalized in {"false", "0", "no"}:
+            return False
+        raise EmaPullbackInstanceValidationError(
+            f"{key} must be a boolean (true/false), got string {value!r}"
+        )
+    raise EmaPullbackInstanceValidationError(f"{key} must be a boolean")
 

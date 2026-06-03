@@ -361,9 +361,15 @@ require_ema_stack_direction: true
 На каждый run variant в `component_counters[]` для этого blocker (per `instance_id`, per side):
 
 ```text
-allowed_count
+intrinsic_allowed_count
+intrinsic_blocked_count
+intrinsic_blocked_reason_breakdown
+final_allowed_count_after_context   # если включён context_consumption
+final_blocked_count_after_context
+allowed_count                       # = final mask (runtime), иначе intrinsic
 blocked_count
-blocked_reason_breakdown:
+blocked_reason_breakdown            # = intrinsic (для sweep)
+```
   no_recent_adx_peak: <bars>
   peak_too_old: <bars>
   current_adx_too_low: <bars>

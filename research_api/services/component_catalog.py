@@ -27,6 +27,10 @@ def _num_param(label: str, *, default: float) -> ParamFieldSchema:
     return ParamFieldSchema(type="number", label=label, default=default)
 
 
+def _bool_param(label: str, *, default: bool) -> ParamFieldSchema:
+    return ParamFieldSchema(type="boolean", label=label, default=default)
+
+
 _BLOCKER_CONTEXT_POLICIES = [
     ContextConsumptionPolicySchema(
         policy_id="htf_regime_gate",
@@ -258,6 +262,22 @@ def get_component_catalog(*, family: str = "ema_pullback") -> ComponentCatalog:
             component_id="trend_strength_episode_blocker",
             role="blockers",
             label="Trend strength episode blocker",
+            description=(
+                "Episode-style ADX/DMI gate for pullback entries: requires a recent "
+                "strength confirmation, not high ADX on the entry bar. "
+                "Peak = most recent qualifying bar in lookback (ADX ≥ min_adx_peak), "
+                "not the ADX local maximum.\n\n"
+                "timeframe — ADX/DMI series (MVP: base only).\n"
+                "adx_period — Wilder ADX/DMI period.\n"
+                "min_adx_peak — minimum ADX on the strength confirmation bar.\n"
+                "peak_lookback_bars — how far back to search for that bar.\n"
+                "max_bars_since_peak — episode expires after this many bars since peak.\n"
+                "min_current_adx — floor for current ADX (may be below peak after fade).\n"
+                "require_di_alignment_on_peak — peak counts only when DI favors the side.\n"
+                "block_on_opposite_di_flip — block when opposite DI dominates.\n"
+                "opposite_di_margin — minimum opposite-DI lead for a flip block.\n"
+                "require_ema_stack_direction — fast/anchor/slow must match trade side."
+            ),
             list_slot=True,
             supports_context_consumption=True,
             context_consumption_policies=_BLOCKER_CONTEXT_POLICIES,
@@ -269,6 +289,16 @@ def get_component_catalog(*, family: str = "ema_pullback") -> ComponentCatalog:
                 "max_bars_since_peak": _int_param("Max bars since peak", default=40),
                 "min_current_adx": _num_param("Min current ADX", default=12.0),
                 "opposite_di_margin": _num_param("Opposite DI margin", default=5.0),
+                "require_di_alignment_on_peak": _bool_param(
+                    "Require DI alignment at confirmation", default=True
+                ),
+                "block_on_opposite_di_flip": _bool_param(
+                    "Block on opposite DI flip", default=True
+                ),
+                "require_ema_stack_direction": _bool_param(
+                    "Require EMA stack direction (redundant if direction already on)",
+                    default=True,
+                ),
             },
         ),
         ComponentSchema(

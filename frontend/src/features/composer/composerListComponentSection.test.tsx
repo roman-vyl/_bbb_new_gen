@@ -42,6 +42,13 @@ const catalog: ComponentCatalog = {
       ],
     },
     {
+      component_id: "help_demo_blocker",
+      role: "blockers",
+      label: "Help demo blocker",
+      list_slot: true,
+      description: "Demo help text for Composer info button.",
+    },
+    {
       component_id: "rsi_lookback_extreme_blocker",
       role: "blockers",
       label: "RSI lookback extreme blocker",
@@ -184,6 +191,16 @@ describe("ListComponentSection blockers context consumption", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: /Context consumption/i }));
     expect(screen.getAllByText("context_ref").length).toBeGreaterThan(0);
     expect(screen.getAllByText("policy_id").length).toBeGreaterThan(0);
+  });
+
+  it("shows component help popover when catalog has description", () => {
+    renderBlockers([{ instance_id: "hd1", component_id: "help_demo_blocker" }], {
+      contexts: {},
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Component help" }));
+    expect(screen.getByRole("dialog", { name: "Component help" }).textContent).toContain(
+      "Demo help text for Composer info button.",
+    );
   });
 
   it("does not render context consumption for no_blockers", () => {

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import numpy as np
 import pandas as pd
 
 from data_engine.contracts import pandas_freq_alias
@@ -31,9 +32,34 @@ def _rsi_rolling_mean(close: pd.Series, *, period: int) -> pd.Series:
     return 100 - (100 / (1 + rs))
 
 
-def _wilder_smooth(series: pd.Series, *, period: int) -> pd.Series:
-    """Wilder smoothing (alpha = 1/period), consistent with standard ADX/DMI."""
-    return series.ewm(alpha=1.0 / period, adjust=False).mean()
+def _wilder_rma(series: pd.Series, *, period: int) -> pd.Series:
+    """Wilder RMA; first output at the earliest index with `period` finite samples."""
+
+    values = series.astype(float).to_numpy()
+    n = len(values)
+    out = np.full(n, np.nan, dtype=float)
+    if n < period:
+        return pd.Series(out, index=series.index, dtype=float)
+
+    start_idx: int | None = None
+    for end in range(period - 1, n):
+        window = values[end - period + 1 : end + 1]
+        if np.all(np.isfinite(window)):
+            start_idx = end
+            break
+    if start_idx is None:
+        return pd.Series(out, index=series.index, dtype=float)
+
+    out[start_idx] = float(np.mean(values[start_idx - period + 1 : start_idx + 1]))
+    for i in range(start_idx + 1, n):
+        prev = out[i - 1]
+        current = values[i]
+        if not np.isfinite(prev) or not np.isfinite(current):
+            out[i] = np.nan
+            continue
+        out[i] = prev - (prev / period) + current
+
+    return pd.Series(out, index=series.index, dtype=float)
 
 
 def _compute_adx_dmi(
@@ -45,11 +71,7 @@ def _compute_adx_dmi(
 ) -> tuple[pd.Series, pd.Series, pd.Series]:
     up_move = high.diff()
     down_move = -low.diff()
-    plus_dm = pd.Series(
-        0.0,
-        index=high.index,
-        dtype=float,
-    )
+    plus_dm = pd.Series(0.0, index=high.index, dtype=float)
     minus_dm = pd.Series(0.0, index=high.index, dtype=float)
     plus_mask = (up_move > down_move) & (up_move > 0)
     minus_mask = (down_move > up_move) & (down_move > 0)
@@ -57,15 +79,20 @@ def _compute_adx_dmi(
     minus_dm.loc[minus_mask] = down_move.loc[minus_mask]
 
     tr = _true_range(high, low, close)
-    smooth_tr = _wilder_smooth(tr, period=period)
-    smooth_plus = _wilder_smooth(plus_dm, period=period)
-    smooth_minus = _wilder_smooth(minus_dm, period=period)
+    smooth_tr = _wilder_rma(tr, period=period)
+    smooth_plus = _wilder_rma(plus_dm, period=period)
+    smooth_minus = _wilder_rma(minus_dm, period=period)
 
     di_plus = 100.0 * smooth_plus / smooth_tr
     di_minus = 100.0 * smooth_minus / smooth_tr
     di_sum = di_plus + di_minus
     dx = 100.0 * (di_plus - di_minus).abs() / di_sum.replace(0, float("nan"))
-    adx = _wilder_smooth(dx, period=period)
+    adx = _wilder_rma(dx, period=period)
+
+    di_warmup = period
+    di_plus.iloc[:di_warmup] = np.nan
+    di_minus.iloc[:di_warmup] = np.nan
+
     return adx, di_plus, di_minus
 
 

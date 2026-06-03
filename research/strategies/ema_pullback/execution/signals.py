@@ -136,7 +136,7 @@ def _evaluate_blocker(
             anchor_col=anchor_col,
             slow_col=slow_col,
         )
-        return trace["allowed"], build_trend_strength_blocker_counters(trace)
+        return trace["allowed"], {"trend_strength_trace": trace}
     if rule.component_id == RSI_LOOKBACK_EXTREME_BLOCKER_COMPONENT:
         signal = rsi_lookback_extreme_blocker(
             df, side=side, rule=rule, rsi_col=_rsi_column(plan, rule.rsi)
@@ -162,7 +162,13 @@ def _blocker_counter_entry(
         "blocked_count": int((~allowed).sum()),
     }
     if extra_counters is not None:
-        counters.update(extra_counters)
+        trace = extra_counters.get("trend_strength_trace")
+        if trace is not None:
+            counters = build_trend_strength_blocker_counters(
+                trace, final_allowed=allowed
+            )
+        else:
+            counters.update(extra_counters)
     return {
         "role": "blockers",
         "component_id": rule.component_id,
