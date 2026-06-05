@@ -38,6 +38,7 @@ REQUIRED_TOP = (
     "data_range",
     "variants_count",
     "trade_quality_config",
+    "path_diagnostics_config",
     "variants",
 )
 
@@ -153,8 +154,9 @@ def test_build_research_run_payload_top_level_keys() -> None:
         variants=[variant],
     )
     assert tuple(payload.keys()) == REQUIRED_TOP
-    assert payload["report_schema_version"] == 5
+    assert payload["report_schema_version"] == 6
     assert payload["trade_quality_config"]["schema"] == "trade-exit-quality-diagnostics-v1"
+    assert payload["path_diagnostics_config"]["schema"] == "trade_path_diagnostics"
     assert payload["trade_quality_config"]["atr_source"] is None
     assert payload["data_range"] == {"from_open_time_ms": 1, "to_open_time_ms": 2}
     assert payload["variants_count"] == 1
@@ -220,7 +222,9 @@ def test_extract_trade_records_closed_and_open() -> None:
     assert t0["exit_time_ms"] is not None
     assert t0["exit_reason"] == "unknown"
     assert t0["mfe_price"] > 0
-    assert t0["mae_price"] <= 0
+    assert t0["mae_price"] >= 0
+    assert "path_diagnostics" in t0
+    assert "reference_levels" in t0
     assert t0["mfe_atr"] is None
     assert isinstance(t0["quality_flags"], list)
 
@@ -231,6 +235,8 @@ def test_extract_trade_records_closed_and_open() -> None:
     assert rec_o[0]["exit_time_ms"] is None
     assert rec_o[0]["exit_price"] is None
     assert rec_o[0]["exit_reason"] == "open"
+    assert "path_diagnostics" not in rec_o[0]
+    assert "reference_levels" not in rec_o[0]
 
     short_entries = pd.Series([False, True, False, False, False], index=idx)
     short_exits = pd.Series([False, False, False, True, False], index=idx)
@@ -447,6 +453,7 @@ def test_trade_quality_breakdowns_summarize_flags_and_components() -> None:
     assert flag_bucket["avg_capture_ratio"] == 0.2
     component = breakdowns["exit_component_quality_breakdown"]["ema_cross_loss_exit"]
     assert component["signal_exit_giveback_failures"] == 1
+    assert "path_diagnostics_summary" in breakdowns
 
 
 def test_fee_diagnostics_identity() -> None:

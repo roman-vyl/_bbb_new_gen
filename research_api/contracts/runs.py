@@ -6,7 +6,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-SUPPORTED_REPORT_SCHEMA_VERSIONS: frozenset[int] = frozenset({3, 4, 5})
+SUPPORTED_REPORT_SCHEMA_VERSIONS: frozenset[int] = frozenset({3, 4, 5, 6})
 
 
 class TradeOverlay(BaseModel):
@@ -79,6 +79,8 @@ class TradeRecord(TradeOverlay):
     giveback_atr: float | None = None
     bars_from_mfe_to_exit: int | None = None
     quality_flags: list[str] | None = None
+    path_diagnostics: dict[str, Any] | None = None
+    reference_levels: dict[str, Any] | None = None
     entry_setup_diagnostics: dict[str, dict[str, Any]] = Field(default_factory=dict)
     entry_idx: int | None = None
     exit_idx: int | None = None
@@ -205,6 +207,18 @@ class VariantMetrics(BaseModel):
     fee_diagnostics: FeeDiagnostics | None = None
     quality_flag_breakdown: dict[str, QualityFlagBucketMetrics] | None = None
     exit_component_quality_breakdown: dict[str, ExitComponentQualityBucketMetrics] | None = None
+    path_diagnostics_summary: dict[str, Any] | None = None
+
+
+class PathDiagnosticsConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_: str = Field(alias="schema")
+    version: str
+    window: str
+    open_trades: str
+    same_bar_level_policy: str
+    post_exit_bars: str
 
 
 class TradeQualityConfig(BaseModel):
@@ -280,4 +294,5 @@ class RunReport(BaseModel):
     data_range: DataRange
     variants_count: int
     trade_quality_config: TradeQualityConfig | None = None
+    path_diagnostics_config: PathDiagnosticsConfig | None = None
     variants: list[RunVariant]

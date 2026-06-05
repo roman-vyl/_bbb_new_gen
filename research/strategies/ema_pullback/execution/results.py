@@ -21,8 +21,10 @@ from research.strategies.ema_pullback.execution.exit_attribution import (
 )
 from research.strategies.ema_pullback.execution.trade_analyzer import (
     build_exit_component_quality_breakdown,
+    build_path_diagnostics_summary,
     build_quality_flag_breakdown,
     build_trade_quality_diagnostics,
+    path_diagnostics_config_payload,
     trade_quality_config_payload,
 )
 
@@ -341,6 +343,7 @@ def build_trade_quality_breakdowns(trade_records: list[dict[str, Any]]) -> dict[
     return {
         "quality_flag_breakdown": build_quality_flag_breakdown(trade_records),
         "exit_component_quality_breakdown": build_exit_component_quality_breakdown(trade_records),
+        "path_diagnostics_summary": build_path_diagnostics_summary(trade_records),
     }
 
 
@@ -574,6 +577,10 @@ def extract_trade_records(
                         exit_idx=exit_idx,
                         high=high,
                         low=low,
+                        index=index,
+                        open_=open_s,
+                        close=close,
+                        attribution=attribution,
                         diagnostic_atr_series=diagnostic_atr_series,
                     )
                 )
@@ -587,6 +594,11 @@ def build_managed_trade_records(
     *,
     index: pd.Index,
     close: pd.Series,
+    high: pd.Series | None = None,
+    low: pd.Series | None = None,
+    open_: pd.Series | None = None,
+    attribution: ExitAttributionContext | None = None,
+    diagnostic_atr_series: pd.Series | None = None,
     fees_rate: float = 0.0,
     base_timeframe: str | None = None,
     profile_long: pd.Series | None = None,
@@ -694,6 +706,28 @@ def build_managed_trade_records(
                 "active_stop_management_source": diag.active_stop_management_source,
             }
 
+        if (
+            status == "closed"
+            and high is not None
+            and low is not None
+            and entry_idx >= 0
+            and exit_idx >= entry_idx
+        ):
+            record.update(
+                build_trade_quality_diagnostics(
+                    record,
+                    entry_idx=entry_idx,
+                    exit_idx=exit_idx,
+                    high=high,
+                    low=low,
+                    index=index,
+                    open_=open_,
+                    close=close,
+                    attribution=attribution,
+                    diagnostic_atr_series=diagnostic_atr_series,
+                )
+            )
+
         out.append(record)
     return out
 
@@ -716,7 +750,7 @@ def build_research_run_payload(
     payload = {
         "run_id": run_id,
         "created_at": _format_created_at(created_at),
-        "report_schema_version": 5,
+        "report_schema_version": 6,
         "family": family,
         "symbol": symbol.strip().upper(),
         "timeframe": timeframe.strip(),
@@ -727,6 +761,7 @@ def build_research_run_payload(
         },
         "variants_count": len(variants),
         "trade_quality_config": trade_quality_config_payload(),
+        "path_diagnostics_config": path_diagnostics_config_payload(),
         "variants": variants,
     }
     if batch_metadata is not None:
