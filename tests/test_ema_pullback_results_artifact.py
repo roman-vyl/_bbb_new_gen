@@ -11,6 +11,7 @@ import pytest
 from research.strategies.ema_pullback.execution.backtest import build_trade_side_metrics
 from research.strategies.ema_pullback.context.policies import resolve_htf_regime
 from research.strategies.ema_pullback.execution.results import (
+    build_compact_report_payload,
     build_exit_reason_breakdown,
     build_fee_diagnostics,
     build_profile_breakdown,
@@ -38,6 +39,7 @@ REQUIRED_TOP = (
     "data_range",
     "variants_count",
     "trade_quality_config",
+    "path_diagnostics_config",
     "variants",
 )
 
@@ -153,8 +155,9 @@ def test_build_research_run_payload_top_level_keys() -> None:
         variants=[variant],
     )
     assert tuple(payload.keys()) == REQUIRED_TOP
-    assert payload["report_schema_version"] == 5
+    assert payload["report_schema_version"] == 6
     assert payload["trade_quality_config"]["schema"] == "trade-exit-quality-diagnostics-v1"
+    assert payload["path_diagnostics_config"]["schema"] == "trade_path_diagnostics"
     assert payload["trade_quality_config"]["atr_source"] is None
     assert payload["data_range"] == {"from_open_time_ms": 1, "to_open_time_ms": 2}
     assert payload["variants_count"] == 1
@@ -175,7 +178,53 @@ def test_build_research_run_payload_top_level_keys() -> None:
     assert "ema_pullback" in raw
 
 
-def test_write_research_results_creates_latest_and_run(tmp_path: Path) -> None:
+def test_build_compact_report_payload_strips_trade_records_and_adds_counts() -> None:
+    full = {
+        "run_id": "rid",
+        "report_schema_version": 6,
+        "family": "ema_pullback",
+        "variants": [
+            {
+                "variant": "v1",
+                "metrics": {"total": {"trades": 2}},
+                "trade_records": [
+                    {"status": "closed", "trade_id": 1},
+                    {"status": "open", "trade_id": 2},
+                ],
+            }
+        ],
+    }
+    original_records = full["variants"][0]["trade_records"]
+
+    compact = build_compact_report_payload(full)
+
+    assert full["variants"][0]["trade_records"] is original_records
+    assert compact["artifact_kind"] == "run_summary"
+    assert compact["summary_schema_version"] == 1
+    assert compact["source_report_path"] == "research/results/runs/rid.json"
+    variant = compact["variants"][0]
+    assert "trade_records" not in variant
+    assert variant["trade_records_count"] == 2
+    assert variant["closed_trades_count"] == 1
+    assert variant["open_trades_count"] == 1
+    assert variant["metrics"] == {"total": {"trades": 2}}
+
+
+def test_build_compact_report_payload_summary_markers_override_collisions() -> None:
+    full = {
+        "run_id": "rid",
+        "artifact_kind": "full_report",
+        "summary_schema_version": 99,
+        "source_report_path": "wrong.json",
+        "variants": [],
+    }
+    compact = build_compact_report_payload(full)
+    assert compact["artifact_kind"] == "run_summary"
+    assert compact["summary_schema_version"] == 1
+    assert compact["source_report_path"] == "research/results/runs/rid.json"
+
+
+def test_write_research_results_creates_latest_run_and_summary(tmp_path: Path) -> None:
     results_dir = tmp_path / "results"
     payload = {
         "run_id": "2026-05-01T120000Z_ema_pullback_BTCUSDT_1h",
@@ -189,12 +238,17 @@ def test_write_research_results_creates_latest_and_run(tmp_path: Path) -> None:
         "variants_count": 0,
         "variants": [],
     }
-    latest, run_p = write_research_results(payload, results_dir=results_dir)
+    latest, run_p, summary_p = write_research_results(payload, results_dir=results_dir)
     assert latest == results_dir / "latest.json"
     assert run_p == results_dir / "runs" / f"{payload['run_id']}.json"
+    assert summary_p == results_dir / "runs" / f"{payload['run_id']}.summary.json"
     assert latest.read_text(encoding="utf-8") == run_p.read_text(encoding="utf-8")
     roundtrip = json.loads(latest.read_text(encoding="utf-8"))
     assert roundtrip["run_id"] == payload["run_id"]
+    summary = json.loads(summary_p.read_text(encoding="utf-8"))
+    assert summary["artifact_kind"] == "run_summary"
+    assert summary["run_id"] == payload["run_id"]
+    assert "trade_records" not in summary
 
 
 @pytest.mark.optional_vectorbt
@@ -220,7 +274,9 @@ def test_extract_trade_records_closed_and_open() -> None:
     assert t0["exit_time_ms"] is not None
     assert t0["exit_reason"] == "unknown"
     assert t0["mfe_price"] > 0
-    assert t0["mae_price"] <= 0
+    assert t0["mae_price"] >= 0
+    assert "path_diagnostics" in t0
+    assert "reference_levels" in t0
     assert t0["mfe_atr"] is None
     assert isinstance(t0["quality_flags"], list)
 
@@ -231,6 +287,8 @@ def test_extract_trade_records_closed_and_open() -> None:
     assert rec_o[0]["exit_time_ms"] is None
     assert rec_o[0]["exit_price"] is None
     assert rec_o[0]["exit_reason"] == "open"
+    assert "path_diagnostics" not in rec_o[0]
+    assert "reference_levels" not in rec_o[0]
 
     short_entries = pd.Series([False, True, False, False, False], index=idx)
     short_exits = pd.Series([False, False, False, True, False], index=idx)
@@ -447,6 +505,7 @@ def test_trade_quality_breakdowns_summarize_flags_and_components() -> None:
     assert flag_bucket["avg_capture_ratio"] == 0.2
     component = breakdowns["exit_component_quality_breakdown"]["ema_cross_loss_exit"]
     assert component["signal_exit_giveback_failures"] == 1
+    assert "path_diagnostics_summary" in breakdowns
 
 
 def test_fee_diagnostics_identity() -> None:

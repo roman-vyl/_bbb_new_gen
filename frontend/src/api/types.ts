@@ -1,6 +1,6 @@
 /** Mirrors future `research_api/contracts` — single source for UI types (phase 0). */
 
-export const SUPPORTED_REPORT_SCHEMA_VERSIONS = [3, 4, 5] as const;
+export const SUPPORTED_REPORT_SCHEMA_VERSIONS = [3, 4, 5, 6] as const;
 export type ReportSchemaVersion = (typeof SUPPORTED_REPORT_SCHEMA_VERSIONS)[number];
 
 /** JSON object maps in reports/config drafts (avoids bare `Record` under TS 5.8). */
@@ -134,6 +134,91 @@ export type TradeRecord = TradeOverlay & {
   entry_setup_diagnostics?: Record<string, SetupEntryDiagnostics>;
   /** Exit management combiner — break_even_stop when present on trade record. */
   break_even?: BreakEvenDiagnostics;
+  /** Schema v6 — closed trades only */
+  path_diagnostics?: TradePathDiagnostics;
+  reference_levels?: TradeReferenceLevels;
+};
+
+export type TradePathExcursion = {
+  price_move: number;
+  pct: number;
+  time_ms: number | null;
+  bars_from_entry: number;
+};
+
+export type TradePathCapture = {
+  capture_ratio: number | null;
+  captured_pct: number;
+  giveback_price: number | null;
+  giveback_pct: number | null;
+  bars_from_mfe_to_exit: number;
+};
+
+export type TradePathDiagnostics = {
+  mfe: TradePathExcursion;
+  mae: TradePathExcursion;
+  capture: TradePathCapture;
+};
+
+export type TradeReferenceLevels = {
+  reference_levels_available: boolean;
+  initial_stop_price: number | null;
+  initial_take_profit_price: number | null;
+  initial_risk_price_move: number | null;
+  initial_reward_price_move: number | null;
+  reached_initial_tp: boolean;
+  reached_initial_sl: boolean;
+  first_level_hit: "take_profit" | "stop_loss" | "ambiguous_same_bar" | "none";
+  first_level_hit_time_ms: number | null;
+  bars_to_first_level_hit: number | null;
+};
+
+export type PathDiagnosticsSummaryBucket = {
+  trade_count: number;
+  avg_mfe_pct: number | null;
+  median_mfe_pct: number | null;
+  p75_mfe_pct: number | null;
+  p90_mfe_pct: number | null;
+  avg_mae_pct: number | null;
+  median_mae_pct: number | null;
+  p75_mae_pct: number | null;
+  p90_mae_pct: number | null;
+  avg_capture_ratio: number | null;
+  median_capture_ratio: number | null;
+  avg_giveback_pct: number | null;
+  median_giveback_pct: number | null;
+  reference_levels_available_count: number;
+  reference_levels_unavailable_count: number;
+  reached_initial_tp_count: number;
+  reached_initial_sl_count: number;
+  first_take_profit_count: number;
+  first_stop_loss_count: number;
+  ambiguous_first_level_count: number;
+  no_reference_level_hit_count: number;
+  avg_bars_to_mfe: number | null;
+  median_bars_to_mfe: number | null;
+  avg_bars_to_mae: number | null;
+  median_bars_to_mae: number | null;
+  avg_bars_to_first_level_hit: number | null;
+  median_bars_to_first_level_hit: number | null;
+};
+
+export type PathDiagnosticsSummary = {
+  total: PathDiagnosticsSummaryBucket;
+  by_side: { long: PathDiagnosticsSummaryBucket; short: PathDiagnosticsSummaryBucket };
+  by_exit_reason: Record<string, PathDiagnosticsSummaryBucket>;
+  by_entry_profile?: Record<string, PathDiagnosticsSummaryBucket>;
+  by_entry_context_state?: Record<string, PathDiagnosticsSummaryBucket>;
+  by_active_exit_profile?: Record<string, PathDiagnosticsSummaryBucket>;
+};
+
+export type PathDiagnosticsConfig = {
+  schema: "trade_path_diagnostics" | string;
+  version: string;
+  window: string;
+  open_trades: string;
+  same_bar_level_policy: string;
+  post_exit_bars: string;
 };
 
 export type ContextConsumptionAttribution = {
@@ -244,6 +329,8 @@ export type VariantMetrics = {
   quality_flag_breakdown?: Record<string, QualityFlagBucketMetrics>;
   exit_component_quality_breakdown?: Record<string, ExitComponentQualityBucketMetrics>;
   bounce_counter_breakdown?: BounceCounterBreakdown;
+  /** Schema v6 */
+  path_diagnostics_summary?: PathDiagnosticsSummary;
 };
 
 export type RunVariant = {
@@ -268,6 +355,7 @@ export type RunReport = {
   data_range: { from_open_time_ms: number; to_open_time_ms: number };
   variants_count: number;
   trade_quality_config?: TradeQualityConfig | null;
+  path_diagnostics_config?: PathDiagnosticsConfig | null;
   variants: RunVariant[];
 };
 

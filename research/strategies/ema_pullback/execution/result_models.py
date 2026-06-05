@@ -61,6 +61,7 @@ class VariantMetrics:
     bounce_counter_breakdown: dict[str, Any] | None = None
     quality_flag_breakdown: dict[str, Any] | None = None
     exit_component_quality_breakdown: dict[str, Any] | None = None
+    path_diagnostics_summary: dict[str, Any] | None = None
 
     def to_payload(self) -> dict[str, Any]:
         total_payload = self.total.to_payload()
@@ -86,6 +87,8 @@ class VariantMetrics:
             payload["quality_flag_breakdown"] = self.quality_flag_breakdown
         if self.exit_component_quality_breakdown is not None:
             payload["exit_component_quality_breakdown"] = self.exit_component_quality_breakdown
+        if self.path_diagnostics_summary is not None:
+            payload["path_diagnostics_summary"] = self.path_diagnostics_summary
         return payload
 
 

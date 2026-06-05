@@ -65,6 +65,7 @@ class ExperimentCandidateResult:
     strategy_config_hash: str
     run_id: str | None = None
     report_path: str | None = None
+    summary_report_path: str | None = None
     config_id: str | None = None
     report_schema_version: int | None = None
     started_at: str | None = None

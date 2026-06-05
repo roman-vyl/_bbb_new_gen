@@ -7,6 +7,7 @@ describe("reportSchema", () => {
   it("isDiagnosticsV4 is true for diagnostic report versions", () => {
     expect(isDiagnosticsV4(4)).toBe(true);
     expect(isDiagnosticsV4(5)).toBe(true);
+    expect(isDiagnosticsV4(6)).toBe(true);
     expect(isDiagnosticsV4(3)).toBe(false);
     expect(isDiagnosticsV4(1)).toBe(false);
   });

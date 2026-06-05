@@ -33,9 +33,9 @@ def test_long_trade_excursion_capture_and_atr_metrics() -> None:
     assert metrics["mfe_price"] == 10.0
     assert metrics["mfe_pct"] == 0.10
     assert metrics["mfe_atr"] == 5.0
-    assert metrics["mae_price"] == -2.0
-    assert metrics["mae_pct"] == -0.02
-    assert metrics["mae_atr"] == -1.0
+    assert metrics["mae_price"] == 2.0
+    assert metrics["mae_pct"] == 0.02
+    assert metrics["mae_atr"] == 1.0
     assert metrics["bars_to_mfe"] == 1
     assert metrics["bars_to_mae"] == 1
     assert metrics["captured_price"] == 6.0
@@ -60,7 +60,7 @@ def test_short_trade_excursion_mirrors_long_calculations() -> None:
     )
 
     assert metrics["mfe_price"] == 5.0
-    assert metrics["mae_price"] == -3.0
+    assert metrics["mae_price"] == 3.0
     assert metrics["bars_to_mfe"] == 1
     assert metrics["bars_to_mae"] == 1
     assert metrics["captured_price"] == 4.0
@@ -80,7 +80,7 @@ def test_one_bar_trade_uses_entry_bar_as_zero_offset() -> None:
     )
 
     assert metrics["mfe_price"] == 2.0
-    assert metrics["mae_price"] == -1.0
+    assert metrics["mae_price"] == 1.0
     assert metrics["bars_to_mfe"] == 0
     assert metrics["bars_to_mae"] == 0
     assert metrics["bars_from_mfe_to_exit"] == 0
@@ -108,10 +108,10 @@ def test_entry_price_outside_ohlc_due_slippage_clamps_mfe_and_mae() -> None:
 
     assert long_metrics["mfe_price"] == 0.0
     assert long_metrics["capture_ratio"] is None
-    assert long_metrics["mae_price"] == -2.0
+    assert long_metrics["mae_price"] == 2.0
     assert short_metrics["mfe_price"] == 0.0
     assert short_metrics["capture_ratio"] is None
-    assert short_metrics["mae_price"] == -2.0
+    assert short_metrics["mae_price"] == 2.0
 
 
 def test_zero_mfe_and_mae_reset_bar_offset_to_entry() -> None:
@@ -198,7 +198,7 @@ def test_exit_bar_is_included_for_bar_level_diagnostics() -> None:
     )
 
     assert metrics["mfe_price"] == 10.0
-    assert metrics["mae_price"] == -2.0
+    assert metrics["mae_price"] == 2.0
     assert metrics["bars_to_mfe"] == 1
 
 

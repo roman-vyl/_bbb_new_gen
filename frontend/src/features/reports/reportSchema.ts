@@ -1,7 +1,7 @@
 import type { VariantMetrics } from "@/api/types";
 
 export function isDiagnosticsV4(reportSchemaVersion: number): boolean {
-  return reportSchemaVersion === 4 || reportSchemaVersion === 5;
+  return reportSchemaVersion === 4 || reportSchemaVersion === 5 || reportSchemaVersion === 6;
 }
 
 export function hasVariantDiagnostics(metrics: VariantMetrics): boolean {
