@@ -81,9 +81,10 @@ def run_strategy_specs_from_config(
         variants=[v.to_payload() for v in variant_results],
         batch_metadata=_batch_success_metadata(loaded_config),
     )
-    latest_path, run_path = write_research_results(payload)
+    latest_path, run_path, summary_path = write_research_results(payload)
     print(f"results_artifact={latest_path.relative_to(_ROOT).as_posix()}")
     print(f"run_artifact={run_path.relative_to(_ROOT).as_posix()}")
+    print(f"summary_artifact={summary_path.relative_to(_ROOT).as_posix()}")
     print("status=ok")
     return run_id
 

@@ -847,10 +847,10 @@ def build_compact_report_payload(
         stripped["variants"] = compact_variants
 
     return {
+        **stripped,
         "artifact_kind": "run_summary",
         "summary_schema_version": SUMMARY_SCHEMA_VERSION,
         "source_report_path": source_report_path,
-        **stripped,
     }
 
 

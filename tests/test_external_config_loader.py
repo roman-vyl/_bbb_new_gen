@@ -655,6 +655,7 @@ def test_runner_applies_run_level_execution_from_external_config(
         lambda _payload: (
             runner._ROOT / "research" / "results" / "latest.json",
             runner._ROOT / "research" / "results" / "runs" / "fake.json",
+            runner._ROOT / "research" / "results" / "runs" / "fake.summary.json",
         ),
     )
 

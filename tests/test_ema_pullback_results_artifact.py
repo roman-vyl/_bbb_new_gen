@@ -210,6 +210,20 @@ def test_build_compact_report_payload_strips_trade_records_and_adds_counts() -> 
     assert variant["metrics"] == {"total": {"trades": 2}}
 
 
+def test_build_compact_report_payload_summary_markers_override_collisions() -> None:
+    full = {
+        "run_id": "rid",
+        "artifact_kind": "full_report",
+        "summary_schema_version": 99,
+        "source_report_path": "wrong.json",
+        "variants": [],
+    }
+    compact = build_compact_report_payload(full)
+    assert compact["artifact_kind"] == "run_summary"
+    assert compact["summary_schema_version"] == 1
+    assert compact["source_report_path"] == "research/results/runs/rid.json"
+
+
 def test_write_research_results_creates_latest_run_and_summary(tmp_path: Path) -> None:
     results_dir = tmp_path / "results"
     payload = {
