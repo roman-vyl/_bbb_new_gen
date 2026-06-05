@@ -175,6 +175,15 @@ Percentiles: linear interpolation on finite values; empty → `null`.
 2. Frontend optional types; existing Reports UI reads flat + v4 metrics.
 3. Rollback: revert research PR; v5 JSON still valid.
 
+## Compact run summary artifact (follow-up)
+
+When `write_research_results` persists `runs/<RUN_ID>.json`, it also writes **`runs/<RUN_ID>.summary.json`** — a projection of the same payload without per-trade arrays.
+
+- **Not** a new report schema: keeps `report_schema_version` from full report; adds `artifact_kind: run_summary`, `summary_schema_version: 1`, `source_report_path`.
+- `build_compact_report_payload()` deep-copies, strips `trade_records` (and other known heavy keys) from variants, adds `trade_records_count` / `closed_trades_count` / `open_trades_count`.
+- Full `latest.json` and `runs/<RUN_ID>.json` unchanged.
+- Batch runner may set optional `summary_report_path` on candidate results.
+
 ## Open Questions
 
 - Reports UI for `path_diagnostics_summary` table — deferred follow-up.

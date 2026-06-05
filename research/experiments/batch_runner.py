@@ -95,6 +95,9 @@ class BatchRunner:
             result.status = "ok"
             result.run_id = summary.get("run_id") or run_id
             result.report_path = _relative_or_posix(run_path, repo_root)
+            summary_path = run_path.with_name(f"{run_id}.summary.json")
+            if summary_path.exists():
+                result.summary_report_path = _relative_or_posix(summary_path, repo_root)
             result.error = None
         except Exception as exc:  # noqa: BLE001 — runtime failure isolation per spec
             result.error = str(exc)

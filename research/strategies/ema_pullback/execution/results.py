@@ -5,6 +5,7 @@ Stage 9: structured machine-readable output under ``research/results/``.
 
 from __future__ import annotations
 
+import copy
 import json
 import math
 from datetime import datetime, timezone
@@ -769,12 +770,96 @@ def build_research_run_payload(
     return payload
 
 
+SUMMARY_SCHEMA_VERSION = 1
+
+_STRIP_VARIANT_KEYS = frozenset(
+    {
+        "trade_records",
+        "trades",
+        "candles",
+        "ohlcv",
+        "component_events",
+        "signal_trace",
+        "trace",
+    }
+)
+
+_STRIP_TOP_LEVEL_KEYS = frozenset(
+    {
+        "candles",
+        "ohlcv",
+        "component_events",
+        "signal_trace",
+        "trace",
+        "trade_records",
+        "trades",
+    }
+)
+
+
+def run_report_relpath(run_id: str) -> str:
+    return f"research/results/runs/{run_id}.json"
+
+
+def run_summary_report_relpath(run_id: str) -> str:
+    return f"research/results/runs/{run_id}.summary.json"
+
+
+def _trade_record_counts(trade_records: list[dict[str, Any]]) -> dict[str, int]:
+    closed = sum(1 for record in trade_records if record.get("status") == "closed")
+    open_count = sum(1 for record in trade_records if record.get("status") == "open")
+    return {
+        "trade_records_count": len(trade_records),
+        "closed_trades_count": closed,
+        "open_trades_count": open_count,
+    }
+
+
+def build_compact_report_payload(
+    full_report: Mapping[str, Any],
+    *,
+    source_report_path: str | None = None,
+) -> dict[str, Any]:
+    """Projection of a full run report without per-trade heavy arrays."""
+
+    run_id = str(full_report["run_id"])
+    if source_report_path is None:
+        source_report_path = run_report_relpath(run_id)
+
+    stripped = copy.deepcopy(dict(full_report))
+    for key in _STRIP_TOP_LEVEL_KEYS:
+        stripped.pop(key, None)
+
+    variants = stripped.get("variants")
+    if isinstance(variants, list):
+        compact_variants: list[Any] = []
+        for variant in variants:
+            if not isinstance(variant, dict):
+                compact_variants.append(variant)
+                continue
+            compact_variant = {
+                key: value for key, value in variant.items() if key not in _STRIP_VARIANT_KEYS
+            }
+            trade_records = variant.get("trade_records")
+            if isinstance(trade_records, list):
+                compact_variant.update(_trade_record_counts(trade_records))
+            compact_variants.append(compact_variant)
+        stripped["variants"] = compact_variants
+
+    return {
+        "artifact_kind": "run_summary",
+        "summary_schema_version": SUMMARY_SCHEMA_VERSION,
+        "source_report_path": source_report_path,
+        **stripped,
+    }
+
+
 def write_research_results(
     payload: dict[str, Any],
     *,
     results_dir: Path | None = None,
-) -> tuple[Path, Path]:
-    """Write ``latest.json`` and ``runs/<run_id>.json``; return both paths."""
+) -> tuple[Path, Path, Path]:
+    """Write full report, compact summary, and ``latest.json``; return all three paths."""
 
     base = results_dir if results_dir is not None else default_results_dir()
     runs = base / "runs"
@@ -785,7 +870,15 @@ def write_research_results(
     text = json.dumps(safe, indent=2, ensure_ascii=False)
 
     run_path = runs / f"{run_id}.json"
+    summary_path = runs / f"{run_id}.summary.json"
     latest_path = base / "latest.json"
     run_path.write_text(text, encoding="utf-8")
     latest_path.write_text(text, encoding="utf-8")
-    return latest_path, run_path
+
+    summary_payload = build_compact_report_payload(
+        payload,
+        source_report_path=run_report_relpath(run_id),
+    )
+    summary_text = json.dumps(json_safe(summary_payload), indent=2, ensure_ascii=False)
+    summary_path.write_text(summary_text, encoding="utf-8")
+    return latest_path, run_path, summary_path

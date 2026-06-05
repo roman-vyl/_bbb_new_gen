@@ -11,6 +11,7 @@ import pytest
 from research.strategies.ema_pullback.execution.backtest import build_trade_side_metrics
 from research.strategies.ema_pullback.context.policies import resolve_htf_regime
 from research.strategies.ema_pullback.execution.results import (
+    build_compact_report_payload,
     build_exit_reason_breakdown,
     build_fee_diagnostics,
     build_profile_breakdown,
@@ -177,7 +178,39 @@ def test_build_research_run_payload_top_level_keys() -> None:
     assert "ema_pullback" in raw
 
 
-def test_write_research_results_creates_latest_and_run(tmp_path: Path) -> None:
+def test_build_compact_report_payload_strips_trade_records_and_adds_counts() -> None:
+    full = {
+        "run_id": "rid",
+        "report_schema_version": 6,
+        "family": "ema_pullback",
+        "variants": [
+            {
+                "variant": "v1",
+                "metrics": {"total": {"trades": 2}},
+                "trade_records": [
+                    {"status": "closed", "trade_id": 1},
+                    {"status": "open", "trade_id": 2},
+                ],
+            }
+        ],
+    }
+    original_records = full["variants"][0]["trade_records"]
+
+    compact = build_compact_report_payload(full)
+
+    assert full["variants"][0]["trade_records"] is original_records
+    assert compact["artifact_kind"] == "run_summary"
+    assert compact["summary_schema_version"] == 1
+    assert compact["source_report_path"] == "research/results/runs/rid.json"
+    variant = compact["variants"][0]
+    assert "trade_records" not in variant
+    assert variant["trade_records_count"] == 2
+    assert variant["closed_trades_count"] == 1
+    assert variant["open_trades_count"] == 1
+    assert variant["metrics"] == {"total": {"trades": 2}}
+
+
+def test_write_research_results_creates_latest_run_and_summary(tmp_path: Path) -> None:
     results_dir = tmp_path / "results"
     payload = {
         "run_id": "2026-05-01T120000Z_ema_pullback_BTCUSDT_1h",
@@ -191,12 +224,17 @@ def test_write_research_results_creates_latest_and_run(tmp_path: Path) -> None:
         "variants_count": 0,
         "variants": [],
     }
-    latest, run_p = write_research_results(payload, results_dir=results_dir)
+    latest, run_p, summary_p = write_research_results(payload, results_dir=results_dir)
     assert latest == results_dir / "latest.json"
     assert run_p == results_dir / "runs" / f"{payload['run_id']}.json"
+    assert summary_p == results_dir / "runs" / f"{payload['run_id']}.summary.json"
     assert latest.read_text(encoding="utf-8") == run_p.read_text(encoding="utf-8")
     roundtrip = json.loads(latest.read_text(encoding="utf-8"))
     assert roundtrip["run_id"] == payload["run_id"]
+    summary = json.loads(summary_p.read_text(encoding="utf-8"))
+    assert summary["artifact_kind"] == "run_summary"
+    assert summary["run_id"] == payload["run_id"]
+    assert "trade_records" not in summary
 
 
 @pytest.mark.optional_vectorbt
