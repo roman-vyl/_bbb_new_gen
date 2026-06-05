@@ -289,6 +289,73 @@ def test_build_trade_quality_breakdowns_includes_path_summary() -> None:
     assert breakdowns["path_diagnostics_summary"]["total"]["trade_count"] == 1
 
 
+def test_bar_time_ms_datetime_index_matches_entry_time_ms() -> None:
+    idx = pd.date_range("2024-01-01", periods=3, freq="h", tz="UTC")
+    from research.strategies.ema_pullback.execution.trade_analyzer import _bar_time_ms
+
+    assert _bar_time_ms(idx, 1) == int(idx[1].timestamp() * 1000)
+
+
+def test_bar_time_ms_open_time_ms_integer_index() -> None:
+    from research.strategies.ema_pullback.execution.trade_analyzer import _bar_time_ms
+
+    ms_idx = pd.Index([1_704_067_200_000, 1_704_070_800_000])
+    assert _bar_time_ms(ms_idx, 0) == 1_704_067_200_000
+    assert _bar_time_ms(ms_idx, 1) == 1_704_070_800_000
+
+
+@pytest.mark.optional_vectorbt
+def test_reference_levels_inferred_from_entry_context_when_profile_missing() -> None:
+    vbt = pytest.importorskip("vectorbt")
+    from research.strategies.ema_pullback.execution.results import extract_trade_records
+
+    idx = pd.date_range("2024-01-01", periods=10, freq="h", tz="UTC")
+    close = pd.Series(100.0, index=idx, dtype=float)
+    high = close + 2.0
+    low = close - 2.0
+    open_ = close.copy()
+    entries = pd.Series(False, index=idx)
+    entries.iloc[2] = True
+    exits = pd.Series(False, index=idx)
+    exits.iloc[6] = True
+    sl_ratio = pd.Series(0.02, index=idx)
+    tp_ratio = pd.Series(0.05, index=idx)
+    ctx = ExitAttributionContext(
+        index=idx,
+        instance_ids=("atr_sl", "atr_tp"),
+        exit_kinds=("stop_loss", "take_profit"),
+        long_signal_by_rule=(None, None),
+        short_signal_by_rule=(None, None),
+        distance_ratio_by_rule=(sl_ratio, tp_ratio),
+        sl_stop_agg_by_profile={
+            "aligned": sl_ratio,
+            "countertrend": sl_ratio,
+            "neutral": sl_ratio,
+        },
+        tp_stop_agg_by_profile={
+            "aligned": tp_ratio,
+            "countertrend": tp_ratio,
+            "neutral": tp_ratio,
+        },
+        sl_stop_agg=sl_ratio,
+        tp_stop_agg=tp_ratio,
+    )
+    pf = vbt.Portfolio.from_signals(close, entries, exits, freq="1h")
+    context_state = pd.Series("up", index=idx, dtype=object)
+    rec = extract_trade_records(
+        pf,
+        close,
+        high=high,
+        low=low,
+        open_s=open_,
+        attribution=ctx,
+        context_state=context_state,
+    )[0]
+    assert rec["entry_context_state"] == "up"
+    assert rec.get("entry_profile") is None
+    assert rec["reference_levels"]["reference_levels_available"] is True
+
+
 @pytest.mark.optional_vectorbt
 def test_open_trade_omits_nested_sections() -> None:
     vbt = pytest.importorskip("vectorbt")

@@ -12,9 +12,12 @@ from research.strategies.ema_pullback.execution.exit_attribution import (
     ExitAttributionContext,
     _agg_sl_tp_at_entry,
     _levels_from_ratios,
+    _resolve_profile,
     _stop_hit_long,
     _stop_hit_short,
 )
+
+_REFERENCE_PROFILE_KEYS = frozenset({"aligned", "countertrend", "neutral"})
 
 
 QUALITY_FLAGS = (
@@ -103,13 +106,42 @@ def _bar_time_ms(index: pd.Index | None, bar_idx: int) -> int | None:
     if index is None or bar_idx < 0 or bar_idx >= len(index):
         return None
     ts = index[bar_idx]
-    if not isinstance(ts, pd.Timestamp):
-        ts = pd.Timestamp(ts)
-    if ts.tzinfo is None:
-        ts = ts.tz_localize("UTC")
+    if isinstance(ts, pd.Timestamp):
+        if ts.tzinfo is None:
+            ts = ts.tz_localize("UTC")
+        else:
+            ts = ts.tz_convert("UTC")
+        return int(ts.value // 1_000_000)
+    try:
+        v = int(ts)
+    except (TypeError, ValueError):
+        v = None
+    if v is not None and not isinstance(ts, bool):
+        # DB OHLCV uses open_time_ms; raw int index values are ms, not ns.
+        if v >= 1_000_000_000_000:
+            return v
+        if v >= 1_000_000_000:
+            return v * 1000
+    parsed = pd.Timestamp(ts)
+    if parsed.tzinfo is None:
+        parsed = parsed.tz_localize("UTC")
     else:
-        ts = ts.tz_convert("UTC")
-    return int(ts.value // 1_000_000)
+        parsed = parsed.tz_convert("UTC")
+    return int(parsed.value // 1_000_000)
+
+
+def _resolve_reference_profile(record: dict[str, Any]) -> str | None:
+    """Locked entry profile for SL/TP agg lookup (not exit-rule metadata alone)."""
+
+    for key in ("entry_profile", "active_exit_profile", "exit_profile"):
+        raw = record.get(key)
+        if isinstance(raw, str) and raw in _REFERENCE_PROFILE_KEYS:
+            return raw
+    ctx_state = record.get("entry_context_state")
+    direction = str(record.get("direction") or "")
+    if ctx_state in {"up", "down", "neutral"}:
+        return _resolve_profile(direction, str(ctx_state))
+    return None
 
 
 def _entry_atr(
@@ -506,7 +538,7 @@ def build_trade_quality_diagnostics(
 
     if include_nested:
         out["path_diagnostics"] = _build_nested_path_diagnostics(core, index=index)
-        profile = record.get("entry_profile") or record.get("active_exit_profile")
+        profile = _resolve_reference_profile(record)
         out["reference_levels"] = _compute_reference_levels(
             direction=str(record["direction"]),
             entry_price=float(record["entry_price"]),
@@ -517,7 +549,7 @@ def build_trade_quality_diagnostics(
             open_=open_,
             close=close,
             attribution=attribution,
-            profile=str(profile) if profile is not None else None,
+            profile=profile,
             index=index,
         )
     return out
