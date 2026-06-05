@@ -60,8 +60,10 @@ Reports UI for nested `path_diagnostics` / `path_diagnostics_summary`; silent mi
 
 ## 9. Compact run summary artifact
 
-- [x] 9.1 `build_compact_report_payload()` — strip `trade_records` + known heavy keys; add trade counts; no in-place mutation
-- [x] 9.2 `write_research_results()` — also write `runs/<RUN_ID>.summary.json` with `artifact_kind` / `summary_schema_version`
-- [x] 9.3 Batch runner — optional `summary_report_path` on `ExperimentCandidateResult` when summary file exists
-- [x] 9.4 Tests — compact projection + writer creates summary alongside full report
+- [x] 9.1 `build_compact_report_payload()` — `deepcopy`; strip heavy keys; per-variant trade counts; summary markers merged last
+- [x] 9.2 `write_research_results()` — write `runs/<RUN_ID>.summary.json`; return `(latest_path, run_path, summary_path)`
+- [x] 9.3 `runner.py` — 3-tuple unpack; log `summary_artifact`
+- [x] 9.4 Batch runner — optional `summary_report_path` on `ExperimentCandidateResult`
+- [x] 9.5 Tests — projection, collision override, writer creates summary; `test_external_config_loader` mock 3-tuple
+- [x] 9.6 `rg write_research_results` — all call sites use 3-tuple (no 2-value unpack left)
 

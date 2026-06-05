@@ -1,50 +1,51 @@
-## ADDED Requirements
+# workbench-report-diagnostics Specification
 
+## Purpose
+TBD - created by archiving change frontend-report-diagnostics-v4. Update Purpose after archive.
+## Requirements
 ### Requirement: Schema v4 diagnostics section in Reports tab
 
-When the loaded run report has `report_schema_version` equal to `4` and the selected variant's `metrics` includes diagnostic sections, the Workbench Reports tab SHALL render, for that variant:
+When the loaded run report has `report_schema_version` equal to `4`, `5`, or `6` and the selected variant's `metrics` includes diagnostic sections, the Workbench Reports tab SHALL render, for that variant:
 
 1. A **Fee Diagnostics** summary from `metrics.fee_diagnostics`.
 2. A **Profile Breakdown** table from `metrics.profile_breakdown` with rows `aligned`, `countertrend`, and `neutral`.
 3. An **Exit Reason Breakdown** table from `metrics.exit_reason_breakdown` with one row per full `exit_reason` key.
 
-The UI MUST NOT recompute these aggregates from `trade_records` in v1; it SHALL display values from the JSON payload.
+The UI MUST NOT recompute these aggregates from `trade_records`; it SHALL display values from the JSON payload.
 
-#### Scenario: v4 report shows fee diagnostics
+#### Scenario: v4+ report shows fee diagnostics
 
-- **WHEN** the user opens the Reports tab with a loaded report where `report_schema_version` is `4` and `selectedVariant.metrics.fee_diagnostics` is present
+- **WHEN** the user opens the Reports tab with a loaded report where `report_schema_version` is `4`, `5`, or `6` and `selectedVariant.metrics.fee_diagnostics` is present
 - **THEN** the UI displays `fees_rate`, `total_fees_paid`, `gross_pnl`, `net_pnl`, and `fees_as_pct_of_gross_profit` (or an em dash when that field is null or omitted)
-
-#### Scenario: v4 report shows profile breakdown rows
-
-- **WHEN** the user views Reports for a v4 variant with `metrics.profile_breakdown` populated
-- **THEN** the Profile Breakdown table lists rows for `aligned`, `countertrend`, and `neutral` with columns for trade count, win rate, profit factor, pnl, gross_pnl, fees_paid, avg_return_pct, avg_hold_bars, and a compact exit-reason mix derived from `exit_reason_mix`
 
 #### Scenario: Profile breakdown always shows three profile rows
 
-- **WHEN** the Profile Breakdown table is rendered for a v4 variant
+- **WHEN** the Profile Breakdown table is rendered for a v4+ variant
 - **THEN** rows for `aligned`, `countertrend`, and `neutral` are always visible in that order
 - **AND** when a profile bucket has `trades` equal to zero, the trades column shows `0` and nullable metric cells show a neutral placeholder rather than hiding the row
 
-#### Scenario: v4 report shows exit reason breakdown rows
+#### Scenario: Missing diagnostic section on v4+
 
-- **WHEN** the user views Reports for a v4 variant with `metrics.exit_reason_breakdown` populated
-- **THEN** the Exit Reason Breakdown table lists one row per key in `exit_reason_breakdown` with columns for trades, win_rate, profit_factor, pnl, gross_pnl, fees_paid, avg_return_pct, and avg_hold_bars
-
-#### Scenario: Missing diagnostic section on v4
-
-- **WHEN** `report_schema_version` is `4` but a given diagnostic section (e.g. `fee_diagnostics`) is absent from `metrics`
+- **WHEN** `report_schema_version` is `4`, `5`, or `6` but a given diagnostic section (e.g. `fee_diagnostics`) is absent from `metrics`
 - **THEN** the UI omits that block without error and still renders other available sections
 
 ### Requirement: Schema v3 diagnostics empty state
 
-When `report_schema_version` is not `4`, the Reports tab SHALL NOT render v4 diagnostic blocks as if values were zero. It SHALL either hide those blocks or show an empty state with text indicating that diagnostics require schema v4 reports. The existing v3 summary cards, trade table, and exit_reason prefix filters SHALL continue to work unchanged.
+When `report_schema_version` is not `4`, `5`, or `6`, the Reports tab SHALL NOT render v4 diagnostic blocks as if values were zero. It SHALL either hide those blocks or show an empty state with text indicating that diagnostics require schema v4+ reports. The existing v3 summary cards, trade table, and exit_reason prefix filters SHALL continue to work unchanged.
+
+Schema **v6** reports SHALL use the same Reports UI gating and flat v5 quality fields as v4/v5 (no new nested-path UI in this change).
 
 #### Scenario: v3 report without diagnostics fields
 
 - **WHEN** the user opens Reports with `report_schema_version` equal to `3`
 - **THEN** Fee Diagnostics, Profile Breakdown, and Exit Reason Breakdown blocks are not shown as populated tables and the user sees the v4-only empty-state message or equivalent non-error placeholder
 - **AND** the trade table and existing summary metrics render without runtime errors
+
+#### Scenario: v6 report uses existing diagnostics UI
+
+- **WHEN** the user opens Reports with `report_schema_version` equal to `6` and v4 metric sections present
+- **THEN** Fee/Profile/Exit breakdown blocks render as for v5
+- **AND** no runtime error occurs when `path_diagnostics` is present on trade records
 
 ### Requirement: Trade table diagnostic enrichment
 
@@ -126,18 +127,3 @@ Nested `path_diagnostics` / `path_diagnostics_summary` **visualization** is out 
 - **WHEN** Workbench Reports implementation is complete
 - **THEN** `cd frontend && npm test` succeeds for reports diagnostics tests
 
-## MODIFIED Requirements
-
-### Requirement: Schema v3 diagnostics empty state
-
-When `report_schema_version` is not `4`, `5`, or `6`, the Reports tab SHALL show an empty state indicating diagnostics require schema v4+ reports. Schema **v6** reports SHALL use the same Reports UI gating and flat v5 quality fields as v4/v5 (no new nested-path UI in this change).
-
-#### Scenario: v6 report uses existing diagnostics UI
-
-- **WHEN** the user opens Reports with `report_schema_version` equal to `6` and v4 metric sections present
-- **THEN** Fee/Profile/Exit breakdown blocks render as for v5
-- **AND** no runtime error occurs when `path_diagnostics` is present on trade records
-
-### Requirement: Schema v4 diagnostics section in Reports tab
-
-When the loaded run report has `report_schema_version` equal to `4`, `5`, or `6` and the selected variant's `metrics` includes diagnostic sections, the Workbench Reports tab SHALL render Fee/Profile/Exit Reason blocks from `variant.metrics` without recomputing aggregates from `trade_records`.

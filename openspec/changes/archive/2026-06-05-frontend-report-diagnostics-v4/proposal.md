@@ -25,11 +25,21 @@ Research already computes MFE/MAE/capture/giveback in `trade_analyzer.py` for v5
 - **No new UI** for nested v6 sections in this change — optional TypeScript types only if needed for build.
 - Gating treats schema v4, v5, and **6** as “diagnostics-capable” for existing v4/v5 UI.
 
+### Research — compact run summary artifact (follow-up)
+
+- When `write_research_results` persists `runs/<RUN_ID>.json`, also write **`runs/<RUN_ID>.summary.json`** beside it.
+- Summary is a **projection** of the full report (not a new `report_schema_version`): keeps top-level metadata, variant `metrics`, breakdowns, `path_diagnostics_summary`, `component_counters`, `strategy_spec`; **omits** `trade_records` and other known heavy arrays.
+- Summary markers (written last, cannot be overwritten): `artifact_kind: run_summary`, `summary_schema_version: 1`, `source_report_path`.
+- Per-variant counts before strip: `trade_records_count`, `closed_trades_count`, `open_trades_count`.
+- `write_research_results` returns `(latest_path, run_path, summary_path)`; full `latest.json` unchanged.
+- Batch runner may set optional `summary_report_path` on `ExperimentCandidateResult`.
+
 ### Compatibility
 
 - v3–v5 historical JSON: read-only, no silent migration.
 - Flat v5 field names unchanged; values aligned with nested v6 where applicable.
 - Batch `extract_candidate_summary` continues on v5; v6 summary fields optional.
+- Compact `.summary.json` is additive; absence on old runs does not break loaders.
 
 ## Non-goals
 
@@ -37,7 +47,8 @@ Research already computes MFE/MAE/capture/giveback in `trade_analyzer.py` for v5
 - No post-exit or hypothetical trade analysis.
 - No new context snapshot contracts.
 - No duplicate path math outside `trade_analyzer.py`.
-- No mandatory Reports UI for `path_diagnostics` / `path_diagnostics_summary` (follow-up).
+- No mandatory Reports UI for `path_diagnostics` / `path_diagnostics_summary`.
+- No replacement of full report JSON with summary-only artifact.
 
 ## Capabilities
 
@@ -54,9 +65,9 @@ Research already computes MFE/MAE/capture/giveback in `trade_analyzer.py` for v5
 
 | Layer | Scope |
 |-------|--------|
-| **research** | `trade_analyzer.py` (core refactor), `results.py`, `backtest.py` / `result_models.py`, tests under `tests/test_ema_pullback_*` |
+| **research** | `trade_analyzer.py` (core refactor), `results.py` (v6 payload + `build_compact_report_payload` / `.summary.json` writer), `runner.py`, `backtest.py` / `result_models.py`, tests under `tests/test_ema_pullback_*` |
 | **research_api** | Optional pass-through types in `contracts/runs.py`; readers unchanged |
-| **research/experiments** | `summary.py` tolerance for v6 |
+| **research/experiments** | `summary.py` tolerance for v6; optional `summary_report_path` on batch candidate results |
 | **frontend** | `api/types.ts` optional v6 nested types; `reportSchema.ts` include v6; **no new Reports panels** |
 | **data_engine** | _none_ |
 

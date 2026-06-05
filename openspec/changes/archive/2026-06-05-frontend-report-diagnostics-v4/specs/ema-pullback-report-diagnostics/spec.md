@@ -95,6 +95,44 @@ New runs SHALL set `report_schema_version` to `6` and include `path_diagnostics_
 - **WHEN** `build_research_run_payload` assembles a new run after this change
 - **THEN** `report_schema_version` is `6`
 
+### Requirement: Compact run summary artifact alongside full report
+
+When `write_research_results` persists a full run report at `research/results/runs/<RUN_ID>.json`, the system SHALL also write `research/results/runs/<RUN_ID>.summary.json` in the same directory.
+
+The summary file SHALL be a projection of the full report without per-trade heavy arrays. It MUST NOT replace or alter the full report file or `latest.json`.
+
+The summary payload SHALL include top-level run metadata from the full report (`report_schema_version`, `run_id`, `family`, `symbol`, `timeframe`, `created_at`, `path_diagnostics_config`, `trade_quality_config`, `batch_metadata`, and other non-heavy top-level fields present in the full report).
+
+Per variant, the summary SHALL retain `variant`, `config_id`, `metrics`, `strategy_spec`, `component_counters`, and other non-heavy variant fields. It SHALL omit `trade_records` and other known heavy keys (`trades`, `candles`, `ohlcv`, `component_events`, `signal_trace`, `trace`).
+
+Before omitting `trade_records`, the summary SHALL add `trade_records_count`, `closed_trades_count`, and `open_trades_count` per variant.
+
+The summary SHALL include markers written last (so they override any same-named keys from the full payload): `artifact_kind` `run_summary`, `summary_schema_version` `1`, and `source_report_path` pointing at the full report path.
+
+`build_compact_report_payload` MUST NOT mutate the input full report in place.
+
+#### Scenario: Summary written on save
+
+- **WHEN** `write_research_results` saves a run with `run_id` `R`
+- **THEN** `research/results/runs/R.summary.json` exists
+- **AND** `research/results/runs/R.json` still contains full `trade_records`
+
+#### Scenario: Summary omits trade records
+
+- **WHEN** a variant in the full report has `trade_records`
+- **THEN** the summary variant has no `trade_records` key
+- **AND** `trade_records_count` equals the full report trade count
+
+#### Scenario: Summary retains path diagnostics aggregates
+
+- **WHEN** variant `metrics` includes `path_diagnostics_summary`
+- **THEN** the summary variant `metrics.path_diagnostics_summary` matches the full report
+
+#### Scenario: Summary markers win on collision
+
+- **WHEN** the full report contains `artifact_kind` or `summary_schema_version` keys
+- **THEN** the summary file still has `artifact_kind` `run_summary` and `summary_schema_version` `1`
+
 ## MODIFIED Requirements
 
 ### Requirement: Report schema version 4 with backward-compatible v3

@@ -177,12 +177,56 @@ Percentiles: linear interpolation on finite values; empty → `null`.
 
 ## Compact run summary artifact (follow-up)
 
-When `write_research_results` persists `runs/<RUN_ID>.json`, it also writes **`runs/<RUN_ID>.summary.json`** — a projection of the same payload without per-trade arrays.
+### Problem
 
-- **Not** a new report schema: keeps `report_schema_version` from full report; adds `artifact_kind: run_summary`, `summary_schema_version: 1`, `source_report_path`.
-- `build_compact_report_payload()` deep-copies, strips `trade_records` (and other known heavy keys) from variants, adds `trade_records_count` / `closed_trades_count` / `open_trades_count`.
-- Full `latest.json` and `runs/<RUN_ID>.json` unchanged.
-- Batch runner may set optional `summary_report_path` on candidate results.
+Full `runs/<RUN_ID>.json` includes `trade_records` and becomes too large for chat/review handoff. Need a second artifact with run metadata + variant metrics/breakdowns only.
+
+### Artifact naming
+
+`research/results/runs/<RUN_ID>.summary.json` — summary **projection** of the full report, not a replacement schema.
+
+### `build_compact_report_payload(full_report)`
+
+- `copy.deepcopy` — does **not** mutate the input dict.
+- Strips from each variant: `trade_records`, `trades`, `candles`, `ohlcv`, `component_events`, `signal_trace`, `trace`.
+- Strips same heavy keys at top level if present.
+- Before strip, adds per-variant: `trade_records_count`, `closed_trades_count`, `open_trades_count`.
+- Preserves: `metrics` (incl. `path_diagnostics_summary`), breakdowns, `strategy_spec`, `component_counters`, top-level `path_diagnostics_config`, `batch_metadata`, etc.
+- Summary markers merged **last** (override any collision from full payload):
+
+```python
+return {
+    **stripped,
+    "artifact_kind": "run_summary",
+    "summary_schema_version": 1,
+    "source_report_path": "research/results/runs/<RUN_ID>.json",
+}
+```
+
+Helpers: `run_report_relpath()`, `run_summary_report_relpath()`.
+
+### `write_research_results`
+
+Writes three files:
+
+| Path | Content |
+|------|---------|
+| `runs/<RUN_ID>.json` | Full report (unchanged) |
+| `runs/<RUN_ID>.summary.json` | Compact projection |
+| `latest.json` | Full report (unchanged) |
+
+Returns `(latest_path, run_path, summary_path)` — **3-tuple** (breaking change vs old 2-tuple; all call sites updated).
+
+`runner.py` logs `summary_artifact=...` alongside existing artifact paths.
+
+### Batch / experiments
+
+`ExperimentCandidateResult.summary_report_path` optional — set when `<RUN_ID>.summary.json` exists after candidate run. Old batch JSON without the field remains valid.
+
+### Non-goals
+
+- No change to v6 path math, metrics computation, or Workbench UI.
+- No summary-only writer replacing full report.
 
 ## Open Questions
 
