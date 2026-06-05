@@ -1,191 +1,180 @@
 ## Context
 
-**Current state**
+### Audit: current `trade_analyzer.py` (baseline at `55e7dce`)
 
-- Reports tab: single `ReportsPanel.tsx` bound to `useWorkbench()` (`report`, `selectedVariant`, `selectedTradeId`, `selectTrade`).
-- Summary metric cards use `selectedVariant.metrics.total` / `open_trades`.
-- Trade list: client-side filter via `exitReasonFilters.ts` (prefix chips: `stop_loss:*`, etc.); row click calls `selectTrade(trade.trade_id)`.
-- `TradeDetail` shows a small fixed field set; no diagnostics blocks.
-- Types in `frontend/src/api/types.ts` already define optional v4 fields on `TradeRecord` and `VariantMetrics` (`profile_breakdown`, `exit_reason_breakdown`, `fee_diagnostics`).
-- Default dev fixture `frontend/src/fixtures/report.json` is schema **v3**; v4 data exists from real runs / test builders only.
+| Responsibility | Function(s) | Notes |
+|----------------|-------------|--------|
+| Path math (flat v5) | `compute_trade_quality_metrics()` | MFE/MAE/capture/giveback over `entry_idx:exit_idx+1`; entry+exit bars included |
+| Quality flags | `classify_quality_flags()` | Uses flat metrics + record context |
+| Public builder | `build_trade_quality_diagnostics()` | Calls `compute_trade_quality_metrics` + flags; **single call site target** |
+| Variant breakdowns | `build_quality_flag_breakdown()`, `build_exit_component_quality_breakdown()` | From flat fields on closed trades |
 
-**Constraints**
+**Call sites (report generation)**
 
-- Read-only visualization; aggregates come from `variant.metrics`, not recomputed in the browser (except filtered **views** of `trade_records`).
-- `WorkbenchContext` trade focus uses `findTradeById(selectedVariant.trade_records, selectedTradeId)` on the **full** variant list—filtered table must not change selection identity.
-- Match existing panel/table/chip CSS patterns (`reports-panel`, `metric-card`, `filter-row`, `trade-table`).
+| Path | File | Behavior today |
+|------|------|----------------|
+| Vectorbt trades | `results.extract_trade_records()` | Closed trades with OHLC → `build_trade_quality_diagnostics()` |
+| Managed replay | `results.build_managed_trade_records()` | **Does not** call diagnostics builder today |
+| Metrics assembly | `backtest.build_trade_side_metrics()` | `build_trade_quality_breakdowns()` only |
+
+**Gaps vs v6 target**
+
+- No nested `path_diagnostics` / `reference_levels`.
+- No `path_diagnostics_summary`.
+- `giveback_price` uses `max(0, mfe - captured)` only when result ≥ 0 (old clamp); v6 allows giveback > MFE on losers via `max(0, MFE - realized)`.
+- Flat `mae_price` is **signed** adverse; v6 nested `mae.price_move` is **non-negative** magnitude — flat `mae_pct` must use positive magnitude for parity with nested.
+- No reference-level scan; no `reference_levels_available`.
+- `report_schema_version` still **5**.
+
+### Frontend (shipped)
+
+Reports tab modules under `frontend/src/features/reports/` — v4/v5 UI, filters, optional quality columns. Gating via `isDiagnosticsV4()` (versions 4 and 5).
 
 ## Goals / Non-Goals
 
-**Goals:**
+**Goals**
 
-- For schema v4 reports, show Fee / Profile / Exit Reason diagnostics for the **selected variant**.
-- Enrich trade exploration (columns + detail) without making the default table unreadable.
-- Client-side filters across v4 dimensions; preserve chart focus when selecting a row from a filtered list.
-- v3 reports behave as today; diagnostics blocks show a clear empty state.
+- **One formula source** in `trade_analyzer.py` for MFE, MAE, capture, giveback, bar timings, reference levels, nested + flat output.
+- Schema v6 for new runs; v3–v5 artifacts unchanged.
+- Same builder for vectorbt and managed closed trades when data available.
+- Frontend continues serving v4/v5 diagnostics UI; v6 reports use same gating + flat fields.
 
-**Non-Goals:**
+**Non-goals**
 
-- Backend, research, BFF, or JSON schema changes.
-- New routes, tabs, or a reusable “analytics dashboard” package.
-- Re-aggregating `profile_breakdown` from filtered trades (out of scope for v1; tables always show full-variant metrics from JSON).
-- Chart marker or overlay changes.
+- Second module duplicating path math (no `trade_path_diagnostics.py` unless extracted as private helpers **inside** the same file).
+- Trading logic changes, post-exit bars, shadow trades, runner simulation.
+- Reports UI for nested path sections.
+- Silent JSON migration.
 
 ## Decisions
 
-### 1. Extend `ReportsPanel` in place (no new tab)
+### 1. Extend `trade_analyzer.py` in place (single source of formulas)
 
-Keep one Reports tab; insert a **Diagnostics** section between existing summary cards and the trade filter row.
+Refactor into logical sections **within the same file**:
 
-**Rationale:** Matches `implementation_plan.md` Reports slice; smallest integration surface.
-
-**Alternative rejected:** New “Diagnostics” top-level tab—more navigation churn for v1.
-
-### 2. Module layout under `features/reports/`
-
-| Module | Responsibility |
-|--------|----------------|
-| `reportSchema.ts` | `isDiagnosticsV4(version)`, `hasVariantDiagnostics(metrics)` |
-| `formatDiagnostics.ts` | Shared formatters (money, %, win rate, PF, hold) — reuse `formatNum` patterns from panel |
-| `FeeDiagnosticsSummary.tsx` | Renders `metrics.fee_diagnostics` |
-| `ProfileBreakdownTable.tsx` | Rows: fixed order `aligned`, `countertrend`, `neutral`; compact `exit_reason_mix` |
-| `ExitReasonBreakdownTable.tsx` | Rows: sorted keys of `metrics.exit_reason_breakdown` |
-| `tradeDiagnosticsFilters.ts` | Pure filter predicates + chip option constants |
-| `TradeDiagnosticsColumns.tsx` | Optional column definitions + toggle state |
-| `ReportsPanel.tsx` | Orchestrates gating, composes sections, wires filters |
-
-**Rationale:** Keeps `ReportsPanel` thin; testable pure helpers.
-
-### 3. Schema v4 gating
-
-```ts
-isDiagnosticsV4(report.report_schema_version) // version === 4
+```
+_compute_trade_path_core()      # pure math → core dataclass/dict
+_build_nested_path_diagnostics() # mfe/mae/capture nested shape
+_compute_reference_levels()    # SL/TP at entry + window scan
+_flat_fields_from_core()       # legacy v5 keys + ATR + quality_flags input
+build_trade_quality_diagnostics()  # public: nested + flat + flags
+build_path_diagnostics_summary()   # variant metrics aggregate
+path_diagnostics_config_payload()    # top-level reproducibility config
 ```
 
-- Diagnostics blocks render only when `isDiagnosticsV4` **and** the relevant `metrics.*` object exists.
-- If v4 but a section is missing → hide that block (no throw).
-- If not v4 → show `empty-hint`: “Diagnostics available for schema v4 reports.”
+`compute_trade_quality_metrics()` becomes a thin wrapper returning flat-only (tests/backward compat) or delegates to `_flat_fields_from_core`.
 
-**Rationale:** v3 payloads never include aggregates; avoids implying zero values.
+**Rejected:** separate `trade_path_diagnostics.py` with duplicated formulas — violates “one source” requirement unless it only re-exports from `trade_analyzer` (unnecessary file).
 
-### 4. Aggregates vs filtered trades
+### 2. Trade window
 
-| UI element | Data source |
-|------------|-------------|
-| Fee / Profile / Exit breakdown tables | `selectedVariant.metrics.*` (full variant) |
-| Trade table rows | `trade_records` after client filters |
-| Summary cards (Total PnL, Trades, …) | unchanged — `metrics.total` |
+Inclusive `entry_idx .. exit_idx`. No bars after exit. Same intrabar caveat as v5 on exit bar OHLC.
 
-**Rationale:** Matches backend contract; prevents expensive/client-incorrect re-aggregation. Document in UI hint: “Breakdowns reflect all closed trades in this variant.”
+### 3. MFE / MAE (normative)
 
-**Alternative considered:** Recompute breakdown from filtered trades—deferred; would confuse comparison with JSON artifact.
+**Long**
 
-### 5. Fee Diagnostics summary (block A)
+```
+MFE_price = max(0, max(high[entry..exit]) - entry_price)
+MAE_price = max(0, entry_price - min(low[entry..exit]))
+```
 
-Horizontal `metric-card` row (same class as existing summary):
+**Short**
 
-| Label | Field |
-|-------|--------|
-| Fees rate | `fee_diagnostics.fees_rate` (format as % or rate per existing execution display convention) |
-| Total fees | `total_fees_paid` |
-| Gross PnL | `gross_pnl` |
-| Net PnL | `net_pnl` |
-| Fees / gross profit | `fees_as_pct_of_gross_profit` — show `—` when null/omitted |
+```
+MFE_price = max(0, entry_price - min(low[entry..exit]))
+MAE_price = max(0, max(high[entry..exit]) - entry_price)
+```
 
-### 6. Profile Breakdown table (block B)
+Nested `mfe` / `mae`: `price_move` (non-negative), `pct = price_move / entry_price`, `time_ms`, `bars_from_entry`.
 
-- Rows: **always exactly three**, fixed order `aligned`, `countertrend`, `neutral` — never hide a profile row.
-- When `trades === 0` for a profile: show `0` in the trades column; show `—` for nullable metrics (`win_rate`, `profit_factor`, `avg_return_pct`, `avg_hold_bars`, etc.); monetary sums may show `0` or `—` per formatter (prefer `0` for numeric sums of zero trades).
-- Columns: `trades`, `win_rate`, `profit_factor`, `pnl`, `gross_pnl`, `fees_paid`, `avg_return_pct`, `avg_hold_bars`, **Exit mix** (compact).
-- **Exit mix**: top 3 `exit_reason` keys by count from `exit_reason_mix`; render as `reason (n)` comma-separated; if more than 3, append `+k more`; empty mix → `—`.
+Flat legacy: `mfe_price`, `mfe_pct`, `mae_price` as **positive magnitudes** (update tests from signed mae); `bars_to_mfe`, `bars_to_mae`.
 
-### 7. Exit Reason Breakdown table (block C)
+### 4. Capture / giveback (normative)
 
-- Rows: `Object.keys(exit_reason_breakdown).sort()` (locale-aware string sort).
-- Columns: `trades`, `win_rate`, `profit_factor`, `pnl`, `gross_pnl`, `fees_paid`, `avg_return_pct`, `avg_hold_bars`.
-- `profit_factor` is in schema (`DiagnosticBucketMetrics`) — always show column.
+```
+realized_favorable_move = (exit - entry) long; (entry - exit) short
+capture_ratio = realized / MFE_price  if MFE_price > 0 else null  # may be negative; never clamp
+captured_pct = realized / entry_price
+giveback_price = max(0, MFE_price - realized)  if MFE_price > 0 else null
+giveback_pct = giveback_price / entry_price     if giveback_price is not None else null
+bars_from_mfe_to_exit = exit_idx - mfe_bar_idx
+```
 
-### 8. Trade table columns (block 2)
+**Losing long example:** entry 100, high 108, exit 95 → `capture_ratio = -0.625`, `giveback_price = 13`, `giveback_pct = 0.13`.
 
-**Default (unchanged):** `#`, `Dir`, `Status`, `Entry`, `Exit`, `PnL`, `exit_reason`.
+### 5. Reference levels
 
-**Diagnostics mode** (toggle `Show diagnostics columns`):
+Resolve initial SL/TP at entry via `ExitAttributionContext` + `_agg_sl_tp_at_entry` + `_levels_from_ratios` (reuse `exit_attribution` helpers).
 
-| Column | Field |
-|--------|--------|
-| entry_profile | `entry_profile` |
-| ctx | `entry_context_state` |
-| exit_prof | `active_exit_profile` |
-| exit_grp | `exit_group` |
-| exit_prof_rule | `exit_profile` |
-| kind | `exit_kind` |
-| gross | `gross_pnl` |
-| fees | `fees_paid` |
-| hold | `hold_bars` |
+`reference_levels_available = true` iff at least one finite SL or TP level.
 
-Omit from default row: `exit_component_id`, `exit_instance_id`, `gross_return_pct`, `hold_minutes` — show in **`TradeDetail`** only to limit width.
+**Unavailable payload:** all nulls/false, `first_level_hit: "none"`.
 
-**Null safety:** formatter returns `—` for null/undefined.
+**Scan** `entry_idx..exit_idx` bar-by-bar:
 
-### 9. TradeDetail expansion
+- Long: TP if high ≥ TP; SL if low ≤ SL
+- Short: symmetric
+- Same bar both → `ambiguous_same_bar` (do not guess order)
+- Levels known, none touched → `first_level_hit: "none"` (distinct from unavailable)
 
-When any v4 field present on trade, add DL entries for all closed-trade diagnostics (including `exit_component_id`, `exit_instance_id`, `gross_return_pct`, `hold_minutes`). Group under subheading “Diagnostics”.
+Touch helpers: reuse `_stop_hit_long` / `_stop_hit_short` from `exit_attribution.py`.
 
-### 10. Client-side filters (block 3)
+### 6. Open trades
 
-Replace single `exitFilter` state with a small filter bar object (or parallel state vars):
+Do **not** write `path_diagnostics` or `reference_levels` keys on open trade records.
 
-| Filter | Control | Match rule |
-|--------|---------|------------|
-| `entry_profile` | chips: All, aligned, countertrend, neutral | exact match on `trade.entry_profile` |
-| `entry_context_state` | chips: All, up, down, neutral, unknown | exact |
-| `exit_kind` | chips: **All** + one chip per **distinct `exit_kind` string present in loaded `trade_records`** (exact match labels, e.g. `signal`, `stop_loss`, `take_profit`) | exact equality on `trade.exit_kind`; **do not** abbreviate or alias (`stop` is wrong — v4 JSON uses `stop_loss`) |
-| `exit_group` | chips: All, always_on, profile | exact; `null` matches only “unknown” chip if added, else excluded from profile/always_on |
-| `exit_reason` | **keep** existing `EXIT_REASON_FILTER_OPTIONS` | `matchesExitReasonFilter` |
-| `outcome` | chips: All, Winners, Losers | `pnl > 0` / `pnl < 0`; open trades (`pnl === null`) excluded unless All |
+### 7. `path_diagnostics_summary`
 
-Apply filters as chained `AND` in one `useMemo` over `selectedVariant.trade_records`.
+`build_path_diagnostics_summary(trade_records)` in `trade_analyzer.py`; wired from `build_trade_quality_breakdowns()` in `results.py`.
 
-**Open trades:** diagnostic fields may be null; profile filters exclude rows with missing `entry_profile` when a specific profile is selected.
+Required: `total`, `by_side.long`, `by_side.short`, `by_exit_reason`.
 
-### 11. Trade selection / Chart focus (unchanged contract)
+Optional when fields exist: `by_entry_profile`, `by_entry_context_state`, `by_active_exit_profile`.
 
-- Row `onSelect` still calls `selectTrade(trade.trade_id)`.
-- `TradeDetail` still resolves via `findTradeById(selectedVariant.trade_records, selectedTradeId)` (full list).
-- Do not store “filtered index”; IDs are stable.
+Counts: `reference_levels_available_count`, `reference_levels_unavailable_count`, `no_reference_level_hit_count` (only available + `first_level_hit === none`).
 
-**Test implication:** filter to one row, click, assert `selectedTradeId` and chart focus helpers still resolve the same trade.
+Percentiles: linear interpolation on finite values; empty → `null`.
 
-### 12. Styling
+### 8. Schema v6 payload
 
-- Add `.diagnostics-section`, `.breakdown-table` (compact font, horizontal scroll via existing `.table-wrap`).
-- Reuse `.chip` / `.chip--active` for new filters; wrap filter rows when crowded (`flex-wrap` already on `.filter-row`).
+```json
+"report_schema_version": 6,
+"path_diagnostics_config": {
+  "schema": "trade_path_diagnostics",
+  "version": "1",
+  "window": "entry_to_exit_inclusive",
+  "open_trades": "omitted",
+  "same_bar_level_policy": "ambiguous_same_bar",
+  "post_exit_bars": "excluded"
+}
+```
 
-### 13. Test fixtures
+### 9. Managed replay parity
 
-- Add `frontend/src/features/reports/__fixtures__/report-v4-minimal.json` (or TS `makeV4Report()` in test file) with one variant, small `profile_breakdown` / `exit_reason_breakdown` / `fee_diagnostics`, and 3–5 `trade_records` covering filter cases.
-- Keep `fixtures/report.json` at v3; v3 tests continue importing it.
+`build_managed_trade_records()` must call `build_trade_quality_diagnostics()` for **closed** trades when `high`/`low`/`open_` and attribution context can be supplied (extend signature if needed).
 
-### 14. Dependencies
+### 10. Frontend (unchanged UI scope)
 
-No new npm packages.
+- `isDiagnosticsV4()` → true for versions 4, 5, **6**.
+- Optional `TradePathDiagnostics`, `TradeReferenceLevels`, `PathDiagnosticsSummary` in `api/types.ts`.
+- No new Reports components for nested path in this change.
 
 ## Risks / Trade-offs
 
 | Risk | Mitigation |
 |------|------------|
-| Wide tables on small viewports | `.table-wrap` scroll; diagnostics columns behind toggle |
-| Users expect filtered breakdowns | Hint copy; defer filtered aggregates to v2 |
-| v4 run missing optional metric sections | Per-block hide; no throw |
-| Filter chips proliferate | `exit_kind` chips derived from distinct values in loaded trades (exact strings); optional “Other” bucket only in a later iteration |
-| E2E trade-focus specs assume column count | E2E unchanged (default columns); unit tests cover diagnostics toggle |
+| Flat `mae_price` sign change | Document; update tests; nested/flat parity tests |
+| Managed path missing OHLC | Skip nested fields only when indices/OHLC absent; document |
+| Duplicate formulas | Code review + single `_compute_trade_path_core` |
+| Frontend build on v6 | Optional types + schema version 6 in `SUPPORTED_REPORT_SCHEMA_VERSIONS` |
 
 ## Migration Plan
 
-1. Ship frontend-only; no deploy ordering vs backend (v4 JSON already produced).
-2. Users on v3 fixtures/runs: unchanged Reports experience + diagnostics empty state.
-3. Rollback: revert frontend PR; no data migration.
+1. Ship research v6 generation first.
+2. Frontend optional types; existing Reports UI reads flat + v4 metrics.
+3. Rollback: revert research PR; v5 JSON still valid.
 
 ## Open Questions
 
-- _(none blocking v1)_ Optional follow-up: exact-match `exit_reason` dropdown when breakdown has many keys; not required for v1 chip filters.
+- Reports UI for `path_diagnostics_summary` table — deferred follow-up.

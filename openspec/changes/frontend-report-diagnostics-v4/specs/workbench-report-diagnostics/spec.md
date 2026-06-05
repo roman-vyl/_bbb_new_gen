@@ -115,11 +115,29 @@ Selecting a trade from a filtered trade table SHALL set `selectedTradeId` to tha
 - **THEN** `selectedTradeId` equals `T`
 - **AND** trade detail and chart focus use the trade record with id `T` from the full variant list
 
-### Requirement: No backend or schema contract changes
+### Requirement: No backend or schema contract changes (Workbench UI slice)
 
-This capability SHALL be implemented entirely in the frontend Workbench. It MUST NOT modify research report generation, Data Engine, BFF endpoints, or the v4 JSON field definitions. TypeScript types MAY already include optional v4 fields; no new API routes are required.
+The Workbench Reports **UI** capability SHALL NOT modify research report generation, Data Engine, or BFF metric recomputation. TypeScript types MAY include optional v4–v6 fields; no new API routes are required.
+
+Nested `path_diagnostics` / `path_diagnostics_summary` **visualization** is out of scope; optional types for schema v6 are allowed.
 
 #### Scenario: Frontend build and tests
 
-- **WHEN** implementation is complete
-- **THEN** `cd frontend && npm test && npm run build` succeeds
+- **WHEN** Workbench Reports implementation is complete
+- **THEN** `cd frontend && npm test` succeeds for reports diagnostics tests
+
+## MODIFIED Requirements
+
+### Requirement: Schema v3 diagnostics empty state
+
+When `report_schema_version` is not `4`, `5`, or `6`, the Reports tab SHALL show an empty state indicating diagnostics require schema v4+ reports. Schema **v6** reports SHALL use the same Reports UI gating and flat v5 quality fields as v4/v5 (no new nested-path UI in this change).
+
+#### Scenario: v6 report uses existing diagnostics UI
+
+- **WHEN** the user opens Reports with `report_schema_version` equal to `6` and v4 metric sections present
+- **THEN** Fee/Profile/Exit breakdown blocks render as for v5
+- **AND** no runtime error occurs when `path_diagnostics` is present on trade records
+
+### Requirement: Schema v4 diagnostics section in Reports tab
+
+When the loaded run report has `report_schema_version` equal to `4`, `5`, or `6` and the selected variant's `metrics` includes diagnostic sections, the Workbench Reports tab SHALL render Fee/Profile/Exit Reason blocks from `variant.metrics` without recomputing aggregates from `trade_records`.
