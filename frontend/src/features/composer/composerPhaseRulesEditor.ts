@@ -3,6 +3,8 @@ import type { JsonObject, ValidationErrorItem } from "@/api/types";
 import {
   EXIT_MANAGEMENT_PRODUCT_CONTRACT,
   createBlankExitManagement,
+  createProductExitManagement,
+  hasLegacyExitManagementRules,
 } from "@/features/composer/composerExitManagementProduct";
 
 export const PHASE_RULE_TARGET_PHASES = [
@@ -79,18 +81,23 @@ export function readPhaseRules(exitManagement: JsonObject): PhaseRuleDraft[] {
 }
 
 export function ensureDiagnosticOnlyProductShape(exitManagement: JsonObject): JsonObject {
-  return {
-    ...createBlankExitManagement(),
-    ...exitManagement,
-    mode: "diagnostic_only",
-    phase_rules: readPhaseRules(exitManagement),
-    stop_management: Array.isArray(exitManagement.stop_management)
-      ? exitManagement.stop_management
-      : [],
-    runtime_exits: Array.isArray(exitManagement.runtime_exits)
-      ? exitManagement.runtime_exits
-      : [],
-  };
+  return createProductExitManagement(readPhaseRules(exitManagement));
+}
+
+/** Explicitly replace deprecated legacy rules with the empty diagnostic-only product contract. */
+export function replaceLegacyExitManagementWithProductShape(strategy: JsonObject): JsonObject {
+  return writeExitManagementOnStrategy(strategy, createBlankExitManagement());
+}
+
+/** Explicitly replace deprecated legacy rules with the default diagnostic phase_rules preset. */
+export function replaceLegacyExitManagementWithDefaultDiagnosticPhases(
+  strategy: JsonObject,
+): JsonObject {
+  return writeExitManagementOnStrategy(strategy, createProductExitManagement(defaultDiagnosticPhaseRules()));
+}
+
+export function exitManagementDraftIsLegacyQuarantined(exitManagement: JsonObject): boolean {
+  return hasLegacyExitManagementRules(exitManagement);
 }
 
 export function writePhaseRules(exitManagement: JsonObject, rules: PhaseRuleDraft[]): JsonObject {

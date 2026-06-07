@@ -5,8 +5,11 @@ import {
   collectPhaseRulesValidationErrors,
   createBlankPhaseRule,
   defaultDiagnosticPhaseRules,
+  ensureDiagnosticOnlyProductShape,
   normalizeConditionForType,
   readPhaseRules,
+  replaceLegacyExitManagementWithDefaultDiagnosticPhases,
+  replaceLegacyExitManagementWithProductShape,
   updatePhaseRuleField,
   writePhaseRules,
 } from "@/features/composer/composerPhaseRulesEditor";
@@ -113,5 +116,55 @@ describe("phaseRulesEditor helpers", () => {
     };
     const errors = collectPhaseRulesValidationErrors(em, PATH);
     expect(errors.some((e) => e.path.endsWith(".stop_management"))).toBe(true);
+  });
+
+  it("ensureDiagnosticOnlyProductShape strips legacy always_on/profiles keys", () => {
+    const legacy = {
+      always_on: { rules: [{ component_id: "break_even_stop" }] },
+      profiles: { aligned: { rules: [] }, countertrend: { rules: [] }, neutral: { rules: [] } },
+      mode: "diagnostic_only",
+      phase_rules: [{ rule_id: "x", to_phase: "proven", condition: { type: "bars_in_trade", threshold: 1 } }],
+    };
+    const next = ensureDiagnosticOnlyProductShape(legacy);
+    expect(next.always_on).toBeUndefined();
+    expect(next.profiles).toBeUndefined();
+    expect(readPhaseRules(next)).toHaveLength(1);
+  });
+
+  it("replaceLegacyExitManagementWithProductShape removes legacy rules from strategy draft", () => {
+    const strategy = {
+      trade_management: {
+        exit_management: {
+          always_on: { rules: [{ component_id: "break_even_stop" }] },
+          profiles: {
+            aligned: { rules: [] },
+            countertrend: { rules: [] },
+            neutral: { rules: [] },
+          },
+        },
+      },
+    };
+    const next = replaceLegacyExitManagementWithProductShape(strategy);
+    const em = (next.trade_management as JsonObject).exit_management as JsonObject;
+    expect(em).toEqual(createBlankExitManagement());
+  });
+
+  it("replaceLegacyExitManagementWithDefaultDiagnosticPhases installs preset", () => {
+    const strategy = {
+      trade_management: {
+        exit_management: {
+          always_on: { rules: [{ component_id: "break_even_stop" }] },
+          profiles: {
+            aligned: { rules: [] },
+            countertrend: { rules: [] },
+            neutral: { rules: [] },
+          },
+        },
+      },
+    };
+    const next = replaceLegacyExitManagementWithDefaultDiagnosticPhases(strategy);
+    const em = (next.trade_management as JsonObject).exit_management as JsonObject;
+    expect(readPhaseRules(em)).toEqual(defaultDiagnosticPhaseRules());
+    expect(em.always_on).toBeUndefined();
   });
 });

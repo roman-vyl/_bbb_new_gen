@@ -1,8 +1,11 @@
 import type { JsonObject, ValidationErrorItem } from "@/api/types";
 import {
+  createBlankExitManagement,
+  createProductExitManagement,
   hasLegacyExitManagementRules,
   summarizeExitManagementProduct,
 } from "@/features/composer/composerExitManagementProduct";
+import { defaultDiagnosticPhaseRules } from "@/features/composer/composerPhaseRulesEditor";
 import { PhaseRulesEditor } from "@/features/composer/PhaseRulesEditor";
 
 type Props = {
@@ -34,11 +37,43 @@ export function ExitManagementProductPanel({
         compatibility-only — Composer does not offer them for new configs.
       </p>
       {hasLegacy && (
-        <p className="banner banner--warn" role="status">
-          This instance still loads deprecated legacy management rules (
-          {summary.legacyRulesCount}). They remain readable for old artifacts only; phase-rules
-          authoring is disabled until legacy rules are removed from the config JSON.
-        </p>
+        <div
+          className="composer-exit-management-legacy-quarantine"
+          data-testid="exit-management-legacy-quarantine"
+        >
+          <p className="banner banner--warn" role="status">
+            This instance still loads deprecated legacy management rules (
+            {summary.legacyRulesCount}). Phase-rules authoring is disabled while the legacy shape
+            remains in this draft. To edit diagnostic phase rules, explicitly replace the deprecated
+            rules below — this does not change saved reports or backend compatibility for old
+            artifacts.
+          </p>
+          <p className="composer-exit-management-legacy-quarantine__notice" role="note">
+            Explicit replacement removes legacy <code>always_on</code>, <code>profiles</code>, and{" "}
+            <code>break_even_stop</code> rules from this draft only. Save the config to persist the
+            new product contract.
+          </p>
+          {onChange ? (
+            <div className="composer-exit-management-legacy-quarantine__actions">
+              <button
+                type="button"
+                data-testid="replace-legacy-empty-product"
+                onClick={() => onChange(createBlankExitManagement())}
+              >
+                Remove legacy rules and use diagnostic-only contract
+              </button>
+              <button
+                type="button"
+                data-testid="replace-legacy-default-phases"
+                onClick={() =>
+                  onChange(createProductExitManagement(defaultDiagnosticPhaseRules()))
+                }
+              >
+                Replace with default diagnostic phases
+              </button>
+            </div>
+          ) : null}
+        </div>
       )}
       <dl className="composer-exit-management-product__summary">
         <div>

@@ -89,3 +89,11 @@
 - [x] 8.5 Add smoke config fixture and run parity check vs baseline (execution unchanged; reports include diagnostics).
 
 **Slice 10 notes:** `composerPhaseRulesEditor.ts`, `PhaseRulesEditor.tsx`, `ExitManagementProductPanel` authoring; smoke fixture `smoke_runtime_diag_p8a_relaxed_w9_r10_wlb20_ulb75_ab8_sl4_safetytp40_control_no_signal_exit.json`. No backend/runtime/report/API/chart changes.
+
+## 9. Composer Legacy Quarantine Escape (Slice 10B)
+
+- [x] 9.1 Explicit UI buttons to replace deprecated legacy exit-management shape with diagnostic-only product contract (empty or default preset).
+- [x] 9.2 No auto-migration on load; replacement is draft-only until Save.
+- [x] 9.3 Replacement strips legacy `always_on/profiles/rules/break_even_stop` from draft JSON; does not restore legacy BE authoring.
+
+**Slice 10B notes:** `ExitManagementProductPanel` quarantine actions; `replaceLegacyExitManagementWithProductShape` / `replaceLegacyExitManagementWithDefaultDiagnosticPhases`; `createProductExitManagement`. Frontend-only.

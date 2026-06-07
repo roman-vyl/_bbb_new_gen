@@ -15,6 +15,16 @@ export function createBlankExitManagement(): JsonObject {
   return structuredClone(EXIT_MANAGEMENT_PRODUCT_CONTRACT);
 }
 
+/** Product contract only — no legacy always_on/profiles keys. */
+export function createProductExitManagement(phaseRules: JsonObject[] = []): JsonObject {
+  return {
+    mode: "diagnostic_only",
+    phase_rules: structuredClone(phaseRules),
+    stop_management: [],
+    runtime_exits: [],
+  };
+}
+
 function legacyRulesFromGroup(group: unknown): JsonObject[] {
   if (!group || typeof group !== "object") {
     return [];
