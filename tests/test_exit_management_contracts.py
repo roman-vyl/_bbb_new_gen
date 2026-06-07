@@ -127,6 +127,27 @@ def test_diagnostic_only_rejects_non_empty_runtime_exits() -> None:
         load_strategy_config(payload)
 
 
+def test_diagnostic_only_rejects_phase_rules_that_move_backwards() -> None:
+    payload = _fixture_payload()
+    exit_management = _diagnostic_only_exit_management()
+    exit_management["phase_rules"] = [
+        {
+            "rule_id": "to_runner_at_2_5atr",
+            "to_phase": "runner",
+            "condition": {"type": "mfe_pct", "threshold": 0.025},
+        },
+        {
+            "rule_id": "to_protected_at_1_5atr",
+            "to_phase": "protected",
+            "condition": {"type": "mfe_pct", "threshold": 0.015},
+        },
+    ]
+    _trade_management(payload)["exit_management"] = exit_management
+
+    with pytest.raises(ValueError, match="phase_rules must be ordered"):
+        load_strategy_config(payload)
+
+
 def test_default_exit_management_wire_shape_omits_new_empty_fields() -> None:
     payload = _fixture_payload()
     _trade_management(payload).pop("exit_management")

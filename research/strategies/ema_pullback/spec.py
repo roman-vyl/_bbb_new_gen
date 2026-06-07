@@ -695,6 +695,7 @@ class ExitManagementSpec:
                 "legacy always_on/profiles management rules"
             )
         seen_phase_rules: set[str] = set()
+        last_phase_rank = 0
         for rule in self.phase_rules:
             if rule.rule_id in seen_phase_rules:
                 raise ValueError(
@@ -702,6 +703,13 @@ class ExitManagementSpec:
                     f"{rule.rule_id!r}"
                 )
             seen_phase_rules.add(rule.rule_id)
+            phase_rank = TRADE_MANAGEMENT_PHASES.index(rule.to_phase)
+            if phase_rank < last_phase_rank:
+                raise ValueError(
+                    "trade_management.exit_management.phase_rules must be ordered by "
+                    "non-decreasing phase progression"
+                )
+            last_phase_rank = phase_rank
 
 
 def _effective_exit_group_has_stop_loss(
