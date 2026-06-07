@@ -77,7 +77,7 @@ def test_long_runtime_state_uses_favorable_high_and_adverse_low() -> None:
     assert state.mfe_price == 105.0
     assert state.mae_price == 98.0
     assert state.mfe_pct == pytest.approx(0.05)
-    assert state.mae_pct == pytest.approx(-0.02)
+    assert state.mae_pct == pytest.approx(0.02)
     assert result.events[-1].event_type == "exit_executed"
     assert result.events[-1].component_id == "no_signal_exit"
 
@@ -113,7 +113,7 @@ def test_short_runtime_state_uses_favorable_low_and_adverse_high() -> None:
     assert state.mfe_price == 95.0
     assert state.mae_price == 104.0
     assert state.mfe_pct == pytest.approx(0.05)
-    assert state.mae_pct == pytest.approx(-0.04)
+    assert state.mae_pct == pytest.approx(0.04)
 
 
 def test_phase_rules_support_mfe_pct_bars_and_mfe_atr() -> None:

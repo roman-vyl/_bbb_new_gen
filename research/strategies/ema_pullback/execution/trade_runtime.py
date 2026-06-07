@@ -154,7 +154,7 @@ def update_trade_runtime_state(
         state.mfe_price = state.best_price
         state.mae_price = state.worst_price
         state.mfe_pct = (state.best_price - state.entry_price) / state.entry_price
-        state.mae_pct = (state.worst_price - state.entry_price) / state.entry_price
+        state.mae_pct = (state.entry_price - state.worst_price) / state.entry_price
         return
 
     state.best_price = min(state.best_price, low)
@@ -162,7 +162,7 @@ def update_trade_runtime_state(
     state.mfe_price = state.best_price
     state.mae_price = state.worst_price
     state.mfe_pct = (state.entry_price - state.best_price) / state.entry_price
-    state.mae_pct = (state.entry_price - state.worst_price) / state.entry_price
+    state.mae_pct = (state.worst_price - state.entry_price) / state.entry_price
 
 
 def _condition_met(
