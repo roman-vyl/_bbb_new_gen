@@ -39,12 +39,12 @@
 
 ## 4. Backend Tests And Verification
 
-- [ ] 4.1 Add unit tests for long and short side-aware best/worst price and MFE/MAE calculations.
-- [ ] 4.2 Add unit tests for `mfe_atr`, `mfe_pct`, and `bars_in_trade` phase-rule transitions, including monotonic phase behavior.
-- [ ] 4.3 Add parity tests comparing a config without `exit_management` to the same config with diagnostic-only phase rules: trade count, net PnL, PF, and exit reasons must match within existing tolerances.
-- [ ] 4.4 Add report fixture/test coverage for closed-trade `trade_management`, variant `trade_management_events`, and `metrics.trade_management_summary`.
-- [ ] 4.5 Add compatibility tests proving existing break-even exit-management configs still validate and run as before.
-- [ ] 4.6 Run the focused research test suite for `ema_pullback` execution/report diagnostics and record the command/output in the implementation notes.
+- [x] 4.1 Add unit tests for long and short side-aware best/worst price and MFE/MAE calculations.
+- [x] 4.2 Add unit tests for `mfe_atr`, `mfe_pct`, and `bars_in_trade` phase-rule transitions, including monotonic phase behavior.
+- [x] 4.3 Add parity tests comparing a config without `exit_management` to the same config with diagnostic-only phase rules: trade count, net PnL, PF, and exit reasons must match within existing tolerances.
+- [x] 4.4 Add report fixture/test coverage for closed-trade `trade_management`, variant `trade_management_events`, and `metrics.trade_management_summary`.
+- [x] 4.5 Add compatibility tests proving existing break-even exit-management configs still validate and run as before.
+- [x] 4.6 Run the focused research test suite for `ema_pullback` execution/report diagnostics and record the command/output in the implementation notes.
 
 ## 5. API/BFF Read Integration Future Slice
 
