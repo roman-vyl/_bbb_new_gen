@@ -1,9 +1,9 @@
 ## 1. Contracts And Parsing
 
-- [ ] 1.1 Add spec dataclasses/types for `trade_management.exit_management.mode`, `phase_rules`, `stop_management`, and `runtime_exits` without moving declarative exits out of `exit_policy`.
-- [ ] 1.2 Support v1 phase-rule condition types `mfe_atr`, `mfe_pct`, and `bars_in_trade`, including validation for required fields and positive thresholds.
-- [ ] 1.3 Enforce diagnostic-only v1 constraints: `mode: "diagnostic_only"` allows phase rules but rejects non-empty `stop_management` and `runtime_exits`.
-- [ ] 1.4 Preserve existing configs without `exit_management` and existing archived break-even management configs so their validation/runtime behavior is unchanged.
+- [x] 1.1 Add spec dataclasses/types for `trade_management.exit_management.mode`, `phase_rules`, `stop_management`, and `runtime_exits` without moving declarative exits out of `exit_policy`.
+- [x] 1.2 Support v1 phase-rule condition types `mfe_atr`, `mfe_pct`, and `bars_in_trade`, including validation for required fields and positive thresholds.
+- [x] 1.3 Enforce diagnostic-only v1 constraints: `mode: "diagnostic_only"` allows phase rules but rejects non-empty `stop_management` and `runtime_exits`.
+- [x] 1.4 Preserve existing configs without `exit_management` and existing archived break-even management configs so their validation/runtime behavior is unchanged.
 
 ## 2A. Execution Integration Audit
 
