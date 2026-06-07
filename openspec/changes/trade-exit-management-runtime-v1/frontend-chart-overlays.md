@@ -70,22 +70,35 @@ Time: `event.time_ms` via `msToChartTime`. Missing `time_ms` → event skipped.
 
 Show the trade’s favorable extreme (MFE peak) on the chart for the selected trade (or filtered visible trades), using **report data only** — not recomputing MFE in the browser.
 
-### Candidate data sources (no new backend required for minimal v1)
+### Required payload (price is not enough)
 
-Per closed trade, prefer existing report fields before new event types:
+A correct MFE peak marker needs **both**:
 
-| Source | Fields | Limitation |
-|--------|--------|------------|
-| `trade_records[].trade_management` | `best_price_before_exit`, `mfe_at_proven_pct`, `mfe_at_protected_pct`, `mfe_at_runner_pct` | Peak **time/bar** not always on trade record |
-| `trade_records[]` quality block | `mfe_price`, `mfe_pct`, `bars_to_mfe` | Bar index may need mapping via `entry_time_ms` + timeframe, not `entry_idx` on frontend |
-| `trade_management_events[]` | `mfe_pct` on each event | Point-in-time at transition, not necessarily global MFE peak |
+1. **Peak price** — e.g. `mfe_price`, `best_price_before_exit`
+2. **Peak bar/time** — explicit timestamp or bar offset from entry
+
+`best_price_before_exit` alone places a horizontal line at the right level but not at the right bar. The frontend **must not** infer peak time by scanning OHLCV or recomputing MFE from candles.
+
+### Candidate data sources (may suffice without new backend — verify first)
+
+Per closed trade, prefer existing report fields before new event types or schema additions:
+
+| Source | Fields | Peak time? | Notes |
+|--------|--------|------------|-------|
+| `trade_records[]` quality block | `mfe_price`, `mfe_pct`, `bars_to_mfe` | **Indirect** | `bars_to_mfe` is bars from entry (inclusive semantics match runtime). Frontend can map to chart time only via `entry_time_ms` + report `timeframe` — acceptable **only if** this offset is stable and tested on real reports; no OHLCV scan. |
+| `trade_records[].path_diagnostics.mfe` | `price_move`, `pct`, `time_ms`, `bars_from_entry` | **Yes** | Preferred when path diagnostics are enabled on the run (`time_ms` is authoritative). |
+| `trade_records[].trade_management` | `best_price_before_exit`, phase MFE % fields | **No** | Price/phase snapshots only; not sufficient alone for bar-accurate peak marker. |
+| `trade_management_events[]` | `mfe_pct` per event | **Partial** | Point-in-time at phase transition, not necessarily global MFE peak. |
+
+**Likely outcome:** if neither `path_diagnostics.mfe.time_ms` nor a verified `bars_to_mfe` → time mapping is available on target runs, 7.3b becomes a **small backend/report slice** (e.g. expose `mfe_time_ms` / `mfe_bar_index` on the trade quality block) rather than frontend-only work. That is an open design decision, not a blocker for 7.3a.
 
 ### Open design questions
 
-1. **Bar time for peak:** Does frontend need `mfe_time_ms` / `mfe_bar_index` on trade record or a dedicated event, or is inferring from `bars_to_mfe` + entry bar acceptable?
-2. **Marker shape:** Horizontal price line vs bar marker vs both (price line is closer to “peak” semantics).
+1. **Peak bar/time source:** Confirm which field is canonical — `path_diagnostics.mfe.time_ms`, derived time from `bars_to_mfe` + `entry_time_ms`, or a new stable field on the trade record. If none are present on a run, hide the overlay (do not guess).
+2. **Marker shape:** Horizontal price line vs bar marker vs both (price line alone is misleading without correct bar anchor).
 3. **Toggle:** Separate “MFE peak” under Trade management, or coupled to selected trade only.
 4. **Multi-trade view:** Show peaks only for selected trade vs all visible closed trades.
+5. **Backend slice needed?** Audit smoke/diagnostic reports: if peak time is missing on typical configs, add explicit serialization before frontend 7.3b.
 
 ### Guardrails
 
@@ -95,8 +108,9 @@ Per closed trade, prefer existing report fields before new event types:
 
 ### Suggested acceptance (when implemented)
 
-- Selected trade with MFE fields shows one peak indicator at correct bar/time when data exists.
-- Missing fields → no marker, no crash.
+- Selected trade shows one peak indicator at **correct bar/time and price** when authoritative time fields exist.
+- Price-only or time-only payload → no marker (or defer until backend adds stable peak time).
+- Missing fields → no crash.
 - Toggle OFF hides peak; existing 7.3a markers unchanged.
 
 ---

@@ -55,10 +55,12 @@
 
 ## 6. Legacy BE Cleanup Future Slice
 
-- [ ] 6.1 After diagnostic runtime v1 lands, remove or archive the legacy `exit_management.always_on/profiles/rules` `break_even_stop` shape from product-facing contracts.
-- [ ] 6.2 Remove legacy BE from new runtime documentation, examples, and any Composer/catalog path that could present it as supported.
-- [ ] 6.3 Keep only deliberate historical-report/config loading support if still needed, with explicit deprecated-path tests.
-- [ ] 6.4 Verify the new runtime architecture uses only `phase_rules`, `stop_management`, and `runtime_exits` as its product contract.
+- [x] 6.1 After diagnostic runtime v1 lands, remove or archive the legacy `exit_management.always_on/profiles/rules` `break_even_stop` shape from product-facing contracts.
+- [x] 6.2 Remove legacy BE from new runtime documentation, examples, and any Composer/catalog path that could present it as supported.
+- [x] 6.3 Keep only deliberate historical-report/config loading support if still needed, with explicit deprecated-path tests.
+- [x] 6.4 Verify the new runtime architecture uses only `phase_rules`, `stop_management`, and `runtime_exits` as its product contract.
+
+**Slice 9 notes:** `break_even_stop` removed from BFF authoring catalog; Composer blank draft uses `diagnostic_only` product shape; legacy rules detectable read-only in UI. Backend parser/runtime and deprecated compatibility tests unchanged. Detail: `legacy-be-cleanup-audit.md`.
 
 ## 7. Frontend Report And Chart Future Slice
 

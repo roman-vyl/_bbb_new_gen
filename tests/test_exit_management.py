@@ -1,4 +1,9 @@
-"""Exit management combiner: validation and break-even semantics."""
+"""Exit management combiner: validation and break-even semantics (deprecated legacy compatibility).
+
+Slice 9: tests in this module cover the legacy ``break_even_stop`` managed combiner path only.
+They are not the product contract for the phase-based diagnostic runtime (``phase_rules`` /
+``stop_management`` / ``runtime_exits``).
+"""
 
 from __future__ import annotations
 

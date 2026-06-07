@@ -275,6 +275,23 @@ select {
   color: #fdba74;
 }
 
+.composer-exit-management-product__summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr));
+  gap: 0.5rem 1rem;
+  margin: 0.5rem 0 0;
+  font-size: 0.8125rem;
+}
+
+.composer-exit-management-product__summary dt {
+  color: #94a3b8;
+  font-size: 0.75rem;
+}
+
+.composer-exit-management-product__summary dd {
+  margin: 0;
+}
+
 .chart-legend__chip--exit_executed {
   border-color: #c084fc;
   color: #d8b4fe;

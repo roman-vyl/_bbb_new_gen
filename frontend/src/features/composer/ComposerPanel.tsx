@@ -58,6 +58,7 @@ import {
   type ContextConsumptionDraft,
   type ContextProviderDraft,
 } from "./composerStrategyContexts";
+import { ExitManagementProductPanel } from "./ExitManagementProductPanel";
 import { ParamFields } from "./ParamFields";
 
 type PreviewTab = "draft" | "serialized";
@@ -1600,11 +1601,17 @@ export function ComposerPanel() {
 
               <ComposerCollapsible
                 id="exit_management"
-                title="Trade management / Exit management"
+                title="Trade management / Exit management runtime"
                 summary={joinInstanceSummaries(
-                  configDraft.instances.map((inst) =>
-                    listSummary(readAlwaysOnManagementRules((inst.strategy ?? {}) as JsonObject)),
-                  ),
+                  configDraft.instances.map((inst) => {
+                    const em = readExitManagement((inst.strategy ?? {}) as JsonObject);
+                    const mode = typeof em.mode === "string" ? em.mode : "legacy";
+                    const phaseCount = Array.isArray(em.phase_rules) ? em.phase_rules.length : 0;
+                    const legacyCount = readAlwaysOnManagementRules(
+                      (inst.strategy ?? {}) as JsonObject,
+                    ).length;
+                    return `${mode}; phase_rules=${phaseCount}; legacy_rules=${legacyCount}`;
+                  }),
                 )}
                 open={openPipelineSections.has("exit_management")}
                 onToggle={togglePipeline}
@@ -1618,79 +1625,11 @@ export function ComposerPanel() {
                   instances={configDraft.instances}
                   selectedIndex={selectedIndex}
                 >
-                  {(index, inst) => {
-                    const instStrategy = (inst.strategy ?? {}) as JsonObject;
-                    return (
-                      <div className="composer-collapsible-inner">
-                        <h4 className="composer-subhead">Always-on rules</h4>
-                        <ListComponentSection
-                          compact
-                          title="Always-on management rules"
-                          role="exit_management"
-                          pathRole="always_on_management"
-                          catalog={catalog}
-                          slots={readAlwaysOnManagementRules(instStrategy)}
-                          instanceIndex={index}
-                          errors={validationErrors}
-                          onAdd={(id) => addListSlot(index, "always_on_management", id)}
-                          onRemove={(slot) => removeListSlot(index, "always_on_management", slot)}
-                          onChange={(slot, next) =>
-                            updateListSlot(index, "always_on_management", slot, next)
-                          }
-                        />
-                        <h4 className="composer-subhead">Profile: aligned</h4>
-                        <ListComponentSection
-                          compact
-                          title="Aligned management rules"
-                          role="exit_management"
-                          pathRole="aligned_management"
-                          catalog={catalog}
-                          slots={readProfileManagementRules(instStrategy, "aligned")}
-                          instanceIndex={index}
-                          errors={validationErrors}
-                          onAdd={(id) => addListSlot(index, "aligned_management", id)}
-                          onRemove={(slot) => removeListSlot(index, "aligned_management", slot)}
-                          onChange={(slot, next) =>
-                            updateListSlot(index, "aligned_management", slot, next)
-                          }
-                        />
-                        <h4 className="composer-subhead">Profile: countertrend</h4>
-                        <ListComponentSection
-                          compact
-                          title="Countertrend management rules"
-                          role="exit_management"
-                          pathRole="countertrend_management"
-                          catalog={catalog}
-                          slots={readProfileManagementRules(instStrategy, "countertrend")}
-                          instanceIndex={index}
-                          errors={validationErrors}
-                          onAdd={(id) => addListSlot(index, "countertrend_management", id)}
-                          onRemove={(slot) =>
-                            removeListSlot(index, "countertrend_management", slot)
-                          }
-                          onChange={(slot, next) =>
-                            updateListSlot(index, "countertrend_management", slot, next)
-                          }
-                        />
-                        <h4 className="composer-subhead">Profile: neutral</h4>
-                        <ListComponentSection
-                          compact
-                          title="Neutral management rules"
-                          role="exit_management"
-                          pathRole="neutral_management"
-                          catalog={catalog}
-                          slots={readProfileManagementRules(instStrategy, "neutral")}
-                          instanceIndex={index}
-                          errors={validationErrors}
-                          onAdd={(id) => addListSlot(index, "neutral_management", id)}
-                          onRemove={(slot) => removeListSlot(index, "neutral_management", slot)}
-                          onChange={(slot, next) =>
-                            updateListSlot(index, "neutral_management", slot, next)
-                          }
-                        />
-                      </div>
-                    );
-                  }}
+                  {(_index, inst) => (
+                    <ExitManagementProductPanel
+                      exitManagement={readExitManagement((inst.strategy ?? {}) as JsonObject)}
+                    />
+                  )}
                 </ComposerInstanceGrid>
               </ComposerCollapsible>
             </div>
@@ -2348,7 +2287,11 @@ export function ListComponentSection({
   compact = false,
   title,
   role,
-  pathRole = role === "setup" ? "setups" : role,
+  pathRole = role === "setup"
+    ? "setups"
+    : role === "exit_management"
+      ? "always_on_management"
+      : role,
   catalog,
   strategy,
   slots,

@@ -145,6 +145,15 @@ def test_component_catalog_returns_ema_pullback_components(client: TestClient) -
     assert cross_loss["params_schema"]["fast_ema.timeframe"]["default"] == "base"
 
 
+def test_component_catalog_excludes_deprecated_break_even_stop_authoring(
+    client: TestClient,
+) -> None:
+    res = client.get("/api/research/component-catalog?family=ema_pullback")
+    assert res.status_code == 200
+    body = res.json()
+    assert not any(c["component_id"] == "break_even_stop" for c in body["components"])
+
+
 def test_validate_config_ok(client: TestClient) -> None:
     res = client.post("/api/research/config/validate", json=_valid_draft())
     assert res.status_code == 200

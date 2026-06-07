@@ -3,10 +3,18 @@
  */
 import { describe, expect, it } from "vitest";
 
-import type { ComponentCatalog, StrategyConfigDraft } from "@/api/types";
-import { createBlankConfigDraft } from "@/features/composer/composerDraft";
+import type { ComponentCatalog } from "@/api/types";
+import {
+  componentsForRole,
+  createBlankConfigDraft,
+} from "@/features/composer/composerDraft";
+import {
+  EXIT_MANAGEMENT_PRODUCT_CONTRACT,
+  countLegacyExitManagementRules,
+  createBlankExitManagement,
+} from "@/features/composer/composerExitManagementProduct";
 
-const CATALOG: ComponentCatalog = {
+const CATALOG_WITH_LEGACY_BE: ComponentCatalog = {
   family: "ema_pullback",
   schema_version: 1,
   sections: [],
@@ -31,53 +39,38 @@ const CATALOG: ComponentCatalog = {
   context_consumption_roles: [],
 };
 
-describe("composer exit_management draft shape", () => {
-  it("blank instance includes empty exit_management groups", () => {
+describe("composer exit_management product contract", () => {
+  it("blank instance uses diagnostic_only product contract, not legacy always_on/rules", () => {
     const draft = createBlankConfigDraft("test_exp");
-    const tm = draft.instances[0]?.strategy?.trade_management as Record<string, unknown>;
-    const em = tm?.exit_management as Record<string, unknown>;
-    expect(em).toBeTruthy();
-    const alwaysOn = em?.always_on as Record<string, unknown>;
-    expect(Array.isArray(alwaysOn?.rules)).toBe(true);
-    expect((alwaysOn?.rules as unknown[]).length).toBe(0);
+    const strategy = draft.instances[0]?.strategy as Record<string, unknown> | undefined;
+    const tm = strategy?.trade_management as Record<string, unknown> | undefined;
+    const em = tm?.exit_management as Record<string, unknown> | undefined;
+    expect(em).toEqual(createBlankExitManagement());
+    expect(em?.mode).toBe("diagnostic_only");
+    expect(em?.always_on).toBeUndefined();
   });
 
-  it("can author always_on and profile break_even rules in draft JSON", () => {
-    const draft = createBlankConfigDraft("test_exp") as StrategyConfigDraft;
-    const strategy = draft.instances[0].strategy as Record<string, unknown>;
-    const tm = strategy.trade_management as Record<string, unknown>;
-    const exitPolicy = tm.exit_policy as Record<string, unknown>;
-    const alwaysOnPolicy = exitPolicy.always_on as Record<string, unknown>;
-    alwaysOnPolicy.exits = [
-      {
-        instance_id: "atr_sl",
-        component_id: "atr_stop_loss",
-        distance: { timeframe: "base", period: 14, multiplier: 2 },
+  it("componentsForRole hides deprecated break_even_stop from authoring options", () => {
+    expect(componentsForRole(CATALOG_WITH_LEGACY_BE, "exit_management")).toEqual([]);
+    expect(componentsForRole(CATALOG_WITH_LEGACY_BE, "exits")).toHaveLength(1);
+  });
+
+  it("counts legacy rules on loaded deprecated configs", () => {
+    const legacy = {
+      always_on: {
+        rules: [{ instance_id: "be_ao", component_id: "break_even_stop" }],
       },
-    ];
-    const em = tm.exit_management as Record<string, unknown>;
-    const alwaysOnEm = em.always_on as Record<string, unknown>;
-    alwaysOnEm.rules = [
-      {
-        instance_id: "be_ao",
-        component_id: "break_even_stop",
-        trigger_r: 1,
-        offset_r: 0,
-        apply_once: true,
+      profiles: {
+        aligned: { rules: [{ instance_id: "be_al", component_id: "break_even_stop" }] },
+        countertrend: { rules: [] },
+        neutral: { rules: [] },
       },
-    ];
-    const profiles = em.profiles as Record<string, Record<string, unknown>>;
-    profiles.aligned.rules = [
-      {
-        instance_id: "be_al",
-        component_id: "break_even_stop",
-        trigger_r: 1.5,
-        offset_r: 0,
-        apply_once: true,
-      },
-    ];
-    expect(CATALOG.components.some((c) => c.role === "exit_management")).toBe(true);
-    const rules = (em.always_on as Record<string, unknown>).rules as unknown[];
-    expect(rules[0]).toMatchObject({ component_id: "break_even_stop" });
+    };
+    expect(countLegacyExitManagementRules(legacy)).toBe(2);
+  });
+
+  it("product contract reserves empty stop_management and runtime_exits", () => {
+    expect(EXIT_MANAGEMENT_PRODUCT_CONTRACT.stop_management).toEqual([]);
+    expect(EXIT_MANAGEMENT_PRODUCT_CONTRACT.runtime_exits).toEqual([]);
   });
 });

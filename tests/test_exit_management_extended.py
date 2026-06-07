@@ -1,4 +1,8 @@
-"""Exit management: signal trace, reports, config fixture, backtest routing."""
+"""Exit management: signal trace, reports, config fixture, backtest routing (legacy compatibility).
+
+Slice 9: ``break_even_stop`` coverage here is deprecated managed-path compatibility, not the
+new diagnostic-only runtime product contract.
+"""
 
 from __future__ import annotations
 
