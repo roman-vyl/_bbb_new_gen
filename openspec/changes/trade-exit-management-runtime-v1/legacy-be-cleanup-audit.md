@@ -67,3 +67,9 @@ Change: `trade-exit-management-runtime-v1` · OpenSpec §6.
 - No removal of backend legacy parser/runtime
 - No phase_rules Composer editor
 - No OpenSpec archive in this slice
+
+## Residual (intentional, not a blocker)
+
+`research_api/services/component_catalog.py` still defines legacy **exit-management sections** with `role="exit_management"` (`exit_management_always_on`, profile buckets). The **`break_even_stop` component was removed** from the catalog; Composer no longer renders rule-list authoring for those sections (product panel only). Empty `componentsForRole(..., "exit_management")` means those sections are inert for add-component UX.
+
+**Follow-up (deeper cleanup, later):** remove or repurpose the legacy section schemas when catalog/Composer section wiring is next refactored — not required for Slice 9 product semantics.

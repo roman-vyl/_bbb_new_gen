@@ -121,12 +121,18 @@ describe("SignalTraceRequestCoordinator", () => {
     const c = createSignalTraceRequestCoordinator();
     const key = buildTraceRequestKey(PARAMS);
     c.markInFlight(key, 1);
-    expect(c.evaluate({ key, generation: 1, displayCacheCoversWindow: false }).reason).toBe("in_flight");
+    const inFlight = c.evaluate({ key, generation: 1, displayCacheCoversWindow: false });
+    expect(inFlight.action).toBe("skip");
+    if (inFlight.action === "skip") {
+      expect(inFlight.reason).toBe("in_flight");
+    }
     c.clearInFlight(key, 1);
     c.markMerged(key, "network");
-    expect(c.evaluate({ key, generation: 1, displayCacheCoversWindow: false }).reason).toBe(
-      "already_merged",
-    );
+    const merged = c.evaluate({ key, generation: 1, displayCacheCoversWindow: false });
+    expect(merged.action).toBe("skip");
+    if (merged.action === "skip") {
+      expect(merged.reason).toBe("already_merged");
+    }
   });
 
   it("isResponseCurrent false after reset", () => {

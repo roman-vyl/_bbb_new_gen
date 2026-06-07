@@ -119,7 +119,6 @@ import {
   lanesSignalTraceStatus as deriveLanesSignalTraceStatus,
   signalTraceMatchesChartWindow,
   type SignalTraceLoadStatus,
-  type SignalTraceRequest,
 } from "@/shared/context/signalTraceLoadPolicy";
 import { evaluateSignalTraceBootstrap } from "@/shared/context/signalTraceBootstrap";
 import {
@@ -333,6 +332,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
 
   const setSelectedVariantKey = useCallback(
     (key: string) => {
+      selectedVariantKeyRef.current = key;
       setSelectedVariantKeyState(key);
       if (report === null) {
         return;
