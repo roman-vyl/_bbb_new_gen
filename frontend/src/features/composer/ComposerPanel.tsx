@@ -59,6 +59,7 @@ import {
   type ContextProviderDraft,
 } from "./composerStrategyContexts";
 import { ExitManagementProductPanel } from "./ExitManagementProductPanel";
+import { writeExitManagementOnStrategy } from "./composerPhaseRulesEditor";
 import { ParamFields } from "./ParamFields";
 
 type PreviewTab = "draft" | "serialized";
@@ -1625,11 +1626,22 @@ export function ComposerPanel() {
                   instances={configDraft.instances}
                   selectedIndex={selectedIndex}
                 >
-                  {(_index, inst) => (
-                    <ExitManagementProductPanel
-                      exitManagement={readExitManagement((inst.strategy ?? {}) as JsonObject)}
-                    />
-                  )}
+                  {(index, inst) => {
+                    const strategy = (inst.strategy ?? {}) as JsonObject;
+                    const pathPrefix = strategyPath(index);
+                    return (
+                      <ExitManagementProductPanel
+                        exitManagement={readExitManagement(strategy)}
+                        pathPrefix={pathPrefix}
+                        errors={validationErrors}
+                        onChange={(nextExitManagement) => {
+                          patchInstance(index, {
+                            strategy: writeExitManagementOnStrategy(strategy, nextExitManagement),
+                          });
+                        }}
+                      />
+                    );
+                  }}
                 </ComposerInstanceGrid>
               </ComposerCollapsible>
             </div>

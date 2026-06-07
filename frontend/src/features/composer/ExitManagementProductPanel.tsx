@@ -1,16 +1,26 @@
-import type { JsonObject } from "@/api/types";
+import type { JsonObject, ValidationErrorItem } from "@/api/types";
 import {
   hasLegacyExitManagementRules,
   summarizeExitManagementProduct,
 } from "@/features/composer/composerExitManagementProduct";
+import { PhaseRulesEditor } from "@/features/composer/PhaseRulesEditor";
 
 type Props = {
   exitManagement: JsonObject;
+  pathPrefix: string;
+  errors?: ValidationErrorItem[];
+  onChange?: (nextExitManagement: JsonObject) => void;
 };
 
-export function ExitManagementProductPanel({ exitManagement }: Props) {
+export function ExitManagementProductPanel({
+  exitManagement,
+  pathPrefix,
+  errors = [],
+  onChange,
+}: Props) {
   const summary = summarizeExitManagementProduct(exitManagement);
   const hasLegacy = hasLegacyExitManagementRules(exitManagement);
+  const authoringEnabled = Boolean(onChange) && !hasLegacy;
 
   return (
     <div
@@ -18,16 +28,16 @@ export function ExitManagementProductPanel({ exitManagement }: Props) {
       data-testid="exit-management-product-panel"
     >
       <p className="banner banner--info" role="status">
-        Product contract: <code>mode</code>, <code>phase_rules</code>, reserved{" "}
-        <code>stop_management</code> and <code>runtime_exits</code>. Legacy{" "}
-        <code>break_even_stop</code> rules are deprecated compatibility-only — Composer does not
-        offer them for new configs. Phase-rules editor is not in Composer yet; edit JSON directly.
+        Product contract: <code>mode</code> = <code>diagnostic_only</code>,{" "}
+        <code>phase_rules</code>, reserved <code>stop_management</code> and{" "}
+        <code>runtime_exits</code>. Legacy <code>break_even_stop</code> rules are deprecated
+        compatibility-only — Composer does not offer them for new configs.
       </p>
       {hasLegacy && (
         <p className="banner banner--warn" role="status">
           This instance still loads deprecated legacy management rules (
-          {summary.legacyRulesCount}). They remain readable for old artifacts only; do not use them
-          as the basis for new runtime work.
+          {summary.legacyRulesCount}). They remain readable for old artifacts only; phase-rules
+          authoring is disabled until legacy rules are removed from the config JSON.
         </p>
       )}
       <dl className="composer-exit-management-product__summary">
@@ -56,6 +66,15 @@ export function ExitManagementProductPanel({ exitManagement }: Props) {
           </div>
         )}
       </dl>
+
+      {authoringEnabled ? (
+        <PhaseRulesEditor
+          exitManagement={exitManagement}
+          pathPrefix={pathPrefix}
+          errors={errors}
+          onChange={onChange!}
+        />
+      ) : null}
     </div>
   );
 }

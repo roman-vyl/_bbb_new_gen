@@ -73,4 +73,13 @@ describe("composer exit_management product contract", () => {
     expect(EXIT_MANAGEMENT_PRODUCT_CONTRACT.stop_management).toEqual([]);
     expect(EXIT_MANAGEMENT_PRODUCT_CONTRACT.runtime_exits).toEqual([]);
   });
+
+  it("blank draft shape matches diagnostic_only authoring contract", () => {
+    expect(createBlankExitManagement()).toEqual({
+      mode: "diagnostic_only",
+      phase_rules: [],
+      stop_management: [],
+      runtime_exits: [],
+    });
+  });
 });

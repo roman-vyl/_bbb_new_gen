@@ -237,6 +237,7 @@ export function listSlotPath(
     | "aligned_exits"
     | "countertrend_exits"
     | "neutral_exits"
+    | "phase_rules"
     | "always_on_management"
     | "aligned_management"
     | "countertrend_management"
@@ -260,6 +261,9 @@ export function listSlotPath(
   }
   if (role === "neutral_exits") {
     return `${strategyPath(index)}.trade_management.exit_policy.profiles.neutral.exits[${slot}]`;
+  }
+  if (role === "phase_rules") {
+    return `${strategyPath(index)}.trade_management.exit_management.phase_rules[${slot}]`;
   }
   if (role === "always_on_management") {
     return `${strategyPath(index)}.trade_management.exit_management.always_on.rules[${slot}]`;

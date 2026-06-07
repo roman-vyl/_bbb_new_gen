@@ -1,6 +1,7 @@
 import type { ComponentCatalog, JsonObject, ValidationErrorItem } from "@/api/types";
 
 import { normalizeStrategySingletonsForApi } from "./composerComponentSlots";
+import { collectExitManagementProductValidationErrors } from "./composerPhaseRulesEditor";
 
 export type ContextProviderDraft = JsonObject & {
   component_id: string;
@@ -597,6 +598,7 @@ export function collectComposerStrategyErrors(
     );
   }
   errors.push(...collectUndefinedConsumerContextRefErrors(strategy, pathPrefix));
+  errors.push(...collectExitManagementProductValidationErrors(strategy, pathPrefix));
   return errors;
 }
 

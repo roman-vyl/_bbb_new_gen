@@ -79,3 +79,13 @@
 - Slice 8A (Reports): types, summary panels, selected-trade block, compact `/summary` client typing — tasks 7.1, 7.2, 7.4, 7.5.
 - Slice 8B (Chart): phase/exit markers, legend toggles, selected-trade filtering — task 7.3a; exit-layer attribution on chart is tooltip-only until 7.3d.
 - Chart overlay rollout detail: `frontend-chart-overlays.md`.
+
+## 8. Composer Phase Rules Authoring (Slice 10)
+
+- [x] 8.1 Add Composer `PhaseRulesEditor` for `diagnostic_only` `phase_rules` (add/remove/edit/reorder, default preset).
+- [x] 8.2 Add client-side validation aligned with backend phase-rule constraints (mode, monotonic phases, condition types/thresholds).
+- [x] 8.3 Wire save/load so `trade_management.exit_management` preserves product contract (`phase_rules`, empty `stop_management`/`runtime_exits`).
+- [x] 8.4 Add Composer tests; legacy `break_even_stop` remains read-only warning, not authoring.
+- [x] 8.5 Add smoke config fixture and run parity check vs baseline (execution unchanged; reports include diagnostics).
+
+**Slice 10 notes:** `composerPhaseRulesEditor.ts`, `PhaseRulesEditor.tsx`, `ExitManagementProductPanel` authoring; smoke fixture `smoke_runtime_diag_p8a_relaxed_w9_r10_wlb20_ulb75_ab8_sl4_safetytp40_control_no_signal_exit.json`. No backend/runtime/report/API/chart changes.
