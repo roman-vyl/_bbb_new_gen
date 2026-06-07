@@ -3,6 +3,7 @@ import {
   COMPONENT_EVENT_ROLE_LEGEND,
 } from "@/features/chart/chartComponentEvents";
 import { EXIT_MARKER_LEGEND } from "@/features/chart/chartMarkers";
+import { TRADE_MANAGEMENT_MARKER_LEGEND } from "@/features/chart/tradeManagementChartEvents";
 
 type ChartMarkerLegendProps = {
   showEntryBlockMarkers: boolean;
@@ -12,6 +13,11 @@ type ChartMarkerLegendProps = {
   showSetupMarkers: boolean;
   onShowSetupMarkersChange: (show: boolean) => void;
   hasComponentEvents: boolean;
+  hasTradeManagementEvents: boolean;
+  showTradeManagementPhaseMarkers: boolean;
+  onShowTradeManagementPhaseMarkersChange: (show: boolean) => void;
+  showTradeManagementExitMarkers: boolean;
+  onShowTradeManagementExitMarkersChange: (show: boolean) => void;
 };
 
 export function ChartMarkerLegend({
@@ -22,6 +28,11 @@ export function ChartMarkerLegend({
   showSetupMarkers,
   onShowSetupMarkersChange,
   hasComponentEvents,
+  hasTradeManagementEvents,
+  showTradeManagementPhaseMarkers,
+  onShowTradeManagementPhaseMarkersChange,
+  showTradeManagementExitMarkers,
+  onShowTradeManagementExitMarkersChange,
 }: ChartMarkerLegendProps) {
   return (
     <div className="chart-legend" aria-label="Chart marker legend">
@@ -82,6 +93,37 @@ export function ChartMarkerLegend({
               onChange={(event) => onShowSetupMarkersChange(event.target.checked)}
             />
             Show setup
+          </label>
+        </div>
+      )}
+      {hasTradeManagementEvents && (
+        <div className="chart-legend__group">
+          <p className="chart-legend__subheading">Trade management</p>
+          {TRADE_MANAGEMENT_MARKER_LEGEND.map((item) => (
+            <span key={item.kind} className="chart-legend__badge" title={item.description}>
+              <span className={`chart-legend__chip chart-legend__chip--${item.kind}`}>
+                {item.label}
+              </span>
+              <span className="chart-legend__text">{item.description}</span>
+            </span>
+          ))}
+          <label className="chart-legend__toggle">
+            <input
+              type="checkbox"
+              checked={showTradeManagementPhaseMarkers}
+              onChange={(event) => onShowTradeManagementPhaseMarkersChange(event.target.checked)}
+              data-testid="chart-toggle-trade-management-phases"
+            />
+            Phases
+          </label>
+          <label className="chart-legend__toggle">
+            <input
+              type="checkbox"
+              checked={showTradeManagementExitMarkers}
+              onChange={(event) => onShowTradeManagementExitMarkersChange(event.target.checked)}
+              data-testid="chart-toggle-trade-management-exits"
+            />
+            Exits
           </label>
         </div>
       )}

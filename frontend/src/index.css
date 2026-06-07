@@ -255,6 +255,31 @@ select {
   color: #c4b5fd;
 }
 
+.chart-legend__chip--phase_proven {
+  border-color: #22d3ee;
+  color: #67e8f9;
+}
+
+.chart-legend__chip--phase_protected {
+  border-color: #818cf8;
+  color: #a5b4fc;
+}
+
+.chart-legend__chip--phase_runner {
+  border-color: #f472b6;
+  color: #f9a8d4;
+}
+
+.chart-legend__chip--phase_exhaust {
+  border-color: #fb923c;
+  color: #fdba74;
+}
+
+.chart-legend__chip--exit_executed {
+  border-color: #c084fc;
+  color: #d8b4fe;
+}
+
 .chart-legend__group {
   display: flex;
   flex-wrap: wrap;

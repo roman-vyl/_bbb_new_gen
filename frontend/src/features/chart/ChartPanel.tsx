@@ -61,6 +61,10 @@ import {
   buildComponentEventsForView,
   hasHtfAlignedComponentEvents,
 } from "@/features/chart/chartComponentEvents";
+import {
+  buildTradeManagementEventsForView,
+  hasTradeManagementEvents,
+} from "@/features/chart/tradeManagementChartEvents";
 
 import { shouldSuppressPanShiftRequest } from "@/features/chart/chartViewport";
 import { createChartInteractionAdapter } from "@/features/chart/runtime/interactionAdapter";
@@ -144,6 +148,14 @@ export function ChartPanel() {
     chartShowSetupMarkers,
 
     setChartShowSetupMarkers,
+
+    chartShowTradeManagementPhaseMarkers,
+
+    setChartShowTradeManagementPhaseMarkers,
+
+    chartShowTradeManagementExitMarkers,
+
+    setChartShowTradeManagementExitMarkers,
 
     candlesSource,
 
@@ -752,6 +764,7 @@ export function ChartPanel() {
 
     let tradeMarkerCount = 0;
     let componentMarkerCount = 0;
+    let tradeManagementMarkerCount = 0;
     dbgTimedSync(
       DBG.chart.markersRebuild,
       () => {
@@ -766,15 +779,25 @@ export function ChartPanel() {
           showSetup: chartShowSetupMarkers,
           viewCandles: chartCandles,
         });
+        const tradeManagementMarkers = buildTradeManagementEventsForView(
+          selectedVariant.trade_management_events,
+          {
+            showPhases: chartShowTradeManagementPhaseMarkers,
+            showExits: chartShowTradeManagementExitMarkers,
+            selectedTradeId,
+            viewCandles: chartCandles,
+          },
+        );
         tradeMarkerCount = tradeMarkers.length;
         componentMarkerCount = componentMarkers.length;
+        tradeManagementMarkerCount = tradeManagementMarkers.length;
         markersPlugin.setMarkers(
-          [...tradeMarkers, ...componentMarkers].sort(
+          [...tradeMarkers, ...componentMarkers, ...tradeManagementMarkers].sort(
             (a, b) => (a.time as number) - (b.time as number),
           ),
         );
       },
-      () => ({ tradeMarkerCount, componentMarkerCount }),
+      () => ({ tradeMarkerCount, componentMarkerCount, tradeManagementMarkerCount }),
     );
 
   }, [
@@ -786,6 +809,8 @@ export function ChartPanel() {
     chartShowEntryBlockMarkers,
     chartShowExitSignalMarkers,
     chartShowSetupMarkers,
+    chartShowTradeManagementPhaseMarkers,
+    chartShowTradeManagementExitMarkers,
   ]);
 
 
@@ -910,6 +935,11 @@ export function ChartPanel() {
         showSetupMarkers={chartShowSetupMarkers}
         onShowSetupMarkersChange={setChartShowSetupMarkers}
         hasComponentEvents={chartDisplayComponentEvents.length > 0}
+        hasTradeManagementEvents={hasTradeManagementEvents(selectedVariant?.trade_management_events)}
+        showTradeManagementPhaseMarkers={chartShowTradeManagementPhaseMarkers}
+        onShowTradeManagementPhaseMarkersChange={setChartShowTradeManagementPhaseMarkers}
+        showTradeManagementExitMarkers={chartShowTradeManagementExitMarkers}
+        onShowTradeManagementExitMarkersChange={setChartShowTradeManagementExitMarkers}
       />
 
       {chartTradeFocusWarning && (

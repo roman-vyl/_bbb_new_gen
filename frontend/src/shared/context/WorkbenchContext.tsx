@@ -103,7 +103,9 @@ import {
   resolveSelectedTradeEntryTimeMs,
   resolveTradeEntryTimeMs,
   resolveVariantKeyForReport,
+  tradeIdsEqual,
 } from "@/features/chart/tradeLookup";
+import { hasTradeManagementEvents } from "@/features/chart/tradeManagementChartEvents";
 import {
   buildMarketCacheKey,
   getMarketCache,
@@ -166,6 +168,10 @@ type WorkbenchState = {
   setChartShowExitSignalMarkers: (show: boolean) => void;
   chartShowSetupMarkers: boolean;
   setChartShowSetupMarkers: (show: boolean) => void;
+  chartShowTradeManagementPhaseMarkers: boolean;
+  setChartShowTradeManagementPhaseMarkers: (show: boolean) => void;
+  chartShowTradeManagementExitMarkers: boolean;
+  setChartShowTradeManagementExitMarkers: (show: boolean) => void;
   chartViewMode: ChartViewMode;
   chartViewCenterTimeSec: number | null;
   chartViewFirstTimeSec: number | null;
@@ -260,6 +266,10 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
   const [chartShowEntryBlockMarkers, setChartShowEntryBlockMarkers] = useState(true);
   const [chartShowExitSignalMarkers, setChartShowExitSignalMarkers] = useState(true);
   const [chartShowSetupMarkers, setChartShowSetupMarkers] = useState(true);
+  const [chartShowTradeManagementPhaseMarkers, setChartShowTradeManagementPhaseMarkers] =
+    useState(false);
+  const [chartShowTradeManagementExitMarkers, setChartShowTradeManagementExitMarkers] =
+    useState(false);
   const [runs, setRuns] = useState<RunSummary[]>([]);
   const [selectedRunId, setSelectedRunIdState] = useState<string | null>(null);
   const [report, setReport] = useState<RunReport | null>(null);
@@ -1457,6 +1467,17 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
         emitChartViewportCommand(command);
       }
       setSelectedTradeId(tradeId);
+      if (
+        tradeId !== null &&
+        selectedVariant &&
+        hasTradeManagementEvents(selectedVariant.trade_management_events) &&
+        selectedVariant.trade_management_events!.some((event) =>
+          tradeIdsEqual(tradeId, event.trade_id),
+        )
+      ) {
+        setChartShowTradeManagementPhaseMarkers(true);
+        setChartShowTradeManagementExitMarkers(true);
+      }
       if (tradeId !== null && entryTimeSec !== null) {
         setSelectedBarTimeSec(entryTimeSec);
         setActiveTab("chart");
@@ -1811,6 +1832,10 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       setChartShowExitSignalMarkers,
       chartShowSetupMarkers,
       setChartShowSetupMarkers,
+      chartShowTradeManagementPhaseMarkers,
+      setChartShowTradeManagementPhaseMarkers,
+      chartShowTradeManagementExitMarkers,
+      setChartShowTradeManagementExitMarkers,
       chartViewMode: chartView.mode,
       chartViewCenterTimeSec: chartView.centerTimeSec,
       chartViewFirstTimeSec: chartView.firstTimeSec,
@@ -1882,6 +1907,8 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       chartShowEntryBlockMarkers,
       chartShowExitSignalMarkers,
       chartShowSetupMarkers,
+      chartShowTradeManagementPhaseMarkers,
+      chartShowTradeManagementExitMarkers,
       chartView.mode,
       chartView.centerTimeSec,
       chartView.firstTimeSec,
