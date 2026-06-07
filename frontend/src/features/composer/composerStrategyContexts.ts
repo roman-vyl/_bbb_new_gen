@@ -573,6 +573,7 @@ export function collectComposerStrategyErrors(
       });
     }
   }
+  errors.push(...collectExitManagementProductValidationErrors(strategy, pathPrefix));
   if (!exitPolicyRequiresContextConsumption(strategy)) {
     return errors;
   }
@@ -598,7 +599,6 @@ export function collectComposerStrategyErrors(
     );
   }
   errors.push(...collectUndefinedConsumerContextRefErrors(strategy, pathPrefix));
-  errors.push(...collectExitManagementProductValidationErrors(strategy, pathPrefix));
   return errors;
 }
 
