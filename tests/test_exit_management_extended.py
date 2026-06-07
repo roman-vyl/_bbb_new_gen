@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 import json
 from pathlib import Path
 
@@ -187,6 +188,67 @@ def test_run_strategy_spec_without_exit_management_skips_managed_loop(
     assert not has_exit_management_rules(spec)
     result = backtest.run_strategy_spec(spec, _ohlcv(120))
     assert result.metrics.total.trades >= 0
+
+
+@pytest.mark.optional_vectorbt
+def test_diagnostic_only_config_preserves_static_execution_parity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pytest.importorskip("vectorbt")
+
+    from research.strategies.ema_pullback.spec import (
+        ExitManagementSpec,
+        PhaseRuleConditionSpec,
+        PhaseRuleSpec,
+        empty_exit_management,
+    )
+
+    def _boom(*args: object, **kwargs: object) -> None:
+        raise AssertionError("diagnostic_only must not use the legacy managed BE loop")
+
+    monkeypatch.setattr(backtest, "run_managed_bar_loop", _boom)
+    baseline = make_ema_pullback_strategy_spec()
+    empty_management = empty_exit_management()
+    diagnostic_management = ExitManagementSpec(
+        always_on=empty_management.always_on,
+        profiles=empty_management.profiles,
+        mode="diagnostic_only",
+        phase_rules=(
+            PhaseRuleSpec(
+                rule_id="to_proven_after_3_bars",
+                to_phase="proven",
+                condition=PhaseRuleConditionSpec(
+                    type="bars_in_trade",
+                    threshold=3,
+                ),
+            ),
+        ),
+    )
+    diagnostic = replace(
+        baseline,
+        trade_management=replace(
+            baseline.trade_management,
+            exit_management=diagnostic_management,
+        ),
+    )
+    data = _ohlcv(120)
+
+    baseline_result = backtest.run_strategy_spec(baseline, data)
+    diagnostic_result = backtest.run_strategy_spec(diagnostic, data)
+
+    assert diagnostic_result.metrics.total.trades == baseline_result.metrics.total.trades
+    assert diagnostic_result.metrics.total.pnl == pytest.approx(
+        baseline_result.metrics.total.pnl
+    )
+    if baseline_result.metrics.total.profit_factor is None:
+        assert diagnostic_result.metrics.total.profit_factor is None
+    else:
+        assert diagnostic_result.metrics.total.profit_factor == pytest.approx(
+            baseline_result.metrics.total.profit_factor
+        )
+    assert [
+        record.get("exit_reason") for record in diagnostic_result.trade_records
+    ] == [record.get("exit_reason") for record in baseline_result.trade_records]
 
 
 def test_resolve_never_triggered_break_even_diagnostics() -> None:

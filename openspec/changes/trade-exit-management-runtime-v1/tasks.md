@@ -7,10 +7,10 @@
 
 ## 2A. Execution Integration Audit
 
-- [ ] 2A.1 Identify the exact current execution paths: static vectorbt path, existing managed `exit_management` path, and report/trade record builder path.
-- [ ] 2A.2 Document where `entry_idx`, `exit_idx`, side, entry price, exit price, exit reason, locked profile, and OHLCV index are available in the current code.
-- [ ] 2A.3 Add an implementation note or code comment at the integration point explaining why `diagnostic_only` does not create a second trade path.
-- [ ] 2A.4 Add a failing parity fixture/test before implementing diagnostics so the first runtime integration must preserve old behavior.
+- [x] 2A.1 Identify the exact current execution paths: static vectorbt path, existing managed `exit_management` path, and report/trade record builder path.
+- [x] 2A.2 Document where `entry_idx`, `exit_idx`, side, entry price, exit price, exit reason, locked profile, and OHLCV index are available in the current code.
+- [x] 2A.3 Add an implementation note or code comment at the integration point explaining why `diagnostic_only` does not create a second trade path.
+- [x] 2A.4 Add a failing parity fixture/test before implementing diagnostics so the first runtime integration must preserve old behavior.
 
 ## 2. Diagnostic Runtime State
 

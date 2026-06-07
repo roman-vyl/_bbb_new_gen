@@ -271,6 +271,9 @@ def run_strategy_spec(
         enriched, spec, plan, context_bundle=context_bundle
     )
 
+    # Future diagnostic_only trade-management must run after actual trade_records
+    # are built from the chosen path. It must not feed phase state back into
+    # vectorbt masks, stops, exits, or legacy BE managed decisions.
     if has_exit_management_rules(spec):
         return _run_managed_strategy_spec(
             spec,
