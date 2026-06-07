@@ -62,8 +62,18 @@
 
 ## 7. Frontend Report And Chart Future Slice
 
-- [ ] 7.1 Update frontend report types for optional trade-management fields.
-- [ ] 7.2 Add report diagnostics panels for phase reached breakdown, runner capture summary, protected trade summary, and exit-layer breakdown.
-- [ ] 7.3 Add chart overlays later for Proven/Protected/Runner markers, MFE peak marker, active stop line when available, and exit-layer label.
-- [ ] 7.4 Keep Workbench loading old reports that do not contain trade-management fields.
-- [ ] 7.5 Do not add Composer authoring until the backend/API read path is stable.
+- [x] 7.1 Update frontend report types for optional trade-management fields.
+- [x] 7.2 Add report diagnostics panels for phase reached breakdown, runner capture summary, protected trade summary, and exit-layer breakdown.
+- [ ] 7.3 Chart overlays for trade-management diagnostics (split — see `frontend-chart-overlays.md`).
+  - [x] 7.3a Phase and exit event markers from `variant.trade_management_events` (read-only; Slice 8B).
+  - [ ] 7.3b MFE peak marker (future slice).
+  - [ ] 7.3c Active stop line overlay (future / blocked until `active_stop_updated` events are emitted).
+  - [ ] 7.3d Dedicated exit-layer label overlay (partial today: `exit_executed` Exit marker + tooltip only; separate layer label deferred).
+- [x] 7.4 Keep Workbench loading old reports that do not contain trade-management fields.
+- [x] 7.5 Do not add Composer authoring until the backend/API read path is stable.
+
+**Frontend slice notes (8A / 8B):**
+
+- Slice 8A (Reports): types, summary panels, selected-trade block, compact `/summary` client typing — tasks 7.1, 7.2, 7.4, 7.5.
+- Slice 8B (Chart): phase/exit markers, legend toggles, selected-trade filtering — task 7.3a; exit-layer attribution on chart is tooltip-only until 7.3d.
+- Chart overlay rollout detail: `frontend-chart-overlays.md`.

@@ -48,7 +48,12 @@ Backend runtime is not considered fully productized until:
 3. The frontend report model can load them.
 4. Chart/report UI can visualize phase transitions and runner diagnostics.
 
-These are later slices, not part of the diagnostic-only backend parity slice.
+Status (2026-06-07):
+
+- Items 1–3: done (backend §2–§3, API §5, frontend types/reports §7.1–7.2, §7.4).
+- Item 4 (chart): **partial** — phase/exit event markers done (§7.3a); MFE peak (§7.3b), active stop line (§7.3c), full exit-layer overlay (§7.3d) remain future.
+
+Chart overlay rollout detail: `frontend-chart-overlays.md`.
 
 ## Decisions
 
