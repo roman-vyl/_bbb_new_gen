@@ -48,10 +48,10 @@
 
 ## 5. API/BFF Read Integration Future Slice
 
-- [ ] 5.1 Update `research_api` report schemas/types to tolerate and expose `trade.trade_management`, `variant.metrics.trade_management_summary`, and `variant.trade_management_events`.
-- [ ] 5.2 Add read-only API support for the new runtime diagnostic fields; do not add authoring support in this slice.
-- [ ] 5.3 Ensure old reports without trade-management fields still load and serve through the API.
-- [ ] 5.4 Add API tests for both an old report and a new diagnostic-only report.
+- [x] 5.1 Update `research_api` report schemas/types to tolerate and expose `trade.trade_management`, `variant.metrics.trade_management_summary`, and `variant.trade_management_events`.
+- [x] 5.2 Add read-only API support for the new runtime diagnostic fields; do not add authoring support in this slice.
+- [x] 5.3 Ensure old reports without trade-management fields still load and serve through the API.
+- [x] 5.4 Add API tests for both an old report and a new diagnostic-only report.
 
 ## 6. Legacy BE Cleanup Future Slice
 

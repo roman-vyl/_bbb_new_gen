@@ -41,6 +41,52 @@ class BreakEvenDiagnostics(BaseModel):
     active_stop_management_source: Literal["profile", "always_on"]
 
 
+class TradeManagementDiagnostics(BaseModel):
+    """Diagnostic-only runtime block on closed trades (schema v6 additive)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    phase_at_exit: str
+    max_phase_reached: str
+    active_stop_source_at_exit: str | None = None
+    active_stop_price_at_exit: float | None = None
+    exit_layer: str | None = None
+    exit_rule_id: str | None = None
+    exit_component_id: str | None = None
+    best_price_before_exit: float | None = None
+    giveback_from_best_price_pct: float | None = None
+    capture_ratio: float | None = None
+    mfe_pct: float | None = None
+    bars_to_proven: int | None = None
+    bars_to_protected: int | None = None
+    bars_to_runner: int | None = None
+    mfe_at_proven_pct: float | None = None
+    mfe_at_protected_pct: float | None = None
+    mfe_at_runner_pct: float | None = None
+
+
+class TradeManagementEvent(BaseModel):
+    """Runtime trace event from diagnostic-only trade-management (schema v6 additive)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    trade_id: str
+    time_ms: int | None = None
+    bar_index: int
+    side: Literal["long", "short"]
+    event_type: Literal["phase_changed", "exit_executed"]
+    from_phase: str | None = None
+    to_phase: str | None = None
+    rule_id: str | None = None
+    component_id: str | None = None
+    price: float | None = None
+    stop_price: float | None = None
+    mfe_pct: float | None = None
+    mae_pct: float | None = None
+    bars_in_trade: int | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
 class TradeRecord(TradeOverlay):
     model_config = ConfigDict(extra="forbid")
 
@@ -85,6 +131,7 @@ class TradeRecord(TradeOverlay):
     entry_idx: int | None = None
     exit_idx: int | None = None
     break_even: BreakEvenDiagnostics | None = None
+    trade_management: TradeManagementDiagnostics | None = None
 
 
 class SideMetrics(BaseModel):
@@ -208,6 +255,7 @@ class VariantMetrics(BaseModel):
     quality_flag_breakdown: dict[str, QualityFlagBucketMetrics] | None = None
     exit_component_quality_breakdown: dict[str, ExitComponentQualityBucketMetrics] | None = None
     path_diagnostics_summary: dict[str, Any] | None = None
+    trade_management_summary: dict[str, Any] | None = None
 
 
 class PathDiagnosticsConfig(BaseModel):
@@ -253,6 +301,7 @@ class RunVariant(BaseModel):
     metrics: VariantMetrics
     component_counters: list[Any] = Field(default_factory=list)
     trade_records: list[TradeRecord]
+    trade_management_events: list[TradeManagementEvent] | None = None
 
     @property
     def trade_overlays(self) -> list[TradeOverlay]:
@@ -281,6 +330,23 @@ class RunSummary(BaseModel):
     timeframe: str
 
 
+class RunCompactVariant(BaseModel):
+    """Compact run summary variant projection without per-trade arrays."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    variant: str
+    config_id: str
+    symbol: str
+    timeframe: str
+    strategy_spec: dict[str, Any]
+    metrics: VariantMetrics
+    component_counters: list[Any] = Field(default_factory=list)
+    trade_records_count: int | None = None
+    closed_trades_count: int | None = None
+    open_trades_count: int | None = None
+
+
 class RunReport(BaseModel):
     model_config = ConfigDict(extra="allow")
 
@@ -296,3 +362,24 @@ class RunReport(BaseModel):
     trade_quality_config: TradeQualityConfig | None = None
     path_diagnostics_config: PathDiagnosticsConfig | None = None
     variants: list[RunVariant]
+
+
+class RunCompactSummaryReport(BaseModel):
+    """Compact ``*.summary.json`` artifact (no trade records or event trace)."""
+
+    model_config = ConfigDict(extra="allow")
+
+    run_id: str
+    created_at: str
+    report_schema_version: int
+    family: str
+    symbol: str
+    timeframe: str
+    data_range: DataRange | None = None
+    variants_count: int
+    trade_quality_config: TradeQualityConfig | None = None
+    path_diagnostics_config: PathDiagnosticsConfig | None = None
+    variants: list[RunCompactVariant]
+    artifact_kind: Literal["run_summary"] = "run_summary"
+    summary_schema_version: int
+    source_report_path: str

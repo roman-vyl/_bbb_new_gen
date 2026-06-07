@@ -447,6 +447,50 @@ def test_http_missing_valid_run_id_returns_404(
     assert resp.status_code == 404
 
 
+def test_http_get_run_summary_returns_compact_shape(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import research_api.services.results_reader as reader
+
+    monkeypatch.setattr(reader, "default_results_dir", lambda: tmp_path)
+    run_id = _write_artifacts(tmp_path, payload=_SAMPLE_REPORT_V5, schema_version=6)
+    variant = {
+        **_SAMPLE_REPORT_V5["variants"][0],
+        "metrics": {
+            **_SAMPLE_REPORT_V5["variants"][0]["metrics"],
+            "trade_management_summary": {
+                "by_phase_reached": {"runner": {"trade_count": 1}},
+            },
+        },
+        "trade_records_count": 1,
+        "closed_trades_count": 1,
+        "open_trades_count": 0,
+    }
+    variant.pop("trade_records", None)
+    summary_payload = {
+        **_SAMPLE_REPORT_V5,
+        "run_id": run_id,
+        "variants": [variant],
+        "artifact_kind": "run_summary",
+        "summary_schema_version": 1,
+        "source_report_path": f"research/results/runs/{run_id}.json",
+    }
+    summary_payload.pop("candles", None)
+    (tmp_path / "runs" / f"{run_id}.summary.json").write_text(
+        json.dumps(summary_payload, indent=2),
+        encoding="utf-8",
+    )
+
+    client = TestClient(app)
+    resp = client.get(f"/api/research/runs/{run_id}/summary")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["artifact_kind"] == "run_summary"
+    assert "trade_management_events" not in body["variants"][0]
+    assert "trade_records" not in body["variants"][0]
+    assert body["variants"][0]["metrics"]["trade_management_summary"]["by_phase_reached"]["runner"][
+        "trade_count"
+    ] == 1
+
+
 def test_http_unsupported_schema(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     import research_api.services.results_reader as reader
 
