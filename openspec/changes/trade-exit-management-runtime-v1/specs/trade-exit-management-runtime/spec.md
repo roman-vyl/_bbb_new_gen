@@ -10,6 +10,8 @@ For v1, `exit_management` SHALL support:
 - `stop_management`: list reserved for behavior-changing stop rules; v1 diagnostic-only configs MUST leave it empty.
 - `runtime_exits`: list reserved for phase-gated runtime exit rules; v1 diagnostic-only configs MUST leave it empty.
 
+The legacy `exit_management.always_on/profiles/rules` `break_even_stop` shape SHALL NOT be considered part of this runtime contract. It MAY remain temporarily as deprecated backward-compatible parsing/runtime support for existing artifacts, but new diagnostic runtime behavior MUST NOT depend on it.
+
 #### Scenario: Config places runtime controller beside exit policy
 - **GIVEN** a strategy spec contains `trade_management.exit_policy`
 - **WHEN** the spec also contains `trade_management.exit_management.mode: "diagnostic_only"`
@@ -27,6 +29,12 @@ For v1, `exit_management` SHALL support:
 - **AND** `stop_management` or `runtime_exits` contains one or more rules
 - **WHEN** validation runs for v1
 - **THEN** validation fails with a message that behavior-changing exit management is out of scope for diagnostic-only v1
+
+#### Scenario: Legacy BE shape is not runtime v1 input
+- **GIVEN** an existing strategy spec uses `exit_management.always_on/profiles/rules` with `break_even_stop`
+- **WHEN** diagnostic runtime v1 is implemented
+- **THEN** the diagnostic runtime does not read those legacy rules as phase, stop-management, or runtime-exit inputs
+- **AND** any continued support for that shape is treated as deprecated compatibility only
 
 ### Requirement: Runtime state tracks one real open trade
 The runtime SHALL maintain one `TradeRuntimeState` for each real open trade. The state MUST include trade id, side, entry index/time/price, bars in trade, current phase, max phase reached, side-aware best and worst prices, MFE/MAE price and percent, active-stop diagnostics, initial stop/take-profit diagnostics when available, and locked exit profile when available.

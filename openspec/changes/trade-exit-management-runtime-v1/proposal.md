@@ -14,12 +14,14 @@ This change introduces a stateful runtime layer inside the existing research tra
 - Add diagnostic-only mode where `exit_management` computes runtime state and report diagnostics without changing exits, stops, trade count, PnL, or PF.
 - Extend closed-trade and variant-level research reports with trade-management diagnostics for phases reached, MFE/giveback/capture, exit-layer attribution, and active-stop source.
 - Preserve old behavior when `exit_management` is absent; no silent migration of old strategy shapes.
+- Treat the existing `break_even_stop` `exit_management.always_on/profiles/rules` shape as deprecated backward-compatible parsing only, not as a supported product path and not as part of the new runtime architecture.
 
 Non-goals for the first backend change:
 
 - No new parallel trade path, pseudo-trades, or second simulation.
 - No frontend/chart rendering for phase markers, active-stop lines, or exit-layer labels.
 - No behavior-changing break-even, EMA trailing, RSI overheat transition, or context-loss runtime exit in the first implementation slice.
+- No integration of the legacy BE shape into the new diagnostic runtime.
 - No changes to `data_engine` candle ingestion/storage.
 - No Workbench Composer authoring changes unless a later slice explicitly targets frontend/API validation.
 
@@ -55,3 +57,7 @@ Integration boundaries:
 Roadmap note:
 
 This change's first implementation slice is backend diagnostic-only. The full master plan requires later read-only API/BFF and frontend report/chart integration. Frontend authoring and Composer support are intentionally later than read-only consumption.
+
+Legacy BE note:
+
+The archived `break_even_stop` shape under `exit_management.always_on/profiles/rules` remains only as a temporary deprecated parser/runtime compatibility path for existing artifacts. It is not a supported product path for new work and must not participate in the new phase-based runtime architecture. After diagnostic runtime v1 lands, add a separate cleanup slice to remove or archive the legacy BE shape.

@@ -3,7 +3,7 @@
 - [x] 1.1 Add spec dataclasses/types for `trade_management.exit_management.mode`, `phase_rules`, `stop_management`, and `runtime_exits` without moving declarative exits out of `exit_policy`.
 - [x] 1.2 Support v1 phase-rule condition types `mfe_atr`, `mfe_pct`, and `bars_in_trade`, including validation for required fields and positive thresholds.
 - [x] 1.3 Enforce diagnostic-only v1 constraints: `mode: "diagnostic_only"` allows phase rules but rejects non-empty `stop_management` and `runtime_exits`.
-- [x] 1.4 Preserve existing configs without `exit_management` and existing archived break-even management configs so their validation/runtime behavior is unchanged.
+- [x] 1.4 Preserve existing configs without `exit_management` and existing archived break-even management configs as deprecated backward-compatible parser/runtime behavior; do not treat legacy BE as part of the new runtime architecture.
 
 ## 2A. Execution Integration Audit
 
@@ -53,10 +53,17 @@
 - [ ] 5.3 Ensure old reports without trade-management fields still load and serve through the API.
 - [ ] 5.4 Add API tests for both an old report and a new diagnostic-only report.
 
-## 6. Frontend Report And Chart Future Slice
+## 6. Legacy BE Cleanup Future Slice
 
-- [ ] 6.1 Update frontend report types for optional trade-management fields.
-- [ ] 6.2 Add report diagnostics panels for phase reached breakdown, runner capture summary, protected trade summary, and exit-layer breakdown.
-- [ ] 6.3 Add chart overlays later for Proven/Protected/Runner markers, MFE peak marker, active stop line when available, and exit-layer label.
-- [ ] 6.4 Keep Workbench loading old reports that do not contain trade-management fields.
-- [ ] 6.5 Do not add Composer authoring until the backend/API read path is stable.
+- [ ] 6.1 After diagnostic runtime v1 lands, remove or archive the legacy `exit_management.always_on/profiles/rules` `break_even_stop` shape from product-facing contracts.
+- [ ] 6.2 Remove legacy BE from new runtime documentation, examples, and any Composer/catalog path that could present it as supported.
+- [ ] 6.3 Keep only deliberate historical-report/config loading support if still needed, with explicit deprecated-path tests.
+- [ ] 6.4 Verify the new runtime architecture uses only `phase_rules`, `stop_management`, and `runtime_exits` as its product contract.
+
+## 7. Frontend Report And Chart Future Slice
+
+- [ ] 7.1 Update frontend report types for optional trade-management fields.
+- [ ] 7.2 Add report diagnostics panels for phase reached breakdown, runner capture summary, protected trade summary, and exit-layer breakdown.
+- [ ] 7.3 Add chart overlays later for Proven/Protected/Runner markers, MFE peak marker, active stop line when available, and exit-layer label.
+- [ ] 7.4 Keep Workbench loading old reports that do not contain trade-management fields.
+- [ ] 7.5 Do not add Composer authoring until the backend/API read path is stable.

@@ -17,6 +17,8 @@ The requested runtime model should evolve that existing research execution layer
 
 The first implementation slice is intentionally diagnostic-only: it proves the runtime state model and report contracts while preserving old strategy results.
 
+The existing `break_even_stop` `exit_management.always_on/profiles/rules` shape is legacy. It may remain temporarily as deprecated backward-compatible parsing/runtime support for existing artifacts, but it is not a supported product path and must not be used as a building block for the new runtime architecture.
+
 ## Goals / Non-Goals
 
 **Goals:**
@@ -33,6 +35,7 @@ The first implementation slice is intentionally diagnostic-only: it proves the r
 
 - No BE/protective stop activation in the first slice, even though the config contract reserves `stop_management`.
 - No EMA trailing, RSI transition cap, context-loss runner exit, or other behavior-changing `runtime_exits` in the first slice.
+- No legacy BE integration into diagnostic runtime v1.
 - No frontend/chart markers or Workbench Composer authoring.
 - No changes to `data_engine`, candle storage, or BFF routes.
 
@@ -74,6 +77,14 @@ Likely touched files:
 Rationale: this gives immediate research value: we can measure how many trades reach `proven`, `protected`, or `runner` and what they give back without introducing a new trading hypothesis.
 
 Alternative considered: implement BE/trailing together with phases. Rejected because it would make parity failures and PF changes hard to attribute.
+
+### Decision: Legacy BE is parser compatibility only
+
+The archived `break_even_stop` management shape (`exit_management.always_on/profiles/rules`) SHALL NOT participate in the new phase-based runtime architecture. During this change it may remain only as deprecated backward-compatible parser/runtime behavior for existing configs and fixtures.
+
+Rationale: the new runtime architecture is `phase_rules`, `stop_management`, and `runtime_exits`; mixing the old BE shape into it would preserve two models and make future stop-management semantics ambiguous.
+
+Cleanup requirement: after diagnostic runtime v1 lands, create a separate cleanup slice to remove or archive the legacy BE shape and any remaining product-facing references.
 
 ### Decision: Phase rules are monotonic and config-driven
 
@@ -144,7 +155,7 @@ The first diagnostic-only slice does not apply this priority to alter exits, but
 - Runtime state alignment off by one bar -> Use entry/exit indices from actual trade records and assert `bars_in_trade`, phase transition bars, and closed-trade diagnostics on small fixtures.
 - ATR condition ambiguity -> V1 `mfe_atr` uses a configured ATR series aligned to the base timeframe; missing/invalid ATR at a bar does not trigger the condition.
 - Report schema churn -> Keep the additive runtime diagnostics under report schema 6 and update loaders/summary extraction only enough to tolerate them.
-- Existing `break_even_stop` shape differs from the target `phase_rules/stop_management/runtime_exits` shape -> Keep existing archived behavior working and treat behavior-changing stop migration as a later explicit slice.
+- Existing `break_even_stop` shape differs from the target `phase_rules/stop_management/runtime_exits` shape -> Keep only deprecated compatibility behavior for existing artifacts during this change; do not integrate it into diagnostic runtime v1; schedule a cleanup slice after diagnostic runtime v1.
 
 ## Migration Plan
 
@@ -152,7 +163,8 @@ The first diagnostic-only slice does not apply this priority to alter exits, but
 2. Implement diagnostic-only runtime state and phase evaluation using actual trade lifecycle data.
 3. Attach closed-trade runtime diagnostics and variant-level summary.
 4. Add parity and fixture tests.
-5. Leave old configs and existing archived BE behavior intact unless a config opts into the new diagnostic-only contract.
+5. Leave old configs and existing archived BE behavior intact only as deprecated compatibility unless a config opts into the new diagnostic-only contract.
+6. After diagnostic runtime v1, run a separate cleanup slice to remove or archive the legacy BE shape.
 
 Rollback is straightforward: configs without `exit_management` retain the old path, and diagnostic-only configs can remove the block to disable runtime diagnostics.
 
@@ -162,3 +174,4 @@ Rollback is straightforward: configs without `exit_management` retain the old pa
 - Report schema: stay on `report_schema_version: 6` with additive optional fields.
 - Bar counting: `bars_in_trade` is inclusive and matches `hold_bars`.
 - Runtime trace: serialize v1 events as variant-level `trade_management_events` only when diagnostic-only mode is enabled.
+- Legacy BE: deprecated compatibility parser/runtime only; not part of new runtime architecture; cleanup slice follows diagnostic runtime v1.
