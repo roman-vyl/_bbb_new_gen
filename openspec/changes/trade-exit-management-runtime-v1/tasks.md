@@ -14,13 +14,13 @@
 
 ## 2. Diagnostic Runtime State
 
-- [ ] 2.1 Introduce `TradeRuntimeState` and `TradeManagementEvent` structures in the existing `ema_pullback` execution layer.
-- [ ] 2.2 Implement side-aware best/worst price, MFE/MAE price, MFE/MAE percent, and inclusive `bars_in_trade` updates for long and short trades.
-- [ ] 2.3 Evaluate ordered phase rules monotonically and record `phase_changed` events with rule id, from/to phase, MFE/MAE, and bars in trade.
-- [ ] 2.4 Build runtime diagnostics from actual closed trade windows using existing trade records' `entry_idx` and `exit_idx`; do not recompute entries, exits, setup, trigger, blockers, indicators, or context.
-- [ ] 2.5 For each closed trade, iterate only `entry_idx..exit_idx` inclusive to update runtime state and phase transitions.
-- [ ] 2.6 For `diagnostic_only`, do not feed runtime state back into exit masks, stop prices, vectorbt exits, or managed execution decisions.
-- [ ] 2.7 Record `exit_executed` events for real closed trades using existing exit attribution when available.
+- [x] 2.1 Introduce `TradeRuntimeState` and `TradeManagementEvent` structures in the existing `ema_pullback` execution layer.
+- [x] 2.2 Implement side-aware best/worst price, MFE/MAE price, MFE/MAE percent, and inclusive `bars_in_trade` updates for long and short trades.
+- [x] 2.3 Evaluate ordered phase rules monotonically and record `phase_changed` events with rule id, from/to phase, MFE/MAE, and bars in trade.
+- [x] 2.4 Build runtime diagnostics from actual closed trade windows using existing trade records' `entry_idx` and `exit_idx`; do not recompute entries, exits, setup, trigger, blockers, indicators, or context.
+- [x] 2.5 For each closed trade, iterate only `entry_idx..exit_idx` inclusive to update runtime state and phase transitions.
+- [x] 2.6 For `diagnostic_only`, do not feed runtime state back into exit masks, stop prices, vectorbt exits, or managed execution decisions.
+- [x] 2.7 Record `exit_executed` events for real closed trades using existing exit attribution when available.
 
 ## 3. Report Serialization
 

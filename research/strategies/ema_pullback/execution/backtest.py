@@ -34,6 +34,9 @@ from research.strategies.ema_pullback.execution.exit_management import (
 from research.strategies.ema_pullback.execution.exits import build_exit_outputs_from_spec
 from research.strategies.ema_pullback.execution.results import build_managed_trade_records
 from research.strategies.ema_pullback.execution.signals import build_signals_from_spec
+from research.strategies.ema_pullback.execution.trade_runtime import (
+    build_trade_runtime_diagnostics,
+)
 from research.strategies.ema_pullback.features.calculations import add_feature_columns_from_plan
 from research.strategies.ema_pullback.features.plan import build_feature_plan_from_strategy_spec
 from research.strategies.ema_pullback.spec import strategy_spec_config_id, strategy_spec_to_dict
@@ -74,6 +77,23 @@ def _open_high_low_for_vectorbt(enriched: pd.DataFrame) -> tuple[pd.Series, pd.S
         if series.isna().any():
             raise SystemExit(f"{name} contains NaN — check DB / repair pipeline.")
     return open_s, high_s, low_s
+
+
+def _atr_series_for_phase_rules(
+    enriched: pd.DataFrame,
+    spec: EmaPullbackStrategySpec,
+) -> dict[tuple[str, int], pd.Series]:
+    """Return already-materialized ATR columns needed by diagnostic phase rules."""
+
+    out: dict[tuple[str, int], pd.Series] = {}
+    for rule in spec.trade_management.exit_management.phase_rules:
+        atr = rule.condition.atr
+        if atr is None:
+            continue
+        column = f"atr_close_{atr.timeframe}_{atr.period}"
+        if column in enriched.columns:
+            out[(atr.timeframe, atr.period)] = enriched[column].astype(float)
+    return out
 
 
 def _build_side_metrics(records: list[dict[str, Any]], init_cash: float) -> SideMetrics:
@@ -501,6 +521,15 @@ def run_strategy_spec(
         context_bundle=context_bundle,
         setup_traces_by_instance_side=setup_traces_by_instance_side,
     )
+    if spec.trade_management.exit_management.mode == "diagnostic_only":
+        _diagnostic_runtime = build_trade_runtime_diagnostics(
+            trade_records=trade_records,
+            high=high_s,
+            low=low_s,
+            close=close,
+            phase_rules=spec.trade_management.exit_management.phase_rules,
+            atr_series_by_key=_atr_series_for_phase_rules(enriched, spec),
+        )
 
     sharpe = ensure_finite_metric("sharpe_ratio", float(pf.sharpe_ratio()))
     max_dd_raw = pf.max_drawdown()
