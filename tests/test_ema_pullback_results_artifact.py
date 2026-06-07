@@ -292,6 +292,8 @@ def test_extract_trade_records_closed_and_open() -> None:
         assert k in t0
     assert t0["status"] == "closed"
     assert t0["direction"] == "long"
+    assert t0["entry_idx"] == 1
+    assert t0["exit_idx"] == 3
     assert t0["entry_time_ms"] is not None
     assert t0["exit_time_ms"] is not None
     assert t0["exit_reason"] == "unknown"

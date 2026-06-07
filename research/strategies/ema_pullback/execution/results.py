@@ -507,6 +507,10 @@ def extract_trade_records(
             except (TypeError, ValueError):
                 entry_idx = -1
                 exit_idx = -1
+            if entry_idx >= 0:
+                record["entry_idx"] = entry_idx
+            if exit_idx >= 0:
+                record["exit_idx"] = exit_idx
             if entry_idx >= 0 and exit_idx >= 0:
                 hold_bars = exit_idx - entry_idx + 1
                 record["hold_bars"] = hold_bars
