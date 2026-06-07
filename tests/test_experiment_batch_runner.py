@@ -178,6 +178,25 @@ def test_extract_candidate_summary_v5_without_profile_side_breakdown() -> None:
     assert summary["aligned_fees_paid"] is None
 
 
+def test_extract_candidate_summary_ignores_trade_management_optional_fields() -> None:
+    report = _v5_report(with_quality=True, with_profile_side=True)
+    variant = report["variants"][0]
+    assert isinstance(variant, dict)
+    metrics = variant["metrics"]
+    assert isinstance(metrics, dict)
+    metrics["trade_management_summary"] = {
+        "by_phase_reached": {"runner": {"trade_count": 1}},
+    }
+    variant["trade_management_events"] = [{"event_type": "phase_changed"}]
+
+    summary = extract_candidate_summary(report)
+
+    assert summary["total_trades"] == 1
+    assert summary["pnl"] == 100.0
+    assert summary["long_trades"] == 2
+    assert "trade_management_summary" not in summary
+
+
 def test_apply_summary_profile_side_round_trip() -> None:
     summary = extract_candidate_summary(_v5_report(with_profile_side=True))
     result = ExperimentCandidateResult(

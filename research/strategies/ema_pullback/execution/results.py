@@ -779,6 +779,7 @@ _STRIP_VARIANT_KEYS = frozenset(
         "candles",
         "ohlcv",
         "component_events",
+        "trade_management_events",
         "signal_trace",
         "trace",
     }

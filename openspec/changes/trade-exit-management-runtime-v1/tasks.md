@@ -24,11 +24,11 @@
 
 ## 3. Report Serialization
 
-- [ ] 3.1 Add nested closed-trade `trade_management` diagnostics for diagnostic-only runs, omitting the block for open trades in v1.
-- [ ] 3.2 Add variant-level `trade_management_events` ordered by bar index and event creation order when diagnostic-only runtime is enabled.
-- [ ] 3.3 Add variant-level `metrics.trade_management_summary` with phase reached buckets, transition counts, exit-layer breakdown, active-stop source breakdown, runner capture, and protected trade summaries.
-- [ ] 3.4 Keep `report_schema_version` at `6` and ensure historical v3-v6 reports load without silent migration.
-- [ ] 3.5 Update candidate/batch summary extraction only as needed so reports with the new optional fields do not break existing summaries.
+- [x] 3.1 Add nested closed-trade `trade_management` diagnostics for diagnostic-only runs, omitting the block for open trades in v1.
+- [x] 3.2 Add variant-level `trade_management_events` ordered by bar index and event creation order when diagnostic-only runtime is enabled.
+- [x] 3.3 Add variant-level `metrics.trade_management_summary` with phase reached buckets, transition counts, exit-layer breakdown, active-stop source breakdown, runner capture, and protected trade summaries.
+- [x] 3.4 Keep `report_schema_version` at `6` and ensure historical v3-v6 reports load without silent migration.
+- [x] 3.5 Update candidate/batch summary extraction only as needed so reports with the new optional fields do not break existing summaries.
 
 ## 3A. Compact Summary Compatibility
 

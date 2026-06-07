@@ -250,6 +250,14 @@ def test_diagnostic_only_config_preserves_static_execution_parity(
         record.get("exit_reason") for record in diagnostic_result.trade_records
     ] == [record.get("exit_reason") for record in baseline_result.trade_records]
 
+    baseline_payload = baseline_result.to_payload()
+    diagnostic_payload = diagnostic_result.to_payload()
+    assert "trade_management_events" not in baseline_payload
+    assert "trade_management_summary" not in baseline_payload["metrics"]
+    assert "trade_management_events" in diagnostic_payload
+    if diagnostic_result.metrics.total.trades:
+        assert "trade_management_summary" in diagnostic_payload["metrics"]
+
 
 def test_resolve_never_triggered_break_even_diagnostics() -> None:
     from research.strategies.ema_pullback.execution.exit_management import (

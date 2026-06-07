@@ -187,6 +187,7 @@ def test_build_compact_report_payload_strips_trade_records_and_adds_counts() -> 
             {
                 "variant": "v1",
                 "metrics": {"total": {"trades": 2}},
+                "trade_management_events": [{"event_type": "phase_changed"}],
                 "trade_records": [
                     {"status": "closed", "trade_id": 1},
                     {"status": "open", "trade_id": 2},
@@ -204,6 +205,7 @@ def test_build_compact_report_payload_strips_trade_records_and_adds_counts() -> 
     assert compact["source_report_path"] == "research/results/runs/rid.json"
     variant = compact["variants"][0]
     assert "trade_records" not in variant
+    assert "trade_management_events" not in variant
     assert variant["trade_records_count"] == 2
     assert variant["closed_trades_count"] == 1
     assert variant["open_trades_count"] == 1

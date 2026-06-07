@@ -62,6 +62,7 @@ class VariantMetrics:
     quality_flag_breakdown: dict[str, Any] | None = None
     exit_component_quality_breakdown: dict[str, Any] | None = None
     path_diagnostics_summary: dict[str, Any] | None = None
+    trade_management_summary: dict[str, Any] | None = None
 
     def to_payload(self) -> dict[str, Any]:
         total_payload = self.total.to_payload()
@@ -89,6 +90,8 @@ class VariantMetrics:
             payload["exit_component_quality_breakdown"] = self.exit_component_quality_breakdown
         if self.path_diagnostics_summary is not None:
             payload["path_diagnostics_summary"] = self.path_diagnostics_summary
+        if self.trade_management_summary is not None:
+            payload["trade_management_summary"] = self.trade_management_summary
         return payload
 
 
@@ -102,9 +105,10 @@ class VariantResult:
     metrics: VariantMetrics
     component_counters: list[dict[str, Any]]
     trade_records: list[dict[str, Any]]
+    trade_management_events: list[dict[str, Any]] | None = None
 
     def to_payload(self) -> dict[str, Any]:
-        return {
+        payload = {
             "variant": self.variant,
             "config_id": self.config_id,
             "symbol": self.symbol,
@@ -114,3 +118,6 @@ class VariantResult:
             "component_counters": self.component_counters,
             "trade_records": self.trade_records,
         }
+        if self.trade_management_events is not None:
+            payload["trade_management_events"] = self.trade_management_events
+        return payload

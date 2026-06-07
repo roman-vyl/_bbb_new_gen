@@ -74,6 +74,13 @@ class TradeRuntimeResult:
     events: list[TradeManagementEvent]
 
 
+_PHASE_MILESTONE_FIELDS = {
+    "proven": ("bars_to_proven", "mfe_at_proven_pct"),
+    "protected": ("bars_to_protected", "mfe_at_protected_pct"),
+    "runner": ("bars_to_runner", "mfe_at_runner_pct"),
+}
+
+
 def _index_to_time_ms(index: pd.Index, idx: int) -> int:
     value = index[idx]
     if isinstance(value, pd.Timestamp):
@@ -315,3 +322,272 @@ def build_trade_runtime_diagnostics(
         states[state.trade_id] = state
 
     return TradeRuntimeResult(states_by_trade_id=states, events=events)
+
+
+def _event_payload(event: TradeManagementEvent) -> dict[str, Any]:
+    return {
+        "trade_id": event.trade_id,
+        "time_ms": event.time_ms,
+        "bar_index": event.bar_index,
+        "side": event.side,
+        "event_type": event.event_type,
+        "from_phase": event.from_phase,
+        "to_phase": event.to_phase,
+        "rule_id": event.rule_id,
+        "component_id": event.component_id,
+        "price": event.price,
+        "stop_price": event.stop_price,
+        "mfe_pct": event.mfe_pct,
+        "mae_pct": event.mae_pct,
+        "bars_in_trade": event.bars_in_trade,
+        "metadata": dict(event.metadata),
+    }
+
+
+def trade_management_events_payload(result: TradeRuntimeResult) -> list[dict[str, Any]]:
+    ordered = sorted(enumerate(result.events), key=lambda item: (item[1].bar_index, item[0]))
+    return [_event_payload(event) for _order, event in ordered]
+
+
+def _events_by_trade_id(result: TradeRuntimeResult) -> dict[str, list[TradeManagementEvent]]:
+    out: dict[str, list[TradeManagementEvent]] = {}
+    for event in result.events:
+        out.setdefault(event.trade_id, []).append(event)
+    return out
+
+
+def _exit_layer(record: dict[str, Any]) -> str | None:
+    kind = record.get("exit_kind")
+    if isinstance(kind, str) and kind:
+        return kind
+    reason = str(record.get("exit_reason") or "")
+    if ":" in reason:
+        return reason.split(":", 1)[0]
+    return reason or None
+
+
+def _capture_fields(record: dict[str, Any], state: TradeRuntimeState) -> tuple[float | None, float | None]:
+    exit_price = _finite_float(record.get("exit_price"))
+    if exit_price is None or state.entry_price <= 0:
+        return None, None
+    if state.side == "long":
+        captured_pct = (exit_price - state.entry_price) / state.entry_price
+    else:
+        captured_pct = (state.entry_price - exit_price) / state.entry_price
+    giveback_pct = max(0.0, state.mfe_pct - captured_pct)
+    capture_ratio = captured_pct / state.mfe_pct if state.mfe_pct > 0 else None
+    return capture_ratio, giveback_pct
+
+
+def trade_management_block_for_trade(
+    record: dict[str, Any],
+    state: TradeRuntimeState,
+    events: list[TradeManagementEvent],
+) -> dict[str, Any]:
+    capture_ratio, giveback_pct = _capture_fields(record, state)
+    block: dict[str, Any] = {
+        "phase_at_exit": state.phase,
+        "max_phase_reached": state.max_phase_reached,
+        "active_stop_source_at_exit": state.active_stop_source,
+        "active_stop_price_at_exit": state.active_stop_price,
+        "exit_layer": _exit_layer(record),
+        "exit_rule_id": record.get("exit_rule_id") or record.get("exit_instance_id"),
+        "exit_component_id": record.get("exit_component_id"),
+        "best_price_before_exit": state.best_price,
+        "giveback_from_best_price_pct": giveback_pct,
+        "capture_ratio": capture_ratio,
+        "mfe_pct": state.mfe_pct,
+    }
+    phase_events = [event for event in events if event.event_type == "phase_changed"]
+    by_phase: dict[str, TradeManagementEvent] = {}
+    for event in phase_events:
+        if event.to_phase is not None and event.to_phase not in by_phase:
+            by_phase[event.to_phase] = event
+    for phase, (bars_field, mfe_field) in _PHASE_MILESTONE_FIELDS.items():
+        event = by_phase.get(phase)
+        block[bars_field] = None if event is None else event.bars_in_trade
+        block[mfe_field] = None if event is None else event.mfe_pct
+    return block
+
+
+def apply_trade_management_diagnostics(
+    trade_records: list[dict[str, Any]],
+    result: TradeRuntimeResult,
+) -> None:
+    events_by_trade = _events_by_trade_id(result)
+    for record in trade_records:
+        if record.get("status") != "closed":
+            continue
+        trade_id = str(record.get("trade_id") or "")
+        state = result.states_by_trade_id.get(trade_id)
+        if state is None:
+            continue
+        record["trade_management"] = trade_management_block_for_trade(
+            record,
+            state,
+            events_by_trade.get(trade_id, ()),
+        )
+
+
+def _finite_values(records: list[dict[str, Any]], path: tuple[str, ...]) -> list[float]:
+    values: list[float] = []
+    for record in records:
+        current: Any = record
+        for key in path:
+            if not isinstance(current, dict) or key not in current:
+                current = None
+                break
+            current = current[key]
+        value = _finite_float(current)
+        if value is not None:
+            values.append(value)
+    return values
+
+
+def _avg(values: list[float]) -> float | None:
+    return sum(values) / len(values) if values else None
+
+
+def _median(values: list[float]) -> float | None:
+    if not values:
+        return None
+    ordered = sorted(values)
+    mid = len(ordered) // 2
+    if len(ordered) % 2:
+        return ordered[mid]
+    return (ordered[mid - 1] + ordered[mid]) / 2
+
+
+def _percentile(values: list[float], q: float) -> float | None:
+    if not values:
+        return None
+    ordered = sorted(values)
+    idx = (len(ordered) - 1) * q
+    lo = int(idx)
+    hi = min(lo + 1, len(ordered) - 1)
+    frac = idx - lo
+    return ordered[lo] * (1.0 - frac) + ordered[hi] * frac
+
+
+def _profit_factor(records: list[dict[str, Any]]) -> float | None:
+    pnls = [float(record.get("pnl") or 0.0) for record in records]
+    gross_profit = sum(value for value in pnls if value > 0.0)
+    gross_loss = abs(sum(value for value in pnls if value < 0.0))
+    if gross_loss == 0:
+        return None
+    return gross_profit / gross_loss
+
+
+def _exit_reason_mix(records: list[dict[str, Any]]) -> dict[str, int]:
+    out: dict[str, int] = {}
+    for record in records:
+        reason = str(record.get("exit_reason") or "unknown")
+        out[reason] = out.get(reason, 0) + 1
+    return out
+
+
+def _exit_layer_mix(records: list[dict[str, Any]]) -> dict[str, int]:
+    out: dict[str, int] = {}
+    for record in records:
+        tm = record.get("trade_management")
+        layer = tm.get("exit_layer") if isinstance(tm, dict) else _exit_layer(record)
+        key = str(layer or "unknown")
+        out[key] = out.get(key, 0) + 1
+    return out
+
+
+def _phase_bucket(records: list[dict[str, Any]], *, all_count: int) -> dict[str, Any]:
+    pnl_values = [float(record.get("pnl") or 0.0) for record in records]
+    mfe = _finite_values(records, ("trade_management", "mfe_pct"))
+    giveback = _finite_values(records, ("trade_management", "giveback_from_best_price_pct"))
+    capture = _finite_values(records, ("trade_management", "capture_ratio"))
+    wins = sum(1 for value in pnl_values if value > 0.0)
+    count = len(records)
+    return {
+        "trade_count": count,
+        "share_of_all_trades": (count / all_count) if all_count else None,
+        "pnl": sum(pnl_values),
+        "profit_factor": _profit_factor(records),
+        "win_rate": (wins / count) if count else None,
+        "avg_mfe_pct": _avg(mfe),
+        "p75_mfe_pct": _percentile(mfe, 0.75),
+        "p90_mfe_pct": _percentile(mfe, 0.90),
+        "avg_giveback_pct": _avg(giveback),
+        "median_giveback_pct": _median(giveback),
+        "avg_capture_ratio": _avg(capture),
+        "median_capture_ratio": _median(capture),
+        "exit_reason_mix": _exit_reason_mix(records),
+    }
+
+
+def _reached_phase(record: dict[str, Any], phase: str) -> bool:
+    tm = record.get("trade_management")
+    if not isinstance(tm, dict):
+        return False
+    reached = tm.get("max_phase_reached")
+    if not isinstance(reached, str) or reached not in TRADE_MANAGEMENT_PHASES:
+        return False
+    return _phase_rank(reached) >= _phase_rank(phase)
+
+
+def _summary_for_records(records: list[dict[str, Any]]) -> dict[str, Any]:
+    giveback = _finite_values(records, ("trade_management", "giveback_from_best_price_pct"))
+    capture = _finite_values(records, ("trade_management", "capture_ratio"))
+    return {
+        "trade_count": len(records),
+        "avg_capture_ratio": _avg(capture),
+        "median_capture_ratio": _median(capture),
+        "avg_giveback_pct": _avg(giveback),
+        "median_giveback_pct": _median(giveback),
+        "exit_layer_mix": _exit_layer_mix(records),
+        "exit_reason_mix": _exit_reason_mix(records),
+    }
+
+
+def build_trade_management_summary(trade_records: list[dict[str, Any]]) -> dict[str, Any] | None:
+    closed = [
+        record
+        for record in trade_records
+        if record.get("status") == "closed" and isinstance(record.get("trade_management"), dict)
+    ]
+    if not closed:
+        return None
+
+    by_phase: dict[str, Any] = {}
+    for phase in TRADE_MANAGEMENT_PHASES:
+        bucket = [
+            record
+            for record in closed
+            if record["trade_management"].get("max_phase_reached") == phase
+        ]
+        by_phase[phase] = _phase_bucket(bucket, all_count=len(closed))
+
+    phase_transition_counts: dict[str, int] = {}
+    for record in closed:
+        reached = record["trade_management"].get("max_phase_reached")
+        if isinstance(reached, str):
+            for phase in TRADE_MANAGEMENT_PHASES[1:]:
+                if _phase_rank(reached) >= _phase_rank(phase):
+                    phase_transition_counts[phase] = phase_transition_counts.get(phase, 0) + 1
+
+    runner = [record for record in closed if _reached_phase(record, "runner")]
+    protected = [record for record in closed if _reached_phase(record, "protected")]
+    protected_not_runner = [
+        record for record in protected if not _reached_phase(record, "runner")
+    ]
+    runner_summary = _summary_for_records(runner)
+    runner_summary["old_exit_reason_mix"] = runner_summary["exit_reason_mix"]
+    protected_summary = _summary_for_records(protected)
+    protected_summary["protected_not_runner_count"] = len(protected_not_runner)
+    protected_summary["protected_not_runner_exit_reason_mix"] = _exit_reason_mix(
+        protected_not_runner
+    )
+
+    return {
+        "by_phase_reached": by_phase,
+        "phase_transition_counts": phase_transition_counts,
+        "exit_layer_breakdown": _exit_layer_mix(closed),
+        "active_stop_source_breakdown": {},
+        "runner_capture_summary": runner_summary,
+        "protected_trade_summary": protected_summary,
+    }
