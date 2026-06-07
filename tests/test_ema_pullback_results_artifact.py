@@ -179,6 +179,10 @@ def test_build_research_run_payload_top_level_keys() -> None:
 
 
 def test_build_compact_report_payload_strips_trade_records_and_adds_counts() -> None:
+    trade_management_summary = {
+        "by_phase_reached": {"runner": {"trade_count": 1}},
+        "runner_capture_summary": {"trade_count": 1},
+    }
     full = {
         "run_id": "rid",
         "report_schema_version": 6,
@@ -186,16 +190,28 @@ def test_build_compact_report_payload_strips_trade_records_and_adds_counts() -> 
         "variants": [
             {
                 "variant": "v1",
-                "metrics": {"total": {"trades": 2}},
+                "metrics": {
+                    "total": {"trades": 2},
+                    "exit_reason_breakdown": {"signal:exit": {"trades": 1}},
+                    "path_diagnostics_summary": {"total": {"trade_count": 1}},
+                    "quality_flag_breakdown": {"high_mfe_low_capture": {"trades": 1}},
+                    "trade_management_summary": trade_management_summary,
+                },
                 "trade_management_events": [{"event_type": "phase_changed"}],
                 "trade_records": [
-                    {"status": "closed", "trade_id": 1},
+                    {
+                        "status": "closed",
+                        "trade_id": 1,
+                        "trade_management": {"phase_at_exit": "runner"},
+                    },
                     {"status": "open", "trade_id": 2},
                 ],
             }
         ],
     }
     original_records = full["variants"][0]["trade_records"]
+    assert "trade_management_events" in full["variants"][0]
+    assert "trade_management_summary" in full["variants"][0]["metrics"]
 
     compact = build_compact_report_payload(full)
 
@@ -209,7 +225,11 @@ def test_build_compact_report_payload_strips_trade_records_and_adds_counts() -> 
     assert variant["trade_records_count"] == 2
     assert variant["closed_trades_count"] == 1
     assert variant["open_trades_count"] == 1
-    assert variant["metrics"] == {"total": {"trades": 2}}
+    assert variant["metrics"]["total"] == {"trades": 2}
+    assert variant["metrics"]["exit_reason_breakdown"] == {"signal:exit": {"trades": 1}}
+    assert variant["metrics"]["path_diagnostics_summary"] == {"total": {"trade_count": 1}}
+    assert variant["metrics"]["quality_flag_breakdown"] == {"high_mfe_low_capture": {"trades": 1}}
+    assert variant["metrics"]["trade_management_summary"] == trade_management_summary
 
 
 def test_build_compact_report_payload_summary_markers_override_collisions() -> None:

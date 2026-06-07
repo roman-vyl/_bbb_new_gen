@@ -32,10 +32,10 @@
 
 ## 3A. Compact Summary Compatibility
 
-- [ ] 3A.1 Ensure the full report may contain `trade_management_events`.
-- [ ] 3A.2 Ensure compact summaries exclude heavy event arrays by default.
-- [ ] 3A.3 Ensure compact summaries can keep `metrics.trade_management_summary`.
-- [ ] 3A.4 Add a test for compact summary JSON size/shape or explicit omission of heavy event fields.
+- [x] 3A.1 Ensure the full report may contain `trade_management_events`.
+- [x] 3A.2 Ensure compact summaries exclude heavy event arrays by default.
+- [x] 3A.3 Ensure compact summaries can keep `metrics.trade_management_summary`.
+- [x] 3A.4 Add a test for compact summary JSON size/shape or explicit omission of heavy event fields.
 
 ## 4. Backend Tests And Verification
 
