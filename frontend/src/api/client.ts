@@ -5,6 +5,7 @@ import {
   type ChartMarketBundle,
   type ComponentCatalog,
   type IndicatorPoint,
+  type RunCompactSummaryReport,
   type RunReport,
   type RunSummary,
   type SignalTraceBundle,
@@ -79,6 +80,14 @@ export async function fetchRunReport(runId: string): Promise<RunReport> {
     assertSupportedReportSchema(report.report_schema_version);
     return report;
   });
+}
+
+export async function fetchRunSummaryReport(runId: string): Promise<RunCompactSummaryReport> {
+  const report = await requestJson<RunCompactSummaryReport>(
+    `/api/research/runs/${encodeURIComponent(runId)}/summary`,
+  );
+  assertSupportedReportSchema(report.report_schema_version);
+  return report;
 }
 
 /** Per-bar entry pipeline trace for Chart Bar Inspector (phase 5). */

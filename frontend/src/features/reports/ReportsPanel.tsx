@@ -11,11 +11,14 @@ import { EM_DASH } from "@/features/reports/formatDiagnostics";
 import { TradeStatusChip } from "@/features/reports/TradeStatusChip";
 import {
   buildTradeDiagnosticFields,
+  buildTradeManagementDiagnosticFields,
   formatMs,
   formatNum,
 } from "@/features/reports/tradeDiagnosticsFields";
 import { ProfileBreakdownTable } from "@/features/reports/ProfileBreakdownTable";
 import { hasVariantDiagnostics, isDiagnosticsV4 } from "@/features/reports/reportSchema";
+import { TradeManagementDiagnosticsPanel } from "@/features/reports/TradeManagementDiagnosticsPanel";
+import { hasTradeManagementSummary } from "@/features/reports/tradeManagementSummary";
 import {
   DEFAULT_TRADE_DIAGNOSTICS_FILTERS,
   distinctExitKinds,
@@ -129,6 +132,10 @@ export function ReportsPanel() {
           </>
         )}
       </section>
+
+      {hasTradeManagementSummary(metrics) && (
+        <TradeManagementDiagnosticsPanel summary={metrics.trade_management_summary} />
+      )}
 
       <div className="filter-row" data-testid="filter-direction">
         <span>side</span>
@@ -377,6 +384,19 @@ function TradeDetail({ trade }: { trade: TradeRecord | undefined }) {
                     f.label
                   )}
                 </dt>
+                <dd>{f.value}</dd>
+              </div>
+            ))}
+          </dl>
+        </>
+      )}
+      {buildTradeManagementDiagnosticFields(trade).length > 0 && (
+        <>
+          <h4 className="trade-detail__subtitle">Selected Trade Management</h4>
+          <dl>
+            {buildTradeManagementDiagnosticFields(trade).map((f) => (
+              <div key={f.key}>
+                <dt>{f.label}</dt>
                 <dd>{f.value}</dd>
               </div>
             ))}

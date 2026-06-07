@@ -55,5 +55,13 @@ describe("reportSchema", () => {
         },
       }),
     ).toBe(true);
+    expect(
+      hasVariantDiagnostics({
+        ...empty,
+        trade_management_summary: {
+          by_phase_reached: { runner: { trade_count: 1 } },
+        },
+      }),
+    ).toBe(true);
   });
 });

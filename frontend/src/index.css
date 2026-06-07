@@ -879,6 +879,26 @@ select {
   white-space: normal;
 }
 
+.trade-management-summary-dl {
+  display: grid;
+  grid-template-columns: minmax(8rem, 1fr) 2fr;
+  gap: 0.35rem 1rem;
+  margin: 0 0 1rem;
+}
+
+.trade-management-summary-dl dt {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.trade-management-summary-dl dd {
+  margin: 0;
+}
+
+.trade-management-diagnostics .breakdown-table--trade-management code {
+  font-size: 0.85rem;
+}
+
 .breakdown-table .exit-mix-cell {
   max-width: 14rem;
   white-space: normal;
