@@ -13,6 +13,7 @@ v2 adds **`mode: managed`** — a behavior-changing **managed exit state / candi
 - **Execution integration:** existing execution/backtest layer consumes effective `exit_policy` candidates plus managed candidates from the provider; applies close decisions with **delayed activation** (provider snapshot updates on bar N apply from bar N+1).
 - Extend report/API/frontend with **generic** managed-layer breakdowns (`exit_layer`, `rule_id`, `component_id`) — not per-component schemas.
 - Add baseline vs managed comparison tooling (generic metrics; BE labels derived).
+- Add Workbench Composer authoring for v2 `exit_management` and related visualization/compare UX (Slice 10).
 - **Guardrail:** `managed` with empty `stop_management` / `take_management` / `runtime_exits` MUST match baseline parity (same as no behavior-changing rules).
 - **Single managed runtime path:** behavior-changing execution uses only v2 `run_managed_execution_loop` (`ManagedExitProvider` + `ExitCandidate` + `ExitArbitrator`). No legacy BE combiner runtime path.
 - **Legacy shape rejected (presence-based):** if `exit_management` contains `always_on` or `profiles` keys at all (including empty wrappers), validation fails with an explicit error. No runtime path, no authoring surface, no `run_managed_bar_loop` call-sites (including signal trace / diagnostics). No compatibility migration, no adapter shim, no unified `execution_combiner`. `exit_policy.always_on`/`profiles` unchanged.
@@ -35,9 +36,9 @@ _None — extends existing capabilities via delta specs._
 |-------|--------|
 | **research** | `spec.py` validation; managed exit provider (`trade_runtime.py`, component evaluators); `ExitArbitrator`; execution integration in `backtest.py`; `results.py` serialization; comparison helpers |
 | **research_api** | Read-only types/endpoints for managed report fields |
-| **frontend** | Report panels read unified managed breakdowns (no Composer authoring in v2) |
+| **frontend** | Read-support (Slice 8); Composer v2 `exit_management` editors, comparison UX, chart overlays (Slice 10) |
 | **data_engine** | None |
 
-**Non-goals (this change):** component-based state rules (`component_id` phase conditions), runner management pack (ADX/EMA trail/exhaustion), full Composer managed-mode editors, second trade path / second portfolio, exit_management as entry or lifecycle owner, vectorbt callback as source of truth, legacy BE runtime / `run_managed_bar_loop` execution path, legacy JSON migration, adapter-based execution combiner (`execution_combiner` / `execution_adapters`), partial take/scale-out, OHLC intrabar priority v2.
+**Non-goals (this change):** component-based state rules (`component_id` phase conditions), runner management pack (ADX/EMA trail/exhaustion), second trade path / second portfolio, exit_management as entry or lifecycle owner, vectorbt callback as source of truth, legacy BE runtime / `run_managed_bar_loop` execution path, legacy JSON migration, adapter-based execution combiner (`execution_combiner` / `execution_adapters`), partial take/scale-out, OHLC intrabar priority v2, legacy `exit_management` authoring UI, browser-side exit logic.
 
-**Future (separate changes):** research doc phases 6–8 — component state rules, runner pack, Composer authoring.
+**Future (separate changes):** research doc phases 6–7 — component state rules, runner pack.

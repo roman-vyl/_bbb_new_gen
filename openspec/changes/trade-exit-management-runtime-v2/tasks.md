@@ -455,37 +455,149 @@ Research master-plan reference: `docs/research/21_state_driven_exit_management_v
 
 ---
 
-## Slice 10 — Final smoke / archive readiness
+## Slice 10 — Composer / managed exit management UX
 
-**Goal:** End-to-end validation across all layers and archive checklist.
+**Goal:** Workbench Composer authoring and visualization for v2 `exit_management` — users can author, validate, and inspect managed configs without legacy wire shapes. Archive readiness (Slice 11) MUST NOT start until this slice is complete.
 
 **Scope:**
-- Full pytest suite for Slices 1–9.
-- Frontend build CI parity.
-- Re-run backend smoke (Slice 6) + Workbench spot-check (Slice 8) on same fixture.
-- Confirm non-goals untouched: `data_engine/`, Composer authoring, runner pack, component state rules.
+
+### 10.A — Composer authoring UI (`exit_management` v2 shape)
+
+Catalog/schema-driven editors (match existing Composer conventions — no ad-hoc legacy terminology):
+
+| Section | Editor scope |
+|---------|----------------|
+| Mode | `exit_management.mode` — `diagnostic_only` \| `managed` |
+| Phase rules | `phase_rules[]` — `rule_id`, `to_phase`, `condition` (`mfe_atr` + ATR ref) |
+| Stop management | `stop_management[]` — `break_even_stop`, `lock_profit_stop` |
+| Take management | `take_management[]` — `take_profile_switch` (`keep_initial`, `disable_initial_tp`) |
+| Runtime exits | `runtime_exits[]` — `phase_runtime_exit` (`activate_when.phase_at_least`, `params.exit_price: "close"`) |
+
+Each rule row: `rule_id`, `component_id`, `activate_when`, `params` per component contract from Slice 1.
+
+**Forbidden in UI and serialized draft output:**
+
+- `exit_management.always_on` / `exit_management.profiles`
+- `trigger_r`, `offset_r`, `apply_once` on management rules
+- Legacy `break_even_stop_rule` authoring or R-trigger terminology
+- Any UI path that reintroduces removed registry/catalog legacy BE surface
+
+`exit_policy` Composer section **unchanged** — do not merge exit-policy and exit-management editors.
+
+### 10.B — Validation / catalog integration
+
+- Reuse existing Composer validate → `POST /api/research/config/validate` flow.
+- Component pickers driven by catalog where the project already does so for `exit_policy`.
+- Serialize drafts with v2 keys only (`mode`, `phase_rules`, `stop_management`, `take_management`, `runtime_exits`).
+- Client-side guards MAY mirror server rejection of legacy keys; server validation remains source of truth.
+- **No** backend runtime semantics changes; **no** execution path changes; **no** `data_engine/` changes.
+
+### 10.C — Baseline-vs-managed UX (Workbench)
+
+Design and implement Workbench UX around paired comparison (see `comparison.md` for research-layer helper). Wording MUST NOT imply saved/hurt categories prove causal attribution — they are **paired-run diagnostic diffs**.
+
+**Minimum (required in Slice 10):**
+
+- When `baseline_vs_managed_summary` is placeholder/empty: show explicit **“comparison not generated”** state (not silent empty panel).
+- UI contract for future compare trigger: document/run affordance placeholder (button, menu item, or documented manual CLI path) without hiding Slice 9 tooling.
+- When populated: show paired/unpaired counts, category list sizes, transition matrix summary.
+- Copy/disclaimer: paired diff is observational; not causal proof.
+
+**Full compare UX (implement if scope allows; otherwise defer sub-features inside Slice 10, not to a new change):**
+
+- Baseline selection: same `experiment_id` / variant params with `diagnostic_only` or baseline managed-empty config.
+- Managed run launch from Composer (existing backtest/run flow).
+- Compare step: invoke `compare_baseline_managed` (CLI wrapper or BFF endpoint — decide at implementation; no new execution semantics).
+- Render `saved_by_managed_stop`, `hurt_by_managed_stop`, `take_disabled_then_won/lost`, `runtime_exit_helped/hurt`, `exit_layer_transition_matrix`.
+- `be_helped` / `be_hurt` as derived labels only (filter `break_even_stop` entries or breakdown view) — **no** new schema fields.
+
+### 10.D — Chart visualization (frontend only)
+
+- Improve existing managed event markers from Slice 8 where low-cost.
+- **Active managed stop line overlay** — in scope for Slice 10 (read from report/trace fields; no trading logic on frontend).
+- Phase / protected / runner / exhaustion band visualization — **optional or staged** within Slice 10 (document in implementation notes if deferred).
+- No browser-side exit arbitration or PnL recomputation.
+
+**Out of scope:**
+
+- Backend runtime / execution architecture changes.
+- `data_engine/`.
+- Component-based `phase_rules` (`component_id` conditions) — research phase 6.
+- Runner pack (ADX/EMA trail) — research phase 7.
+- Archive / spec merge (Slice 11).
+- Misleading causal copy for comparison categories.
+
+**Acceptance criteria:**
+
+- [ ] Composer exposes v2 `exit_management` sections: mode, phase_rules, stop_management, take_management, runtime_exits.
+- [ ] Authoring `break_even_stop` and `lock_profit_stop` under `stop_management` with `activate_when.phase_at_least` — no legacy fields in saved JSON.
+- [ ] Authoring `take_profile_switch` with `keep_initial` and `disable_initial_tp`.
+- [ ] Authoring `phase_runtime_exit` with `params.exit_price: "close"` only.
+- [ ] Saved draft fails validation if legacy `always_on`/`profiles` keys present; UI does not offer legacy authoring paths.
+- [ ] Validate + serialize round-trip managed smoke fixture shape (`exit_management_managed_smoke.json`).
+- [ ] Baseline-vs-managed panel shows **comparison not generated** for single-run managed reports (placeholder).
+- [ ] Compared artifact renders category counts and transition matrix; disclaimer copy present.
+- [ ] Chart: managed event markers still work on managed smoke report; active stop line overlay implemented or explicitly staged with follow-up note in slice review.
+- [ ] `npm test` + `npm run build` pass for touched frontend modules.
+- [ ] No `data_engine/` diff from Slice 10 work.
+
+**Tests:**
+
+- [ ] 10.1 Frontend unit tests — v2 exit_management draft serialization / validation guards.
+- [ ] 10.2 Composer smoke — author managed config matching `exit_management_managed_smoke.json` structure; validate OK.
+- [ ] 10.3 Workbench — load managed smoke report; comparison empty state + compared artifact state (manual or fixture).
+- [ ] 10.4 Chart — managed markers + stop line overlay smoke on managed fixture.
+
+- [ ] 10.5 Implement Composer managed exit_management editors.
+- [ ] 10.6 Wire catalog-driven component pickers and params forms.
+- [ ] 10.7 Implement comparison UX (minimum empty state + populated view).
+- [ ] 10.8 Chart visualization improvements (markers + stop line overlay).
+
+### STOP — Checkpoint 10: Composer / managed exit management UX review
+
+**Review:** v2 authoring shape only; no legacy wire; comparison UX honest labeling; chart overlays read-only.  
+**Do not proceed** to Slice 11 until approved.
+
+---
+
+## Slice 11 — Final smoke / archive readiness
+
+**Goal:** End-to-end validation across all layers (including Composer UX from Slice 10) and archive checklist. **Archive readiness runs only after Slice 10 is accepted.**
+
+**Scope:**
+- Full pytest suite for Slices 1–9 (backend) plus frontend tests from Slice 10.
+- Frontend build CI parity (`npm test`, `npm run build`).
+- Re-run backend smoke (Slice 6) + comparison smoke (`comparison.md`).
+- Workbench spot-check: Slice 8 read-support + Slice 10 Composer/compare/chart on managed smoke fixtures.
+- Composer manual acceptance checklist (author managed smoke config end-to-end).
+- Confirm non-goals untouched: `data_engine/`, runner pack, component state rules.
 - `openspec validate trade-exit-management-runtime-v2 --strict` at change level.
 
 **Out of scope:**
 - Archive merge itself (unless explicitly requested).
-- Future phases 6–8 from research doc.
+- Research doc phases 6–7 (component state rules, runner pack).
 
 **Acceptance criteria:**
-- [ ] All Slice 1–9 tests green.
+- [ ] All Slice 1–9 backend tests green.
+- [ ] Slice 10 frontend tests + build green.
 - [ ] `diagnostic_only` parity suite green.
-- [ ] Backend smoke + frontend read smoke both pass on component-pack fixture.
+- [ ] Backend smoke + comparison smoke pass per `smoke.md` / `comparison.md`.
+- [ ] Composer smoke: managed config authors, validates, saves without legacy keys.
+- [ ] Workbench: managed report read + comparison states + chart overlays spot-check.
 - [ ] `git diff --stat data_engine/` empty.
 - [ ] `openspec validate trade-exit-management-runtime-v2 --strict` passes.
 
 **Tests:**
-- [ ] 10.1 `python -m pytest tests/test_exit_management_contracts.py tests/test_trade_runtime_diagnostics.py tests/test_trade_runtime_managed_core.py tests/test_managed_stop_components.py tests/test_managed_take_components.py tests/test_managed_runtime_exit_components.py tests/test_exit_arbitration.py tests/test_managed_execution_integration.py tests/test_managed_report_contract.py tests/test_managed_comparison.py -q`
-- [ ] 10.2 `cd frontend && npm test && npm run build`
-- [ ] 10.3 Re-run backend smoke per `smoke.md`.
-- [ ] 10.4 Final review against `docs/research/21_state_driven_exit_management_v1.md` phases 1–5 checklist.
+- [ ] 11.1 `python -m pytest tests/test_exit_management_contracts.py tests/test_trade_runtime_diagnostics.py tests/test_trade_runtime_managed_core.py tests/test_managed_stop_components.py tests/test_managed_take_components.py tests/test_managed_runtime_exit_components.py tests/test_exit_arbitration.py tests/test_managed_execution_integration.py tests/test_managed_report_contract.py tests/test_managed_comparison.py -q`
+- [ ] 11.2 `cd frontend && npm test && npm run build`
+- [ ] 11.3 Re-run backend smoke per `smoke.md`.
+- [ ] 11.4 Re-run paired comparison smoke per `comparison.md`.
+- [ ] 11.5 Composer manual acceptance + Workbench spot-check (Slice 10 fixtures).
+- [ ] 11.6 Final review against `docs/research/21_state_driven_exit_management_v1.md` phases 1–5 checklist.
 
-### STOP — Checkpoint 10: Final smoke / archive readiness review
+### STOP — Checkpoint 11: Final smoke / archive readiness review
 
-**Review:** ready for `/opsx:archive` or follow-up changes for research phases 6–8.  
+**Review:** ready for `/opsx:archive` or follow-up changes for research phases 6–7.  
 **Stop** — no further implementation in this change without new proposal.
 
 ---
@@ -494,7 +606,5 @@ Research master-plan reference: `docs/research/21_state_driven_exit_management_v
 
 - [ ] Component-based state rules (`phase_rules` with `component_id`) — research phase 6.
 - [ ] Runner management pack (ADX/DI, EMA trail, exhaustion) — research phase 7.
-- [ ] Composer managed mode + management editors — research phase 8.
 - [ ] OHLC intrabar priority v2.
 - [ ] Partial take / scale-out.
-- [ ] Chart active stop line overlay (optional).

@@ -2,6 +2,8 @@
 
 Generic paired-run comparison between baseline and managed reports. Populates `metrics.baseline_vs_managed_summary` on the **managed** variant.
 
+**Workbench UX:** Slice 10 surfaces this summary in the Workbench (empty state when compare not run; populated view after paired compare). See `tasks.md` § Slice 10.C and `design.md` § Composer and Workbench UX.
+
 ## Helper location
 
 | Piece | Path |
@@ -83,3 +85,11 @@ Inspect `variants[0].metrics.baseline_vs_managed_summary` in the compared artifa
 ## Tests
 
 `tests/test_managed_comparison.py` — synthetic paired trade sets + report post-processor.
+
+## Slice 10 / Slice 11 expectations
+
+| Layer | Responsibility |
+|-------|----------------|
+| Slice 9 (done) | Research helper + CLI (`compare_baseline_managed`) |
+| Slice 10 | Workbench comparison panel: **comparison not generated** vs populated; honest disclaimer copy; optional compare trigger affordance |
+| Slice 11 | Comparison smoke re-run + Composer-managed Workbench acceptance on compared artifact |

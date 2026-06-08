@@ -504,3 +504,88 @@ The runtime contract SHALL define explicit same-bar priority for behavior-changi
 - **WHEN** arbitration runs
 - **THEN** the winner is selected using `same_bar_policy: "v1"`
 - **AND** the result is reflected in `exit_executed`
+
+### Requirement: Composer authors v2 exit_management wire shape only
+The Workbench Composer SHALL provide authoring UI for `trade_management.exit_management` using the v2 contract:
+
+- `mode`: `diagnostic_only` or `managed`
+- `phase_rules`
+- `stop_management` with `break_even_stop` and `lock_profit_stop`
+- `take_management` with `take_profile_switch` actions `keep_initial` and `disable_initial_tp`
+- `runtime_exits` with `phase_runtime_exit` and `params.exit_price: "close"`
+
+Each management rule SHALL be authored with `rule_id`, `component_id`, `activate_when`, and `params` per the backend contract.
+
+The Composer SHALL NOT expose or serialize legacy exit_management shapes:
+
+- `exit_management.always_on` or `exit_management.profiles`
+- `trigger_r`, `offset_r`, or R-trigger break-even authoring
+- Legacy `break_even_stop_rule` terminology or fields
+
+The `exit_policy` Composer section SHALL remain unchanged and separate from exit_management authoring.
+
+#### Scenario: Composer saves managed break-even under stop_management
+- **GIVEN** a user authors breakeven protection in Composer with `mode: "managed"`
+- **WHEN** the draft is saved and validated
+- **THEN** the rule appears under `stop_management` with `component_id: "break_even_stop"` and `activate_when.phase_at_least`
+- **AND** the saved JSON does not contain `always_on`, `profiles`, `trigger_r`, or `offset_r` under `exit_management`
+
+#### Scenario: Composer rejects legacy exit_management keys in draft
+- **GIVEN** a draft JSON contains `exit_management.always_on` or `exit_management.profiles`
+- **WHEN** validation runs through the Composer validate flow
+- **THEN** validation fails with the legacy unsupported error message
+- **AND** the Composer UI does not offer controls that produce those keys
+
+#### Scenario: Composer round-trips managed smoke fixture shape
+- **GIVEN** the managed smoke config structure (`exit_management_managed_smoke.json`)
+- **WHEN** an equivalent config is authored in Composer and serialized
+- **THEN** validation succeeds
+- **AND** serialized `exit_management` contains `mode`, `phase_rules`, `stop_management`, `take_management`, and `runtime_exits` only
+
+### Requirement: Workbench shows honest baseline-vs-managed comparison state
+The Workbench SHALL surface `metrics.baseline_vs_managed_summary` from managed run reports without implying causal attribution.
+
+When the summary is a placeholder or empty (single run, no paired compare), the UI SHALL show an explicit **comparison not generated** state and SHALL NOT present empty category lists as meaningful results.
+
+When the summary is populated after a paired compare step, the UI SHALL display:
+
+- paired and unpaired trade counts where available
+- category list sizes or summaries for `saved_by_managed_stop`, `hurt_by_managed_stop`, `take_disabled_then_won`, `take_disabled_then_lost`, `runtime_exit_helped`, `runtime_exit_hurt`
+- `exit_layer_transition_matrix` summary
+
+UI copy SHALL describe categories as **paired-run diagnostic diffs** — not proof that managed rules caused improvement or harm.
+
+Derived break-even labels (`be_helped` / `be_hurt`) MAY be shown as filters over `break_even_stop` comparison entries or breakdown views and SHALL NOT be added as new report schema fields.
+
+#### Scenario: Single managed run shows comparison not generated
+- **GIVEN** a managed run report with placeholder `baseline_vs_managed_summary` (empty category lists)
+- **WHEN** the Workbench renders trade management diagnostics
+- **THEN** the UI shows a comparison-not-generated state
+- **AND** does not label empty lists as zero saved/hurt outcomes
+
+#### Scenario: Compared artifact shows populated summary with disclaimer
+- **GIVEN** a managed run report after `compare_baseline_managed` populated `baseline_vs_managed_summary`
+- **WHEN** the Workbench renders comparison diagnostics
+- **THEN** category counts and transition matrix are visible
+- **AND** explanatory copy states that results are paired observational diffs, not causal proof
+
+### Requirement: Chart visualizes managed exit read data without trading logic
+The Workbench chart SHALL visualize managed exit management read data from reports and/or signal trace — without implementing exit arbitration or PnL logic in the browser.
+
+The chart SHALL support managed trade-management event markers for managed event types already exposed by the API.
+
+The chart SHALL support an **active managed stop line overlay** derived from read-only report or trace fields for the focused trade or visible window.
+
+Phase band visualization (protected, runner, exhaustion) MAY be staged as optional within Slice 10 but SHALL NOT require new backend execution semantics.
+
+#### Scenario: Managed smoke report renders event markers
+- **GIVEN** a managed run report with `trade_management_events` including `active_stop_updated`
+- **WHEN** the user views the chart for that run
+- **THEN** managed event markers render without error
+- **AND** no exit decision is computed client-side
+
+#### Scenario: Active stop line uses report read fields
+- **GIVEN** a focused trade with managed stop updates in the loaded report window
+- **WHEN** the chart overlay is enabled
+- **THEN** the overlay reflects stop prices from API/report data
+- **AND** the overlay does not recompute managed stop rules in the browser

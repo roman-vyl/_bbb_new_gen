@@ -101,6 +101,14 @@ print('runtime_exit_breakdown:', summary.get('runtime_exit_breakdown'))
 - [x] No evidence of legacy BE combiner / `run_managed_bar_loop` involvement.
 - [x] Backend pytest suite Slices 1–5 green (see `tasks.md` §6.1).
 
-## Next slice
+## Slice map (reference)
 
-Proceed to **Slice 7 — API / BFF read support** after checkpoint approval.
+| Slice | Status | Doc |
+|-------|--------|-----|
+| 6 | ACCEPTED | this file |
+| 7–8 | ACCEPTED | `tasks.md` |
+| 9 | Comparison tooling | `comparison.md` |
+| 10 | Composer / managed UX | `tasks.md` § Slice 10 |
+| 11 | Final smoke / archive | `tasks.md` § Slice 11 |
+
+Slice 11 archive readiness runs **after** Slice 10 Composer acceptance.
