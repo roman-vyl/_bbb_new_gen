@@ -322,22 +322,24 @@ Research master-plan reference: `docs/research/21_state_driven_exit_management_v
 - Comparison tooling (Slice 9).
 
 **Acceptance criteria:**
-- [ ] Smoke run completes with `status=ok`.
-- [ ] Full report contains `trade_management_events` with managed event types.
-- [ ] Closed trades have `exit_layer`, `exit_rule_id`, `exit_component_id` where applicable.
-- [ ] `trade_management_summary.exit_layer_breakdown` populated on managed variant.
-- [ ] BE path fixture: `exit_layer=exit_management` + `break_even_stop` attribution visible in JSON.
-- [ ] `diagnostic_only` parity suite still green.
+- [x] Smoke run completes with `status=ok`.
+- [x] Full report contains `trade_management_events` with managed event types.
+- [x] Closed trades have `exit_layer`, `exit_rule_id`, `exit_component_id` where applicable.
+- [x] `trade_management_summary.exit_layer_breakdown` populated on managed variant.
+- [x] BE path fixture: `exit_layer=exit_management` + `break_even_stop` attribution visible in JSON.
+- [x] `diagnostic_only` parity suite still green.
 
 **Tests:**
-- [ ] 6.1 Re-run full backend pytest suite for Slices 1–5.
-- [ ] 6.2 Execute smoke run command documented in `smoke.md`.
+- [x] 6.1 Re-run full backend pytest suite for Slices 1–5 (94 passed).
+- [x] 6.2 Execute smoke run command documented in `smoke.md`.
 
-- [ ] 6.3 Add/commit smoke fixture config if not already present.
-- [ ] 6.4 Run smoke; capture checklist of JSON fields verified.
-- [ ] 6.5 Write `smoke.md` with command, fixture path, and expected JSON assertions.
+- [x] 6.3 Add/commit smoke fixture config if not already present.
+- [x] 6.4 Run smoke; capture checklist of JSON fields verified.
+- [x] 6.5 Write `smoke.md` with command, fixture path, and expected JSON assertions.
 
 ### STOP — Checkpoint 6: Backend smoke / backend acceptance review
+
+**Status:** ACCEPTED (2026-06-08). See `smoke.md` for fixtures, commands, and verified JSON checklist.
 
 **Review:** smoke JSON matches spec delta; backend path is trustworthy before BFF.  
 **Do not proceed** to Slice 7 until approved.
