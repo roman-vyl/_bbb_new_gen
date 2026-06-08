@@ -375,6 +375,8 @@ Research master-plan reference: `docs/research/21_state_driven_exit_management_v
 
 ### STOP — Checkpoint 7: API / BFF read support review
 
+**Status:** ACCEPTED (2026-06-08). Managed report fields pass through `research_api` contracts; smoke artifact + HTTP BFF tests green.
+
 **Review:** API parity with backend JSON; no frontend yet.  
 **Do not proceed** to Slice 8 until approved.
 
@@ -397,18 +399,18 @@ Research master-plan reference: `docs/research/21_state_driven_exit_management_v
 - Comparison UI (Slice 9).
 
 **Acceptance criteria:**
-- [ ] Managed report renders layer breakdowns without component-specific UI branches.
-- [ ] Legacy diagnostic-only report still renders.
-- [ ] Workbench smoke against Slice 6 run artifact via API.
-- [ ] `npm test` + `npm run build` pass for touched frontend modules.
+- [x] Managed report renders layer breakdowns without component-specific UI branches.
+- [x] Legacy diagnostic-only report still renders.
+- [x] Workbench smoke against Slice 6 run artifact via API.
+- [x] `npm test` + `npm run build` pass for touched frontend modules.
 
 **Tests:**
-- [ ] 8.1 Frontend unit tests for managed report types/panels.
-- [ ] 8.2 Manual Workbench smoke on managed fixture report (post-API).
+- [x] 8.1 Frontend unit tests for managed report types/panels.
+- [x] 8.2 Manual Workbench smoke on managed fixture report (post-API).
 
-- [ ] 8.3 Update frontend types from API.
-- [ ] 8.4 Render unified managed sections in diagnostics panel.
-- [ ] 8.5 Optional: chart markers for `active_stop_updated` / `exit_rule_triggered`.
+- [x] 8.3 Update frontend types from API.
+- [x] 8.4 Render unified managed sections in diagnostics panel.
+- [x] 8.5 Optional: chart markers for `active_stop_updated` / `exit_rule_triggered`.
 
 ### STOP — Checkpoint 8: Frontend read-support review
 

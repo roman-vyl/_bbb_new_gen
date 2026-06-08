@@ -134,7 +134,10 @@ export function ReportsPanel() {
       </section>
 
       {hasTradeManagementSummary(metrics) && (
-        <TradeManagementDiagnosticsPanel summary={metrics.trade_management_summary} />
+        <TradeManagementDiagnosticsPanel
+          summary={metrics.trade_management_summary}
+          baselineVsManagedSummary={metrics.baseline_vs_managed_summary}
+        />
       )}
 
       <div className="filter-row" data-testid="filter-direction">

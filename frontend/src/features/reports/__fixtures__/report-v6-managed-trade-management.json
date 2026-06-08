@@ -1,0 +1,171 @@
+{
+  "run_id": "2026-06-08T144306Z_ema_pullback_BTCUSDT_5m_fixture_managed",
+  "created_at": "2026-06-08T14:43:06Z",
+  "report_schema_version": 6,
+  "family": "ema_pullback",
+  "symbol": "BTCUSDT",
+  "timeframe": "5m",
+  "candles": 100,
+  "data_range": {
+    "from_open_time_ms": 1714550400000,
+    "to_open_time_ms": 1714579800000
+  },
+  "variants_count": 1,
+  "variants": [
+    {
+      "variant": "managed_smoke_fixture",
+      "config_id": "fixture_v6_managed",
+      "symbol": "BTCUSDT",
+      "timeframe": "5m",
+      "strategy_spec": { "variant": "managed_smoke_fixture" },
+      "metrics": {
+        "long": {
+          "trades": 1,
+          "pnl": 1,
+          "return_pct": 0.001,
+          "profit_factor": 1,
+          "win_rate": 1
+        },
+        "short": {
+          "trades": 0,
+          "pnl": 0,
+          "return_pct": 0,
+          "profit_factor": null,
+          "win_rate": null
+        },
+        "total": {
+          "trades": 1,
+          "pnl": 1,
+          "return_pct": 0.001,
+          "profit_factor": 1,
+          "win_rate": 1,
+          "sharpe": 0.1,
+          "max_drawdown": -0.01
+        },
+        "open_trades": { "long": 0, "short": 0, "total": 0 },
+        "trade_management_summary": {
+          "by_phase_reached": {
+            "protected": { "trade_count": 1, "share_of_all_trades": 1 }
+          },
+          "phase_transition_counts": { "proven": 1, "protected": 1 },
+          "exit_layer_breakdown": {
+            "exit_management": 1
+          },
+          "stop_management_breakdown": {
+            "break_even_stop": { "trade_count": 1, "pnl": 1, "win_count": 1 }
+          },
+          "take_management_breakdown": {
+            "take_profile_switch": { "trade_count": 1, "pnl": 1, "win_count": 1 }
+          },
+          "runtime_exit_breakdown": {}
+        },
+        "baseline_vs_managed_summary": {
+          "saved_by_managed_stop": [],
+          "hurt_by_managed_stop": [],
+          "take_disabled_then_won": [],
+          "take_disabled_then_lost": [],
+          "runtime_exit_helped": [],
+          "runtime_exit_hurt": [],
+          "exit_layer_transition_matrix": {}
+        }
+      },
+      "component_counters": [],
+      "trade_management_events": [
+        {
+          "trade_id": "long:10",
+          "time_ms": 1714561400000,
+          "bar_index": 10,
+          "side": "long",
+          "event_type": "phase_changed",
+          "from_phase": "initial_risk",
+          "to_phase": "protected",
+          "rule_id": "managed_protected_2atr",
+          "mfe_pct": 0.02,
+          "mae_pct": 0.01,
+          "bars_in_trade": 3,
+          "metadata": {}
+        },
+        {
+          "trade_id": "long:10",
+          "time_ms": 1714561500000,
+          "bar_index": 11,
+          "side": "long",
+          "event_type": "active_stop_updated",
+          "from_phase": "protected",
+          "rule_id": "be_at_protected",
+          "component_id": "break_even_stop",
+          "stop_price": 10000,
+          "mfe_pct": 0.02,
+          "mae_pct": 0.01,
+          "bars_in_trade": 4,
+          "metadata": { "effective_from_bar": 12 }
+        },
+        {
+          "trade_id": "long:10",
+          "time_ms": 1714561600000,
+          "bar_index": 12,
+          "side": "long",
+          "event_type": "exit_rule_triggered",
+          "from_phase": "protected",
+          "rule_id": "be_at_protected",
+          "component_id": "break_even_stop",
+          "metadata": { "exit_layer": "exit_management" }
+        },
+        {
+          "trade_id": "long:10",
+          "time_ms": 1714561600000,
+          "bar_index": 12,
+          "side": "long",
+          "event_type": "exit_executed",
+          "from_phase": "protected",
+          "rule_id": "be_at_protected",
+          "component_id": "break_even_stop",
+          "metadata": { "exit_layer": "exit_management", "exit_reason": "exit_management:be" }
+        }
+      ],
+      "trade_records": [
+        {
+          "trade_id": "long:10",
+          "direction": "long",
+          "status": "closed",
+          "entry_time_ms": 1714561200000,
+          "exit_time_ms": 1714561600000,
+          "entry_price": 10000,
+          "exit_price": 10000,
+          "size": 0.1,
+          "pnl": 1,
+          "return_pct": 0.001,
+          "exit_reason": "exit_management:be_at_protected",
+          "exit_layer": "exit_management",
+          "managed_exit_candidate_type": "managed_stop",
+          "trade_management": {
+            "phase_at_exit": "protected",
+            "max_phase_reached": "protected",
+            "exit_layer": "exit_management",
+            "exit_rule_id": "be_at_protected",
+            "exit_component_id": "break_even_stop",
+            "exit_candidate_type": "managed_stop",
+            "active_stop_at_exit": 10000,
+            "active_take_at_exit": "disable_initial_tp",
+            "active_stop_component_id": "break_even_stop",
+            "active_take_component_id": "take_profile_switch",
+            "managed_events": [
+              {
+                "trade_id": "long:10",
+                "time_ms": 1714561500000,
+                "bar_index": 11,
+                "side": "long",
+                "event_type": "active_stop_updated",
+                "rule_id": "be_at_protected",
+                "component_id": "break_even_stop",
+                "stop_price": 10000,
+                "bars_in_trade": 4,
+                "metadata": {}
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

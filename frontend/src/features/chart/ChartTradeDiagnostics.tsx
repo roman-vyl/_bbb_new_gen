@@ -29,7 +29,7 @@ import type { SignalTraceLoadStatus } from "@/shared/context/signalTraceLoadPoli
 
 type Props = {
   trade: TradeRecord | undefined;
-  selectedTradeId: number;
+  selectedTradeId: number | string;
   strategySpec: JsonObject | undefined;
   chartEmaOverlays: ChartEmaOverlay[];
   chartAuxEmaOverlays?: ChartAuxEmaOverlay[];

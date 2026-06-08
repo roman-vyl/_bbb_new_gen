@@ -122,7 +122,7 @@ export function getAdjacentTradeId(
   trades: readonly TradeRecord[],
   currentId: number | string | null | undefined,
   direction: -1 | 1,
-): number | null {
+): number | string | null {
   if (currentId === null || currentId === undefined || trades.length === 0) {
     return null;
   }
@@ -134,5 +134,9 @@ export function getAdjacentTradeId(
   if (nextIndex < 0 || nextIndex >= trades.length) {
     return null;
   }
-  return normalizeTradeId(trades[nextIndex]!.trade_id);
+  const raw = trades[nextIndex]!.trade_id;
+  if (typeof raw === "string") {
+    return raw;
+  }
+  return normalizeTradeId(raw);
 }

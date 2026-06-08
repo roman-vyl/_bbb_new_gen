@@ -5,8 +5,8 @@ import type { TradeRecord } from "@/api/types";
 
 type ChartTradeFocusNavProps = {
   trades: readonly TradeRecord[];
-  selectedTradeId: number;
-  onSelectTrade: (tradeId: number | null) => void;
+  selectedTradeId: number | string;
+  onSelectTrade: (tradeId: number | string | null) => void;
 };
 
 export function ChartTradeFocusNav({
