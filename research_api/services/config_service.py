@@ -274,7 +274,10 @@ def get_config_state(family: str) -> ConfigStateResponse:
     config_file = find_config_file(family_key, selected_id)
     if config_file is not None:
         selected_path = _repo_relative_config_path(config_file)
-        draft = load_draft_from_file(config_file)
+        try:
+            draft = load_draft_from_file(config_file)
+        except (ConfigValidationError, EmaPullbackInstanceValidationError, ValueError):
+            draft = None
 
     return ConfigStateResponse(
         family=family_key,

@@ -377,6 +377,29 @@ def test_signal_trace_after_strategy_spec_report_roundtrip() -> None:
     assert len(trace.times) == len(df)
 
 
+def test_strategy_spec_report_roundtrip_accepts_null_optional_atr_ref() -> None:
+    """asdict serializes optional ManagementAtrRefSpec as null; report reload must accept it."""
+    wire = strategy_spec_to_dict(make_ema_pullback_strategy_spec())
+    exit_management = wire["trade_management"]["exit_management"]
+    exit_management["mode"] = "managed"
+    exit_management["stop_management"] = [
+        {
+            "rule_id": "be_at_protected",
+            "component_id": "break_even_stop",
+            "activate_when": {"phase_at_least": "protected"},
+            "params": {
+                "buffer_type": "none",
+                "buffer": 0.0,
+                "buffer_atr": 0.0,
+                "atr_period": 14,
+                "atr": None,
+            },
+        }
+    ]
+    restored = strategy_spec_from_report_dict(wire)
+    assert restored.trade_management.exit_management.stop_management[0].params.atr is None
+
+
 def test_portfolio_entry_false_when_stop_not_ready() -> None:
     spec = make_ema_pullback_strategy_spec()
     plan = build_feature_plan_from_strategy_spec(spec)

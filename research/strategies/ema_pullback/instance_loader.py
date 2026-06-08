@@ -371,7 +371,7 @@ def _parse_phase_rule_condition(value: Any, *, path: str) -> PhaseRuleConditionS
     payload = _require_mapping(path, value)
     _reject_unknown_fields(path, payload, {"type", "threshold", "atr"})
     atr = None
-    if "atr" in payload:
+    if "atr" in payload and payload["atr"] is not None:
         atr = _parse_phase_rule_atr(payload["atr"], path=f"{path}.atr")
     try:
         return PhaseRuleConditionSpec(
@@ -488,7 +488,7 @@ def _parse_break_even_stop_params(value: Any, *, path: str) -> BreakEvenStopPara
         {"buffer_type", "buffer", "buffer_atr", "atr_period", "atr"},
     )
     atr = None
-    if "atr" in payload:
+    if "atr" in payload and payload["atr"] is not None:
         atr = _parse_management_atr_ref(payload["atr"], path=f"{path}.atr")
     try:
         return BreakEvenStopParamsSpec(
@@ -508,7 +508,7 @@ def _parse_lock_profit_stop_params(value: Any, *, path: str) -> LockProfitStopPa
     if "lock_atr" not in payload:
         raise EmaPullbackInstanceValidationError(f"{path}.lock_atr is required")
     atr = None
-    if "atr" in payload:
+    if "atr" in payload and payload["atr"] is not None:
         atr = _parse_management_atr_ref(payload["atr"], path=f"{path}.atr")
     lock_atr = _require_positive_finite_float(
         _require_present(payload, "lock_atr"),
