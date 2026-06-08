@@ -29,11 +29,6 @@ export const PHASE_RULE_CONDITION_COMPONENT_IDS = [
 export type PhaseRuleConditionComponentId =
   (typeof PHASE_RULE_CONDITION_COMPONENT_IDS)[number];
 
-/** @deprecated Use PHASE_RULE_CONDITION_COMPONENT_IDS */
-export const PHASE_RULE_CONDITION_TYPES = PHASE_RULE_CONDITION_COMPONENT_IDS;
-/** @deprecated Use PhaseRuleConditionComponentId */
-export type PhaseRuleConditionType = PhaseRuleConditionComponentId;
-
 /** Monotonic phase progression order (initial_risk is implicit start). */
 export const TRADE_MANAGEMENT_PHASE_ORDER = [
   "initial_risk",
@@ -209,14 +204,6 @@ export function normalizeConditionForComponent(
           : true,
     },
   };
-}
-
-/** @deprecated Use normalizeConditionForComponent */
-export function normalizeConditionForType(
-  condition: JsonObject,
-  type: PhaseRuleConditionComponentId,
-): JsonObject {
-  return normalizeConditionForComponent(condition, type);
 }
 
 export function updatePhaseRuleField(
