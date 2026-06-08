@@ -609,12 +609,13 @@ def _parse_take_profile_switch_params(
     path: str,
 ) -> TakeProfileSwitchParamsSpec:
     payload = _require_mapping(path, value)
-    _reject_unknown_fields(path, payload, {"action", "safety_tp_atr"})
-    safety_tp_atr = payload.get("safety_tp_atr")
+    _reject_unknown_fields(path, payload, {"action"})
+    action = _require_non_empty_str(payload, "action")
+    if action == "disable_fixed_tp":
+        action = "disable_initial_tp"
     try:
         return TakeProfileSwitchParamsSpec(
-            action=_require_non_empty_str(payload, "action"),  # type: ignore[arg-type]
-            safety_tp_atr=float(safety_tp_atr) if safety_tp_atr is not None else None,
+            action=action,  # type: ignore[arg-type]
         )
     except (TypeError, ValueError) as exc:
         raise EmaPullbackInstanceValidationError(str(exc)) from exc

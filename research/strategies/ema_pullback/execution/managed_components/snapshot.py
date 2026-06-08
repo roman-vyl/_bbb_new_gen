@@ -130,6 +130,7 @@ def evaluate_management_layers(
                         "merged_stop_prices": {
                             item.rule_id: item.stop_price for item in stop_candidates
                         },
+                        "effective_from_bar": context.bar_index + 1,
                     },
                 )
             )
@@ -149,9 +150,10 @@ def evaluate_management_layers(
         take_selection is not None
         and take_selection.profile != previous.active_take_profile
     ):
-        metadata: dict[str, object] = {"take_profile": take_selection.profile}
-        if take_selection.safety_tp_atr is not None:
-            metadata["safety_tp_atr"] = take_selection.safety_tp_atr
+        metadata: dict[str, object] = {
+            "take_profile": take_selection.profile,
+            "effective_from_bar": context.bar_index + 1,
+        }
         snapshot = ActiveManagementSnapshot(
             active_stop_price=snapshot.active_stop_price,
             active_stop_rule_id=snapshot.active_stop_rule_id,
@@ -197,7 +199,10 @@ def evaluate_management_layers(
                 component_id=trigger.component_id,
                 price=trigger.exit_price,
                 stop_price=snapshot.active_stop_price,
-                metadata={"exit_price": "close"},
+                metadata={
+                    "exit_price": "close",
+                    "effective_from_bar": context.bar_index + 1,
+                },
             )
         )
         candidates.append(

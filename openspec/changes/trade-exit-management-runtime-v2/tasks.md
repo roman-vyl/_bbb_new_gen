@@ -167,30 +167,30 @@ Research master-plan reference: `docs/research/21_state_driven_exit_management_v
 - API, frontend, comparison tooling.
 
 **Acceptance criteria:**
-- [ ] Execution integration: bar-open exit check **before** end-of-bar provider update; next snapshot applies from following bar.
-- [ ] Managed candidates from inherited snapshot can **win** close selection via execution layer.
-- [ ] Behavior-changing outcome: managed config with non-empty rules **differs** from empty managed / baseline on at least one fixture.
-- [ ] Provider never opens a position; provider not called to decide entries.
-- [ ] Provider does not read setup/blocker/trigger/direction modules.
-- [ ] `break_even_stop`: phase reaches `protected` on bar N → BE can close on bar **≥ N+1** via execution layer (not bar N).
-- [ ] Same-bar conflicts among bar-open-active candidates resolve per v1 priority.
-- [ ] Initial SL wins over already-active managed stop when both hit.
-- [ ] Already-active managed stop wins over initial TP when both hit.
-- [ ] Newly activated managed stop on bar N does **not** participate in bar N arbitration.
-- [ ] `disable_initial_tp` suppresses initial TP in candidate view only; `exit_policy` unchanged.
-- [ ] `exit_layer` correctly `exit_policy` vs `exit_management`.
-- [ ] `diagnostic_only` unchanged; managed empty arrays parity unchanged.
+- [x] Execution integration: bar-open exit check **before** end-of-bar provider update; next snapshot applies from following bar.
+- [x] Managed candidates from inherited snapshot can **win** close selection via execution layer.
+- [x] Behavior-changing outcome: managed config with non-empty rules **differs** from empty managed / baseline on at least one fixture.
+- [x] Provider never opens a position; provider not called to decide entries.
+- [x] Provider does not read setup/blocker/trigger/direction modules.
+- [x] `break_even_stop`: phase reaches `protected` on bar N → BE can close on bar **≥ N+1** via execution layer (not bar N).
+- [x] Same-bar conflicts among bar-open-active candidates resolve per v1 priority.
+- [x] Initial SL wins over already-active managed stop when both hit.
+- [x] Already-active managed stop wins over initial TP when both hit.
+- [x] Newly activated managed stop on bar N does **not** participate in bar N arbitration.
+- [x] `disable_initial_tp` suppresses initial TP in candidate view only; `exit_policy` unchanged.
+- [x] `exit_layer` correctly `exit_policy` vs `exit_management`.
+- [x] `diagnostic_only` unchanged; managed empty arrays parity unchanged.
 
 **Tests:**
-- [ ] 4.1 `tests/test_exit_arbitration.py` — bar-open-active conflict matrix.
-- [ ] 4.2 Provider unit tests — inherited snapshot → managed stop candidate; end-of-bar phase → snapshot effective N+1; no same-bar BE close from newly activated stop.
-- [ ] 4.3 `tests/test_managed_execution_integration.py` — execution layer closes via managed BE on N+1; opens via precomputed entries only.
-- [ ] 4.4 Provider not invoked for entry decisions; `diagnostic_only` path unchanged; empty managed arrays parity.
+- [x] 4.1 `tests/test_exit_arbitration.py` — bar-open-active conflict matrix.
+- [x] 4.2 Provider unit tests — inherited snapshot → managed stop candidate; end-of-bar phase → snapshot effective N+1; no same-bar BE close from newly activated stop.
+- [x] 4.3 `tests/test_managed_execution_integration.py` — execution layer closes via managed BE on N+1; opens via precomputed entries only.
+- [x] 4.4 Provider not invoked for entry decisions; `diagnostic_only` path unchanged; empty managed arrays parity.
 
-- [ ] 4.5 Implement provider interface and wire Slice 3 evaluators for end-of-bar snapshot.
-- [ ] 4.6 Implement `ExitArbitrator` and v1 policy table (execution layer scope).
-- [ ] 4.7 Wire execution layer to consume `exit_policy` + provider candidates.
-- [ ] 4.8 Record `losing_candidates` metadata where specified.
+- [x] 4.5 Implement provider interface and wire Slice 3 evaluators for end-of-bar snapshot.
+- [x] 4.6 Implement `ExitArbitrator` and v1 policy table (execution layer scope).
+- [x] 4.7 Wire execution layer to consume `exit_policy` + provider candidates.
+- [x] 4.8 Record `losing_candidates` metadata where specified.
 
 ### STOP — Checkpoint 4: Execution integration review
 

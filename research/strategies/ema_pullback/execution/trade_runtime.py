@@ -126,6 +126,8 @@ class ExitCandidate:
     price: float
     bar: int
     reason: str
+    candidate_type: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

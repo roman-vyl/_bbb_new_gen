@@ -9,9 +9,9 @@ from research.strategies.ema_pullback.execution.managed_components.snapshot impo
     evaluate_management_layers,
 )
 from research.strategies.ema_pullback.execution.managed_components.take import (
-    ACTIVE_TAKE_PROFILE_DISABLE_FIXED_TP,
-    ACTIVE_TAKE_PROFILE_EXTEND_SAFETY_TP_ATR,
+    ACTIVE_TAKE_PROFILE_DISABLE_INITIAL_TP,
     evaluate_take_management,
+    normalize_take_profile_action,
     take_profile_descriptor,
 )
 from research.strategies.ema_pullback.execution.trade_runtime import (
@@ -51,7 +51,6 @@ def _take_rule(
     action: str,
     *,
     phase_at_least: str = "runner",
-    safety_tp_atr: float | None = None,
     rule_id: str = "take_switch",
 ) -> TakeManagementRuleSpec:
     return TakeManagementRuleSpec(
@@ -59,8 +58,7 @@ def _take_rule(
         component_id="take_profile_switch",
         activate_when=ManagementActivateWhenSpec(phase_at_least=phase_at_least),  # type: ignore[arg-type]
         params=TakeProfileSwitchParamsSpec(
-            action=action,  # type: ignore[arg-type]
-            safety_tp_atr=safety_tp_atr,
+            action=normalize_take_profile_action(action),  # type: ignore[arg-type]
         ),
     )
 
@@ -119,8 +117,8 @@ def test_keep_initial_does_not_emit_fake_profile_change() -> None:
     assert result.snapshot.active_take_profile == ACTIVE_TAKE_PROFILE_INITIAL
 
 
-def test_disable_fixed_tp_emits_active_take_updated() -> None:
-    rule = _take_rule("disable_fixed_tp")
+def test_disable_initial_tp_emits_active_take_updated() -> None:
+    rule = _take_rule("disable_initial_tp")
     result = evaluate_management_layers(
         _runtime_state(),
         context=_context(phase="runner"),
@@ -135,11 +133,12 @@ def test_disable_fixed_tp_emits_active_take_updated() -> None:
     ]
     assert len(take_events) == 1
     assert take_events[0].component_id == "take_profile_switch"
-    assert result.snapshot.active_take_profile == ACTIVE_TAKE_PROFILE_DISABLE_FIXED_TP
+    assert take_events[0].metadata.get("effective_from_bar") == 11
+    assert result.snapshot.active_take_profile == ACTIVE_TAKE_PROFILE_DISABLE_INITIAL_TP
 
 
-def test_extend_safety_tp_atr_updates_descriptor() -> None:
-    rule = _take_rule("extend_safety_tp_atr", safety_tp_atr=6.0)
+def test_disable_fixed_tp_alias_normalizes_to_disable_initial_tp() -> None:
+    rule = _take_rule("disable_fixed_tp")
     result = evaluate_management_layers(
         _runtime_state(),
         context=_context(phase="runner"),
@@ -149,16 +148,11 @@ def test_extend_safety_tp_atr_updates_descriptor() -> None:
         previous=empty_active_management_snapshot(),
         atr_series_by_key={},
     )
-    assert result.snapshot.active_take_profile == ACTIVE_TAKE_PROFILE_EXTEND_SAFETY_TP_ATR
-    take_events = [
-        event for event in result.events if event.event_type == "active_take_updated"
-    ]
-    assert len(take_events) == 1
-    assert take_events[0].metadata.get("safety_tp_atr") == pytest.approx(6.0)
+    assert result.snapshot.active_take_profile == ACTIVE_TAKE_PROFILE_DISABLE_INITIAL_TP
 
 
 def test_take_rule_inactive_before_phase_threshold() -> None:
-    rule = _take_rule("disable_fixed_tp", phase_at_least="runner")
+    rule = _take_rule("disable_initial_tp", phase_at_least="runner")
     selection = evaluate_take_management((rule,), context=_context(phase="protected"))
     assert selection is None
 
@@ -168,7 +162,7 @@ def test_take_profile_switch_does_not_mutate_exit_policy_spec() -> None:
 
     spec = make_ema_pullback_strategy_spec()
     exit_policy_before = spec.trade_management.exit_policy
-    rule = _take_rule("disable_fixed_tp")
+    rule = _take_rule("disable_initial_tp")
     evaluate_management_layers(
         _runtime_state(),
         context=_context(),
@@ -182,7 +176,7 @@ def test_take_profile_switch_does_not_mutate_exit_policy_spec() -> None:
     assert spec_after.trade_management.exit_policy == exit_policy_before
 
 
-def test_disable_fixed_tp_via_managed_runtime_replay() -> None:
+def test_disable_initial_tp_via_managed_runtime_replay() -> None:
     high = _series([100.0, 102.0, 104.0, 106.0, 108.0, 110.0])
     low = _series([99.0, 100.0, 102.0, 104.0, 106.0, 108.0])
     close = _series([100.0, 101.0, 103.0, 105.0, 107.0, 109.0])
@@ -212,7 +206,7 @@ def test_disable_fixed_tp_via_managed_runtime_replay() -> None:
                 condition=PhaseRuleConditionSpec(type="bars_in_trade", threshold=3),
             ),
         ),
-        take_management=(_take_rule("disable_fixed_tp"),),
+        take_management=(_take_rule("disable_initial_tp"),),
     )
 
     take_events = [
@@ -220,14 +214,14 @@ def test_disable_fixed_tp_via_managed_runtime_replay() -> None:
     ]
     assert len(take_events) >= 1
     assert result.states_by_trade_id["L1"].active_management.active_take_profile == (
-        ACTIVE_TAKE_PROFILE_DISABLE_FIXED_TP
+        ACTIVE_TAKE_PROFILE_DISABLE_INITIAL_TP
     )
 
 
 def test_take_profile_descriptor_mapping() -> None:
     assert take_profile_descriptor("keep_initial") == ACTIVE_TAKE_PROFILE_INITIAL
-    assert take_profile_descriptor("disable_fixed_tp") == ACTIVE_TAKE_PROFILE_DISABLE_FIXED_TP
+    assert take_profile_descriptor("disable_initial_tp") == ACTIVE_TAKE_PROFILE_DISABLE_INITIAL_TP
     assert (
-        take_profile_descriptor("extend_safety_tp_atr", safety_tp_atr=5.0)
-        == ACTIVE_TAKE_PROFILE_EXTEND_SAFETY_TP_ATR
+        take_profile_descriptor("disable_fixed_tp")
+        == ACTIVE_TAKE_PROFILE_DISABLE_INITIAL_TP
     )

@@ -737,6 +737,93 @@ def build_managed_trade_records(
     return out
 
 
+def build_execution_integrated_trade_records(
+    closed_trades: list[dict[str, Any]],
+    *,
+    index: pd.Index,
+    fees_rate: float = 0.0,
+    base_timeframe: str | None = None,
+) -> list[dict[str, Any]]:
+    """Normalize execution-integrated managed closes into trade_records shape."""
+
+    base_timeframe_minutes: int | None = None
+    if base_timeframe is not None:
+        base_timeframe_minutes = timeframe_ms(base_timeframe.strip()) // 60_000
+
+    out: list[dict[str, Any]] = []
+    for i, item in enumerate(closed_trades):
+        entry_idx = int(item["entry_idx"])
+        exit_idx = int(item["exit_idx"])
+        entry_p = float(item["entry_price"])
+        direction = item["direction"]
+        is_open = bool(item.get("open", False))
+        status = "open" if is_open else "closed"
+        exit_p = float(item["exit_price"]) if status == "closed" else None
+
+        if direction == "long":
+            gross_pnl = (exit_p - entry_p) if exit_p is not None else None
+        else:
+            gross_pnl = (entry_p - exit_p) if exit_p is not None else None
+
+        fees_paid = 0.0
+        if gross_pnl is not None and fees_rate:
+            assert exit_p is not None
+            fees_paid = abs(entry_p + exit_p) * fees_rate
+        pnl = (gross_pnl - fees_paid) if gross_pnl is not None else None
+        ret_pct = (pnl / entry_p) if pnl is not None and entry_p else None
+
+        entry_ms = _index_to_open_time_ms(index, entry_idx)
+        exit_ms = _index_to_open_time_ms(index, exit_idx) if status == "closed" else None
+
+        exit_attr = item.get("exit_attribution")
+        if is_open:
+            exit_reason = "open"
+        elif exit_attr is not None:
+            exit_reason = exit_attr.exit_reason
+        else:
+            exit_reason = "unknown"
+
+        record: dict[str, Any] = {
+            "trade_id": item.get("trade_id", i + 1),
+            "direction": direction,
+            "status": status,
+            "entry_time_ms": entry_ms,
+            "exit_time_ms": exit_ms,
+            "entry_price": entry_p,
+            "exit_price": exit_p,
+            "size": 1.0,
+            "pnl": pnl,
+            "return_pct": ret_pct,
+            "exit_reason": exit_reason,
+            "entry_idx": entry_idx,
+            "exit_idx": exit_idx,
+        }
+
+        if status == "closed" and exit_attr is not None:
+            record["exit_group"] = exit_attr.exit_group
+            record["exit_profile"] = exit_attr.exit_profile
+            record["exit_component_id"] = exit_attr.exit_component_id
+            record["exit_instance_id"] = exit_attr.exit_instance_id
+            record["exit_kind"] = exit_attr.exit_kind
+
+        if status == "closed" and gross_pnl is not None:
+            record["gross_pnl"] = gross_pnl
+            record["fees_paid"] = fees_paid
+            record["gross_return_pct"] = ret_pct
+
+        entry_profile = item.get("locked_profile", "neutral")
+        record["entry_profile"] = entry_profile
+        record["active_exit_profile"] = entry_profile
+
+        hold_bars = exit_idx - entry_idx + 1
+        record["hold_bars"] = hold_bars
+        if base_timeframe_minutes is not None:
+            record["hold_minutes"] = hold_bars * base_timeframe_minutes
+
+        out.append(record)
+    return out
+
+
 def build_research_run_payload(
     *,
     run_id: str,

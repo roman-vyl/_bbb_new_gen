@@ -289,7 +289,7 @@ def test_managed_component_pack_fixture_round_trips() -> None:
     assert len(exit_management.take_management) == 1
     assert exit_management.take_management[0].component_id == "take_profile_switch"
     assert isinstance(exit_management.take_management[0].params, TakeProfileSwitchParamsSpec)
-    assert exit_management.take_management[0].params.action == "disable_fixed_tp"
+    assert exit_management.take_management[0].params.action == "disable_initial_tp"
 
     assert len(exit_management.runtime_exits) == 1
     assert exit_management.runtime_exits[0].component_id == "phase_runtime_exit"

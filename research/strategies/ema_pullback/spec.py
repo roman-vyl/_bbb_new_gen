@@ -16,7 +16,8 @@ EXIT_MANAGEMENT_MODES = ("diagnostic_only", "managed")
 STOP_MANAGEMENT_COMPONENT_IDS = ("break_even_stop", "lock_profit_stop")
 TAKE_MANAGEMENT_COMPONENT_IDS = ("take_profile_switch",)
 RUNTIME_EXIT_COMPONENT_IDS = ("phase_runtime_exit",)
-TAKE_PROFILE_SWITCH_ACTIONS = ("keep_initial", "disable_fixed_tp", "extend_safety_tp_atr")
+TAKE_PROFILE_SWITCH_ACTIONS = ("keep_initial", "disable_initial_tp")
+TAKE_PROFILE_SWITCH_DEPRECATED_ACTION_ALIASES = ("disable_fixed_tp",)
 PHASE_RUNTIME_EXIT_PRICES = ("close",)
 BREAK_EVEN_BUFFER_TYPES = ("none", "atr")
 ActivateWhenPhase = Literal[
@@ -718,18 +719,12 @@ class StopManagementRuleSpec:
 
 @dataclass(frozen=True)
 class TakeProfileSwitchParamsSpec:
-    action: Literal["keep_initial", "disable_fixed_tp", "extend_safety_tp_atr"]
-    safety_tp_atr: float | None = None
+    action: Literal["keep_initial", "disable_initial_tp"]
 
     def __post_init__(self) -> None:
         if self.action not in TAKE_PROFILE_SWITCH_ACTIONS:
             allowed = ", ".join(repr(item) for item in TAKE_PROFILE_SWITCH_ACTIONS)
             raise ValueError(f"take_profile_switch params.action must be one of: {allowed}")
-        if self.action == "extend_safety_tp_atr":
-            if self.safety_tp_atr is None or self.safety_tp_atr <= 0:
-                raise ValueError(
-                    "take_profile_switch extend_safety_tp_atr requires safety_tp_atr > 0"
-                )
 
 
 @dataclass(frozen=True)
