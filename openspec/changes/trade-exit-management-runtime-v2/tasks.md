@@ -17,9 +17,9 @@ Research master-plan reference: `docs/research/21_state_driven_exit_management_v
 - Validation: `diagnostic_only` still rejects non-empty management arrays; `managed` accepts them.
 - Component id allowlist for v1 pack: `break_even_stop`, `lock_profit_stop`, `take_profile_switch`, `phase_runtime_exit`.
 - `lock_profit_stop` params (required in contract): `lock_atr` (> 0), `atr_period` (default 14), optional `atr.timeframe`. **Must be fully implemented in Slice 3** — not a stub.
-- `take_profile_switch` actions: `keep_initial`, `disable_fixed_tp`, `extend_safety_tp_atr`.
+- `take_profile_switch` actions: `keep_initial`, `disable_initial_tp` (`disable_fixed_tp` deprecated alias → `disable_initial_tp`).
 - `phase_runtime_exit` params: `exit_price: "close"` only in v2; **no `trigger` sub-object**; reject configs with `trigger` or non-`close` exit_price.
-- Document relationship: `exit_policy` unchanged; managed runtime consumes effective `exit_policy` outputs only — does not evaluate or reinterpret HTF context.
+- Document relationship: `exit_policy` unchanged; execution layer consumes effective `exit_policy` outputs; managed provider does not evaluate or reinterpret HTF context.
 
 **Out of scope:**
 - Runtime loop, arbitration, report serialization, API, frontend, Composer editors.
@@ -46,15 +46,15 @@ Research master-plan reference: `docs/research/21_state_driven_exit_management_v
 
 ---
 
-## Slice 2 — Managed runtime core
+## Slice 2 — Managed exit provider core
 
-**Goal:** Bar-by-bar managed loop skeleton with `ActiveManagementSnapshot`, uniform event emission stubs, and **empty-array baseline parity**.
+**Goal:** Managed exit provider skeleton with `ActiveManagementSnapshot`, uniform event emission stubs, and **empty-array baseline parity**.
 
 **Scope:**
-- `research/strategies/ema_pullback/execution/trade_runtime.py` — managed loop entry point.
+- `research/strategies/ema_pullback/execution/trade_runtime.py` — managed provider entry points (replay helper for tests).
 - Domain types: `ActiveManagementSnapshot`, `ExitCandidate` (minimal fields), `ManagedExitContext`.
 - Uniform event types enumerated; emit `phase_changed` + no-op layer events as applicable; `exit_executed` attribution stub.
-- `backtest.py` / managed bar loop integration hook — research path only, not vectorbt callback source of truth.
+- `backtest.py` / managed provider integration hook — research path only, not vectorbt callback source of truth.
 - `mode: managed` + empty arrays → same trades/PnL/PF/exit_reasons as omitting `exit_management`.
 
 **Out of scope:**
@@ -64,7 +64,7 @@ Research master-plan reference: `docs/research/21_state_driven_exit_management_v
 - Second portfolio / shadow trades.
 
 **Acceptance criteria:**
-- [x] Managed loop runs bar-by-bar for each open trade in research execution.
+- [x] Managed provider replay runs bar-by-bar for each trade in isolation tests.
 - [x] `ActiveManagementSnapshot` exists for all three layers (may be empty/neutral).
 - [x] Empty management arrays: parity tests green vs baseline.
 - [x] `diagnostic_only` tests still green (unchanged).
@@ -73,13 +73,13 @@ Research master-plan reference: `docs/research/21_state_driven_exit_management_v
 - [x] 2.1 Create `tests/test_trade_runtime_managed_core.py` — empty-array parity.
 - [x] 2.2 Re-run `tests/test_trade_runtime_diagnostics.py` — no regression.
 
-- [x] 2.3 Implement managed loop skeleton and snapshot types.
+- [x] 2.3 Implement managed provider skeleton and snapshot types.
 - [x] 2.4 Integrate managed hook in `backtest.py` behind `mode == "managed"`.
 - [x] 2.5 Emit uniform event type constants / dataclass shapes (full emission completed in later slices).
 
-### STOP — Checkpoint 2: Managed runtime core review
+### STOP — Checkpoint 2: Managed exit provider core review
 
-**Review:** loop placement, parity proof, no second trade path, event model shape.  
+**Review:** provider placement, parity proof, no second trade path, event model shape.  
 **Do not proceed** to Slice 3 until approved.
 
 ---
@@ -93,7 +93,7 @@ Research master-plan reference: `docs/research/21_state_driven_exit_management_v
 | Layer | Components |
 |-------|------------|
 | `stop_management` | `break_even_stop`, `lock_profit_stop` (minimal working: entry ± `lock_atr`×ATR, side-aware, tighten-only) |
-| `take_management` | `take_profile_switch` (`keep_initial`, `disable_fixed_tp`, `extend_safety_tp_atr`) |
+| `take_management` | `take_profile_switch` (`keep_initial`, `disable_initial_tp`) |
 | `runtime_exits` | `phase_runtime_exit` (phase-gated exit at bar `close`; `params.exit_price: "close"` only) |
 
 - Evaluators update `ActiveManagementSnapshot` and emit `active_stop_updated`, `active_take_updated`, `runtime_exit_triggered`.
@@ -111,7 +111,7 @@ Research master-plan reference: `docs/research/21_state_driven_exit_management_v
 - [x] Each layer produces at least one **candidate** or **snapshot update** on a fixture (stop price, take profile, runtime exit signal).
 - [x] `break_even_stop`: after `protected`, `active_stop_updated` emitted and managed stop **candidate** present at breakeven (+ buffer); no assertion that trade closes yet.
 - [x] `lock_profit_stop`: when active, `active_stop_updated` emitted and stop **candidate** at entry ± `lock_atr`×ATR (side-aware); tighten-only verified in unit test; no close assertion yet.
-- [x] `take_profile_switch`: when `disable_fixed_tp` active, `active_take_updated` emitted and take profile reflects disabled fixed TP; managed TP **candidate set** altered (not final close).
+- [x] `take_profile_switch`: when `disable_initial_tp` active, `active_take_updated` emitted and take profile reflects suppressed initial TP; managed **candidate view** altered (not final close).
 - [x] `phase_runtime_exit`: when `activate_when` phase is met, `runtime_exit_triggered` emitted and exit **candidate** at bar close price; no `trigger` / pattern evaluation.
 - [x] Per-layer unit tests pass in isolation (evaluator → snapshot/candidate/events only).
 - [x] **No** outcome-vs-baseline or trade-count/PnL assertions in Slice 3.
@@ -127,7 +127,7 @@ Research master-plan reference: `docs/research/21_state_driven_exit_management_v
 - [x] 3.7 Implement stop merge (tightest protective for long / loosest protective for short).
 - [x] 3.8 Implement `take_profile_switch` evaluator.
 - [x] 3.9 Implement `phase_runtime_exit` evaluator (active when `phase_at_least` met → candidate at `close`; no pattern triggers).
-- [x] 3.10 Wire evaluators into managed loop (pre-arbitration).
+- [x] 3.10 Wire evaluators into managed provider replay (pre-arbitration).
 
 ### STOP — Checkpoint 3: Active layer / component contract review
 
@@ -136,64 +136,72 @@ Research master-plan reference: `docs/research/21_state_driven_exit_management_v
 
 ---
 
-## Slice 4 — Causal managed close path + delayed activation
+## Slice 4 — Execution integration + managed exit provider
 
-**Goal:** Live causal bar loop + `ExitArbitrator` so managed rules can close trades **without OHLC lookahead**. Management snapshot and phase updates from bar N apply from bar **N+1**; exits on bar N use only state inherited from bar **N−1**.
+**Goal:** Integrate the managed exit provider into the existing execution layer **without** making `exit_management` the execution owner. Execution layer remains responsible for open/close lifecycle; provider supplies inherited candidates, end-of-bar snapshots, and events with **delayed activation**.
 
-**Causal bar order (normative):**
+**Provider / execution interaction (normative):**
 
-1. Start bar N with inherited `phase` + `ActiveManagementSnapshot` (from end of N−1).
-2. Build exit candidates from **bar-open-active** state only (`exit_policy` + inherited managed stop / take profile / armed runtime exits).
-3. Arbitrate among those candidates (`same_bar_policy: "v1"`).
-4. If winner → close; stop.
-5. Else: update MFE/MAE; evaluate `phase_rules`; recompute **next** snapshot via Slice 3 evaluators; emit layer events; snapshot active from N+1.
+1. Execution layer starts bar N with open position state, inherited snapshot, and effective `exit_policy` candidates.
+2. Execution layer calls provider `get_bar_open_candidates(...)` — inherited managed stop, take profile effect, armed runtime exits only.
+3. Execution layer arbitrates among `exit_policy` + inherited managed candidates (`same_bar_policy: "v1"`); applies close if winner.
+4. If still open, execution layer calls provider `update_end_of_bar_snapshot(...)` — MFE/MAE, `phase_rules`, next snapshot, events; snapshot effective from N+1.
+5. New provider state from end of bar N MUST NOT produce close candidates on bar N.
 
 **Scope:**
-- Refactor managed loop from post-close replay to **inline open-trade** path in research execution (`backtest.py` + `trade_runtime.py`).
-- `research/strategies/ema_pullback/execution/exit_arbitration.py` — `ExitArbitrator`, v1 priority among **bar-open-active** candidates only.
-- Collect `exit_policy` candidates from effective pipeline outputs (initial SL/TP/signal; respect inherited managed take profile). No HTF evaluation in managed runtime.
-- Build managed candidates from **inherited snapshot only** (not from snapshot computed later on same bar).
-- Winner → trade close in research path; `exit_rule_triggered` + `exit_executed` with attribution metadata.
-- **Delayed activation:** new `break_even_stop` / `lock_profit_stop` / take switch / runtime arm from phase change on bar N → eligible for exits starting bar N+1.
+- Define provider interface in research layer (e.g. `ManagedExitProvider` or equivalent: `get_bar_open_candidates`, `update_end_of_bar_snapshot`).
+- Wire execution layer (`backtest.py`) to call provider for **already-open** positions only.
+- Execution layer opens positions from precomputed `entries` / `short_entries` (existing entry pipeline) — unchanged.
+- `research/strategies/ema_pullback/execution/exit_arbitration.py` — `ExitArbitrator` used by execution layer; v1 priority among bar-open-active candidates.
+- Collect `exit_policy` candidates from effective pipeline outputs (initial SL/TP/signal; respect inherited `disable_initial_tp` in candidate view). No HTF evaluation in provider.
+- Provider builds managed candidates from **inherited snapshot only**.
+- Execution layer applies close; emits `exit_rule_triggered` + `exit_executed` with attribution metadata.
+- **Delayed activation:** new stop / take switch / runtime arm from end-of-bar update on bar N → eligible from bar N+1.
+- Provider MUST NOT import setup/blocker/trigger/direction or consume entries as entry owner.
 
 **Out of scope:**
-- OHLC intrabar path modeling v2 (`open→high→low` vs `open→low→high`).
-- Arbitrating candidates that first become eligible on the same bar as the phase/snapshot change.
+- exit_management as entry or lifecycle owner; second portfolio; shadow trades.
+- OHLC intrabar path modeling v2.
+- Arbitrating candidates first eligible from same-bar provider update.
 - Report serialization (Slice 5).
 - API, frontend, comparison tooling.
 
 **Acceptance criteria:**
-- [ ] Live causal loop: exit check **before** end-of-bar phase/snapshot update; next snapshot applies from following bar.
-- [ ] Managed candidates from inherited snapshot can **win** close selection.
+- [ ] Execution integration: bar-open exit check **before** end-of-bar provider update; next snapshot applies from following bar.
+- [ ] Managed candidates from inherited snapshot can **win** close selection via execution layer.
 - [ ] Behavior-changing outcome: managed config with non-empty rules **differs** from empty managed / baseline on at least one fixture.
-- [ ] `break_even_stop`: phase reaches `protected` on bar N → BE stop can close trade on bar **≥ N+1** when price hits (not on bar N of phase transition).
-- [ ] Same-bar conflicts among **bar-open-active** candidates resolve per v1 priority.
-- [ ] Initial SL wins over **already-active** managed stop when both hit.
-- [ ] **Already-active** managed stop wins over TP when both hit.
-- [ ] **Newly activated** managed stop on bar N does **not** participate in bar N arbitration.
+- [ ] Provider never opens a position; provider not called to decide entries.
+- [ ] Provider does not read setup/blocker/trigger/direction modules.
+- [ ] `break_even_stop`: phase reaches `protected` on bar N → BE can close on bar **≥ N+1** via execution layer (not bar N).
+- [ ] Same-bar conflicts among bar-open-active candidates resolve per v1 priority.
+- [ ] Initial SL wins over already-active managed stop when both hit.
+- [ ] Already-active managed stop wins over initial TP when both hit.
+- [ ] Newly activated managed stop on bar N does **not** participate in bar N arbitration.
+- [ ] `disable_initial_tp` suppresses initial TP in candidate view only; `exit_policy` unchanged.
 - [ ] `exit_layer` correctly `exit_policy` vs `exit_management`.
+- [ ] `diagnostic_only` unchanged; managed empty arrays parity unchanged.
 
 **Tests:**
 - [ ] 4.1 `tests/test_exit_arbitration.py` — bar-open-active conflict matrix.
-- [ ] 4.2 `tests/test_managed_causal_loop.py` — delayed activation (phase on N → stop exit on N+1).
-- [ ] 4.3 Integration: managed BE close end-to-end (first outcome-changing proof).
-- [ ] 4.4 Outcome-vs-empty-managed break test on component-pack fixture.
+- [ ] 4.2 Provider unit tests — inherited snapshot → managed stop candidate; end-of-bar phase → snapshot effective N+1; no same-bar BE close from newly activated stop.
+- [ ] 4.3 `tests/test_managed_execution_integration.py` — execution layer closes via managed BE on N+1; opens via precomputed entries only.
+- [ ] 4.4 Provider not invoked for entry decisions; `diagnostic_only` path unchanged; empty managed arrays parity.
 
-- [ ] 4.5 Implement `ExitArbitrator` and v1 policy table (bar-open scope).
-- [ ] 4.6 Refactor managed loop to causal inline close path; reuse Slice 3 evaluators for end-of-bar snapshot.
-- [ ] 4.7 Wire `exit_policy` candidate collection from effective outputs.
+- [ ] 4.5 Implement provider interface and wire Slice 3 evaluators for end-of-bar snapshot.
+- [ ] 4.6 Implement `ExitArbitrator` and v1 policy table (execution layer scope).
+- [ ] 4.7 Wire execution layer to consume `exit_policy` + provider candidates.
 - [ ] 4.8 Record `losing_candidates` metadata where specified.
 
-### STOP — Checkpoint 4: Causal close path review
+### STOP — Checkpoint 4: Execution integration review
 
-**Review:** causal bar order, delayed activation, bar-open arbitration scope, exit_policy candidate sourcing, close path ownership.  
+**Review:** execution ownership boundary, provider interface, delayed activation, bar-open arbitration scope, exit_policy candidate sourcing.  
 **Do not proceed** to Slice 5 until approved.
 
 ---
 
 ## Slice 5 — Backend report serialization only
 
-**Goal:** Serialize managed runtime output into research JSON report — **research layer only**, no API or frontend.
+**Goal:** Serialize managed provider output into research JSON report — **research layer only**, no API or frontend.
 
 **Scope:**
 - `research/strategies/ema_pullback/execution/results.py` — per-trade managed fields (`phase_at_exit`, `active_stop_at_exit`, `active_take_at_exit`, `exit_layer`, `exit_rule_id`, `exit_component_id`).
@@ -394,7 +402,7 @@ Research master-plan reference: `docs/research/21_state_driven_exit_management_v
 - [ ] `openspec validate trade-exit-management-runtime-v2 --strict` passes.
 
 **Tests:**
-- [ ] 10.1 `python -m pytest tests/test_exit_management_contracts.py tests/test_trade_runtime_diagnostics.py tests/test_trade_runtime_managed_core.py tests/test_managed_stop_components.py tests/test_managed_take_components.py tests/test_managed_runtime_exit_components.py tests/test_exit_arbitration.py tests/test_managed_report_contract.py tests/test_managed_comparison.py -q`
+- [ ] 10.1 `python -m pytest tests/test_exit_management_contracts.py tests/test_trade_runtime_diagnostics.py tests/test_trade_runtime_managed_core.py tests/test_managed_stop_components.py tests/test_managed_take_components.py tests/test_managed_runtime_exit_components.py tests/test_exit_arbitration.py tests/test_managed_execution_integration.py tests/test_managed_report_contract.py tests/test_managed_comparison.py -q`
 - [ ] 10.2 `cd frontend && npm test && npm run build`
 - [ ] 10.3 Re-run backend smoke per `smoke.md`.
 - [ ] 10.4 Final review against `docs/research/21_state_driven_exit_management_v1.md` phases 1–5 checklist.

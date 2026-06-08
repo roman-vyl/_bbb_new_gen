@@ -1,8 +1,8 @@
 # Step 21 — State-Driven Exit Management v1 (managed runtime)
 
 Date: 2026-06-08  
-Status: **план** — следующий OpenSpec change `state-driven-exit-management-v1`  
-Связанные спеки: `openspec/specs/trade-exit-management-runtime/` (Step 20, diagnostic-only foundation)
+Status: **в работе** — OpenSpec change `trade-exit-management-runtime-v2` (Phases 1–2 реализованы; Phase 3 = execution integration — в спеке, код не начат)  
+Связанные спеки: `openspec/specs/trade-exit-management-runtime/` (Step 20 foundation); активный change: `openspec/changes/trade-exit-management-runtime-v2/`
 
 > Master-plan research-документ для **behavior-changing** exit management: состояния сделки управляют active stops, take profile и runtime exits.  
 > Step 20 дал приборную панель (phase diagnostics); Step 21 подключает руль, тормоза и газ.
@@ -39,7 +39,7 @@ Step 20 (`docs/research/20_trade_exit_management_runtime_v1.md`) закрыл di
 | Composer `PhaseRulesEditor` | Authoring phase_rules |
 | Reports / chart markers | Показывают фазы и diagnostic exit events |
 | `stop_management`, `runtime_exits` | Зарезервированы в контракте; parser отклоняет non-empty при `diagnostic_only` |
-| Behavior-changing management | **Не реализован** |
+| Behavior-changing management | Provider + evaluators (Phases 1–2 ✅); execution integration (Phase 3 ⏳) |
 
 OpenSpec reference после archive Step 20: `openspec/specs/trade-exit-management-runtime/`.
 
@@ -66,33 +66,35 @@ report показывает, когда это произошло
 ### Цель (managed)
 
 ```text
-Сделка открылась
+entry pipeline (setup/blocker/trigger/direction) → entries / short_entries
+  ↓
+execution layer открывает позицию (lifecycle owner)
   ↓
 initial SL / initial TP активны (exit_policy — аварийный контур)
   ↓
-phase_rules переводят сделку в protected
+на каждом баре для открытой позиции:
+  execution layer запрашивает exit_policy candidates + managed provider candidates (inherited snapshot)
   ↓
-runtime видит protected (bar-by-bar, внутри жизни сделки)
+phase_rules (через provider, end-of-bar) → protected
   ↓
-активируется stop_management rule
+provider обновляет snapshot; stop_management rule effective с N+1 (delayed activation)
   ↓
-старый initial SL перестаёт быть главным защитным стопом
+на следующем баре inherited active_stop участвует в arbitration
   ↓
-каждый бар пересчитывается active_stop
-  ↓
-цена бьёт active_stop → сделка закрывается через exit_management
+execution layer выбирает победителя и закрывает с exit_layer=exit_management
 ```
 
-Аналогично для `runner`:
+Аналогично для `runner` (v1 pack — минимальный; runner pack в Phase 7):
 
 ```text
 phase/regime rules → runner
   ↓
 другой набор management rules:
-  - отключить фиксированный TP
-  - включить EMA trailing stop
-  - включить exit on exhaustion
-  - более широкий safety TP
+  - disable_initial_tp (suppress initial exit_policy TP в candidate view)
+  - lock_profit_stop / break_even_stop (stop_management)
+  - phase_runtime_exit (runtime_exits)
+  ↓
+будущий runner pack (Phase 7): EMA trail, structure stop, exhaustion exits
 ```
 
 **Ключевой вопрос архитектуры:** когда сделка находится в таком-то состоянии, **какие правила управления стопом/тейком/выходом активны?**
@@ -128,7 +130,7 @@ phase/regime rules → runner
 | `phase >= protected` | поставить BE stop |
 | `phase >= protected` | lock +0.5 ATR profit |
 | `regime == runner` | включить EMA trailing stop |
-| `regime == runner` | отключить fixed TP |
+| `regime == runner` | `disable_initial_tp` (suppress initial exit_policy TP в candidate view) |
 | `regime == exhaustion` | закрыть сделку (runtime exit) |
 
 Это **реальные действия** — пересчёт `active_stop`, смена take profile, принудительный выход.
@@ -141,8 +143,8 @@ phase/regime rules → runner
 
 ```text
 trade_management
-├── exit_policy          # initial SL, safety TP, signal exits — аварийный контур
-└── exit_management      # runtime: фазы + managed stops/takes/exits поверх
+├── exit_policy          # initial SL, initial TP, signal exits — аварийный контур
+└── exit_management      # provider: фазы + managed stops/takes/exits для открытых позиций
 ```
 
 | Слой | Роль |
@@ -151,11 +153,11 @@ trade_management
 | `exit_management` (diagnostic) | Только фазы и trace, без feedback |
 | `exit_management` (managed) | `stop_management`, `take_management`, `runtime_exits` — поверх initial exits |
 
-В начале сделки работает старый аварийный контур: **initial SL / safety TP**.  
-Когда сделка доказала силу, управление перехватывает новый слой:
+В начале сделки работает старый аварийный контур: **initial SL / initial TP** (из `exit_policy`).  
+Когда сделка доказала силу, managed provider обновляет snapshot; execution layer применяет эффект с **следующего бара** (delayed activation):
 
-- `protected` → `active_stop` = BE / lock profit;
-- `runner` → `active_stop` = trailing / EMA / structure stop; fixed TP отключён или сдвинут.
+- `protected` → `active_stop` = BE / lock profit (effective N+1);
+- `runner` → `disable_initial_tp` suppress initial TP в candidate view; `active_stop` / runtime exits по правилам v1 pack (EMA trail — Phase 7).
 
 Initial exits **не удаляются** — они остаются fallback и участвуют в exit arbitration (см. ниже).
 
@@ -182,7 +184,7 @@ Initial exits **не удаляются** — они остаются fallback �
 | `mode` | `"diagnostic_only"` (Step 20) или `"managed"` (Step 21) |
 | `phase_rules` | State transitions — без изменений семантики v1 |
 | `stop_management` | Behavior-changing active stop rules |
-| `take_management` | Take profile switching (`keep_initial`, `disable_fixed_tp`, `extend_safety_tp_atr`, …) |
+| `take_management` | Take profile switching (`keep_initial`, `disable_initial_tp`; deprecated alias `disable_fixed_tp`) |
 | `runtime_exits` | Phase-gated forced exits (`phase_runtime_exit`, …) |
 
 `diagnostic_only` и `managed` **сосуществуют**: managed не ломает parity diagnostic path.  
@@ -190,31 +192,46 @@ Initial exits **не удаляются** — они остаются fallback �
 
 ---
 
-## Phase 1 — Managed Runtime Core
+## Execution ownership boundary
 
-### Bar-by-bar loop
+`exit_management` — **не** execution layer.
 
-Главный скелет managed runtime — доменный loop **внутри жизни открытой сделки**, не post-hoc replay:
+| Слой | Владелец | Ответственность |
+|------|----------|-----------------|
+| Entry pipeline | Без изменений | setup / blocker / trigger / direction → `entries` |
+| Execution / backtest | Lifecycle owner | open, hold, close; arbitration; применяет close |
+| `exit_policy` | Initial/fallback exits | SL/TP/signal; HTF profile selection |
+| `exit_management` | Managed exit **provider** | state, snapshot, managed candidates, events |
+
+Provider **не** открывает сделки, **не** читает entry logic, **не** заменяет `backtest.py`.
+
+---
+
+## Phase 1 — Managed exit provider core
+
+**Статус:** ✅ реализован (OpenSpec v2 Slice 2).
+
+### Provider skeleton + replay
+
+Phase 1 строит **managed exit provider** — типы, snapshot, uniform events, replay helper для тестов. Полный bar-by-bar path для open trade подключается в **Phase 3** через execution integration.
 
 ```text
-Открылась сделка
-  ↓
-на каждом баре (entry bar .. close):
-  1. обновить TradeRuntimeState (best/worst, MFE/MAE, bars_in_trade)
-  2. оценить phase_rules → возможный phase_changed
-  3. определить активные management rules для текущей фазы/regime
-  4. пересчитать active_stop и active_take profile
-  5. проверить stop hit (managed active_stop)
-  6. проверить runtime_exits
-  7. exit arbitration — выбрать, чем закрыть сделку на этом баре
-  8. записать event trace
+Provider (exit_management):
+  TradeRuntimeState, ActiveManagementSnapshot
+  evaluate phase_rules, stop/take/runtime evaluators
+  emit events; return managed candidates / next snapshot
+
+Execution layer (backtest.py) — Phase 3:
+  open from precomputed entries
+  per bar: exit_policy candidates + provider.get_bar_open_candidates(inherited snapshot)
+  arbitrate → close OR provider.update_end_of_bar_snapshot()
 ```
 
-Без этого скелета ADX/EMA/runner rules бессмысленны — им некуда влиять.
+Без provider skeleton ADX/EMA/runner rules бессмысленны — им некуда влиять.
 
-**Отличие от diagnostic-only:** managed runtime участвует в **фактическом** выборе exit bar/price/reason; diagnostic-only идёт после закрытия по существующему path.
+**Отличие от diagnostic-only:** managed mode **может** менять exit через execution integration (Phase 3); diagnostic-only — post-hoc trace без feedback.
 
-Ключевые объекты (Phase 1 — Managed Runtime Core):
+Ключевые объекты (Phase 1):
 
 ```text
 TradeRuntimeState
@@ -239,10 +256,12 @@ ManagedExitContext
 
 ### Критерий готовности Phase 1
 
-- runtime проходит сделку bar-by-bar;
-- все active layers (`stop_management`, `take_management`, `runtime_exits`) существуют в коде и snapshot;
-- uniform events (все 6 типов) эмитятся по контракту;
-- **пустые management arrays → поведение равно baseline**.
+- [x] provider skeleton и domain types (`ActiveManagementSnapshot`, `ExitCandidate`, `ManagedExitContext`);
+- [x] replay helper проходит сделку bar-by-bar в изоляции;
+- [x] все active layers существуют в snapshot;
+- [x] uniform events (все 6 типов) по контракту;
+- [x] **пустые management arrays → поведение равно baseline**;
+- [ ] execution layer вызывает provider для open trades (Phase 3).
 
 ---
 
@@ -262,6 +281,8 @@ ManagedExitContext
 ---
 
 ## Phase 2 — Active management components v1
+
+**Статус:** ✅ реализован (OpenSpec v2 Slice 3). Outcome-changing close — Phase 3.
 
 Минимальный **component pack** для всех active layers — не «только BE», иначе report/API/frontend придётся доращивать кусками под каждый новый слой.
 
@@ -291,19 +312,20 @@ ManagedExitContext
 
 | component_id | actions в v1 pack |
 |--------------|-------------------|
-| `take_profile_switch` | `keep_initial`, `disable_fixed_tp`, `extend_safety_tp_atr` |
+| `take_profile_switch` | `keep_initial`, `disable_initial_tp` |
 
 ```json
 {
-  "rule_id": "disable_fixed_tp_runner",
+  "rule_id": "disable_initial_tp_runner",
   "component_id": "take_profile_switch",
   "activate_when": { "phase_at_least": "runner" },
   "params": {
-    "action": "disable_fixed_tp",
-    "safety_tp_atr": 40
+    "action": "disable_initial_tp"
   }
 }
 ```
+
+`disable_initial_tp` suppress initial `exit_policy` take-profit candidate в managed/execution candidate view only; **не** мутирует `exit_policy` config/masks. Deprecated parsing alias: `disable_fixed_tp` → `disable_initial_tp`.
 
 ### runtime_exits
 
@@ -322,9 +344,10 @@ ManagedExitContext
 
 ### Критерий готовности Phase 2
 
-- каждый слой (`stop_management`, `take_management`, `runtime_exits`) **реально влияет** на выход сделки;
-- unit tests на stop / take / runtime_exit **отдельно**;
-- BE case — reference integration, не единственный scope Phase 2.
+- [x] каждый слой производит snapshot update / candidate / event в unit tests;
+- [x] unit tests на stop / take / runtime_exit **отдельно**;
+- [x] BE / take / runtime — evaluator isolation, без assertion на trade close (это Phase 3);
+- [ ] outcome-changing close через execution layer (Phase 3).
 
 ### Связь с legacy `break_even_stop`
 
@@ -342,19 +365,29 @@ exit_executed:           exit_layer=exit_management, component_id=break_even_sto
 
 ---
 
-## Phase 3 — Arbitration + managed trade output
+## Phase 3 — Execution integration + managed exit provider
 
-Фиксируем, как все кандидаты конкурируют на одном баре:
+**Статус:** ⏳ в OpenSpec (Slice 4); код не начат.
 
-- initial SL (`exit_policy`);
-- managed active stop;
-- initial TP / managed TP profile;
-- runtime exit (`phase_runtime_exit`);
-- old signal exits (`exit_policy`).
+Execution layer остаётся lifecycle owner. Provider отдаёт inherited candidates и end-of-bar snapshot; close применяет execution.
+
+### Provider / execution interaction (normative)
+
+Для открытой позиции на баре N:
+
+**A.** Execution стартует с open position state, inherited snapshot (конец N−1), effective `exit_policy` candidates.
+
+**B.** Execution вызывает `get_bar_open_candidates(...)` — только inherited: active stop, take profile effect, armed runtime exits.
+
+**C.** Execution арбитрирует `exit_policy` + inherited managed candidates (`same_bar_policy: v1`); при winner — close.
+
+**D.** Если позиция открыта — `update_end_of_bar_snapshot(...)`: MFE/MAE, `phase_rules`, next snapshot, events; snapshot effective с N+1.
+
+**E.** State, вычисленный в конце бара N, **не** даёт close candidates на баре N (delayed activation).
 
 ### ExitCandidate → ExitArbitrator
 
-На баре собирается список `ExitCandidate[]`. Arbitrator выбирает победителя по `same_bar_policy` и формирует единый managed trade output:
+Execution layer собирает `ExitCandidate[]` из `exit_policy` pipeline и provider. `ExitArbitrator` выбирает победителя; execution формирует trade output:
 
 | Поле | Назначение |
 |------|------------|
@@ -370,23 +403,31 @@ exit_executed:           exit_layer=exit_management, component_id=break_even_sto
 
 Приоритет (от высшего к низшему):
 
-1. **initial stop loss**
-2. **managed active stop**
-3. **initial take profit / managed take / safety take**
-4. **runtime exit**
+1. **initial stop loss** (`exit_policy`)
+2. **managed active stop** (inherited snapshot only)
+3. **initial take profit** (`exit_policy`, unless suppressed by inherited `disable_initial_tp`)
+4. **runtime exit** (inherited armed state only)
 5. **signal exit** (`exit_policy`)
 
-Явно пометить в spec как **v1 policy** — допускается пересмотр в v2 с OHLC path modeling.
+Исключено из arbitration на баре N: stop/take/runtime arm, впервые появившиеся в snapshot после end-of-bar update на N.
+
+Явно пометить в spec как **v1 policy** — OHLC intrabar path modeling — отдельный future change.
 
 ### Критерий готовности Phase 3
 
-- на одном баре может быть несколько кандидатов;
-- arbitrator **стабильно** выбирает победителя;
-- результат **объясним** в report (`exit_layer`, `losing_candidates`, `same_bar_policy`).
+- [ ] execution layer открывает из precomputed entries; provider не решает entry;
+- [ ] provider не импортирует setup/blocker/trigger/direction;
+- [ ] на баре несколько bar-open-active кандидатов → стабильный победитель;
+- [ ] delayed activation: BE на N+1, не на N;
+- [ ] `disable_initial_tp` suppress TP в candidate view only; `exit_policy` unchanged;
+- [ ] результат объясним (`exit_layer`, `losing_candidates`, `same_bar_policy`);
+- [ ] `diagnostic_only` и empty-array parity без регрессии.
 
 ---
 
 ## Phase 4 — Unified report / API / frontend contract
+
+**Статус:** ⏳ OpenSpec Slices 5–8.
 
 Не BE-report, а **общий** contract для всех managed layers. Любой будущий component автоматически виден через `rule_id` / `component_id` / layer breakdown — не расширять report под каждый компонент отдельно.
 
@@ -430,7 +471,7 @@ baseline_vs_managed_summary  # placeholder fields; filled in Phase 5
 | baseline vs managed | trade count, net PnL, PF, win rate |
 | `saved_by_managed_stop` | SL → managed stop / small win |
 | `hurt_by_managed_stop` | ранний managed stop vs baseline TP |
-| `take_disabled_then_won` / `take_disabled_then_lost` | эффект `disable_fixed_tp` |
+| `take_disabled_then_won` / `take_disabled_then_lost` | эффект `disable_initial_tp` |
 | `runtime_exit_helped` / `runtime_exit_hurt` | эффект `phase_runtime_exit` |
 | `exit_layer_transition_matrix` | от baseline exit к managed exit |
 
@@ -511,7 +552,7 @@ AND no exhaustion
 | Правило | Действие |
 |---------|----------|
 | `stop_management` | `active_stop` = EMA trail / structure stop |
-| `take_management` | fixed TP disabled или safety TP дальше |
+| `take_management` | `disable_initial_tp` + runner-specific take profiles (Phase 7) |
 | `runtime_exits` | exit on exhaustion / structure loss |
 
 ---
@@ -535,9 +576,9 @@ OpenSpec change: **`state-driven-exit-management-v1`**
 
 | Phase | Содержание | Критерий готовности |
 |-------|------------|---------------------|
-| **1 — Managed Runtime Core** | `mode: managed`, bar-by-bar loop, `ActiveManagementSnapshot`, `ExitCandidate`, `ExitArbitrator`, uniform events (все 6 типов) | Runtime проходит сделку bar-by-bar; все active layers существуют; **пустые management arrays = baseline** |
-| **2 — Component Pack v1** | `break_even_stop`, `lock_profit_stop` (working); `take_profile_switch`; `phase_runtime_exit` | Каждый слой влияет на выход; unit tests per layer |
-| **3 — Arbitration + output** | same-bar policy, `exit_layer` / `losing_candidates`, managed trade close | Несколько кандидатов на баре → стабильный победитель; объяснимый report |
+| **1 — Provider core** ✅ | `mode: managed`, provider skeleton, `ActiveManagementSnapshot`, uniform events | Replay + types; **empty arrays = baseline** |
+| **2 — Component Pack v1** ✅ | `break_even_stop`, `lock_profit_stop`, `take_profile_switch` (`disable_initial_tp`), `phase_runtime_exit` | Evaluators → snapshot/candidates/events; unit tests per layer |
+| **3 — Execution integration** ⏳ | Provider interface + execution wiring, `ExitArbitrator`, delayed activation | Execution owns lifecycle; provider supplies candidates; outcome change via arbitration |
 | **4 — Unified report/API/frontend** | generic per-trade + variant breakdowns по layer/component | Новый component виден без расширения schema |
 | **5 — Comparison tooling** | generic baseline vs managed, transition matrix | BE labels как производные |
 | **6 — Component-based state rules** | condition component registry, MFE ATR → component, ADX/DI impulse | State через `component_id` + `params` |
@@ -594,17 +635,17 @@ OpenSpec change: **`state-driven-exit-management-v1`**
 | `action` | Поведение |
 |----------|-----------|
 | `keep_initial` | Без изменений (no-op, для тестов pipeline) |
-| `disable_fixed_tp` | Отключить fixed TP; optional wider safety TP |
-| `extend_safety_tp_atr` | Сдвинуть safety TP дальше |
+| `disable_initial_tp` | Suppress initial `exit_policy` take-profit candidate в managed/execution candidate view only; не мутирует `exit_policy` |
+
+Deprecated parsing alias: `disable_fixed_tp` → `disable_initial_tp`.
 
 ```json
 {
-  "rule_id": "extend_safety_tp_runner",
+  "rule_id": "disable_initial_tp_runner",
   "component_id": "take_profile_switch",
   "activate_when": { "phase_at_least": "runner" },
   "params": {
-    "action": "extend_safety_tp_atr",
-    "safety_tp_atr": 40
+    "action": "disable_initial_tp"
   }
 }
 ```
@@ -630,9 +671,11 @@ v2: без `trigger` / `exhaustion_pattern` — pattern catalog future. Закр
 
 ```text
 data_engine/              — candles pipeline only; без изменений
-research execution        — один trade path; managed — расширение, не второй portfolio
+entry pipeline            — owner входа; exit_management не читает setup/blocker/trigger
+execution layer           — lifecycle owner (open/hold/close); один trade path
+exit_management           — provider для open trades; не simulation engine
 diagnostic_only parity    — сохраняется для mode=diagnostic_only
-exit_policy               — остаётся источником initial SL/TP/signal exits
+exit_policy               — initial SL/TP/signal; HTF profile selection
 report_schema_version     — backward compatible optional fields
 legacy break_even_stop    — deprecated; не смешивать с managed contract
 ```
@@ -648,13 +691,16 @@ research/strategies/ema_pullback/spec.py
   ExitManagementSpec — mode managed, stop_management, take_management validation
 
 research/strategies/ema_pullback/execution/trade_runtime.py
-  bar-by-bar managed loop (расширение diagnostic runtime)
+  managed exit provider (state, snapshot, events; replay helper)
 
-research/strategies/ema_pullback/execution/exit_arbitration.py  (new)
-  same-bar priority, exit_layer selection
+research/strategies/ema_pullback/execution/managed_components/
+  stop / take / runtime_exit evaluators (Phase 2)
+
+research/strategies/ema_pullback/execution/exit_arbitration.py  (Phase 3)
+  same-bar priority; used by execution layer
 
 research/strategies/ema_pullback/execution/backtest.py
-  wire managed runtime into execution (не только post-close diagnostics)
+  execution integration: open/close lifecycle + provider calls (Phase 3)
 
 research/strategies/ema_pullback/execution/results.py
   managed events, exit_layer, comparison fields
@@ -670,11 +716,9 @@ frontend/src/features/reports/TradeManagementDiagnosticsPanel.tsx
 
 ## OpenSpec workflow
 
-1. **`/opsx:propose "state-driven-exit-management-v1"`** — proposal, design (loop, arbitration, uniform events/report), delta spec к `trade-exit-management-runtime`, tasks по Phases 1–5.
-2. **Apply** — Phase 1 → 5 последовательно (pipe first); Phases 6–8 отдельными changes или continuation.
-3. **Archive** — merge behavioral spec для `mode: managed`, всех management layers, arbitration, unified report.
-
-Change folder (после propose): `openspec/changes/state-driven-exit-management-v1/`.
+1. **Propose / apply** — активный change: `openspec/changes/trade-exit-management-runtime-v2/` (provider + execution integration, uniform events/report).
+2. **Apply** — Phases 1–2 done; Phase 3 (execution integration) next; Phases 4–5 report/comparison; Phases 6–8 отдельно.
+3. **Archive** — merge behavioral spec для `mode: managed`, provider contract, execution integration, unified report.
 
 ---
 
@@ -683,7 +727,7 @@ Change folder (после propose): `openspec/changes/state-driven-exit-manageme
 | Step 20 (закрыт) | Step 21 (этот план) |
 |------------------|---------------------|
 | `diagnostic_only` | `managed` |
-| post-hoc phase replay | bar-by-bar feedback |
+| post-hoc phase replay | provider + execution integration (bar-by-bar для open trades) |
 | `phase_changed`, `exit_executed` (attribution старого exit) | + uniform events: `active_stop_updated`, `active_take_updated`, `runtime_exit_triggered`, `exit_rule_triggered` |
 | parity guardrail | empty management arrays = baseline; comparison tooling (Phase 5) |
 | `stop_management` rejected if non-empty | все management arrays реализованы (Phase 2 pack) |
@@ -711,10 +755,11 @@ python -m pytest tests/test_managed_stop_components.py \
   tests/test_managed_runtime_exit_components.py -q
 ```
 
-### Phase 3 — arbitration
+### Phase 3 — execution integration
 
 ```bash
-python -m pytest tests/test_exit_arbitration.py -q
+python -m pytest tests/test_exit_arbitration.py \
+  tests/test_managed_execution_integration.py -q
 ```
 
 ### Phase 4 — unified report
@@ -755,7 +800,8 @@ Step 21 переводит exit management из **приборной панел�
 
 - **state rules** определяют фазу; **management rules** — stops/takes/runtime exits;
 - **initial exit_policy** остаётся аварийным контуром;
-- Phases 1–5 строят **всю трубу**: runtime core, component pack по слою, arbitration, unified report, generic comparison;
+- Phases 1–5 строят **всю трубу**: provider core, component pack, execution integration, unified report, generic comparison;
+- **execution layer** владеет lifecycle; **exit_management** — provider для open trades;
 - Phases 6–8 — богаче state (component catalog), runner pack, Composer;
 - не «BE only», а **архитектура всех active layers** + по одному простому компоненту на слой.
 

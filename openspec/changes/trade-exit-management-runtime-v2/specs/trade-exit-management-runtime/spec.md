@@ -39,20 +39,61 @@ Phase diagnostics and managed-runtime infrastructure MAY run, but MUST NOT chang
 - **AND** profit factor matches within existing numeric tolerance
 - **AND** exit reasons match for the same trades
 
+### Requirement: Execution layer owns position lifecycle
+The managed exit-management provider SHALL NOT open positions or own entry sequencing.
+
+The existing execution/backtest layer SHALL own position lifecycle: opening positions from precomputed entry signals, holding open position state, collecting `exit_policy` and managed provider candidates, selecting close decisions, and applying closes.
+
+The managed exit provider SHALL be callable only for already-open position context.
+
+#### Scenario: Provider receives open position context only
+- **GIVEN** an open trade in managed mode on bar N
+- **WHEN** the execution layer requests managed state or candidates
+- **THEN** the provider receives already-open position context (trade id, entry, runtime state, inherited snapshot)
+- **AND** the provider does not open the position
+
+#### Scenario: Provider does not evaluate entry pipeline
+- **GIVEN** a managed-mode backtest with setup, blocker, trigger, and direction configured
+- **WHEN** the managed exit provider runs
+- **THEN** the provider does not inspect or recompute setup, blocker, trigger, or direction logic
+- **AND** the provider does not consume `entries` or `short_entries` as an entry owner
+
+### Requirement: Managed exit provider supplies candidates for open positions
+For an open trade, the managed exit provider SHALL supply:
+
+- bar-open-active managed candidates derived from the inherited snapshot;
+- end-of-bar next `ActiveManagementSnapshot` and runtime state updates;
+- managed events (`phase_changed`, `active_stop_updated`, `active_take_updated`, `runtime_exit_triggered`);
+- `TradeRuntimeState` / phase tracking for the open trade.
+
+The provider SHALL NOT apply trade close; the execution layer applies close using combined candidates.
+
+#### Scenario: Provider returns inherited managed stop candidate
+- **GIVEN** an open trade with an active managed stop in the inherited snapshot at bar open
+- **AND** bar OHLC hits that stop level
+- **WHEN** the execution layer requests bar-open managed candidates
+- **THEN** the provider returns a managed stop `ExitCandidate` at the hit price
+
+#### Scenario: Provider returns end-of-bar snapshot for next bar
+- **GIVEN** an open trade that does not close on bar N
+- **WHEN** the execution layer calls the provider for end-of-bar update
+- **THEN** the provider returns an updated `ActiveManagementSnapshot` effective from bar N+1
+- **AND** emits management events with `effective_from_bar` metadata where applicable
+
 ### Requirement: Exit policy remains the initial and fallback exit layer
-`trade_management.exit_policy` SHALL remain the declarative source of initial stop loss, safety take profit, and signal exits.
+`trade_management.exit_policy` SHALL remain the declarative source of initial stop loss, initial take profit, and signal exits.
 
 HTF-context-gated exit profile selection SHALL remain owned by `exit_policy` and SHALL NOT be moved into `exit_management` management rules in v2.
 
-The managed runtime SHALL consume effective `exit_policy` outputs and candidates produced by the existing `exit_policy` pipeline as arbitration inputs. It SHALL NOT remove or replace the `exit_policy` configuration surface.
+The execution layer SHALL consume effective `exit_policy` outputs and candidates produced by the existing `exit_policy` pipeline as arbitration inputs. It SHALL NOT remove or replace the `exit_policy` configuration surface.
 
-The managed runtime SHALL NOT evaluate HTF context itself. If `exit_policy` locks or gates profiles using HTF context, that ownership and behavior SHALL remain unchanged in `exit_policy`. The managed runtime MUST NOT duplicate or reinterpret HTF context for profile selection.
+The managed exit provider SHALL NOT evaluate HTF context itself. If `exit_policy` locks or gates profiles using HTF context, that ownership and behavior SHALL remain unchanged in `exit_policy`. The managed exit provider MUST NOT duplicate or reinterpret HTF context for profile selection.
 
-#### Scenario: Managed runtime consumes exit_policy outputs without HTF reimplementation
+#### Scenario: Execution layer consumes exit_policy outputs; provider does not reimplement HTF
 - **GIVEN** a strategy spec with `exit_policy` profiles gated by `htf_context.state`
 - **WHEN** a managed-mode backtest runs
-- **THEN** arbitration receives `exit_policy` candidates from the existing exit-policy pipeline (effective/locked profile outputs as implemented today)
-- **AND** the managed runtime does not evaluate HTF context for profile selection
+- **THEN** the execution layer receives `exit_policy` candidates from the existing exit-policy pipeline (effective/locked profile outputs as implemented today)
+- **AND** the managed exit provider does not evaluate HTF context for profile selection
 - **AND** managed rules do not reimplement HTF profile switching
 
 #### Scenario: Initial SL remains a candidate when managed stop is active
@@ -60,28 +101,30 @@ The managed runtime SHALL NOT evaluate HTF context itself. If `exit_policy` lock
 - **WHEN** a bar hits the initial `exit_policy` stop loss
 - **THEN** an `exit_policy` exit candidate is present for arbitration on that bar
 
-### Requirement: Managed runtime evaluates trades bar-by-bar during open life
-When `exit_management.mode` is `managed`, the runtime SHALL evaluate each open trade on every bar from entry through close using a bar-by-bar managed loop inside the research execution path.
+### Requirement: Execution layer integrates managed provider per open trade
+When `exit_management.mode` is `managed`, the execution layer SHALL call the managed exit provider once per bar for each open trade from entry through close.
 
-The runtime MUST NOT create a second simulated trade path, shadow portfolio, or pseudo-trades.
+The execution layer MUST NOT create a second simulated trade path, shadow portfolio, or pseudo-trades.
 
-#### Scenario: Managed mode can close via inherited breakeven stop after protected
+The managed exit provider MUST NOT open trades or own the full execution loop.
+
+#### Scenario: Execution layer closes via inherited breakeven stop after protected
 - **GIVEN** a managed config with a `stop_management` rule that places breakeven after `protected`
 - **AND** a trade reaches `protected` on bar N
 - **AND** price returns to breakeven on a later bar M where M > N
-- **WHEN** the causal managed bar-by-bar loop runs
-- **THEN** the trade closes via `exit_management` on bar M using the breakeven stop that was active from bar N+1 onward
+- **WHEN** the execution layer integrates the managed provider with delayed activation
+- **THEN** the execution layer closes the trade on bar M using the breakeven managed candidate that was active from bar N+1 onward
 - **AND** the close is attributed with `exit_layer: "exit_management"`
 - **AND** the trade does not close on bar N solely because phase became `protected` on that bar
 
-### Requirement: Causal managed bar order with delayed activation
-On each bar N of an open managed trade, the runtime SHALL follow this order:
+### Requirement: Delayed activation applies to provider snapshots
+On each bar N of an open managed trade, the execution layer and provider SHALL follow this order:
 
-1. Inherit `phase` and `ActiveManagementSnapshot` from the end of bar N−1 (neutral snapshot on entry bar until end-of-entry-bar update applies from bar N+1).
-2. Collect exit candidates from **bar-open-active** state only: effective `exit_policy` candidates plus managed stop, take profile, and armed runtime exits from the inherited snapshot.
-3. If multiple bar-open candidates are hit on bar N OHLC, select one winner using `same_bar_policy: "v1"`.
-4. If a winner is selected, close the trade and stop further processing for that trade on later bars.
-5. If no close on bar N, update MFE/MAE and `bars_in_trade` from bar N OHLC, evaluate `phase_rules`, recompute the next `ActiveManagementSnapshot`, emit management layer events, and apply the new snapshot from bar N+1.
+1. Start bar N with open position state, inherited `phase` and `ActiveManagementSnapshot` from end of bar N−1, and effective `exit_policy` candidates from the existing pipeline.
+2. Request bar-open-active managed candidates from the provider (inherited snapshot only).
+3. If multiple bar-open candidates are hit on bar N OHLC, the execution layer selects one winner using `same_bar_policy: "v1"` among `exit_policy` and inherited managed candidates.
+4. If a winner is selected, the execution layer closes the trade and stops further processing for that trade on later bars.
+5. If no close on bar N, the execution layer calls the provider for end-of-bar update: MFE/MAE/`bars_in_trade`, `phase_rules`, next `ActiveManagementSnapshot`, and management events; new snapshot applies from bar N+1.
 
 Rules that become eligible because of phase or snapshot changes computed **at end of bar N** MUST NOT produce exit candidates on bar N.
 
@@ -99,7 +142,7 @@ Rules that become eligible because of phase or snapshot changes computed **at en
 - **AND** runtime exit may be a bar-open candidate on bar N+1 if armed in the inherited snapshot
 
 ### Requirement: Active management snapshot tracks all managed layers
-For each open trade in managed mode, the runtime SHALL maintain an active management snapshot including at minimum:
+For each open trade in managed mode, the managed exit provider SHALL maintain an active management snapshot including at minimum:
 
 - active stop price and originating `rule_id` / `component_id` when a stop rule is active;
 - active take profile state and originating `rule_id` / `component_id` when a take rule is active;
@@ -142,7 +185,7 @@ Managed mode v2 SHALL support the following component contracts:
 
 **take_management**
 
-- `take_profile_switch` with actions `keep_initial`, `disable_fixed_tp`, `extend_safety_tp_atr`
+- `take_profile_switch` with actions `keep_initial`, `disable_initial_tp`
 
 **runtime_exits**
 
@@ -174,19 +217,26 @@ Each component SHALL be testable in isolation and SHALL be able to influence tra
 - **WHEN** stop merge runs
 - **THEN** the merged managed active stop is `101.0`
 
-#### Scenario: Take profile switch can disable fixed take profit
-- **GIVEN** a managed config with `take_profile_switch` action `disable_fixed_tp`
-- **AND** a trade that would have hit fixed take profit under initial policy
-- **WHEN** the take rule is active
-- **THEN** the fixed take profit candidate is not the winning exit while disabled
-- **AND** an `active_take_updated` event records the profile change
+#### Scenario: Take profile switch can disable initial take profit in candidate view
+- **GIVEN** a managed config with `take_profile_switch` action `disable_initial_tp`
+- **AND** a trade that would have hit the initial `exit_policy` take-profit candidate
+- **WHEN** the take profile is active from the inherited snapshot (delayed activation)
+- **THEN** the initial take-profit candidate is suppressed in the managed/execution candidate view
+- **AND** `exit_policy` config and compiled masks remain unchanged
+- **AND** an `active_take_updated` event records the profile change with `effective_from_bar`
+
+#### Scenario: Deprecated disable_fixed_tp alias normalizes to disable_initial_tp
+- **GIVEN** a config that authors `take_profile_switch` with `action: "disable_fixed_tp"`
+- **WHEN** validation or parsing runs
+- **THEN** the action is normalized to `disable_initial_tp`
+- **AND** behavior matches `disable_initial_tp` semantics
 
 #### Scenario: Phase runtime exit emits candidate at close when phase active
 - **GIVEN** a managed config with `phase_runtime_exit`, `activate_when.phase_at_least: "exhaustion"`, and `params.exit_price: "close"`
 - **AND** a trade whose current phase is `exhaustion`
-- **WHEN** the managed loop evaluates that bar
+- **WHEN** the provider evaluates end-of-bar state for that bar
 - **THEN** a `runtime_exit_triggered` event is recorded
-- **AND** a runtime exit candidate is present at that bar's close price
+- **AND** a runtime exit candidate is available at that bar's close price from the next bar onward if armed in inherited snapshot
 
 #### Scenario: Phase runtime exit rejects pattern trigger in v2
 - **GIVEN** a managed config with `component_id: "phase_runtime_exit"` and a `trigger` sub-object
@@ -221,12 +271,29 @@ Events SHALL be ordered by bar index and creation order within the bar.
 - **AND** `exit_executed` has `exit_layer: "exit_management"`
 - **AND** `exit_executed` includes the winning `rule_id` and `component_id`
 
+### Requirement: Take profile action disable_initial_tp
+`take_profile_switch` SHALL support `disable_initial_tp`.
+
+When active in the inherited snapshot, it SHALL suppress the initial `exit_policy` take-profit candidate in the managed/execution candidate view only.
+
+It SHALL NOT mutate `exit_policy` config or compiled outputs globally.
+
+It SHALL NOT disable managed stops or runtime exits.
+
+`disable_fixed_tp` MAY be accepted as a deprecated alias normalized to `disable_initial_tp` during parsing.
+
+#### Scenario: disable_initial_tp does not mutate exit_policy
+- **GIVEN** a managed config with `take_profile_switch` action `disable_initial_tp`
+- **WHEN** the provider activates the profile on bar N
+- **THEN** `exit_policy` configuration and compiled masks are unchanged
+- **AND** suppression applies only in candidate collection for bars where the profile is inherited active
+
 ### Requirement: Same-bar exit arbitration uses explicit v1 policy among bar-open-active candidates
-When multiple **bar-open-active** exit candidates are hit on one bar, the runtime SHALL select exactly one winner using `same_bar_policy: "v1"` with this priority order:
+When multiple **bar-open-active** exit candidates are hit on one bar, the execution layer SHALL select exactly one winner using `same_bar_policy: "v1"` with this priority order:
 
 1. initial stop loss from `exit_policy`
 2. managed active stop from `exit_management` (inherited snapshot only)
-3. initial take profit, managed take, or safety take
+3. initial take profit from `exit_policy` (unless suppressed by inherited `disable_initial_tp` profile)
 4. runtime exit from `exit_management` (inherited armed state only)
 5. signal exit from `exit_policy`
 
@@ -269,7 +336,7 @@ Product authoring and catalog surfaces MUST NOT revive legacy break-even authori
 ## MODIFIED Requirements
 
 ### Requirement: Exit management runtime is configured inside trade management
-The strategy spec SHALL support an optional `trade_management.exit_management` object beside `trade_management.exit_policy`. `exit_policy` SHALL remain the source of declarative exit components. `exit_management` SHALL own runtime state, phase evaluation, active management layers, runtime trace, and behavior-changing managed controls when `mode` is `managed`.
+The strategy spec SHALL support an optional `trade_management.exit_management` object beside `trade_management.exit_policy`. `exit_policy` SHALL remain the source of declarative exit components. `exit_management` SHALL own runtime state, phase evaluation, active management layers, managed provider outputs, and runtime trace when `mode` is `managed`. Close decisions SHALL be applied by the execution layer when `mode` is `managed`.
 
 `exit_management` SHALL support:
 
@@ -279,7 +346,7 @@ The strategy spec SHALL support an optional `trade_management.exit_management` o
 - `take_management`: take-profile switch rules; MUST be empty for `diagnostic_only`; MAY be non-empty for `managed`.
 - `runtime_exits`: phase-gated runtime exit rules; MUST be empty for `diagnostic_only`; MAY be non-empty for `managed`.
 
-The legacy `exit_management.always_on/profiles/rules` `break_even_stop` shape SHALL NOT be considered part of the managed v2 runtime contract. It MAY remain temporarily as deprecated backward-compatible parsing/runtime support for existing artifacts, but new managed runtime behavior MUST NOT depend on it.
+The legacy `exit_management.always_on/profiles/rules` `break_even_stop` shape SHALL NOT be considered part of the managed v2 provider contract. It MAY remain temporarily as deprecated backward-compatible parsing support for existing artifacts, but new managed provider behavior MUST NOT depend on it.
 
 #### Scenario: Config places runtime controller beside exit policy
 - **GIVEN** a strategy spec contains `trade_management.exit_policy`
@@ -307,8 +374,8 @@ The legacy `exit_management.always_on/profiles/rules` `break_even_stop` shape SH
 
 #### Scenario: Legacy BE shape is not managed v2 input
 - **GIVEN** an existing strategy spec uses `exit_management.always_on/profiles/rules` with `break_even_stop`
-- **WHEN** managed runtime v2 is implemented
-- **THEN** the managed runtime does not read those legacy rules as managed `stop_management` inputs
+- **WHEN** managed exit provider v2 is implemented
+- **THEN** the managed exit provider does not read those legacy rules as managed `stop_management` inputs
 - **AND** any continued support for that shape is treated as deprecated compatibility only
 
 ### Requirement: Runtime event trace records phase and exit events
