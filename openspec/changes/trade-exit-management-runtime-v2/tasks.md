@@ -64,18 +64,18 @@ Research master-plan reference: `docs/research/21_state_driven_exit_management_v
 - Second portfolio / shadow trades.
 
 **Acceptance criteria:**
-- [ ] Managed loop runs bar-by-bar for each open trade in research execution.
-- [ ] `ActiveManagementSnapshot` exists for all three layers (may be empty/neutral).
-- [ ] Empty management arrays: parity tests green vs baseline.
-- [ ] `diagnostic_only` tests still green (unchanged).
+- [x] Managed loop runs bar-by-bar for each open trade in research execution.
+- [x] `ActiveManagementSnapshot` exists for all three layers (may be empty/neutral).
+- [x] Empty management arrays: parity tests green vs baseline.
+- [x] `diagnostic_only` tests still green (unchanged).
 
 **Tests:**
-- [ ] 2.1 Create `tests/test_trade_runtime_managed_core.py` — empty-array parity.
-- [ ] 2.2 Re-run `tests/test_trade_runtime_diagnostics.py` — no regression.
+- [x] 2.1 Create `tests/test_trade_runtime_managed_core.py` — empty-array parity.
+- [x] 2.2 Re-run `tests/test_trade_runtime_diagnostics.py` — no regression.
 
-- [ ] 2.3 Implement managed loop skeleton and snapshot types.
-- [ ] 2.4 Integrate managed hook in `backtest.py` behind `mode == "managed"`.
-- [ ] 2.5 Emit uniform event type constants / dataclass shapes (full emission completed in later slices).
+- [x] 2.3 Implement managed loop skeleton and snapshot types.
+- [x] 2.4 Integrate managed hook in `backtest.py` behind `mode == "managed"`.
+- [x] 2.5 Emit uniform event type constants / dataclass shapes (full emission completed in later slices).
 
 ### STOP — Checkpoint 2: Managed runtime core review
 
