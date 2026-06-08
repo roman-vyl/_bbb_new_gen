@@ -38,6 +38,7 @@ from research.strategies.ema_pullback.context.policies import (
 )
 from research.strategies.ema_pullback.spec import (
     BlockerRuleSpec,
+    BreakEvenStopParamsSpec,
     ContextConsumptionPolicySpec,
     ContextConsumptionSpec,
     ContextProviderSpec,
@@ -50,9 +51,18 @@ from research.strategies.ema_pullback.spec import (
     ExitManagementProfilesSpec,
     ExitManagementRuleSpec,
     ExitManagementSpec,
+    LockProfitStopParamsSpec,
+    ManagementActivateWhenSpec,
+    ManagementAtrRefSpec,
     PhaseRuleAtrSpec,
     PhaseRuleConditionSpec,
     PhaseRuleSpec,
+    PhaseRuntimeExitParamsSpec,
+    RuntimeExitRuleSpec,
+    STOP_MANAGEMENT_COMPONENT_IDS,
+    StopManagementRuleSpec,
+    TakeManagementRuleSpec,
+    TakeProfileSwitchParamsSpec,
     TradeManagementSpec,
     empty_exit_management,
     ExitRuleSpec,
@@ -277,7 +287,15 @@ def _parse_exit_management(value: Any) -> ExitManagementSpec:
     _reject_unknown_fields(
         "trade_management.exit_management",
         payload,
-        {"always_on", "profiles", "mode", "phase_rules", "stop_management", "runtime_exits"},
+        {
+            "always_on",
+            "profiles",
+            "mode",
+            "phase_rules",
+            "stop_management",
+            "take_management",
+            "runtime_exits",
+        },
     )
     has_legacy_shape = "always_on" in payload or "profiles" in payload
     if has_legacy_shape:
@@ -313,19 +331,27 @@ def _parse_exit_management(value: Any) -> ExitManagementSpec:
         always_on = empty.always_on
         profiles = empty.profiles
 
+    mode = _parse_exit_management_mode(payload.get("mode"))
+    if mode == "managed" and has_legacy_shape:
+        raise EmaPullbackInstanceValidationError(
+            "trade_management.exit_management.mode='managed' cannot include "
+            "legacy always_on/profiles management rules"
+        )
+
     try:
         return ExitManagementSpec(
             always_on=always_on,
             profiles=profiles,
-            mode=_parse_exit_management_mode(payload.get("mode")),
+            mode=mode,
             phase_rules=_parse_phase_rules(payload.get("phase_rules")),
-            stop_management=_parse_reserved_rule_list(
+            stop_management=_parse_stop_management_rules(
                 payload.get("stop_management"),
-                path="trade_management.exit_management.stop_management",
             ),
-            runtime_exits=_parse_reserved_rule_list(
+            take_management=_parse_take_management_rules(
+                payload.get("take_management"),
+            ),
+            runtime_exits=_parse_runtime_exit_rules(
                 payload.get("runtime_exits"),
-                path="trade_management.exit_management.runtime_exits",
             ),
         )
     except ValueError as exc:
@@ -339,9 +365,9 @@ def _parse_exit_management_mode(value: Any) -> str | None:
         raise EmaPullbackInstanceValidationError(
             "trade_management.exit_management.mode must be a non-empty string"
         )
-    if value != "diagnostic_only":
+    if value not in ("diagnostic_only", "managed"):
         raise EmaPullbackInstanceValidationError(
-            "trade_management.exit_management.mode must be 'diagnostic_only'"
+            "trade_management.exit_management.mode must be 'diagnostic_only' or 'managed'"
         )
     return value
 
@@ -408,17 +434,221 @@ def _parse_phase_rule_atr(value: Any, *, path: str) -> PhaseRuleAtrSpec:
         raise EmaPullbackInstanceValidationError(str(exc)) from exc
 
 
-def _parse_reserved_rule_list(value: Any, *, path: str) -> tuple[dict[str, Any], ...]:
+def _parse_management_activate_when(value: Any, *, path: str) -> ManagementActivateWhenSpec:
+    payload = _require_mapping(path, value)
+    _reject_unknown_fields(path, payload, {"phase_at_least"})
+    try:
+        return ManagementActivateWhenSpec(
+            phase_at_least=_require_non_empty_str(payload, "phase_at_least"),  # type: ignore[arg-type]
+        )
+    except ValueError as exc:
+        raise EmaPullbackInstanceValidationError(str(exc)) from exc
+
+
+def _parse_management_atr_ref(value: Any, *, path: str) -> ManagementAtrRefSpec:
+    payload = _require_mapping(path, value)
+    _reject_unknown_fields(path, payload, {"timeframe", "period"})
+    try:
+        return ManagementAtrRefSpec(
+            timeframe=_require_non_empty_str(payload, "timeframe"),
+            period=int(_require_present(payload, "period")),
+        )
+    except (TypeError, ValueError) as exc:
+        raise EmaPullbackInstanceValidationError(str(exc)) from exc
+
+
+def _parse_stop_management_rules(value: Any) -> tuple[StopManagementRuleSpec, ...]:
+    path = "trade_management.exit_management.stop_management"
     if value is None:
         return ()
     if not isinstance(value, (list, tuple)):
         raise EmaPullbackInstanceValidationError(f"{path} must be a list")
-    out: list[dict[str, Any]] = []
-    for i, item in enumerate(value):
-        item_path = f"{path}[{i}]"
-        mapping = _require_mapping(item_path, item)
-        out.append(dict(mapping))
-    return tuple(out)
+    return tuple(
+        _parse_stop_management_rule(item, path=f"{path}[{i}]")
+        for i, item in enumerate(value)
+    )
+
+
+def _parse_stop_management_rule(value: Any, *, path: str) -> StopManagementRuleSpec:
+    payload = _require_mapping(path, value)
+    _reject_unknown_fields(path, payload, {"rule_id", "component_id", "activate_when", "params"})
+    if "trigger" in payload:
+        raise EmaPullbackInstanceValidationError(
+            f"{path} must not include trigger in v2 stop_management"
+        )
+    component_id = _require_non_empty_str(payload, "component_id")
+    if component_id not in STOP_MANAGEMENT_COMPONENT_IDS:
+        allowed = ", ".join(repr(item) for item in STOP_MANAGEMENT_COMPONENT_IDS)
+        raise EmaPullbackInstanceValidationError(
+            f"{path}.component_id must be one of: {allowed}; got {component_id!r}"
+        )
+    params_raw = _require_present(payload, "params")
+    if component_id == "break_even_stop":
+        params = _parse_break_even_stop_params(params_raw, path=f"{path}.params")
+    else:
+        params = _parse_lock_profit_stop_params(params_raw, path=f"{path}.params")
+    try:
+        return StopManagementRuleSpec(
+            rule_id=_require_non_empty_str(payload, "rule_id"),
+            component_id=component_id,  # type: ignore[arg-type]
+            activate_when=_parse_management_activate_when(
+                _require_present(payload, "activate_when"),
+                path=f"{path}.activate_when",
+            ),
+            params=params,
+        )
+    except ValueError as exc:
+        raise EmaPullbackInstanceValidationError(str(exc)) from exc
+
+
+def _parse_break_even_stop_params(value: Any, *, path: str) -> BreakEvenStopParamsSpec:
+    payload = _require_mapping(path, value)
+    _reject_unknown_fields(
+        path,
+        payload,
+        {"buffer_type", "buffer", "buffer_atr", "atr_period", "atr"},
+    )
+    atr = None
+    if "atr" in payload:
+        atr = _parse_management_atr_ref(payload["atr"], path=f"{path}.atr")
+    try:
+        return BreakEvenStopParamsSpec(
+            buffer_type=payload.get("buffer_type", "none"),  # type: ignore[arg-type]
+            buffer=float(payload.get("buffer", 0.0)),
+            buffer_atr=float(payload.get("buffer_atr", 0.0)),
+            atr_period=int(payload.get("atr_period", 14)),
+            atr=atr,
+        )
+    except (TypeError, ValueError) as exc:
+        raise EmaPullbackInstanceValidationError(str(exc)) from exc
+
+
+def _parse_lock_profit_stop_params(value: Any, *, path: str) -> LockProfitStopParamsSpec:
+    payload = _require_mapping(path, value)
+    _reject_unknown_fields(path, payload, {"lock_atr", "atr_period", "atr"})
+    if "lock_atr" not in payload:
+        raise EmaPullbackInstanceValidationError(f"{path}.lock_atr is required")
+    atr = None
+    if "atr" in payload:
+        atr = _parse_management_atr_ref(payload["atr"], path=f"{path}.atr")
+    try:
+        return LockProfitStopParamsSpec(
+            lock_atr=float(_require_present(payload, "lock_atr")),
+            atr_period=int(payload.get("atr_period", 14)),
+            atr=atr,
+        )
+    except (TypeError, ValueError) as exc:
+        raise EmaPullbackInstanceValidationError(str(exc)) from exc
+
+
+def _parse_take_management_rules(value: Any) -> tuple[TakeManagementRuleSpec, ...]:
+    path = "trade_management.exit_management.take_management"
+    if value is None:
+        return ()
+    if not isinstance(value, (list, tuple)):
+        raise EmaPullbackInstanceValidationError(f"{path} must be a list")
+    return tuple(
+        _parse_take_management_rule(item, path=f"{path}[{i}]")
+        for i, item in enumerate(value)
+    )
+
+
+def _parse_take_management_rule(value: Any, *, path: str) -> TakeManagementRuleSpec:
+    payload = _require_mapping(path, value)
+    _reject_unknown_fields(path, payload, {"rule_id", "component_id", "activate_when", "params"})
+    component_id = _require_non_empty_str(payload, "component_id")
+    if component_id != "take_profile_switch":
+        raise EmaPullbackInstanceValidationError(
+            f"{path}.component_id must be 'take_profile_switch'; got {component_id!r}"
+        )
+    try:
+        return TakeManagementRuleSpec(
+            rule_id=_require_non_empty_str(payload, "rule_id"),
+            component_id="take_profile_switch",
+            activate_when=_parse_management_activate_when(
+                _require_present(payload, "activate_when"),
+                path=f"{path}.activate_when",
+            ),
+            params=_parse_take_profile_switch_params(
+                _require_present(payload, "params"),
+                path=f"{path}.params",
+            ),
+        )
+    except ValueError as exc:
+        raise EmaPullbackInstanceValidationError(str(exc)) from exc
+
+
+def _parse_take_profile_switch_params(
+    value: Any,
+    *,
+    path: str,
+) -> TakeProfileSwitchParamsSpec:
+    payload = _require_mapping(path, value)
+    _reject_unknown_fields(path, payload, {"action", "safety_tp_atr"})
+    safety_tp_atr = payload.get("safety_tp_atr")
+    try:
+        return TakeProfileSwitchParamsSpec(
+            action=_require_non_empty_str(payload, "action"),  # type: ignore[arg-type]
+            safety_tp_atr=float(safety_tp_atr) if safety_tp_atr is not None else None,
+        )
+    except (TypeError, ValueError) as exc:
+        raise EmaPullbackInstanceValidationError(str(exc)) from exc
+
+
+def _parse_runtime_exit_rules(value: Any) -> tuple[RuntimeExitRuleSpec, ...]:
+    path = "trade_management.exit_management.runtime_exits"
+    if value is None:
+        return ()
+    if not isinstance(value, (list, tuple)):
+        raise EmaPullbackInstanceValidationError(f"{path} must be a list")
+    return tuple(
+        _parse_runtime_exit_rule(item, path=f"{path}[{i}]")
+        for i, item in enumerate(value)
+    )
+
+
+def _parse_runtime_exit_rule(value: Any, *, path: str) -> RuntimeExitRuleSpec:
+    payload = _require_mapping(path, value)
+    if "trigger" in payload:
+        raise EmaPullbackInstanceValidationError(
+            f"{path} must not include trigger in v2 phase_runtime_exit"
+        )
+    _reject_unknown_fields(path, payload, {"rule_id", "component_id", "activate_when", "params"})
+    component_id = _require_non_empty_str(payload, "component_id")
+    if component_id != "phase_runtime_exit":
+        raise EmaPullbackInstanceValidationError(
+            f"{path}.component_id must be 'phase_runtime_exit'; got {component_id!r}"
+        )
+    try:
+        return RuntimeExitRuleSpec(
+            rule_id=_require_non_empty_str(payload, "rule_id"),
+            component_id="phase_runtime_exit",
+            activate_when=_parse_management_activate_when(
+                _require_present(payload, "activate_when"),
+                path=f"{path}.activate_when",
+            ),
+            params=_parse_phase_runtime_exit_params(
+                _require_present(payload, "params"),
+                path=f"{path}.params",
+            ),
+        )
+    except ValueError as exc:
+        raise EmaPullbackInstanceValidationError(str(exc)) from exc
+
+
+def _parse_phase_runtime_exit_params(
+    value: Any,
+    *,
+    path: str,
+) -> PhaseRuntimeExitParamsSpec:
+    payload = _require_mapping(path, value)
+    _reject_unknown_fields(path, payload, {"exit_price"})
+    try:
+        return PhaseRuntimeExitParamsSpec(
+            exit_price=_require_non_empty_str(payload, "exit_price"),  # type: ignore[arg-type]
+        )
+    except ValueError as exc:
+        raise EmaPullbackInstanceValidationError(str(exc)) from exc
 
 
 def _parse_exit_management_group(value: Any, *, path: str) -> ExitManagementGroupSpec:

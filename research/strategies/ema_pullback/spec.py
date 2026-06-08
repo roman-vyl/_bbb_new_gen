@@ -11,6 +11,17 @@ BREAK_EVEN_STOP_COMPONENT = "break_even_stop"
 PROFILE_ORDER = ("aligned", "countertrend", "neutral")
 TRADE_MANAGEMENT_PHASES = ("initial_risk", "proven", "protected", "runner", "exhaustion")
 EXIT_MANAGEMENT_CONDITION_TYPES = ("mfe_atr", "mfe_pct", "bars_in_trade")
+EXIT_MANAGEMENT_MODES = ("diagnostic_only", "managed")
+STOP_MANAGEMENT_COMPONENT_IDS = ("break_even_stop", "lock_profit_stop")
+TAKE_MANAGEMENT_COMPONENT_IDS = ("take_profile_switch",)
+RUNTIME_EXIT_COMPONENT_IDS = ("phase_runtime_exit",)
+TAKE_PROFILE_SWITCH_ACTIONS = ("keep_initial", "disable_fixed_tp", "extend_safety_tp_atr")
+PHASE_RUNTIME_EXIT_PRICES = ("close",)
+BREAK_EVEN_BUFFER_TYPES = ("none", "atr")
+ActivateWhenPhase = Literal[
+    "initial_risk", "proven", "protected", "runner", "exhaustion"
+]
+ExitManagementMode = Literal["diagnostic_only", "managed"]
 
 
 @dataclass(frozen=True)
@@ -624,6 +635,142 @@ class PhaseRuleSpec:
             raise ValueError(f"phase_rules to_phase must be one of: {allowed_text}")
 
 
+@dataclass(frozen=True)
+class ManagementAtrRefSpec:
+    timeframe: str = "base"
+    period: int = 14
+
+    def __post_init__(self) -> None:
+        if not self.timeframe.strip():
+            raise ValueError("management rule params atr.timeframe must be non-empty")
+        if self.period <= 0:
+            raise ValueError("management rule params atr.period must be > 0")
+
+
+@dataclass(frozen=True)
+class ManagementActivateWhenSpec:
+    phase_at_least: ActivateWhenPhase
+
+    def __post_init__(self) -> None:
+        if self.phase_at_least not in TRADE_MANAGEMENT_PHASES:
+            allowed = ", ".join(repr(item) for item in TRADE_MANAGEMENT_PHASES)
+            raise ValueError(f"activate_when.phase_at_least must be one of: {allowed}")
+
+
+@dataclass(frozen=True)
+class BreakEvenStopParamsSpec:
+    buffer_type: Literal["none", "atr"] = "none"
+    buffer: float = 0.0
+    buffer_atr: float = 0.0
+    atr_period: int = 14
+    atr: ManagementAtrRefSpec | None = None
+
+    def __post_init__(self) -> None:
+        if self.buffer_type not in BREAK_EVEN_BUFFER_TYPES:
+            allowed = ", ".join(repr(item) for item in BREAK_EVEN_BUFFER_TYPES)
+            raise ValueError(f"break_even_stop params.buffer_type must be one of: {allowed}")
+        if self.buffer < 0:
+            raise ValueError("break_even_stop params.buffer must be >= 0")
+        if self.buffer_atr < 0:
+            raise ValueError("break_even_stop params.buffer_atr must be >= 0")
+        effective_period = self.atr.period if self.atr is not None else self.atr_period
+        if effective_period <= 0:
+            raise ValueError("break_even_stop params atr_period must be > 0")
+
+
+@dataclass(frozen=True)
+class LockProfitStopParamsSpec:
+    lock_atr: float
+    atr_period: int = 14
+    atr: ManagementAtrRefSpec | None = None
+
+    def __post_init__(self) -> None:
+        if self.lock_atr <= 0:
+            raise ValueError("lock_profit_stop params.lock_atr must be > 0")
+        effective_period = self.atr.period if self.atr is not None else self.atr_period
+        if effective_period <= 0:
+            raise ValueError("lock_profit_stop params atr_period must be > 0")
+
+
+@dataclass(frozen=True)
+class StopManagementRuleSpec:
+    rule_id: str
+    component_id: Literal["break_even_stop", "lock_profit_stop"]
+    activate_when: ManagementActivateWhenSpec
+    params: BreakEvenStopParamsSpec | LockProfitStopParamsSpec
+
+    def __post_init__(self) -> None:
+        if not self.rule_id.strip():
+            raise ValueError("stop_management rule_id must be non-empty")
+        if self.component_id not in STOP_MANAGEMENT_COMPONENT_IDS:
+            allowed = ", ".join(repr(item) for item in STOP_MANAGEMENT_COMPONENT_IDS)
+            raise ValueError(f"stop_management component_id must be one of: {allowed}")
+        if self.component_id == "break_even_stop" and not isinstance(
+            self.params, BreakEvenStopParamsSpec
+        ):
+            raise ValueError("break_even_stop rule requires break_even_stop params")
+        if self.component_id == "lock_profit_stop" and not isinstance(
+            self.params, LockProfitStopParamsSpec
+        ):
+            raise ValueError("lock_profit_stop rule requires lock_profit_stop params")
+
+
+@dataclass(frozen=True)
+class TakeProfileSwitchParamsSpec:
+    action: Literal["keep_initial", "disable_fixed_tp", "extend_safety_tp_atr"]
+    safety_tp_atr: float | None = None
+
+    def __post_init__(self) -> None:
+        if self.action not in TAKE_PROFILE_SWITCH_ACTIONS:
+            allowed = ", ".join(repr(item) for item in TAKE_PROFILE_SWITCH_ACTIONS)
+            raise ValueError(f"take_profile_switch params.action must be one of: {allowed}")
+        if self.action == "extend_safety_tp_atr":
+            if self.safety_tp_atr is None or self.safety_tp_atr <= 0:
+                raise ValueError(
+                    "take_profile_switch extend_safety_tp_atr requires safety_tp_atr > 0"
+                )
+
+
+@dataclass(frozen=True)
+class TakeManagementRuleSpec:
+    rule_id: str
+    component_id: Literal["take_profile_switch"]
+    activate_when: ManagementActivateWhenSpec
+    params: TakeProfileSwitchParamsSpec
+
+    def __post_init__(self) -> None:
+        if not self.rule_id.strip():
+            raise ValueError("take_management rule_id must be non-empty")
+        if self.component_id not in TAKE_MANAGEMENT_COMPONENT_IDS:
+            allowed = ", ".join(repr(item) for item in TAKE_MANAGEMENT_COMPONENT_IDS)
+            raise ValueError(f"take_management component_id must be one of: {allowed}")
+
+
+@dataclass(frozen=True)
+class PhaseRuntimeExitParamsSpec:
+    exit_price: Literal["close"]
+
+    def __post_init__(self) -> None:
+        if self.exit_price not in PHASE_RUNTIME_EXIT_PRICES:
+            allowed = ", ".join(repr(item) for item in PHASE_RUNTIME_EXIT_PRICES)
+            raise ValueError(f"phase_runtime_exit params.exit_price must be one of: {allowed}")
+
+
+@dataclass(frozen=True)
+class RuntimeExitRuleSpec:
+    rule_id: str
+    component_id: Literal["phase_runtime_exit"]
+    activate_when: ManagementActivateWhenSpec
+    params: PhaseRuntimeExitParamsSpec
+
+    def __post_init__(self) -> None:
+        if not self.rule_id.strip():
+            raise ValueError("runtime_exits rule_id must be non-empty")
+        if self.component_id not in RUNTIME_EXIT_COMPONENT_IDS:
+            allowed = ", ".join(repr(item) for item in RUNTIME_EXIT_COMPONENT_IDS)
+            raise ValueError(f"runtime_exits component_id must be one of: {allowed}")
+
+
 def _empty_exit_management_profiles() -> ExitManagementProfilesSpec:
     empty = ExitManagementGroupSpec(rules=())
     return ExitManagementProfilesSpec(
@@ -644,10 +791,11 @@ def empty_exit_management() -> "ExitManagementSpec":
 class ExitManagementSpec:
     always_on: ExitManagementGroupSpec
     profiles: ExitManagementProfilesSpec
-    mode: Literal["diagnostic_only"] | None = None
+    mode: ExitManagementMode | None = None
     phase_rules: tuple[PhaseRuleSpec, ...] = ()
-    stop_management: tuple[dict[str, Any], ...] = ()
-    runtime_exits: tuple[dict[str, Any], ...] = ()
+    stop_management: tuple[StopManagementRuleSpec, ...] = ()
+    take_management: tuple[TakeManagementRuleSpec, ...] = ()
+    runtime_exits: tuple[RuntimeExitRuleSpec, ...] = ()
 
     def __post_init__(self) -> None:
         scopes: list[tuple[str, tuple[ExitManagementRuleSpec, ...]]] = [
@@ -674,25 +822,51 @@ class ExitManagementSpec:
                         f"{rule.instance_id!r}"
                     )
                 seen.add(rule.instance_id)
-        if self.mode is not None and self.mode != "diagnostic_only":
-            raise ValueError("trade_management.exit_management.mode must be 'diagnostic_only'")
+        if self.mode is not None and self.mode not in EXIT_MANAGEMENT_MODES:
+            allowed = ", ".join(repr(item) for item in EXIT_MANAGEMENT_MODES)
+            raise ValueError(
+                f"trade_management.exit_management.mode must be one of: {allowed}"
+            )
         has_legacy_rules = any(rules for _, rules in scopes)
-        if self.phase_rules and self.mode != "diagnostic_only":
+        has_management_rules = bool(
+            self.stop_management or self.take_management or self.runtime_exits
+        )
+        if self.phase_rules and self.mode not in ("diagnostic_only", "managed"):
             raise ValueError(
-                "trade_management.exit_management.phase_rules require mode='diagnostic_only'"
+                "trade_management.exit_management.phase_rules require "
+                "mode='diagnostic_only' or mode='managed'"
             )
-        if self.stop_management:
+        if self.mode == "diagnostic_only":
+            if has_legacy_rules:
+                raise ValueError(
+                    "trade_management.exit_management.mode='diagnostic_only' cannot include "
+                    "legacy always_on/profiles management rules"
+                )
+            if self.stop_management:
+                raise ValueError(
+                    "trade_management.exit_management.stop_management is not allowed in "
+                    "diagnostic-only mode"
+                )
+            if self.take_management:
+                raise ValueError(
+                    "trade_management.exit_management.take_management is not allowed in "
+                    "diagnostic-only mode"
+                )
+            if self.runtime_exits:
+                raise ValueError(
+                    "trade_management.exit_management.runtime_exits is not allowed in "
+                    "diagnostic-only mode"
+                )
+        elif self.mode == "managed":
+            if has_legacy_rules:
+                raise ValueError(
+                    "trade_management.exit_management.mode='managed' cannot include "
+                    "legacy always_on/profiles management rules"
+                )
+        elif has_management_rules:
             raise ValueError(
-                "trade_management.exit_management.stop_management is not supported in v1"
-            )
-        if self.runtime_exits:
-            raise ValueError(
-                "trade_management.exit_management.runtime_exits is not supported in v1"
-            )
-        if self.mode == "diagnostic_only" and has_legacy_rules:
-            raise ValueError(
-                "trade_management.exit_management.mode='diagnostic_only' cannot include "
-                "legacy always_on/profiles management rules"
+                "trade_management.exit_management stop_management, take_management, and "
+                "runtime_exits require mode='managed'"
             )
         seen_phase_rules: set[str] = set()
         last_phase_rank = 0
@@ -710,6 +884,18 @@ class ExitManagementSpec:
                     "non-decreasing phase progression"
                 )
             last_phase_rank = phase_rank
+        seen_management_rule_ids: set[str] = set()
+        for rule in (
+            *self.stop_management,
+            *self.take_management,
+            *self.runtime_exits,
+        ):
+            if rule.rule_id in seen_management_rule_ids:
+                raise ValueError(
+                    "trade_management.exit_management management rule_id must be unique: "
+                    f"{rule.rule_id!r}"
+                )
+            seen_management_rule_ids.add(rule.rule_id)
 
 
 def _effective_exit_group_has_stop_loss(
@@ -920,7 +1106,7 @@ def strategy_spec_to_dict(spec: EmaPullbackStrategySpec) -> dict[str, Any]:
                     _rules_to_list(profiles.get(bucket))
             if exit_management.get("mode") is None:
                 exit_management.pop("mode", None)
-            for key in ("phase_rules", "stop_management", "runtime_exits"):
+            for key in ("phase_rules", "stop_management", "take_management", "runtime_exits"):
                 value = exit_management.get(key)
                 if value in ((), [], None):
                     exit_management.pop(key, None)

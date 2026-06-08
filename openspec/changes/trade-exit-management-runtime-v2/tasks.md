@@ -27,17 +27,17 @@ Research master-plan reference: `docs/research/21_state_driven_exit_management_v
 - Legacy `break_even_stop` authoring revival.
 
 **Acceptance criteria:**
-- [ ] Parser round-trips fixture managed config with all three management arrays.
-- [ ] `diagnostic_only` + non-empty `stop_management` still fails validation.
-- [ ] `managed` + empty management arrays validates.
-- [ ] Unknown `component_id` or `take_profile_switch` action fails validation with clear error.
+- [x] Parser round-trips fixture managed config with all three management arrays.
+- [x] `diagnostic_only` + non-empty `stop_management` still fails validation.
+- [x] `managed` + empty management arrays validates.
+- [x] Unknown `component_id` or `take_profile_switch` action fails validation with clear error.
 
 **Tests:**
-- [ ] 1.1 Add/extend `tests/test_exit_management_contracts.py` for managed mode and `take_management`.
-- [ ] 1.2 Add fixture JSON under `research/experiments/configs/fixtures/` for managed empty arrays (no behavior yet) and a parsing fixture that round-trips `lock_profit_stop` params (`lock_atr`, `atr_period`).
+- [x] 1.1 Add/extend `tests/test_exit_management_contracts.py` for managed mode and `take_management`.
+- [x] 1.2 Add fixture JSON under `research/experiments/configs/fixtures/` for managed empty arrays (no behavior yet) and a parsing fixture that round-trips `lock_profit_stop` params (`lock_atr`, `atr_period`).
 
-- [ ] 1.3 Implement spec types and validation in `spec.py`.
-- [ ] 1.4 Wire validation errors into existing config load path.
+- [x] 1.3 Implement spec types and validation in `spec.py`.
+- [x] 1.4 Wire validation errors into existing config load path.
 
 ### STOP — Checkpoint 1: Contracts & parsing review
 
