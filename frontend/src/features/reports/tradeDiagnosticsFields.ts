@@ -303,3 +303,50 @@ export function buildTradeDiagnosticFields(trade: TradeRecord): {
 
   return { core, diagnostics };
 }
+
+/** Selected-trade runtime management block (schema v6 diagnostic-only). */
+export function buildTradeManagementDiagnosticFields(
+  trade: TradeRecord,
+): TradeDiagnosticField[] {
+  const tm = trade.trade_management;
+  if (!tm) {
+    return [];
+  }
+  return [
+    field("trade_management.phase_at_exit", "phase_at_exit", tm.phase_at_exit),
+    field("trade_management.max_phase_reached", "max_phase_reached", tm.max_phase_reached),
+    field(
+      "trade_management.bars_to_proven",
+      "bars_to_proven",
+      tm.bars_to_proven === null || tm.bars_to_proven === undefined
+        ? EM_DASH
+        : String(tm.bars_to_proven),
+    ),
+    field(
+      "trade_management.bars_to_protected",
+      "bars_to_protected",
+      tm.bars_to_protected === null || tm.bars_to_protected === undefined
+        ? EM_DASH
+        : String(tm.bars_to_protected),
+    ),
+    field(
+      "trade_management.bars_to_runner",
+      "bars_to_runner",
+      tm.bars_to_runner === null || tm.bars_to_runner === undefined
+        ? EM_DASH
+        : String(tm.bars_to_runner),
+    ),
+    field(
+      "trade_management.best_price_before_exit",
+      "best_price_before_exit",
+      formatPrice(tm.best_price_before_exit ?? null),
+    ),
+    field(
+      "trade_management.giveback_from_best_price_pct",
+      "giveback_from_best_price_pct",
+      formatReturnPct(tm.giveback_from_best_price_pct),
+    ),
+    field("trade_management.exit_layer", "exit_layer", tm.exit_layer ?? EM_DASH),
+    field("trade_management.exit_rule_id", "exit_rule_id", tm.exit_rule_id ?? EM_DASH),
+  ];
+}

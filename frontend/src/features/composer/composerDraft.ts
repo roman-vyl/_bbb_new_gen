@@ -6,6 +6,7 @@ import type {
   StrategyInstanceDraft,
   ValidationErrorItem,
 } from "@/api/types";
+import { createBlankExitManagement } from "@/features/composer/composerExitManagementProduct";
 
 export const COMPOSER_DEFAULT_FAMILY = "ema_pullback";
 export const COMPOSER_DEFAULT_EXPERIMENT_ID = "draft_ema_pullback";
@@ -69,14 +70,7 @@ export function createDefaultInstance(instanceId: string): StrategyInstanceDraft
             neutral: { exits: [] },
           },
         },
-        exit_management: {
-          always_on: { rules: [] },
-          profiles: {
-            aligned: { rules: [] },
-            countertrend: { rules: [] },
-            neutral: { rules: [] },
-          },
-        },
+        exit_management: createBlankExitManagement(),
       },
     },
   };
@@ -106,11 +100,19 @@ export function nextInstanceId(draft: StrategyConfigDraft): string {
   return candidate;
 }
 
+import {
+  DEPRECATED_EXIT_MANAGEMENT_AUTHORING_IDS,
+} from "@/features/composer/composerExitManagementProduct";
+
 export function componentsForRole(
   catalog: ComponentCatalog,
   role: ComponentSchema["role"],
 ): ComponentSchema[] {
-  return catalog.components.filter((c) => c.role === role);
+  return catalog.components.filter(
+    (c) =>
+      c.role === role &&
+      !(DEPRECATED_EXIT_MANAGEMENT_AUTHORING_IDS as readonly string[]).includes(c.component_id),
+  );
 }
 
 export function findComponentSchema(
@@ -235,6 +237,7 @@ export function listSlotPath(
     | "aligned_exits"
     | "countertrend_exits"
     | "neutral_exits"
+    | "phase_rules"
     | "always_on_management"
     | "aligned_management"
     | "countertrend_management"
@@ -258,6 +261,9 @@ export function listSlotPath(
   }
   if (role === "neutral_exits") {
     return `${strategyPath(index)}.trade_management.exit_policy.profiles.neutral.exits[${slot}]`;
+  }
+  if (role === "phase_rules") {
+    return `${strategyPath(index)}.trade_management.exit_management.phase_rules[${slot}]`;
   }
   if (role === "always_on_management") {
     return `${strategyPath(index)}.trade_management.exit_management.always_on.rules[${slot}]`;

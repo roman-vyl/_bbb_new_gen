@@ -10,6 +10,7 @@ export function hasVariantDiagnostics(metrics: VariantMetrics): boolean {
     metrics.profile_breakdown !== undefined ||
     metrics.exit_reason_breakdown !== undefined ||
     metrics.quality_flag_breakdown !== undefined ||
-    metrics.exit_component_quality_breakdown !== undefined
+    metrics.exit_component_quality_breakdown !== undefined ||
+    metrics.trade_management_summary !== undefined
   );
 }

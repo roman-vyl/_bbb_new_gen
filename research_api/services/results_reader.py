@@ -7,6 +7,7 @@ from pathlib import Path
 
 from research_api.contracts.runs import (
     SUPPORTED_REPORT_SCHEMA_VERSIONS,
+    RunCompactSummaryReport,
     RunReport,
     RunSummary,
 )
@@ -57,10 +58,21 @@ def parse_run_report(payload: dict) -> RunReport:
     return RunReport.model_validate(payload)
 
 
+def parse_run_summary_report(payload: dict) -> RunCompactSummaryReport:
+    _assert_supported_schema(payload.get("report_schema_version"))
+    return RunCompactSummaryReport.model_validate(payload)
+
+
 def load_run_report(*, run_id: str, results_dir: Path | None = None) -> RunReport:
     safe_run_id = validate_run_id(run_id)
     path = _runs_dir(results_dir) / f"{safe_run_id}.json"
     return parse_run_report(_load_json(path))
+
+
+def load_run_summary_report(*, run_id: str, results_dir: Path | None = None) -> RunCompactSummaryReport:
+    safe_run_id = validate_run_id(run_id)
+    path = _runs_dir(results_dir) / f"{safe_run_id}.summary.json"
+    return parse_run_summary_report(_load_json(path))
 
 
 def load_latest_run_report(results_dir: Path | None = None) -> RunReport:

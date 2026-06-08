@@ -251,3 +251,52 @@ describe("strategy context authoring helpers", () => {
     expect(errors.some((e) => e.path.includes("setups[0].context_consumption"))).toBe(true);
   });
 });
+
+describe("collectComposerStrategyErrors exit_management phase_rules", () => {
+  it("validates phase_rules when profile-scoped exits are absent", () => {
+    const strategy = {
+      trade_management: {
+        exit_policy: {
+          always_on: {
+            exits: [
+              {
+                instance_id: "atr_sl",
+                component_id: "atr_stop_loss",
+                distance: { timeframe: "base", period: 14, multiplier: 2.0 },
+              },
+            ],
+          },
+          profiles: {
+            aligned: { exits: [] },
+            countertrend: { exits: [] },
+            neutral: { exits: [] },
+          },
+        },
+        exit_management: {
+          mode: "diagnostic_only",
+          phase_rules: [
+            {
+              rule_id: "",
+              to_phase: "runner",
+              condition: { type: "bars_in_trade", threshold: 3 },
+            },
+            {
+              rule_id: "proven_late",
+              to_phase: "proven",
+              condition: { type: "bars_in_trade", threshold: 1 },
+            },
+          ],
+          stop_management: [],
+          runtime_exits: [],
+        },
+      },
+    };
+
+    const errors = collectComposerStrategyErrors(strategy, "instances[0].strategy", null);
+    expect(errors.some((e) => e.message.includes("rule_id is required"))).toBe(true);
+    expect(errors.some((e) => e.message.includes("non-decreasing phase progression"))).toBe(
+      true,
+    );
+    expect(errors.some((e) => e.path.includes("exit_policy.context_consumption"))).toBe(false);
+  });
+});

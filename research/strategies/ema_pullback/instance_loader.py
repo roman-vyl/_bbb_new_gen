@@ -50,6 +50,9 @@ from research.strategies.ema_pullback.spec import (
     ExitManagementProfilesSpec,
     ExitManagementRuleSpec,
     ExitManagementSpec,
+    PhaseRuleAtrSpec,
+    PhaseRuleConditionSpec,
+    PhaseRuleSpec,
     TradeManagementSpec,
     empty_exit_management,
     ExitRuleSpec,
@@ -274,36 +277,148 @@ def _parse_exit_management(value: Any) -> ExitManagementSpec:
     _reject_unknown_fields(
         "trade_management.exit_management",
         payload,
-        {"always_on", "profiles"},
+        {"always_on", "profiles", "mode", "phase_rules", "stop_management", "runtime_exits"},
     )
-    always_on = _parse_exit_management_group(
-        _require_present(payload, "always_on"),
-        path="trade_management.exit_management.always_on",
-    )
-    profiles_payload = _require_mapping(
-        "trade_management.exit_management.profiles",
-        _require_present(payload, "profiles"),
-    )
-    _reject_unknown_fields(
-        "trade_management.exit_management.profiles",
-        profiles_payload,
-        {"aligned", "countertrend", "neutral"},
-    )
-    profiles = ExitManagementProfilesSpec(
-        aligned=_parse_exit_management_group(
-            _require_present(profiles_payload, "aligned"),
-            path="trade_management.exit_management.profiles.aligned",
-        ),
-        countertrend=_parse_exit_management_group(
-            _require_present(profiles_payload, "countertrend"),
-            path="trade_management.exit_management.profiles.countertrend",
-        ),
-        neutral=_parse_exit_management_group(
-            _require_present(profiles_payload, "neutral"),
-            path="trade_management.exit_management.profiles.neutral",
-        ),
-    )
-    return ExitManagementSpec(always_on=always_on, profiles=profiles)
+    has_legacy_shape = "always_on" in payload or "profiles" in payload
+    if has_legacy_shape:
+        always_on = _parse_exit_management_group(
+            _require_present(payload, "always_on"),
+            path="trade_management.exit_management.always_on",
+        )
+        profiles_payload = _require_mapping(
+            "trade_management.exit_management.profiles",
+            _require_present(payload, "profiles"),
+        )
+        _reject_unknown_fields(
+            "trade_management.exit_management.profiles",
+            profiles_payload,
+            {"aligned", "countertrend", "neutral"},
+        )
+        profiles = ExitManagementProfilesSpec(
+            aligned=_parse_exit_management_group(
+                _require_present(profiles_payload, "aligned"),
+                path="trade_management.exit_management.profiles.aligned",
+            ),
+            countertrend=_parse_exit_management_group(
+                _require_present(profiles_payload, "countertrend"),
+                path="trade_management.exit_management.profiles.countertrend",
+            ),
+            neutral=_parse_exit_management_group(
+                _require_present(profiles_payload, "neutral"),
+                path="trade_management.exit_management.profiles.neutral",
+            ),
+        )
+    else:
+        empty = empty_exit_management()
+        always_on = empty.always_on
+        profiles = empty.profiles
+
+    try:
+        return ExitManagementSpec(
+            always_on=always_on,
+            profiles=profiles,
+            mode=_parse_exit_management_mode(payload.get("mode")),
+            phase_rules=_parse_phase_rules(payload.get("phase_rules")),
+            stop_management=_parse_reserved_rule_list(
+                payload.get("stop_management"),
+                path="trade_management.exit_management.stop_management",
+            ),
+            runtime_exits=_parse_reserved_rule_list(
+                payload.get("runtime_exits"),
+                path="trade_management.exit_management.runtime_exits",
+            ),
+        )
+    except ValueError as exc:
+        raise EmaPullbackInstanceValidationError(str(exc)) from exc
+
+
+def _parse_exit_management_mode(value: Any) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value.strip():
+        raise EmaPullbackInstanceValidationError(
+            "trade_management.exit_management.mode must be a non-empty string"
+        )
+    if value != "diagnostic_only":
+        raise EmaPullbackInstanceValidationError(
+            "trade_management.exit_management.mode must be 'diagnostic_only'"
+        )
+    return value
+
+
+def _parse_phase_rules(value: Any) -> tuple[PhaseRuleSpec, ...]:
+    if value is None:
+        return ()
+    if not isinstance(value, (list, tuple)):
+        raise EmaPullbackInstanceValidationError(
+            "trade_management.exit_management.phase_rules must be a list"
+        )
+    out: list[PhaseRuleSpec] = []
+    for i, item in enumerate(value):
+        out.append(
+            _parse_phase_rule(
+                item,
+                path=f"trade_management.exit_management.phase_rules[{i}]",
+            )
+        )
+    return tuple(out)
+
+
+def _parse_phase_rule(value: Any, *, path: str) -> PhaseRuleSpec:
+    payload = _require_mapping(path, value)
+    _reject_unknown_fields(path, payload, {"rule_id", "to_phase", "condition"})
+    try:
+        return PhaseRuleSpec(
+            rule_id=_require_non_empty_str(payload, "rule_id"),
+            to_phase=_require_non_empty_str(payload, "to_phase"),  # type: ignore[arg-type]
+            condition=_parse_phase_rule_condition(
+                _require_present(payload, "condition"),
+                path=f"{path}.condition",
+            ),
+        )
+    except ValueError as exc:
+        raise EmaPullbackInstanceValidationError(str(exc)) from exc
+
+
+def _parse_phase_rule_condition(value: Any, *, path: str) -> PhaseRuleConditionSpec:
+    payload = _require_mapping(path, value)
+    _reject_unknown_fields(path, payload, {"type", "threshold", "atr"})
+    atr = None
+    if "atr" in payload:
+        atr = _parse_phase_rule_atr(payload["atr"], path=f"{path}.atr")
+    try:
+        return PhaseRuleConditionSpec(
+            type=_require_non_empty_str(payload, "type"),  # type: ignore[arg-type]
+            threshold=float(_require_present(payload, "threshold")),
+            atr=atr,
+        )
+    except (TypeError, ValueError) as exc:
+        raise EmaPullbackInstanceValidationError(str(exc)) from exc
+
+
+def _parse_phase_rule_atr(value: Any, *, path: str) -> PhaseRuleAtrSpec:
+    payload = _require_mapping(path, value)
+    _reject_unknown_fields(path, payload, {"timeframe", "period"})
+    try:
+        return PhaseRuleAtrSpec(
+            timeframe=_require_non_empty_str(payload, "timeframe"),
+            period=int(_require_present(payload, "period")),
+        )
+    except (TypeError, ValueError) as exc:
+        raise EmaPullbackInstanceValidationError(str(exc)) from exc
+
+
+def _parse_reserved_rule_list(value: Any, *, path: str) -> tuple[dict[str, Any], ...]:
+    if value is None:
+        return ()
+    if not isinstance(value, (list, tuple)):
+        raise EmaPullbackInstanceValidationError(f"{path} must be a list")
+    out: list[dict[str, Any]] = []
+    for i, item in enumerate(value):
+        item_path = f"{path}[{i}]"
+        mapping = _require_mapping(item_path, item)
+        out.append(dict(mapping))
+    return tuple(out)
 
 
 def _parse_exit_management_group(value: Any, *, path: str) -> ExitManagementGroupSpec:

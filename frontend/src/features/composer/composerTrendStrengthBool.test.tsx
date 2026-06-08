@@ -101,8 +101,7 @@ describe("prepareConfigDraftForApi trend_strength booleans", () => {
         {
           instance_id: "inst_1",
           variant: "inst_1",
-          symbol: "BTCUSDT",
-          base_timeframe: "1h",
+          market: { symbol: "BTCUSDT", base_timeframe: "1h" },
           strategy: {
             ...createBlankConfigDraft("ema_pullback").instances[0]!.strategy,
             blockers: [slot],

@@ -34,6 +34,12 @@ from research.strategies.ema_pullback.execution.exit_management import (
 from research.strategies.ema_pullback.execution.exits import build_exit_outputs_from_spec
 from research.strategies.ema_pullback.execution.results import build_managed_trade_records
 from research.strategies.ema_pullback.execution.signals import build_signals_from_spec
+from research.strategies.ema_pullback.execution.trade_runtime import (
+    apply_trade_management_diagnostics,
+    build_trade_management_summary,
+    build_trade_runtime_diagnostics,
+    trade_management_events_payload,
+)
 from research.strategies.ema_pullback.features.calculations import add_feature_columns_from_plan
 from research.strategies.ema_pullback.features.plan import build_feature_plan_from_strategy_spec
 from research.strategies.ema_pullback.spec import strategy_spec_config_id, strategy_spec_to_dict
@@ -76,6 +82,23 @@ def _open_high_low_for_vectorbt(enriched: pd.DataFrame) -> tuple[pd.Series, pd.S
     return open_s, high_s, low_s
 
 
+def _atr_series_for_phase_rules(
+    enriched: pd.DataFrame,
+    spec: EmaPullbackStrategySpec,
+) -> dict[tuple[str, int], pd.Series]:
+    """Return already-materialized ATR columns needed by diagnostic phase rules."""
+
+    out: dict[tuple[str, int], pd.Series] = {}
+    for rule in spec.trade_management.exit_management.phase_rules:
+        atr = rule.condition.atr
+        if atr is None:
+            continue
+        column = f"atr_close_{atr.timeframe}_{atr.period}"
+        if column in enriched.columns:
+            out[(atr.timeframe, atr.period)] = enriched[column].astype(float)
+    return out
+
+
 def _build_side_metrics(records: list[dict[str, Any]], init_cash: float) -> SideMetrics:
     trades = len(records)
     pnl_values = [float(record.get("pnl") or 0.0) for record in records]
@@ -115,6 +138,7 @@ def build_trade_side_metrics(
     sharpe: float,
     max_drawdown: float,
     fees_rate: float = 0.0,
+    trade_management_summary: dict[str, Any] | None = None,
 ) -> VariantMetrics:
     """Realized PnL / PF / win_rate use ``status == \"closed\"`` only; open rows are counted in ``open_trades``."""
 
@@ -140,6 +164,7 @@ def build_trade_side_metrics(
         exit_reason_breakdown=build_exit_reason_breakdown(trade_records),
         fee_diagnostics=build_fee_diagnostics(trade_records, fees_rate=fees_rate),
         bounce_counter_breakdown=build_bounce_counter_breakdown(trade_records),
+        trade_management_summary=trade_management_summary,
         **build_trade_quality_breakdowns(trade_records),
     )
 
@@ -271,6 +296,9 @@ def run_strategy_spec(
         enriched, spec, plan, context_bundle=context_bundle
     )
 
+    # Future diagnostic_only trade-management must run after actual trade_records
+    # are built from the chosen path. It must not feed phase state back into
+    # vectorbt masks, stops, exits, or legacy BE managed decisions.
     if has_exit_management_rules(spec):
         return _run_managed_strategy_spec(
             spec,
@@ -498,6 +526,20 @@ def run_strategy_spec(
         context_bundle=context_bundle,
         setup_traces_by_instance_side=setup_traces_by_instance_side,
     )
+    trade_management_events: list[dict[str, Any]] | None = None
+    trade_management_summary: dict[str, Any] | None = None
+    if spec.trade_management.exit_management.mode == "diagnostic_only":
+        diagnostic_runtime = build_trade_runtime_diagnostics(
+            trade_records=trade_records,
+            high=high_s,
+            low=low_s,
+            close=close,
+            phase_rules=spec.trade_management.exit_management.phase_rules,
+            atr_series_by_key=_atr_series_for_phase_rules(enriched, spec),
+        )
+        apply_trade_management_diagnostics(trade_records, diagnostic_runtime)
+        trade_management_events = trade_management_events_payload(diagnostic_runtime)
+        trade_management_summary = build_trade_management_summary(trade_records)
 
     sharpe = ensure_finite_metric("sharpe_ratio", float(pf.sharpe_ratio()))
     max_dd_raw = pf.max_drawdown()
@@ -516,7 +558,9 @@ def run_strategy_spec(
             sharpe=sharpe,
             max_drawdown=max_dd_f,
             fees_rate=float(fees),
+            trade_management_summary=trade_management_summary,
         ),
         component_counters=list(signals.output_counters + exit_outputs.output_counters),
         trade_records=trade_records,
+        trade_management_events=trade_management_events,
     )

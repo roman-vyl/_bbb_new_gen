@@ -8,6 +8,7 @@ import type { RunReport, RunVariant } from "@/api/types";
 import reportV3 from "@/fixtures/report.json";
 import reportV4 from "@/features/reports/__fixtures__/report-v4-minimal.json";
 import reportV5 from "@/features/reports/__fixtures__/report-v5-quality.json";
+import reportV6 from "@/features/reports/__fixtures__/report-v6-trade-management.json";
 import { ReportsPanel } from "@/features/reports/ReportsPanel";
 
 const { mockUseWorkbench } = vi.hoisted(() => ({
@@ -25,6 +26,7 @@ afterEach(() => {
 const v3Report = reportV3 as RunReport;
 const v4Report = reportV4 as RunReport;
 const v5Report = reportV5 as RunReport;
+const v6Report = reportV6 as RunReport;
 
 function mockWorkbench(overrides: {
   report: RunReport;
@@ -142,5 +144,59 @@ describe("ReportsPanel", () => {
         "сильный ход, но плохо забрали, сигнал выхода отдал импульс",
       ),
     ).toBeTruthy();
+  });
+
+  it("v3 report hides trade management diagnostics section", () => {
+    mockWorkbench({ report: v3Report, variant: v3Report.variants[0] });
+    render(<ReportsPanel />);
+    expect(screen.queryByTestId("trade-management-diagnostics")).toBeNull();
+  });
+
+  it("v6 report renders trade management diagnostics section and phase rows", () => {
+    mockWorkbench({ report: v6Report, variant: v6Report.variants[0] });
+    render(<ReportsPanel />);
+    expect(screen.getByTestId("trade-management-diagnostics")).toBeTruthy();
+    expect(screen.getByText("Trade Management Diagnostics")).toBeTruthy();
+    expect(screen.getByText("Phase reached breakdown")).toBeTruthy();
+    expect(screen.getByText("initial_risk")).toBeTruthy();
+    expect(screen.getByText("runner")).toBeTruthy();
+    expect(screen.getByText("Runner capture summary")).toBeTruthy();
+    expect(screen.getByText("Protected trade summary")).toBeTruthy();
+    expect(screen.getByText("Exit layer breakdown")).toBeTruthy();
+    expect(screen.queryByText("phase_changed")).toBeNull();
+  });
+
+  it("selected trade with trade_management renders Selected Trade Management block", () => {
+    mockWorkbench({
+      report: v6Report,
+      variant: v6Report.variants[0],
+      selectedTradeId: 2,
+    });
+    render(<ReportsPanel />);
+    expect(screen.getByText("Selected Trade Management")).toBeTruthy();
+    const tradeDetail = screen.getByText("Selected Trade Management").closest("aside");
+    expect(tradeDetail).toBeTruthy();
+    const detail = within(tradeDetail!);
+    expect(detail.getByText("phase_at_exit")).toBeTruthy();
+    expect(detail.getByText("bars_to_runner")).toBeTruthy();
+    expect(detail.getAllByText("runner").length).toBeGreaterThan(0);
+  });
+
+  it("trade management summary with sparse nested fields does not crash", () => {
+    const sparseVariant: RunVariant = {
+      ...v6Report.variants[0],
+      metrics: {
+        ...v6Report.variants[0].metrics,
+        trade_management_summary: {
+          by_phase_reached: {
+            proven: {},
+          },
+        },
+      },
+      trade_management_events: [{ trade_id: "1", bar_index: 0, side: "long", event_type: "exit_executed" }],
+    };
+    mockWorkbench({ report: v6Report, variant: sparseVariant });
+    render(<ReportsPanel />);
+    expect(screen.getByTestId("trade-management-diagnostics")).toBeTruthy();
   });
 });

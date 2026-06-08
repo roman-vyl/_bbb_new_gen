@@ -7,7 +7,7 @@ import json
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import ValidationError
 
-from research_api.contracts.runs import RunReport, RunSummary
+from research_api.contracts.runs import RunCompactSummaryReport, RunReport, RunSummary
 from research_api.contracts.signal_trace import SignalTraceBundle
 from research_api.services.market_reader import MarketDataNotFoundError
 from research_api.services.results_reader import (
@@ -16,6 +16,7 @@ from research_api.services.results_reader import (
     list_run_summaries,
     load_latest_run_report,
     load_run_report,
+    load_run_summary_report,
 )
 from research_api.services.run_id import InvalidRunIdError
 from research_api.services.signal_trace_service import (
@@ -59,6 +60,14 @@ def get_latest_run() -> RunReport:
 def get_run(run_id: str) -> RunReport:
     try:
         return load_run_report(run_id=run_id)
+    except Exception as exc:
+        raise _http_from_reader(exc) from exc
+
+
+@router.get("/runs/{run_id}/summary", response_model=RunCompactSummaryReport)
+def get_run_summary(run_id: str) -> RunCompactSummaryReport:
+    try:
+        return load_run_summary_report(run_id=run_id)
     except Exception as exc:
         raise _http_from_reader(exc) from exc
 

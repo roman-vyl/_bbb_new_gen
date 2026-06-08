@@ -121,29 +121,29 @@ def get_component_catalog(*, family: str = "ema_pullback") -> ComponentCatalog:
         ),
         ComposerSectionSchema(
             section_id="exit_management_always_on",
-            label="Exit management always-on rules",
+            label="Exit management runtime (legacy always-on rules deprecated)",
             role="exit_management",
             list_slot=True,
         ),
         ComposerSectionSchema(
             section_id="exit_management_profiles",
-            label="Exit management profiles",
+            label="Exit management runtime profiles (legacy rules deprecated)",
         ),
         ComposerSectionSchema(
             section_id="exit_management_profile_aligned",
-            label="Profile aligned management rules",
+            label="Profile aligned runtime (legacy rules deprecated)",
             role="exit_management",
             list_slot=True,
         ),
         ComposerSectionSchema(
             section_id="exit_management_profile_countertrend",
-            label="Profile countertrend management rules",
+            label="Profile countertrend runtime (legacy rules deprecated)",
             role="exit_management",
             list_slot=True,
         ),
         ComposerSectionSchema(
             section_id="exit_management_profile_neutral",
-            label="Profile neutral management rules",
+            label="Profile neutral runtime (legacy rules deprecated)",
             role="exit_management",
             list_slot=True,
         ),
@@ -412,25 +412,8 @@ def get_component_catalog(*, family: str = "ema_pullback") -> ComponentCatalog:
                 "usd_distance": _num_param("USD distance", default=200.0),
             },
         ),
-        ComponentSchema(
-            component_id="break_even_stop",
-            role="exit_management",
-            label="Break-even stop",
-            list_slot=True,
-            params_schema={
-                "trigger_r": ParamFieldSchema(
-                    type="number", label="Trigger (R)", default=1.0, min=0.0001
-                ),
-                "offset_r": ParamFieldSchema(
-                    type="number", label="Offset (R)", default=0.0, min=0.0
-                ),
-                "apply_once": ParamFieldSchema(
-                    type="boolean",
-                    label="Apply once",
-                    default=True,
-                ),
-            },
-        ),
+        # break_even_stop removed from authoring catalog (Slice 9): legacy managed combiner only.
+        # Runtime/parser compatibility remains in research layer for existing artifacts.
     ]
 
     context_providers = [

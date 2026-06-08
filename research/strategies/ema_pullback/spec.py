@@ -9,6 +9,8 @@ from typing import Any, Literal
 
 BREAK_EVEN_STOP_COMPONENT = "break_even_stop"
 PROFILE_ORDER = ("aligned", "countertrend", "neutral")
+TRADE_MANAGEMENT_PHASES = ("initial_risk", "proven", "protected", "runner", "exhaustion")
+EXIT_MANAGEMENT_CONDITION_TYPES = ("mfe_atr", "mfe_pct", "bars_in_trade")
 
 
 @dataclass(frozen=True)
@@ -577,6 +579,51 @@ class ExitManagementProfilesSpec:
     neutral: ExitManagementGroupSpec
 
 
+@dataclass(frozen=True)
+class PhaseRuleAtrSpec:
+    timeframe: str = "base"
+    period: int = 14
+
+    def __post_init__(self) -> None:
+        if not self.timeframe.strip():
+            raise ValueError("phase_rules condition atr.timeframe must be non-empty")
+        if self.period <= 0:
+            raise ValueError("phase_rules condition atr.period must be > 0")
+
+
+@dataclass(frozen=True)
+class PhaseRuleConditionSpec:
+    type: Literal["mfe_atr", "mfe_pct", "bars_in_trade"]
+    threshold: float
+    atr: PhaseRuleAtrSpec | None = None
+
+    def __post_init__(self) -> None:
+        if self.type not in EXIT_MANAGEMENT_CONDITION_TYPES:
+            allowed = ", ".join(repr(item) for item in EXIT_MANAGEMENT_CONDITION_TYPES)
+            raise ValueError(f"phase_rules condition.type must be one of: {allowed}")
+        if self.threshold <= 0:
+            raise ValueError("phase_rules condition.threshold must be > 0")
+        if self.type == "mfe_atr" and self.atr is None:
+            raise ValueError("phase_rules condition atr is required for mfe_atr")
+        if self.type != "mfe_atr" and self.atr is not None:
+            raise ValueError("phase_rules condition atr is only allowed for mfe_atr")
+
+
+@dataclass(frozen=True)
+class PhaseRuleSpec:
+    rule_id: str
+    to_phase: Literal["proven", "protected", "runner", "exhaustion"]
+    condition: PhaseRuleConditionSpec
+
+    def __post_init__(self) -> None:
+        if not self.rule_id.strip():
+            raise ValueError("phase_rules rule_id must be non-empty")
+        allowed = TRADE_MANAGEMENT_PHASES[1:]
+        if self.to_phase not in allowed:
+            allowed_text = ", ".join(repr(item) for item in allowed)
+            raise ValueError(f"phase_rules to_phase must be one of: {allowed_text}")
+
+
 def _empty_exit_management_profiles() -> ExitManagementProfilesSpec:
     empty = ExitManagementGroupSpec(rules=())
     return ExitManagementProfilesSpec(
@@ -597,6 +644,10 @@ def empty_exit_management() -> "ExitManagementSpec":
 class ExitManagementSpec:
     always_on: ExitManagementGroupSpec
     profiles: ExitManagementProfilesSpec
+    mode: Literal["diagnostic_only"] | None = None
+    phase_rules: tuple[PhaseRuleSpec, ...] = ()
+    stop_management: tuple[dict[str, Any], ...] = ()
+    runtime_exits: tuple[dict[str, Any], ...] = ()
 
     def __post_init__(self) -> None:
         scopes: list[tuple[str, tuple[ExitManagementRuleSpec, ...]]] = [
@@ -623,6 +674,42 @@ class ExitManagementSpec:
                         f"{rule.instance_id!r}"
                     )
                 seen.add(rule.instance_id)
+        if self.mode is not None and self.mode != "diagnostic_only":
+            raise ValueError("trade_management.exit_management.mode must be 'diagnostic_only'")
+        has_legacy_rules = any(rules for _, rules in scopes)
+        if self.phase_rules and self.mode != "diagnostic_only":
+            raise ValueError(
+                "trade_management.exit_management.phase_rules require mode='diagnostic_only'"
+            )
+        if self.stop_management:
+            raise ValueError(
+                "trade_management.exit_management.stop_management is not supported in v1"
+            )
+        if self.runtime_exits:
+            raise ValueError(
+                "trade_management.exit_management.runtime_exits is not supported in v1"
+            )
+        if self.mode == "diagnostic_only" and has_legacy_rules:
+            raise ValueError(
+                "trade_management.exit_management.mode='diagnostic_only' cannot include "
+                "legacy always_on/profiles management rules"
+            )
+        seen_phase_rules: set[str] = set()
+        last_phase_rank = 0
+        for rule in self.phase_rules:
+            if rule.rule_id in seen_phase_rules:
+                raise ValueError(
+                    "trade_management.exit_management.phase_rules rule_id must be unique: "
+                    f"{rule.rule_id!r}"
+                )
+            seen_phase_rules.add(rule.rule_id)
+            phase_rank = TRADE_MANAGEMENT_PHASES.index(rule.to_phase)
+            if phase_rank < last_phase_rank:
+                raise ValueError(
+                    "trade_management.exit_management.phase_rules must be ordered by "
+                    "non-decreasing phase progression"
+                )
+            last_phase_rank = phase_rank
 
 
 def _effective_exit_group_has_stop_loss(
@@ -831,6 +918,14 @@ def strategy_spec_to_dict(spec: EmaPullbackStrategySpec) -> dict[str, Any]:
             if isinstance(profiles, dict):
                 for bucket in ("aligned", "countertrend", "neutral"):
                     _rules_to_list(profiles.get(bucket))
+            if exit_management.get("mode") is None:
+                exit_management.pop("mode", None)
+            for key in ("phase_rules", "stop_management", "runtime_exits"):
+                value = exit_management.get(key)
+                if value in ((), [], None):
+                    exit_management.pop(key, None)
+                elif isinstance(value, tuple):
+                    exit_management[key] = list(value)
     setups = payload.get("setups")
     if isinstance(setups, (list, tuple)):
         for setup in setups:

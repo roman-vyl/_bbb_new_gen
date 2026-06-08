@@ -92,6 +92,71 @@ export type BreakEvenDiagnostics = {
   active_stop_management_source: "profile" | "always_on";
 };
 
+/** Diagnostic-only runtime block on closed trades (schema v6 additive). */
+export type TradeManagementDiagnostics = {
+  phase_at_exit: string;
+  max_phase_reached: string;
+  active_stop_source_at_exit?: string | null;
+  active_stop_price_at_exit?: number | null;
+  exit_layer?: string | null;
+  exit_rule_id?: string | null;
+  exit_component_id?: string | null;
+  best_price_before_exit?: number | null;
+  giveback_from_best_price_pct?: number | null;
+  capture_ratio?: number | null;
+  mfe_pct?: number | null;
+  bars_to_proven?: number | null;
+  bars_to_protected?: number | null;
+  bars_to_runner?: number | null;
+  mfe_at_proven_pct?: number | null;
+  mfe_at_protected_pct?: number | null;
+  mfe_at_runner_pct?: number | null;
+};
+
+/** Runtime trace event from diagnostic-only trade-management (schema v6 additive). */
+export type TradeManagementEvent = {
+  trade_id: string;
+  time_ms?: number | null;
+  bar_index: number;
+  side: "long" | "short";
+  event_type: "phase_changed" | "exit_executed";
+  from_phase?: string | null;
+  to_phase?: string | null;
+  rule_id?: string | null;
+  component_id?: string | null;
+  price?: number | null;
+  stop_price?: number | null;
+  mfe_pct?: number | null;
+  mae_pct?: number | null;
+  bars_in_trade?: number | null;
+  metadata?: JsonObject;
+};
+
+export type TradeManagementPhaseBucket = {
+  trade_count?: number;
+  share_of_all_trades?: number | null;
+  pnl?: number;
+  profit_factor?: number | null;
+  win_rate?: number | null;
+  avg_mfe_pct?: number | null;
+  p90_mfe_pct?: number | null;
+  avg_giveback_pct?: number | null;
+  avg_capture_ratio?: number | null;
+  median_capture_ratio?: number | null;
+  median_giveback_pct?: number | null;
+  exit_reason_mix?: Record<string, number>;
+};
+
+/** Variant-level trade-management summary (schema v6 additive, defensive shape). */
+export type TradeManagementSummary = {
+  by_phase_reached?: Record<string, TradeManagementPhaseBucket>;
+  phase_transition_counts?: Record<string, number>;
+  exit_layer_breakdown?: Record<string, number>;
+  active_stop_source_breakdown?: Record<string, number>;
+  runner_capture_summary?: JsonObject;
+  protected_trade_summary?: JsonObject;
+};
+
 export type TradeRecord = TradeOverlay & {
   size: number | null;
   pnl: number | null;
@@ -137,6 +202,8 @@ export type TradeRecord = TradeOverlay & {
   /** Schema v6 — closed trades only */
   path_diagnostics?: TradePathDiagnostics;
   reference_levels?: TradeReferenceLevels;
+  /** Schema v6 — diagnostic-only trade-management runtime */
+  trade_management?: TradeManagementDiagnostics;
 };
 
 export type TradePathExcursion = {
@@ -331,6 +398,8 @@ export type VariantMetrics = {
   bounce_counter_breakdown?: BounceCounterBreakdown;
   /** Schema v6 */
   path_diagnostics_summary?: PathDiagnosticsSummary;
+  /** Schema v6 — diagnostic-only trade-management summary */
+  trade_management_summary?: TradeManagementSummary;
 };
 
 export type RunVariant = {
@@ -342,6 +411,8 @@ export type RunVariant = {
   metrics: VariantMetrics;
   component_counters: unknown[];
   trade_records: TradeRecord[];
+  /** Schema v6 — diagnostic-only runtime event trace (full report only) */
+  trade_management_events?: TradeManagementEvent[] | null;
 };
 
 export type RunReport = {
@@ -357,6 +428,36 @@ export type RunReport = {
   trade_quality_config?: TradeQualityConfig | null;
   path_diagnostics_config?: PathDiagnosticsConfig | null;
   variants: RunVariant[];
+};
+
+export type RunCompactVariant = {
+  variant: string;
+  config_id: string;
+  symbol: string;
+  timeframe: string;
+  strategy_spec: JsonObject;
+  metrics: VariantMetrics;
+  component_counters: unknown[];
+  trade_records_count?: number | null;
+  closed_trades_count?: number | null;
+  open_trades_count?: number | null;
+};
+
+export type RunCompactSummaryReport = {
+  run_id: string;
+  created_at: string;
+  report_schema_version: number;
+  family: string;
+  symbol: string;
+  timeframe: string;
+  data_range?: { from_open_time_ms: number; to_open_time_ms: number };
+  variants_count: number;
+  trade_quality_config?: TradeQualityConfig | null;
+  path_diagnostics_config?: PathDiagnosticsConfig | null;
+  variants: RunCompactVariant[];
+  artifact_kind: "run_summary";
+  summary_schema_version: number;
+  source_report_path: string;
 };
 
 export type RunSummary = {
