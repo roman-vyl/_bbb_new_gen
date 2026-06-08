@@ -9,6 +9,7 @@ import reportV3 from "@/fixtures/report.json";
 import reportV4 from "@/features/reports/__fixtures__/report-v4-minimal.json";
 import reportV5 from "@/features/reports/__fixtures__/report-v5-quality.json";
 import reportV6 from "@/features/reports/__fixtures__/report-v6-trade-management.json";
+import reportV6Managed from "@/features/reports/__fixtures__/report-v6-managed-trade-management.json";
 import { ReportsPanel } from "@/features/reports/ReportsPanel";
 
 const { mockUseWorkbench } = vi.hoisted(() => ({
@@ -27,12 +28,13 @@ const v3Report = reportV3 as RunReport;
 const v4Report = reportV4 as RunReport;
 const v5Report = reportV5 as RunReport;
 const v6Report = reportV6 as RunReport;
+const v6ManagedReport = reportV6Managed as RunReport;
 
 function mockWorkbench(overrides: {
   report: RunReport;
   variant: RunVariant;
-  selectedTradeId?: number | null;
-  selectTrade?: (id: number) => void;
+  selectedTradeId?: number | string | null;
+  selectTrade?: (id: number | string | null) => void;
 }) {
   const selectTrade = overrides.selectTrade ?? vi.fn();
   mockUseWorkbench.mockReturnValue({
@@ -180,6 +182,25 @@ describe("ReportsPanel", () => {
     expect(detail.getByText("phase_at_exit")).toBeTruthy();
     expect(detail.getByText("bars_to_runner")).toBeTruthy();
     expect(detail.getAllByText("runner").length).toBeGreaterThan(0);
+  });
+
+  it("v6 managed report renders layer breakdowns and baseline placeholder", () => {
+    mockWorkbench({
+      report: v6ManagedReport,
+      variant: v6ManagedReport.variants[0],
+      selectedTradeId: "long:10",
+    });
+    render(<ReportsPanel />);
+    const stopBreakdown = screen.getByTestId("managed-breakdown-stop_management_breakdown");
+    const takeBreakdown = screen.getByTestId("managed-breakdown-take_management_breakdown");
+    expect(within(stopBreakdown).getByText("break_even_stop")).toBeTruthy();
+    expect(within(takeBreakdown).getByText("take_profile_switch")).toBeTruthy();
+    expect(screen.getByTestId("baseline-vs-managed-placeholder")).toBeTruthy();
+    expect(screen.getAllByText("exit_management").length).toBeGreaterThan(0);
+    expect(screen.getByText("Selected Trade Management")).toBeTruthy();
+    expect(screen.getByText("active_stop_at_exit")).toBeTruthy();
+    expect(screen.getByText("exit_candidate_type")).toBeTruthy();
+    expect(screen.getByText("managed_events")).toBeTruthy();
   });
 
   it("trade management summary with sparse nested fields does not crash", () => {

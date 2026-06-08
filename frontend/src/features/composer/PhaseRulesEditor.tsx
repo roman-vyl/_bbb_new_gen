@@ -2,6 +2,7 @@ import { useMemo } from "react";
 
 import type { JsonObject, ValidationErrorItem } from "@/api/types";
 
+import { normalizeExitManagementV2 } from "@/features/composer/composerExitManagementProduct";
 import {
   PHASE_RULE_CONDITION_TYPES,
   PHASE_RULE_TARGET_PHASES,
@@ -53,17 +54,12 @@ export function PhaseRulesEditor({
   }, [errors, pathPrefix, rules]);
 
   const patchRules = (nextRules: JsonObject[]) => {
-    onChange({
-      ...exitManagement,
-      mode: "diagnostic_only",
-      phase_rules: nextRules,
-      stop_management: Array.isArray(exitManagement.stop_management)
-        ? exitManagement.stop_management
-        : [],
-      runtime_exits: Array.isArray(exitManagement.runtime_exits)
-        ? exitManagement.runtime_exits
-        : [],
-    });
+    onChange(
+      normalizeExitManagementV2({
+        ...exitManagement,
+        phase_rules: nextRules,
+      }),
+    );
   };
 
   const updateRule = (index: number, patch: JsonObject) => {

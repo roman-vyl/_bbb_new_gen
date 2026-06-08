@@ -1,19 +1,28 @@
-"""Diagnostic-only trade-management runtime state.
+"""Trade-management runtime: diagnostic replay and managed bar-by-bar loop.
 
-This module builds runtime diagnostics from already executed trade records. It
-must not compute entries/exits or feed state back into portfolio execution.
+Diagnostic-only helpers rebuild phase state from closed trade records without
+feeding back into portfolio execution.
+
+Managed mode (``run_managed_exit_runtime``) runs a bar-by-bar loop over each
+open trade window inside the research execution path. Slice 2+ skeleton: phase
+rules and ``ActiveManagementSnapshot`` only; behavior-changing management
+evaluators and arbitration wire in later slices.
 """
 
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Literal
 
 import pandas as pd
 
 from research.strategies.ema_pullback.spec import (
+    ExitManagementMode,
     PhaseRuleSpec,
+    RuntimeExitRuleSpec,
+    StopManagementRuleSpec,
+    TakeManagementRuleSpec,
     TRADE_MANAGEMENT_PHASES,
 )
 
@@ -21,9 +30,33 @@ TradePhase = Literal["initial_risk", "proven", "protected", "runner", "exhaustio
 TradeRuntimeEventType = Literal[
     "phase_changed",
     "active_stop_updated",
+    "active_take_updated",
+    "runtime_exit_triggered",
     "exit_rule_triggered",
     "exit_executed",
 ]
+
+MANAGED_RUNTIME_EVENT_TYPES: tuple[TradeRuntimeEventType, ...] = (
+    "phase_changed",
+    "active_stop_updated",
+    "active_take_updated",
+    "runtime_exit_triggered",
+    "exit_rule_triggered",
+    "exit_executed",
+)
+
+MANAGED_ACTIVE_LAYER_EVENT_TYPES: frozenset[TradeRuntimeEventType] = frozenset(
+    {
+        "active_stop_updated",
+        "active_take_updated",
+        "runtime_exit_triggered",
+    }
+)
+
+ACTIVE_TAKE_PROFILE_INITIAL = "initial"
+ACTIVE_TAKE_PROFILE_NONE = "none"
+
+ExitCandidateLayer = Literal["exit_policy", "exit_management"]
 
 
 @dataclass
@@ -72,6 +105,76 @@ class TradeManagementEvent:
 class TradeRuntimeResult:
     states_by_trade_id: dict[str, TradeRuntimeState]
     events: list[TradeManagementEvent]
+
+
+@dataclass(frozen=True)
+class ActiveManagementSnapshot:
+    active_stop_price: float | None = None
+    active_stop_rule_id: str | None = None
+    active_stop_component_id: str | None = None
+    active_take_profile: str = ACTIVE_TAKE_PROFILE_INITIAL
+    active_take_rule_id: str | None = None
+    active_take_component_id: str | None = None
+    active_runtime_exit_rules: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class ExitCandidate:
+    layer: ExitCandidateLayer
+    rule_id: str | None
+    component_id: str | None
+    price: float
+    bar: int
+    reason: str
+    candidate_type: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class ManagedExitContext:
+    bar_index: int
+    time_ms: int
+    open: float
+    high: float
+    low: float
+    close: float
+    side: Literal["long", "short"]
+    entry_price: float
+    phase: TradePhase
+    mfe_pct: float
+    mae_pct: float
+    bars_in_trade: int
+    feature_refs: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class ManagedTradeRuntimeState:
+    runtime: TradeRuntimeState
+    active_management: ActiveManagementSnapshot
+    exit_candidates: list[ExitCandidate] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class ManagedTradeRuntimeResult:
+    states_by_trade_id: dict[str, ManagedTradeRuntimeState]
+    events: list[TradeManagementEvent]
+
+
+def empty_active_management_snapshot() -> ActiveManagementSnapshot:
+    return ActiveManagementSnapshot()
+
+
+def is_managed_exit_mode(mode: ExitManagementMode | None) -> bool:
+    return mode == "managed"
+
+
+def has_behavior_changing_management_rules(
+    *,
+    stop_management: tuple[StopManagementRuleSpec, ...],
+    take_management: tuple[TakeManagementRuleSpec, ...],
+    runtime_exits: tuple[RuntimeExitRuleSpec, ...],
+) -> bool:
+    return bool(stop_management or take_management or runtime_exits)
 
 
 _PHASE_MILESTONE_FIELDS = {
@@ -247,6 +350,253 @@ def evaluate_phase_rules(
     return events
 
 
+def _build_managed_exit_context(
+    state: TradeRuntimeState,
+    *,
+    bar_index: int,
+    time_ms: int,
+    open_: float,
+    high: float,
+    low: float,
+    close: float,
+) -> ManagedExitContext:
+    return ManagedExitContext(
+        bar_index=bar_index,
+        time_ms=time_ms,
+        open=open_,
+        high=high,
+        low=low,
+        close=close,
+        side=state.side,
+        entry_price=state.entry_price,
+        phase=state.phase,
+        mfe_pct=state.mfe_pct,
+        mae_pct=state.mae_pct,
+        bars_in_trade=state.bars_in_trade,
+    )
+
+
+def _recompute_active_management_snapshot(
+    state: TradeRuntimeState,
+    *,
+    context: ManagedExitContext,
+    stop_management: tuple[StopManagementRuleSpec, ...],
+    take_management: tuple[TakeManagementRuleSpec, ...],
+    runtime_exits: tuple[RuntimeExitRuleSpec, ...],
+    previous: ActiveManagementSnapshot,
+    atr_series_by_key: dict[tuple[str, int], pd.Series],
+) -> tuple[ActiveManagementSnapshot, list[TradeManagementEvent], list[ExitCandidate]]:
+    from research.strategies.ema_pullback.execution.managed_components.snapshot import (
+        evaluate_management_layers,
+    )
+
+    result = evaluate_management_layers(
+        state,
+        context=context,
+        stop_management=stop_management,
+        take_management=take_management,
+        runtime_exits=runtime_exits,
+        previous=previous,
+        atr_series_by_key=atr_series_by_key,
+    )
+    return result.snapshot, result.events, result.candidates
+
+
+def _exit_executed_event(
+    *,
+    state: TradeRuntimeState,
+    trade: dict[str, Any],
+    exit_idx: int,
+    index: pd.Index,
+) -> TradeManagementEvent:
+    exit_price = _finite_float(trade.get("exit_price"))
+    return TradeManagementEvent(
+        trade_id=state.trade_id,
+        time_ms=_index_to_time_ms(index, exit_idx),
+        bar_index=exit_idx,
+        side=state.side,
+        event_type="exit_executed",
+        from_phase=state.phase,
+        to_phase=None,
+        rule_id=str(trade.get("exit_rule_id") or trade.get("exit_instance_id") or "") or None,
+        component_id=trade.get("exit_component_id"),
+        price=exit_price,
+        stop_price=state.active_stop_price,
+        mfe_pct=state.mfe_pct,
+        mae_pct=state.mae_pct,
+        bars_in_trade=state.bars_in_trade,
+        metadata={"exit_reason": trade.get("exit_reason")},
+    )
+
+
+def run_managed_exit_runtime(
+    *,
+    trade_records: list[dict[str, Any]],
+    open_: pd.Series,
+    high: pd.Series,
+    low: pd.Series,
+    close: pd.Series,
+    phase_rules: tuple[PhaseRuleSpec, ...],
+    stop_management: tuple[StopManagementRuleSpec, ...] = (),
+    take_management: tuple[TakeManagementRuleSpec, ...] = (),
+    runtime_exits: tuple[RuntimeExitRuleSpec, ...] = (),
+    atr_series_by_key: dict[tuple[str, int], pd.Series] | None = None,
+) -> ManagedTradeRuntimeResult:
+    """Bar-by-bar managed runtime entry point (research execution path).
+
+    Slice 2: updates phase state and neutral ``ActiveManagementSnapshot`` when
+    management arrays are empty. Does not create managed exit candidates or
+    change baseline exit selection — trades must already be closed by the
+    existing execution path (vectorbt / legacy combiner).
+    """
+
+    index = close.index
+    states: dict[str, ManagedTradeRuntimeState] = {}
+    events: list[TradeManagementEvent] = []
+    atr_series_by_key = atr_series_by_key or {}
+
+    for trade in trade_records:
+        if trade.get("status") != "closed":
+            continue
+        try:
+            entry_idx = int(trade.get("entry_idx"))
+            exit_idx = int(trade.get("exit_idx"))
+        except (TypeError, ValueError):
+            continue
+        if entry_idx < 0 or exit_idx < entry_idx or exit_idx >= len(close):
+            continue
+        runtime_state = _initial_state(trade, entry_idx=entry_idx, index=index)
+        if runtime_state is None:
+            continue
+
+        active_management = empty_active_management_snapshot()
+        trade_candidates: list[ExitCandidate] = []
+        for bar_idx in range(entry_idx, exit_idx + 1):
+            open_value = _finite_float(open_.iloc[bar_idx])
+            high_value = _finite_float(high.iloc[bar_idx])
+            low_value = _finite_float(low.iloc[bar_idx])
+            close_value = _finite_float(close.iloc[bar_idx])
+            if (
+                open_value is None
+                or high_value is None
+                or low_value is None
+                or close_value is None
+            ):
+                continue
+            update_trade_runtime_state(
+                runtime_state,
+                bar_index=bar_idx,
+                high=high_value,
+                low=low_value,
+            )
+            time_ms = _index_to_time_ms(index, bar_idx)
+            events.extend(
+                evaluate_phase_rules(
+                    runtime_state,
+                    phase_rules,
+                    bar_index=bar_idx,
+                    time_ms=time_ms,
+                    atr_series_by_key=atr_series_by_key,
+                )
+            )
+            context = _build_managed_exit_context(
+                runtime_state,
+                bar_index=bar_idx,
+                time_ms=time_ms,
+                open_=open_value,
+                high=high_value,
+                low=low_value,
+                close=close_value,
+            )
+            active_management, layer_events, layer_candidates = _recompute_active_management_snapshot(
+                runtime_state,
+                context=context,
+                stop_management=stop_management,
+                take_management=take_management,
+                runtime_exits=runtime_exits,
+                previous=active_management,
+                atr_series_by_key=atr_series_by_key,
+            )
+            events.extend(layer_events)
+            trade_candidates.extend(layer_candidates)
+
+        events.append(
+            _exit_executed_event(
+                state=runtime_state,
+                trade=trade,
+                exit_idx=exit_idx,
+                index=index,
+            )
+        )
+        states[runtime_state.trade_id] = ManagedTradeRuntimeState(
+            runtime=runtime_state,
+            active_management=active_management,
+            exit_candidates=trade_candidates,
+        )
+
+    return ManagedTradeRuntimeResult(states_by_trade_id=states, events=events)
+
+
+def managed_trade_management_block_for_trade(
+    record: dict[str, Any],
+    managed_state: ManagedTradeRuntimeState,
+    events: list[TradeManagementEvent],
+) -> dict[str, Any]:
+    block = trade_management_block_for_trade(
+        record,
+        managed_state.runtime,
+        events,
+    )
+    snapshot = managed_state.active_management
+    block["active_stop_at_exit"] = snapshot.active_stop_price
+    block["active_take_at_exit"] = snapshot.active_take_profile
+    block["active_stop_component_id"] = snapshot.active_stop_component_id
+    block["active_take_component_id"] = snapshot.active_take_component_id
+
+    exit_layer = record.get("exit_layer")
+    if isinstance(exit_layer, str) and exit_layer:
+        block["exit_layer"] = exit_layer
+
+    exit_executed = next(
+        (event for event in reversed(events) if event.event_type == "exit_executed"),
+        None,
+    )
+    if exit_executed is not None:
+        meta_layer = exit_executed.metadata.get("exit_layer")
+        if isinstance(meta_layer, str) and meta_layer:
+            block["exit_layer"] = meta_layer
+        if exit_executed.rule_id:
+            block["exit_rule_id"] = exit_executed.rule_id
+        if exit_executed.component_id:
+            block["exit_component_id"] = exit_executed.component_id
+
+    candidate_type = record.get("managed_exit_candidate_type")
+    if isinstance(candidate_type, str) and candidate_type:
+        block["exit_candidate_type"] = candidate_type
+
+    block["managed_events"] = [_event_payload(event) for event in events]
+    return block
+
+
+def apply_managed_trade_management_diagnostics(
+    trade_records: list[dict[str, Any]],
+    result: ManagedTradeRuntimeResult,
+) -> None:
+    events_by_trade = _events_by_trade_id(result)
+    for record in trade_records:
+        if record.get("status") != "closed":
+            continue
+        trade_id = str(record.get("trade_id") or "")
+        managed_state = result.states_by_trade_id.get(trade_id)
+        if managed_state is None:
+            continue
+        record["trade_management"] = managed_trade_management_block_for_trade(
+            record,
+            managed_state,
+            events_by_trade.get(trade_id, ()),
+        )
+
+
 def build_trade_runtime_diagnostics(
     *,
     trade_records: list[dict[str, Any]],
@@ -298,25 +648,12 @@ def build_trade_runtime_diagnostics(
                 )
             )
 
-        exit_price = _finite_float(trade.get("exit_price"))
         events.append(
-            TradeManagementEvent(
-                trade_id=state.trade_id,
-                time_ms=_index_to_time_ms(index, exit_idx),
-                bar_index=exit_idx,
-                side=state.side,
-                event_type="exit_executed",
-                from_phase=state.phase,
-                to_phase=None,
-                rule_id=str(trade.get("exit_rule_id") or trade.get("exit_instance_id") or "")
-                or None,
-                component_id=trade.get("exit_component_id"),
-                price=exit_price,
-                stop_price=state.active_stop_price,
-                mfe_pct=state.mfe_pct,
-                mae_pct=state.mae_pct,
-                bars_in_trade=state.bars_in_trade,
-                metadata={"exit_reason": trade.get("exit_reason")},
+            _exit_executed_event(
+                state=state,
+                trade=trade,
+                exit_idx=exit_idx,
+                index=index,
             )
         )
         states[state.trade_id] = state
@@ -344,12 +681,16 @@ def _event_payload(event: TradeManagementEvent) -> dict[str, Any]:
     }
 
 
-def trade_management_events_payload(result: TradeRuntimeResult) -> list[dict[str, Any]]:
+def trade_management_events_payload(
+    result: TradeRuntimeResult | ManagedTradeRuntimeResult,
+) -> list[dict[str, Any]]:
     ordered = sorted(enumerate(result.events), key=lambda item: (item[1].bar_index, item[0]))
     return [_event_payload(event) for _order, event in ordered]
 
 
-def _events_by_trade_id(result: TradeRuntimeResult) -> dict[str, list[TradeManagementEvent]]:
+def _events_by_trade_id(
+    result: TradeRuntimeResult | ManagedTradeRuntimeResult,
+) -> dict[str, list[TradeManagementEvent]]:
     out: dict[str, list[TradeManagementEvent]] = {}
     for event in result.events:
         out.setdefault(event.trade_id, []).append(event)
@@ -544,7 +885,11 @@ def _summary_for_records(records: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-def build_trade_management_summary(trade_records: list[dict[str, Any]]) -> dict[str, Any] | None:
+def build_trade_management_summary(
+    trade_records: list[dict[str, Any]],
+    *,
+    managed_mode: bool = False,
+) -> dict[str, Any] | None:
     closed = [
         record
         for record in trade_records
@@ -583,7 +928,7 @@ def build_trade_management_summary(trade_records: list[dict[str, Any]]) -> dict[
         protected_not_runner
     )
 
-    return {
+    summary: dict[str, Any] = {
         "by_phase_reached": by_phase,
         "phase_transition_counts": phase_transition_counts,
         "exit_layer_breakdown": _exit_layer_mix(closed),
@@ -591,3 +936,10 @@ def build_trade_management_summary(trade_records: list[dict[str, Any]]) -> dict[
         "runner_capture_summary": runner_summary,
         "protected_trade_summary": protected_summary,
     }
+    if managed_mode:
+        from research.strategies.ema_pullback.execution.results import (
+            build_managed_layer_breakdowns,
+        )
+
+        summary.update(build_managed_layer_breakdowns(trade_records))
+    return summary

@@ -63,6 +63,7 @@ class VariantMetrics:
     exit_component_quality_breakdown: dict[str, Any] | None = None
     path_diagnostics_summary: dict[str, Any] | None = None
     trade_management_summary: dict[str, Any] | None = None
+    baseline_vs_managed_summary: dict[str, Any] | None = None
 
     def to_payload(self) -> dict[str, Any]:
         total_payload = self.total.to_payload()
@@ -92,6 +93,8 @@ class VariantMetrics:
             payload["path_diagnostics_summary"] = self.path_diagnostics_summary
         if self.trade_management_summary is not None:
             payload["trade_management_summary"] = self.trade_management_summary
+        if self.baseline_vs_managed_summary is not None:
+            payload["baseline_vs_managed_summary"] = self.baseline_vs_managed_summary
         return payload
 
 

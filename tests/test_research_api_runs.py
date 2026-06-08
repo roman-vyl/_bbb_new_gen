@@ -491,6 +491,58 @@ def test_http_get_run_summary_returns_compact_shape(tmp_path: Path, monkeypatch:
     ] == 1
 
 
+def test_http_get_managed_run_report_through_bff(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import research_api.services.results_reader as reader
+
+    from tests.test_research_api_run_report import (
+        _managed_trade_management_block,
+        _managed_trade_management_summary_fixture,
+        _minimal_report_payload,
+        _minimal_trade,
+        _trade_management_event,
+    )
+    from research.strategies.ema_pullback.execution.results import (
+        baseline_vs_managed_summary_placeholder,
+    )
+
+    monkeypatch.setattr(reader, "default_results_dir", lambda: tmp_path)
+    payload = _minimal_report_payload(
+        trade_management_events=[
+            _trade_management_event(event_type="active_stop_updated", component_id="break_even_stop"),
+            _trade_management_event(event_type="exit_executed", from_phase="protected", to_phase=None),
+        ],
+        metrics={
+            **_minimal_report_payload()["variants"][0]["metrics"],  # type: ignore[index]
+            "trade_management_summary": _managed_trade_management_summary_fixture(),
+            "baseline_vs_managed_summary": baseline_vs_managed_summary_placeholder(),
+        },
+        trade_records=[_minimal_trade(trade_management=_managed_trade_management_block())],
+    )
+    payload["report_schema_version"] = 6
+    run_id = _write_artifacts(tmp_path, payload=payload, schema_version=6)
+
+    client = TestClient(app)
+    resp = client.get(f"/api/research/runs/{run_id}")
+    assert resp.status_code == 200
+    body = resp.json()
+    trade_tm = body["variants"][0]["trade_records"][0]["trade_management"]
+    assert trade_tm["exit_layer"] == "exit_management"
+    assert trade_tm["active_stop_at_exit"] == 100.0
+    assert trade_tm["managed_events"][0]["event_type"] == "active_stop_updated"
+    assert body["variants"][0]["trade_management_events"][0]["event_type"] == "active_stop_updated"
+    assert body["variants"][0]["metrics"].get("stop_management_breakdown") is None
+    assert (
+        body["variants"][0]["metrics"]["trade_management_summary"]["stop_management_breakdown"][
+            "break_even_stop"
+        ]["trade_count"]
+        == 1
+    )
+    assert body["variants"][0]["metrics"]["baseline_vs_managed_summary"]["saved_by_managed_stop"] == []
+
+
 def test_http_unsupported_schema(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     import research_api.services.results_reader as reader
 

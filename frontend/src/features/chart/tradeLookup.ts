@@ -50,6 +50,62 @@ function normalizeTradeId(raw: number | string): number | null {
   return Number.isFinite(id) ? id : null;
 }
 
+/** 1-based position in variant `trade_records` (user-facing "Trade #N"). */
+export function tradeDisplayNumber(
+  trades: readonly TradeRecord[],
+  tradeId: number | string | null | undefined,
+): number | null {
+  if (tradeId === null || tradeId === undefined || trades.length === 0) {
+    return null;
+  }
+  const index = trades.findIndex((t) => tradeIdsEqual(t.trade_id, tradeId));
+  if (index < 0) {
+    const asNumber = typeof tradeId === "number" ? tradeId : Number(tradeId);
+    return Number.isFinite(asNumber) && asNumber >= 1 ? asNumber : null;
+  }
+  return index + 1;
+}
+
+/** Resolve display number (1-based) to canonical `trade_id` in report order. */
+export function resolveTradeIdByDisplayNumber(
+  trades: readonly TradeRecord[],
+  displayNumber: number,
+): number | string | null {
+  if (!Number.isFinite(displayNumber) || displayNumber < 1) {
+    return null;
+  }
+  const index = displayNumber - 1;
+  if (index >= trades.length) {
+    return displayNumber;
+  }
+  return trades[index]!.trade_id;
+}
+
+/** User-facing trade label (sequential #), not internal managed id (`long:979`). */
+export function formatTradeDisplayNumber(
+  trades: readonly TradeRecord[],
+  tradeId: number | string | null | undefined,
+): string {
+  const display = tradeDisplayNumber(trades, tradeId);
+  if (display !== null) {
+    return String(display);
+  }
+  if (tradeId === null || tradeId === undefined) {
+    return "";
+  }
+  return String(tradeId);
+}
+
+export function buildTradeDisplayNumberLookup(
+  trades: readonly TradeRecord[],
+): ReadonlyMap<string, number> {
+  const lookup = new Map<string, number>();
+  trades.forEach((trade, index) => {
+    lookup.set(String(trade.trade_id), index + 1);
+  });
+  return lookup;
+}
+
 /** Parse manual trade id from chart nav input (positive integer digits only). */
 export function parseManualTradeIdInput(raw: string): number | null {
   const trimmed = raw.trim();
@@ -84,22 +140,18 @@ export function resolveVariantKeyForReport(loaded: RunReport, previousKey: strin
 }
 
 /** Last closed trade in report order (typical backtest: final closed position). */
-export function findLastClosedTradeId(trades: readonly TradeRecord[]): number | null {
+export function findLastClosedTradeId(trades: readonly TradeRecord[]): number | string | null {
   for (let i = trades.length - 1; i >= 0; i--) {
     const trade = trades[i]!;
-    if (trade.status !== "closed") {
-      continue;
-    }
-    const id = normalizeTradeId(trade.trade_id);
-    if (id !== null) {
-      return id;
+    if (trade.status === "closed") {
+      return trade.trade_id;
     }
   }
   return null;
 }
 
 export type TradeFocusSelection = {
-  tradeId: number | null;
+  tradeId: number | string | null;
   barTimeSec: number | null;
 };
 
@@ -122,7 +174,7 @@ export function getAdjacentTradeId(
   trades: readonly TradeRecord[],
   currentId: number | string | null | undefined,
   direction: -1 | 1,
-): number | null {
+): number | string | null {
   if (currentId === null || currentId === undefined || trades.length === 0) {
     return null;
   }
@@ -134,5 +186,9 @@ export function getAdjacentTradeId(
   if (nextIndex < 0 || nextIndex >= trades.length) {
     return null;
   }
-  return normalizeTradeId(trades[nextIndex]!.trade_id);
+  const raw = trades[nextIndex]!.trade_id;
+  if (typeof raw === "string") {
+    return raw;
+  }
+  return normalizeTradeId(raw);
 }

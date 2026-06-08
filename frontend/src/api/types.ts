@@ -59,7 +59,7 @@ export type ChartAuxEmaOverlay = {
 export const CHART_MARKET_TIMEFRAME = "5m" as const;
 
 export type TradeOverlay = {
-  trade_id: number;
+  trade_id: number | string;
   direction: "long" | "short";
   status: "open" | "closed";
   entry_time_ms: number;
@@ -92,7 +92,34 @@ export type BreakEvenDiagnostics = {
   active_stop_management_source: "profile" | "always_on";
 };
 
-/** Diagnostic-only runtime block on closed trades (schema v6 additive). */
+export type ManagedTradeManagementEventType =
+  | "phase_changed"
+  | "active_stop_updated"
+  | "active_take_updated"
+  | "runtime_exit_triggered"
+  | "exit_rule_triggered"
+  | "exit_executed";
+
+/** Runtime trace event from trade-management (schema v6; diagnostic + managed). */
+export type TradeManagementEvent = {
+  trade_id: string;
+  time_ms?: number | null;
+  bar_index: number;
+  side: "long" | "short";
+  event_type: ManagedTradeManagementEventType;
+  from_phase?: string | null;
+  to_phase?: string | null;
+  rule_id?: string | null;
+  component_id?: string | null;
+  price?: number | null;
+  stop_price?: number | null;
+  mfe_pct?: number | null;
+  mae_pct?: number | null;
+  bars_in_trade?: number | null;
+  metadata?: JsonObject;
+};
+
+/** Trade-management runtime block on closed trades (schema v6; diagnostic + managed). */
 export type TradeManagementDiagnostics = {
   phase_at_exit: string;
   max_phase_reached: string;
@@ -111,25 +138,12 @@ export type TradeManagementDiagnostics = {
   mfe_at_proven_pct?: number | null;
   mfe_at_protected_pct?: number | null;
   mfe_at_runner_pct?: number | null;
-};
-
-/** Runtime trace event from diagnostic-only trade-management (schema v6 additive). */
-export type TradeManagementEvent = {
-  trade_id: string;
-  time_ms?: number | null;
-  bar_index: number;
-  side: "long" | "short";
-  event_type: "phase_changed" | "exit_executed";
-  from_phase?: string | null;
-  to_phase?: string | null;
-  rule_id?: string | null;
-  component_id?: string | null;
-  price?: number | null;
-  stop_price?: number | null;
-  mfe_pct?: number | null;
-  mae_pct?: number | null;
-  bars_in_trade?: number | null;
-  metadata?: JsonObject;
+  active_stop_at_exit?: number | null;
+  active_take_at_exit?: string | null;
+  active_stop_component_id?: string | null;
+  active_take_component_id?: string | null;
+  exit_candidate_type?: string | null;
+  managed_events?: TradeManagementEvent[] | null;
 };
 
 export type TradeManagementPhaseBucket = {
@@ -147,6 +161,23 @@ export type TradeManagementPhaseBucket = {
   exit_reason_mix?: Record<string, number>;
 };
 
+export type ManagedLayerBreakdownEntry = {
+  trade_count?: number;
+  pnl?: number;
+  win_count?: number;
+};
+
+/** Placeholder comparison summary (managed mode; populated in later slice). */
+export type BaselineVsManagedSummary = {
+  saved_by_managed_stop?: unknown[];
+  hurt_by_managed_stop?: unknown[];
+  take_disabled_then_won?: unknown[];
+  take_disabled_then_lost?: unknown[];
+  runtime_exit_helped?: unknown[];
+  runtime_exit_hurt?: unknown[];
+  exit_layer_transition_matrix?: Record<string, unknown>;
+};
+
 /** Variant-level trade-management summary (schema v6 additive, defensive shape). */
 export type TradeManagementSummary = {
   by_phase_reached?: Record<string, TradeManagementPhaseBucket>;
@@ -155,6 +186,9 @@ export type TradeManagementSummary = {
   active_stop_source_breakdown?: Record<string, number>;
   runner_capture_summary?: JsonObject;
   protected_trade_summary?: JsonObject;
+  stop_management_breakdown?: Record<string, ManagedLayerBreakdownEntry>;
+  take_management_breakdown?: Record<string, ManagedLayerBreakdownEntry>;
+  runtime_exit_breakdown?: Record<string, ManagedLayerBreakdownEntry>;
 };
 
 export type TradeRecord = TradeOverlay & {
@@ -202,8 +236,11 @@ export type TradeRecord = TradeOverlay & {
   /** Schema v6 — closed trades only */
   path_diagnostics?: TradePathDiagnostics;
   reference_levels?: TradeReferenceLevels;
-  /** Schema v6 — diagnostic-only trade-management runtime */
+  /** Schema v6 — trade-management runtime (diagnostic + managed) */
   trade_management?: TradeManagementDiagnostics;
+  /** Managed execution attribution on trade record */
+  exit_layer?: string | null;
+  managed_exit_candidate_type?: string | null;
 };
 
 export type TradePathExcursion = {
@@ -398,8 +435,10 @@ export type VariantMetrics = {
   bounce_counter_breakdown?: BounceCounterBreakdown;
   /** Schema v6 */
   path_diagnostics_summary?: PathDiagnosticsSummary;
-  /** Schema v6 — diagnostic-only trade-management summary */
+  /** Schema v6 — trade-management summary (diagnostic + managed breakdowns) */
   trade_management_summary?: TradeManagementSummary;
+  /** Schema v6 — managed mode comparison placeholder */
+  baseline_vs_managed_summary?: BaselineVsManagedSummary | null;
 };
 
 export type RunVariant = {
@@ -411,7 +450,7 @@ export type RunVariant = {
   metrics: VariantMetrics;
   component_counters: unknown[];
   trade_records: TradeRecord[];
-  /** Schema v6 — diagnostic-only runtime event trace (full report only) */
+  /** Schema v6 — trade-management runtime event trace (full report only) */
   trade_management_events?: TradeManagementEvent[] | null;
 };
 

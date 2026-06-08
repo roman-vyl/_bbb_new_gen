@@ -622,3 +622,60 @@ def test_select_config_switches_draft(
     body = res.json()
     assert body["selected_experiment_id"] == "api_config_alt"
     assert body["draft"]["instances"][0]["instance_id"] == "alt"
+
+
+def test_config_state_tolerates_invalid_selected_draft(
+    client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    configs_root = tmp_path / "configs"
+    family_dir = configs_root / "ema_pullback"
+    family_dir.mkdir(parents=True)
+    selection_file = configs_root / ".workbench_selection.json"
+    monkeypatch.setattr(config_service, "_CONFIGS_ROOT", configs_root)
+    monkeypatch.setattr(config_service, "_SELECTION_FILE", selection_file)
+
+    legacy_draft = {
+        "schema_version": 1,
+        "experiment_id": "legacy_exit_management",
+        "family": "ema_pullback",
+        "execution": {"init_cash": 10000.0},
+        "instances": [
+            {
+                "instance_id": "baseline",
+                "variant": "baseline",
+                "market": {"symbol": "BTCUSDT", "base_timeframe": "5m"},
+                "strategy": {
+                    **_valid_draft()["instances"][0]["strategy"],  # type: ignore[index]
+                    "trade_management": {
+                        "exit_policy": {"always_on": {"exits": []}, "profiles": {}},
+                        "exit_management": {
+                            "always_on": {
+                                "rules": [
+                                    {
+                                        "instance_id": "be",
+                                        "component_id": "break_even_stop",
+                                        "trigger_r": 1.0,
+                                        "offset_r": 0.0,
+                                        "apply_once": True,
+                                    }
+                                ]
+                            }
+                        },
+                    },
+                },
+            }
+        ],
+    }
+    (family_dir / "legacy_exit_management.json").write_text(
+        json.dumps(legacy_draft), encoding="utf-8"
+    )
+    selection_file.write_text(
+        json.dumps({"ema_pullback": "legacy_exit_management"}), encoding="utf-8"
+    )
+
+    res = client.get("/api/research/configs/state?family=ema_pullback")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["selected_experiment_id"] == "legacy_exit_management"
+    assert body["draft"] is None
+    assert len(body["configs"]) == 1

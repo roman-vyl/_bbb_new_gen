@@ -17,6 +17,7 @@ from research.strategies.ema_pullback.execution.result_models import (
 )
 from research.strategies.ema_pullback.execution.exit_attribution import build_exit_instance_component_map
 from research.strategies.ema_pullback.execution.results import (
+    baseline_vs_managed_summary_placeholder,
     build_bounce_counter_breakdown,
     build_exit_reason_breakdown,
     build_fee_diagnostics,
@@ -27,17 +28,24 @@ from research.strategies.ema_pullback.execution.results import (
 )
 from research.strategies.ema_pullback.components.setup import ema_bounce_counter_setup_trace
 from research.strategies.ema_pullback.context.pipeline import build_context_bundle_for_spec
-from research.strategies.ema_pullback.execution.exit_management import (
-    has_exit_management_rules,
-    run_managed_bar_loop,
-)
 from research.strategies.ema_pullback.execution.exits import build_exit_outputs_from_spec
-from research.strategies.ema_pullback.execution.results import build_managed_trade_records
+from research.strategies.ema_pullback.execution.managed_execution_loop import (
+    execution_result_to_managed_runtime_result,
+    run_managed_execution_loop,
+)
+from research.strategies.ema_pullback.execution.managed_exit_provider import ManagedExitProvider
+from research.strategies.ema_pullback.execution.results import (
+    build_execution_integrated_trade_records,
+)
 from research.strategies.ema_pullback.execution.signals import build_signals_from_spec
 from research.strategies.ema_pullback.execution.trade_runtime import (
+    apply_managed_trade_management_diagnostics,
     apply_trade_management_diagnostics,
     build_trade_management_summary,
     build_trade_runtime_diagnostics,
+    has_behavior_changing_management_rules,
+    is_managed_exit_mode,
+    run_managed_exit_runtime,
     trade_management_events_payload,
 )
 from research.strategies.ema_pullback.features.calculations import add_feature_columns_from_plan
@@ -80,6 +88,15 @@ def _open_high_low_for_vectorbt(enriched: pd.DataFrame) -> tuple[pd.Series, pd.S
         if series.isna().any():
             raise SystemExit(f"{name} contains NaN — check DB / repair pipeline.")
     return open_s, high_s, low_s
+
+
+def _uses_managed_execution_integration(spec: EmaPullbackStrategySpec) -> bool:
+    em = spec.trade_management.exit_management
+    return is_managed_exit_mode(em.mode) and has_behavior_changing_management_rules(
+        stop_management=em.stop_management,
+        take_management=em.take_management,
+        runtime_exits=em.runtime_exits,
+    )
 
 
 def _atr_series_for_phase_rules(
@@ -139,6 +156,7 @@ def build_trade_side_metrics(
     max_drawdown: float,
     fees_rate: float = 0.0,
     trade_management_summary: dict[str, Any] | None = None,
+    baseline_vs_managed_summary: dict[str, Any] | None = None,
 ) -> VariantMetrics:
     """Realized PnL / PF / win_rate use ``status == \"closed\"`` only; open rows are counted in ``open_trades``."""
 
@@ -165,6 +183,7 @@ def build_trade_side_metrics(
         fee_diagnostics=build_fee_diagnostics(trade_records, fees_rate=fees_rate),
         bounce_counter_breakdown=build_bounce_counter_breakdown(trade_records),
         trade_management_summary=trade_management_summary,
+        baseline_vs_managed_summary=baseline_vs_managed_summary,
         **build_trade_quality_breakdowns(trade_records),
     )
 
@@ -204,7 +223,7 @@ def _equity_metrics_from_trades(
     )
 
 
-def _run_managed_strategy_spec(
+def _run_execution_integrated_strategy_spec(
     spec: EmaPullbackStrategySpec,
     enriched: pd.DataFrame,
     plan: Any,
@@ -222,7 +241,15 @@ def _run_managed_strategy_spec(
     short_entries_for_portfolio = (
         signals.short_entries.fillna(False).astype(bool) & exit_outputs.stop_ready_short
     )
-    closed, _traces = run_managed_bar_loop(
+    em = spec.trade_management.exit_management
+    provider = ManagedExitProvider(
+        phase_rules=em.phase_rules,
+        stop_management=em.stop_management,
+        take_management=em.take_management,
+        runtime_exits=em.runtime_exits,
+        atr_series_by_key=_atr_series_for_phase_rules(enriched, spec),
+    )
+    loop_result = run_managed_execution_loop(
         spec=spec,
         close=close,
         open_=open_s,
@@ -231,21 +258,21 @@ def _run_managed_strategy_spec(
         entries=entries_for_portfolio,
         short_entries=short_entries_for_portfolio,
         exit_outputs=exit_outputs,
+        provider=provider,
         component_map=build_exit_instance_component_map(spec),
     )
-    trade_records = build_managed_trade_records(
-        closed,
+    trade_records = build_execution_integrated_trade_records(
+        loop_result.closed,
         index=close.index,
-        close=close,
-        high=high_s,
-        low=low_s,
-        open_=open_s,
-        attribution=exit_outputs.attribution,
         fees_rate=float(fees),
         base_timeframe=spec.base_timeframe,
-        profile_long=exit_outputs.profile_long,
-        profile_short=exit_outputs.profile_short,
-        context_state=exit_outputs.context_state,
+    )
+    managed_runtime = execution_result_to_managed_runtime_result(loop_result)
+    apply_managed_trade_management_diagnostics(trade_records, managed_runtime)
+    trade_management_events = trade_management_events_payload(managed_runtime)
+    trade_management_summary = build_trade_management_summary(
+        trade_records,
+        managed_mode=True,
     )
     sharpe, max_dd = _equity_metrics_from_trades(
         trade_records, init_cash=float(init_cash), n_bars=len(close)
@@ -262,9 +289,12 @@ def _run_managed_strategy_spec(
             sharpe=sharpe,
             max_drawdown=max_dd,
             fees_rate=float(fees),
+            trade_management_summary=trade_management_summary,
+            baseline_vs_managed_summary=baseline_vs_managed_summary_placeholder(),
         ),
         component_counters=list(signals.output_counters + exit_outputs.output_counters),
         trade_records=trade_records,
+        trade_management_events=trade_management_events,
     )
 
 
@@ -299,8 +329,8 @@ def run_strategy_spec(
     # Future diagnostic_only trade-management must run after actual trade_records
     # are built from the chosen path. It must not feed phase state back into
     # vectorbt masks, stops, exits, or legacy BE managed decisions.
-    if has_exit_management_rules(spec):
-        return _run_managed_strategy_spec(
+    if _uses_managed_execution_integration(spec):
+        return _run_execution_integrated_strategy_spec(
             spec,
             enriched,
             plan,
@@ -528,18 +558,42 @@ def run_strategy_spec(
     )
     trade_management_events: list[dict[str, Any]] | None = None
     trade_management_summary: dict[str, Any] | None = None
-    if spec.trade_management.exit_management.mode == "diagnostic_only":
+    baseline_vs_managed_summary: dict[str, Any] | None = None
+    exit_management = spec.trade_management.exit_management
+    if exit_management.mode == "diagnostic_only":
         diagnostic_runtime = build_trade_runtime_diagnostics(
             trade_records=trade_records,
             high=high_s,
             low=low_s,
             close=close,
-            phase_rules=spec.trade_management.exit_management.phase_rules,
+            phase_rules=exit_management.phase_rules,
             atr_series_by_key=_atr_series_for_phase_rules(enriched, spec),
         )
         apply_trade_management_diagnostics(trade_records, diagnostic_runtime)
         trade_management_events = trade_management_events_payload(diagnostic_runtime)
         trade_management_summary = build_trade_management_summary(trade_records)
+    elif is_managed_exit_mode(exit_management.mode):
+        managed_runtime = run_managed_exit_runtime(
+            trade_records=trade_records,
+            open_=open_s,
+            high=high_s,
+            low=low_s,
+            close=close,
+            phase_rules=exit_management.phase_rules,
+            stop_management=exit_management.stop_management,
+            take_management=exit_management.take_management,
+            runtime_exits=exit_management.runtime_exits,
+            atr_series_by_key=_atr_series_for_phase_rules(enriched, spec),
+        )
+        apply_managed_trade_management_diagnostics(trade_records, managed_runtime)
+        trade_management_events = trade_management_events_payload(managed_runtime)
+        trade_management_summary = build_trade_management_summary(
+            trade_records,
+            managed_mode=True,
+        )
+        baseline_vs_managed_summary = baseline_vs_managed_summary_placeholder()
+    else:
+        baseline_vs_managed_summary = None
 
     sharpe = ensure_finite_metric("sharpe_ratio", float(pf.sharpe_ratio()))
     max_dd_raw = pf.max_drawdown()
@@ -559,6 +613,7 @@ def run_strategy_spec(
             max_drawdown=max_dd_f,
             fees_rate=float(fees),
             trade_management_summary=trade_management_summary,
+            baseline_vs_managed_summary=baseline_vs_managed_summary,
         ),
         component_counters=list(signals.output_counters + exit_outputs.output_counters),
         trade_records=trade_records,

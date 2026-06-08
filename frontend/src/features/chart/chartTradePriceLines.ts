@@ -18,22 +18,24 @@ function exitLineColor(): string {
   return "#fbbf24";
 }
 
-export function buildEntryPriceLineTitle(trade: TradeRecord): string {
-  return `Entry #${trade.trade_id}`;
+export function buildEntryPriceLineTitle(trade: TradeRecord, displayNumber?: number): string {
+  const label = displayNumber ?? trade.trade_id;
+  return `Entry #${label}`;
 }
 
-export function buildExitPriceLineTitle(trade: TradeRecord): string {
+export function buildExitPriceLineTitle(trade: TradeRecord, displayNumber?: number): string {
+  const label = displayNumber ?? trade.trade_id;
   const kind = trade.exit_kind ?? classifyExitReason(trade.exit_reason);
   if (kind === "open" || kind === "unknown") {
-    return `Exit #${trade.trade_id}`;
+    return `Exit #${label}`;
   }
   if (kind === "break_even") {
-    return `Exit #${trade.trade_id} · break-even`;
+    return `Exit #${label} · break-even`;
   }
-  return `Exit #${trade.trade_id} · ${kind}`;
+  return `Exit #${label} · ${kind}`;
 }
 
-export function buildTradePriceLineSpecs(trade: TradeRecord): TradePriceLineSpec[] {
+export function buildTradePriceLineSpecs(trade: TradeRecord, displayNumber?: number): TradePriceLineSpec[] {
   const specs: TradePriceLineSpec[] = [];
 
   if (trade.entry_price !== null && trade.entry_price !== undefined) {
@@ -45,7 +47,7 @@ export function buildTradePriceLineSpecs(trade: TradeRecord): TradePriceLineSpec
         lineWidth: 2,
         lineStyle: 0,
         axisLabelVisible: true,
-        title: buildEntryPriceLineTitle(trade),
+        title: buildEntryPriceLineTitle(trade, displayNumber),
       },
     });
   }
@@ -63,7 +65,7 @@ export function buildTradePriceLineSpecs(trade: TradeRecord): TradePriceLineSpec
         lineWidth: 2,
         lineStyle: 2,
         axisLabelVisible: true,
-        title: buildExitPriceLineTitle(trade),
+        title: buildExitPriceLineTitle(trade, displayNumber),
       },
     });
   }

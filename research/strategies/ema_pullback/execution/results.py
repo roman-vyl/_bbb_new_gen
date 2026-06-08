@@ -594,23 +594,14 @@ def extract_trade_records(
     return out
 
 
-def build_managed_trade_records(
+def build_execution_integrated_trade_records(
     closed_trades: list[dict[str, Any]],
     *,
     index: pd.Index,
-    close: pd.Series,
-    high: pd.Series | None = None,
-    low: pd.Series | None = None,
-    open_: pd.Series | None = None,
-    attribution: ExitAttributionContext | None = None,
-    diagnostic_atr_series: pd.Series | None = None,
     fees_rate: float = 0.0,
     base_timeframe: str | None = None,
-    profile_long: pd.Series | None = None,
-    profile_short: pd.Series | None = None,
-    context_state: pd.Series | None = None,
 ) -> list[dict[str, Any]]:
-    """Normalize managed-replay closes into trade_records shape."""
+    """Normalize execution-integrated managed closes into trade_records shape."""
 
     base_timeframe_minutes: int | None = None
     if base_timeframe is not None:
@@ -618,22 +609,22 @@ def build_managed_trade_records(
 
     out: list[dict[str, Any]] = []
     for i, item in enumerate(closed_trades):
-        pos = item["position"]
-        entry_idx = pos.entry_idx
+        entry_idx = int(item["entry_idx"])
         exit_idx = int(item["exit_idx"])
-        entry_p = float(pos.entry_price)
-        exit_p = float(item["exit_price"])
-        direction = pos.direction
+        entry_p = float(item["entry_price"])
+        direction = item["direction"]
         is_open = bool(item.get("open", False))
         status = "open" if is_open else "closed"
+        exit_p = float(item["exit_price"]) if status == "closed" else None
 
         if direction == "long":
-            gross_pnl = (exit_p - entry_p) if status == "closed" else None
+            gross_pnl = (exit_p - entry_p) if exit_p is not None else None
         else:
-            gross_pnl = (entry_p - exit_p) if status == "closed" else None
+            gross_pnl = (entry_p - exit_p) if exit_p is not None else None
 
         fees_paid = 0.0
         if gross_pnl is not None and fees_rate:
+            assert exit_p is not None
             fees_paid = abs(entry_p + exit_p) * fees_rate
         pnl = (gross_pnl - fees_paid) if gross_pnl is not None else None
         ret_pct = (pnl / entry_p) if pnl is not None and entry_p else None
@@ -650,13 +641,13 @@ def build_managed_trade_records(
             exit_reason = "unknown"
 
         record: dict[str, Any] = {
-            "trade_id": i + 1,
+            "trade_id": item.get("trade_id", i + 1),
             "direction": direction,
             "status": status,
             "entry_time_ms": entry_ms,
             "exit_time_ms": exit_ms,
             "entry_price": entry_p,
-            "exit_price": exit_p if status == "closed" else None,
+            "exit_price": exit_p,
             "size": 1.0,
             "pnl": pnl,
             "return_pct": ret_pct,
@@ -672,69 +663,105 @@ def build_managed_trade_records(
             record["exit_instance_id"] = exit_attr.exit_instance_id
             record["exit_kind"] = exit_attr.exit_kind
 
+        exit_layer = item.get("exit_layer")
+        if status == "closed" and isinstance(exit_layer, str):
+            record["exit_layer"] = exit_layer
+
+        winner = item.get("winner")
+        if status == "closed" and winner is not None and getattr(winner, "candidate_type", None):
+            record["managed_exit_candidate_type"] = winner.candidate_type
+
         if status == "closed" and gross_pnl is not None:
             record["gross_pnl"] = gross_pnl
             record["fees_paid"] = fees_paid
             record["gross_return_pct"] = ret_pct
 
-        entry_profile = pos.locked_profile
+        entry_profile = item.get("locked_profile", "neutral")
         record["entry_profile"] = entry_profile
         record["active_exit_profile"] = entry_profile
-
-        if context_state is not None and 0 <= entry_idx < len(context_state):
-            record["entry_context_state"] = _context_state_label(context_state.iloc[entry_idx])
 
         hold_bars = exit_idx - entry_idx + 1
         record["hold_bars"] = hold_bars
         if base_timeframe_minutes is not None:
             record["hold_minutes"] = hold_bars * base_timeframe_minutes
 
-        from research.strategies.ema_pullback.execution.exit_management import (
-            build_break_even_diagnostics,
-        )
-
-        diag = build_break_even_diagnostics(pos)
-        if diag is not None:
-            trigger_time_ms = diag.trigger_time_ms
-            if pos.triggered and pos.trigger_idx is not None:
-                trigger_time_ms = _index_to_open_time_ms(index, pos.trigger_idx)
-            record["break_even"] = {
-                "enabled": diag.enabled,
-                "instance_id": diag.instance_id,
-                "trigger_r": diag.trigger_r,
-                "trigger_price": diag.trigger_price,
-                "triggered": diag.triggered,
-                "trigger_time_ms": trigger_time_ms,
-                "stop_moved_to": diag.stop_moved_to,
-                "initial_stop_price": diag.initial_stop_price,
-                "initial_risk": diag.initial_risk,
-                "active_stop_management_source": diag.active_stop_management_source,
-            }
-
-        if (
-            status == "closed"
-            and high is not None
-            and low is not None
-            and entry_idx >= 0
-            and exit_idx >= entry_idx
-        ):
-            record.update(
-                build_trade_quality_diagnostics(
-                    record,
-                    entry_idx=entry_idx,
-                    exit_idx=exit_idx,
-                    high=high,
-                    low=low,
-                    index=index,
-                    open_=open_,
-                    close=close,
-                    attribution=attribution,
-                    diagnostic_atr_series=diagnostic_atr_series,
-                )
-            )
-
         out.append(record)
     return out
+
+
+_MANAGED_EXIT_CANDIDATE_BREAKDOWN: dict[str, str] = {
+    "managed_stop": "stop_management_breakdown",
+    "runtime_exit": "runtime_exit_breakdown",
+}
+
+
+def _empty_managed_breakdown_entry() -> dict[str, Any]:
+    return {"trade_count": 0, "pnl": 0.0, "win_count": 0}
+
+
+def _accumulate_managed_breakdown(
+    bucket: dict[str, Any],
+    component_key: str,
+    record: dict[str, Any],
+) -> None:
+    entry = bucket.setdefault(component_key, _empty_managed_breakdown_entry())
+    entry["trade_count"] = int(entry["trade_count"]) + 1
+    pnl = float(record.get("pnl") or 0.0)
+    entry["pnl"] = float(entry.get("pnl") or 0.0) + pnl
+    if pnl > 0.0:
+        entry["win_count"] = int(entry.get("win_count") or 0) + 1
+
+
+def build_managed_layer_breakdowns(
+    trade_records: list[dict[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    """Generic managed layer breakdowns keyed by component_id."""
+
+    stop_breakdown: dict[str, Any] = {}
+    take_breakdown: dict[str, Any] = {}
+    runtime_breakdown: dict[str, Any] = {}
+    for record in trade_records:
+        if record.get("status") != "closed":
+            continue
+        tm = record.get("trade_management")
+        if not isinstance(tm, dict):
+            continue
+
+        layer = tm.get("exit_layer")
+        component_id = tm.get("exit_component_id")
+        candidate_type = tm.get("exit_candidate_type") or record.get(
+            "managed_exit_candidate_type"
+        )
+        if layer == "exit_management" and isinstance(component_id, str) and component_id:
+            breakdown_key = _MANAGED_EXIT_CANDIDATE_BREAKDOWN.get(str(candidate_type or ""))
+            if breakdown_key == "stop_management_breakdown":
+                _accumulate_managed_breakdown(stop_breakdown, component_id, record)
+            elif breakdown_key == "runtime_exit_breakdown":
+                _accumulate_managed_breakdown(runtime_breakdown, component_id, record)
+
+        take_component_id = tm.get("active_take_component_id")
+        take_profile = tm.get("active_take_at_exit")
+        if isinstance(take_component_id, str) and take_component_id and take_profile not in (
+            None,
+            "initial",
+        ):
+            _accumulate_managed_breakdown(take_breakdown, take_component_id, record)
+
+    return {
+        "stop_management_breakdown": stop_breakdown,
+        "take_management_breakdown": take_breakdown,
+        "runtime_exit_breakdown": runtime_breakdown,
+    }
+
+
+def baseline_vs_managed_summary_placeholder() -> dict[str, Any]:
+    """Empty comparison summary shape when no paired baseline run is available."""
+
+    from research.strategies.ema_pullback.execution.managed_comparison import (
+        baseline_vs_managed_summary_placeholder as _placeholder,
+    )
+
+    return _placeholder()
 
 
 def build_research_run_payload(

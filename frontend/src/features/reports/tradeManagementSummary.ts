@@ -1,4 +1,10 @@
-import type { JsonObject, TradeManagementSummary, VariantMetrics } from "@/api/types";
+import type {
+  BaselineVsManagedSummary,
+  JsonObject,
+  ManagedLayerBreakdownEntry,
+  TradeManagementSummary,
+  VariantMetrics,
+} from "@/api/types";
 
 export const TRADE_MANAGEMENT_PHASE_ORDER = [
   "initial_risk",
@@ -12,6 +18,35 @@ export function hasTradeManagementSummary(
   metrics: VariantMetrics,
 ): metrics is VariantMetrics & { trade_management_summary: TradeManagementSummary } {
   return metrics.trade_management_summary !== undefined && metrics.trade_management_summary !== null;
+}
+
+export function hasBaselineVsManagedSummary(
+  metrics: VariantMetrics,
+): metrics is VariantMetrics & { baseline_vs_managed_summary: BaselineVsManagedSummary } {
+  return (
+    metrics.baseline_vs_managed_summary !== undefined &&
+    metrics.baseline_vs_managed_summary !== null
+  );
+}
+
+export function hasManagedLayerBreakdowns(summary: TradeManagementSummary): boolean {
+  return (
+    managedLayerBreakdownRows(summary.stop_management_breakdown).length > 0 ||
+    managedLayerBreakdownRows(summary.take_management_breakdown).length > 0 ||
+    managedLayerBreakdownRows(summary.runtime_exit_breakdown).length > 0
+  );
+}
+
+export function managedLayerBreakdownRows(
+  breakdown: Record<string, ManagedLayerBreakdownEntry> | undefined,
+): Array<{ componentId: string; entry: ManagedLayerBreakdownEntry }> {
+  if (!breakdown || typeof breakdown !== "object") {
+    return [];
+  }
+  return Object.entries(breakdown)
+    .filter(([, entry]) => entry && typeof entry === "object")
+    .sort((a, b) => (b[1].trade_count ?? 0) - (a[1].trade_count ?? 0))
+    .map(([componentId, entry]) => ({ componentId, entry }));
 }
 
 export function phaseRows(summary: TradeManagementSummary): Array<{

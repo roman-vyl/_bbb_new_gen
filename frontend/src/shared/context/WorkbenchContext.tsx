@@ -99,6 +99,7 @@ import {
   defaultClosedTradeSelection,
   deriveSelectedVariant,
   findTradeById,
+  formatTradeDisplayNumber,
   isTradeInVariant,
   resolveSelectedTradeEntryTimeMs,
   resolveTradeEntryTimeMs,
@@ -182,8 +183,8 @@ type WorkbenchState = {
   candlesSource: CandlesSource;
   selectedVariantKey: string;
   setSelectedVariantKey: (key: string) => void;
-  selectedTradeId: number | null;
-  selectTrade: (tradeId: number | null) => void;
+  selectedTradeId: number | string | null;
+  selectTrade: (tradeId: number | string | null) => void;
   selectedVariant: RunVariant | null;
   configDraft: StrategyConfigDraft | null;
   setConfigDraft: (draft: StrategyConfigDraft) => void;
@@ -273,7 +274,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
   const [selectedRunId, setSelectedRunIdState] = useState<string | null>(null);
   const [report, setReport] = useState<RunReport | null>(null);
   const [selectedVariantKey, setSelectedVariantKeyState] = useState("");
-  const [selectedTradeId, setSelectedTradeId] = useState<number | null>(null);
+  const [selectedTradeId, setSelectedTradeId] = useState<number | string | null>(null);
   const [selectedBarTimeSec, setSelectedBarTimeSec] = useState<number | null>(null);
   const [signalTrace, setSignalTrace] = useState<SignalTraceBundle | null>(null);
   const [signalTraceStatus, setSignalTraceStatus] = useState<SignalTraceLoadStatus>("idle");
@@ -665,14 +666,14 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       return {
         trade: undefined,
         entryTimeMs: null,
-        warning: `Trade #${selectedTradeId} not found in variant trade_records.`,
+        warning: `Trade #${formatTradeDisplayNumber(selectedVariant.trade_records, selectedTradeId)} not found in variant trade_records.`,
       };
     }
     if (entryTimeMs === null) {
       return {
         trade,
         entryTimeMs: null,
-        warning: `Trade #${trade.trade_id} has no valid entry_time_ms in report.`,
+        warning: `Trade #${formatTradeDisplayNumber(selectedVariant.trade_records, trade.trade_id)} has no valid entry_time_ms in report.`,
       };
     }
     return { trade, entryTimeMs, warning: null };
@@ -1447,7 +1448,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     cachedBundle !== undefined && marketLoadStatus !== "error" ? "market" : "unavailable";
 
   const selectTrade = useCallback(
-    (tradeId: number | null) => {
+    (tradeId: number | string | null) => {
       let entryTimeSec: number | null = null;
       if (tradeId !== null && selectedVariant) {
         const trade = findTradeById(selectedVariant.trade_records, tradeId);

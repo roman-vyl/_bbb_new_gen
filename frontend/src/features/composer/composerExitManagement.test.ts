@@ -12,6 +12,7 @@ import {
   EXIT_MANAGEMENT_PRODUCT_CONTRACT,
   countLegacyExitManagementRules,
   createBlankExitManagement,
+  exitManagementHasLegacyKeys,
 } from "@/features/composer/composerExitManagementProduct";
 
 const CATALOG_WITH_LEGACY_BE: ComponentCatalog = {
@@ -55,6 +56,15 @@ describe("composer exit_management product contract", () => {
     expect(componentsForRole(CATALOG_WITH_LEGACY_BE, "exits")).toHaveLength(1);
   });
 
+  it("exitManagementHasLegacyKeys is true when always_on key is present even without rules", () => {
+    expect(
+      exitManagementHasLegacyKeys({
+        always_on: { rules: [] },
+        profiles: { aligned: { rules: [] }, countertrend: { rules: [] }, neutral: { rules: [] } },
+      }),
+    ).toBe(true);
+  });
+
   it("counts legacy rules on loaded deprecated configs", () => {
     const legacy = {
       always_on: {
@@ -69,8 +79,9 @@ describe("composer exit_management product contract", () => {
     expect(countLegacyExitManagementRules(legacy)).toBe(2);
   });
 
-  it("product contract reserves empty stop_management and runtime_exits", () => {
+  it("product contract reserves empty management arrays", () => {
     expect(EXIT_MANAGEMENT_PRODUCT_CONTRACT.stop_management).toEqual([]);
+    expect(EXIT_MANAGEMENT_PRODUCT_CONTRACT.take_management).toEqual([]);
     expect(EXIT_MANAGEMENT_PRODUCT_CONTRACT.runtime_exits).toEqual([]);
   });
 
@@ -79,6 +90,7 @@ describe("composer exit_management product contract", () => {
       mode: "diagnostic_only",
       phase_rules: [],
       stop_management: [],
+      take_management: [],
       runtime_exits: [],
     });
   });

@@ -2,14 +2,18 @@ import type { SeriesMarker, Time } from "lightweight-charts";
 
 import { msToChartTime, type TradeManagementEvent, type TradeRecord } from "@/api/types";
 import { filterMarkersToTimeRange } from "@/features/chart/chartMarkers";
-import { tradeIdsEqual } from "@/features/chart/tradeLookup";
+import { buildTradeDisplayNumberLookup, tradeIdsEqual } from "@/features/chart/tradeLookup";
 
 export const TRADE_MANAGEMENT_MARKER_LEGEND = [
   { kind: "phase_proven", label: "Proven", description: "Phase transition · proven" },
   { kind: "phase_protected", label: "Protected", description: "Phase transition · protected" },
   { kind: "phase_runner", label: "Runner", description: "Phase transition · runner" },
   { kind: "phase_exhaust", label: "Exhaust", description: "Phase transition · exhaustion" },
-  { kind: "exit_executed", label: "Exit", description: "Exit-management diagnostic exit" },
+  { kind: "managed_stop", label: "Stop↑", description: "Active stop updated" },
+  { kind: "managed_take", label: "Take", description: "Take profile updated" },
+  { kind: "managed_runtime", label: "Runtime", description: "Runtime exit triggered" },
+  { kind: "exit_rule", label: "Rule", description: "Exit rule triggered" },
+  { kind: "exit_executed", label: "Exit", description: "Trade management exit executed" },
 ] as const;
 
 /** Cap markers when no trade is selected to avoid chart spam. */
@@ -86,7 +90,41 @@ export function tradeManagementEventTooltip(
     }
   }
 
-  if (event.event_type === "exit_executed") {
+  if (event.event_type === "active_stop_updated") {
+    if (event.rule_id) {
+      lines.push(`rule_id: ${event.rule_id}`);
+    }
+    if (event.component_id) {
+      lines.push(`component_id: ${event.component_id}`);
+    }
+    if (event.stop_price !== null && event.stop_price !== undefined) {
+      lines.push(`stop_price: ${event.stop_price}`);
+    }
+  }
+
+  if (event.event_type === "active_take_updated") {
+    if (event.rule_id) {
+      lines.push(`rule_id: ${event.rule_id}`);
+    }
+    if (event.component_id) {
+      lines.push(`component_id: ${event.component_id}`);
+    }
+    const action = metadataString(event.metadata, "action");
+    if (action) {
+      lines.push(`action: ${action}`);
+    }
+  }
+
+  if (event.event_type === "runtime_exit_triggered") {
+    if (event.rule_id) {
+      lines.push(`rule_id: ${event.rule_id}`);
+    }
+    if (event.component_id) {
+      lines.push(`component_id: ${event.component_id}`);
+    }
+  }
+
+  if (event.event_type === "exit_rule_triggered" || event.event_type === "exit_executed") {
     const exitLayer = exitLayerFromEvent(event, trade);
     if (exitLayer) {
       lines.push(`exit_layer: ${exitLayer}`);
@@ -169,10 +207,33 @@ function exitMarkerStyle(
   };
 }
 
+function managedLayerMarkerStyle(
+  eventType: TradeManagementEvent["event_type"],
+  side: "long" | "short",
+  highlighted: boolean,
+): { color: string; shape: "circle" | "square"; position: "aboveBar" | "belowBar"; label: string } {
+  const position = side === "long" ? "belowBar" : "aboveBar";
+  if (highlighted) {
+    return { color: "#fbbf24", shape: "circle", position, label: "M" };
+  }
+  switch (eventType) {
+    case "active_stop_updated":
+      return { color: "#34d399", shape: "circle", position, label: "Stop↑" };
+    case "active_take_updated":
+      return { color: "#60a5fa", shape: "circle", position, label: "Take" };
+    case "runtime_exit_triggered":
+      return { color: "#fb923c", shape: "circle", position, label: "Runtime" };
+    case "exit_rule_triggered":
+      return { color: "#a78bfa", shape: "square", position, label: "Rule" };
+    default:
+      return { color: "#94a3b8", shape: "circle", position, label: "M" };
+  }
+}
+
 export function filterTradeManagementEventsForView(
   events: readonly TradeManagementEvent[] | null | undefined,
   options: {
-    selectedTradeId: number | null;
+    selectedTradeId: number | string | null;
     fromSec: number;
     toSec: number;
     maxWithoutSelection?: number;
@@ -209,15 +270,34 @@ export function filterTradeManagementEventsForView(
   return filtered;
 }
 
+const MANAGED_LAYER_EVENT_TYPES = new Set<TradeManagementEvent["event_type"]>([
+  "active_stop_updated",
+  "active_take_updated",
+  "runtime_exit_triggered",
+  "exit_rule_triggered",
+  "exit_executed",
+]);
+
+function highlightedMarkerLabel(
+  prefix: string,
+  tradeId: number | string | null | undefined,
+  lookup: ReadonlyMap<string, number>,
+): string {
+  const display = lookup.get(String(tradeId ?? ""));
+  return display !== undefined ? `${prefix}#${display}` : prefix;
+}
+
 export function buildTradeManagementEventChartMarkers(
   events: readonly TradeManagementEvent[],
   options: {
     showPhases: boolean;
     showExits: boolean;
-    selectedTradeId: number | null;
+    selectedTradeId: number | string | null;
+    trades?: readonly TradeRecord[];
   },
 ): SeriesMarker<Time>[] {
   const out: SeriesMarker<Time>[] = [];
+  const displayLookup = buildTradeDisplayNumberLookup(options.trades ?? []);
 
   for (const event of events) {
     const timeSec = eventChartTime(event);
@@ -239,24 +319,41 @@ export function buildTradeManagementEventChartMarkers(
         position: style.position,
         color: style.color,
         shape: style.shape,
-        text: highlighted ? `${label}#${event.trade_id}` : label,
+        text: highlighted
+          ? highlightedMarkerLabel(label, event.trade_id, displayLookup)
+          : label,
       });
       continue;
     }
 
+    if (!options.showExits || !MANAGED_LAYER_EVENT_TYPES.has(event.event_type)) {
+      continue;
+    }
+
     if (event.event_type === "exit_executed") {
-      if (!options.showExits) {
-        continue;
-      }
       const style = exitMarkerStyle(event.side, highlighted);
       out.push({
         time: timeSec as Time,
         position: style.position,
         color: style.color,
         shape: style.shape,
-        text: highlighted ? `Exit#${event.trade_id}` : "Exit",
+        text: highlighted
+          ? highlightedMarkerLabel("Exit", event.trade_id, displayLookup)
+          : "Exit",
       });
+      continue;
     }
+
+    const style = managedLayerMarkerStyle(event.event_type, event.side, highlighted);
+    out.push({
+      time: timeSec as Time,
+      position: style.position,
+      color: style.color,
+      shape: style.shape,
+      text: highlighted
+        ? highlightedMarkerLabel(style.label, event.trade_id, displayLookup)
+        : style.label,
+    });
   }
 
   return out.sort((a, b) => (a.time as number) - (b.time as number));
@@ -267,8 +364,9 @@ export function buildTradeManagementEventsForView(
   options: {
     showPhases: boolean;
     showExits: boolean;
-    selectedTradeId: number | null;
+    selectedTradeId: number | string | null;
     viewCandles: { time: number }[];
+    trades?: readonly TradeRecord[];
     maxWithoutSelection?: number;
   },
 ): SeriesMarker<Time>[] {
@@ -292,6 +390,7 @@ export function buildTradeManagementEventsForView(
     showPhases: options.showPhases,
     showExits: options.showExits,
     selectedTradeId: options.selectedTradeId,
+    trades: options.trades,
   });
 }
 

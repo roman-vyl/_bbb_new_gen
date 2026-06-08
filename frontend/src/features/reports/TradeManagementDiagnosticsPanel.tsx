@@ -1,4 +1,4 @@
-import type { TradeManagementSummary } from "@/api/types";
+import type { BaselineVsManagedSummary, TradeManagementSummary } from "@/api/types";
 import {
   EM_DASH,
   formatExitReasonMix,
@@ -9,12 +9,15 @@ import {
 } from "@/features/reports/formatDiagnostics";
 import {
   countMapRows,
+  hasManagedLayerBreakdowns,
+  managedLayerBreakdownRows,
   optionalNumber,
   phaseRows,
 } from "@/features/reports/tradeManagementSummary";
 
 type Props = {
   summary: TradeManagementSummary;
+  baselineVsManagedSummary?: BaselineVsManagedSummary | null;
 };
 
 function formatRatio(value: number | null | undefined): string {
@@ -58,11 +61,111 @@ function SummaryMetricList({
   );
 }
 
-export function TradeManagementDiagnosticsPanel({ summary }: Props) {
+function ManagedLayerBreakdownTable({
+  title,
+  breakdownKey,
+  summary,
+}: {
+  title: string;
+  breakdownKey: keyof Pick<
+    TradeManagementSummary,
+    "stop_management_breakdown" | "take_management_breakdown" | "runtime_exit_breakdown"
+  >;
+  summary: TradeManagementSummary;
+}) {
+  const rows = managedLayerBreakdownRows(summary[breakdownKey]);
+  if (rows.length === 0) {
+    return null;
+  }
+  return (
+    <>
+      <h4 className="diagnostics-block__title">{title}</h4>
+      <div className="table-wrap breakdown-table-wrap">
+        <table
+          className="trade-table breakdown-table breakdown-table--trade-management"
+          data-testid={`managed-breakdown-${breakdownKey}`}
+        >
+          <thead>
+            <tr>
+              <th>component_id</th>
+              <th>Trades</th>
+              <th>PnL</th>
+              <th>Wins</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(({ componentId, entry }) => (
+              <tr key={componentId}>
+                <td>
+                  <code>{componentId}</code>
+                </td>
+                <td>{entry.trade_count ?? 0}</td>
+                <td>{formatMoney(entry.pnl)}</td>
+                <td>{entry.win_count ?? 0}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+}
+
+function BaselineVsManagedPlaceholder({
+  summary,
+}: {
+  summary: BaselineVsManagedSummary;
+}) {
+  const listFields = [
+    "saved_by_managed_stop",
+    "hurt_by_managed_stop",
+    "take_disabled_then_won",
+    "take_disabled_then_lost",
+    "runtime_exit_helped",
+    "runtime_exit_hurt",
+  ] as const;
+  const matrix = summary.exit_layer_transition_matrix;
+  const matrixKeys =
+    matrix && typeof matrix === "object" ? Object.keys(matrix).length : 0;
+
+  return (
+    <div
+      className="trade-management-summary-block"
+      data-testid="baseline-vs-managed-placeholder"
+    >
+      <h4 className="diagnostics-block__title">Baseline vs managed summary</h4>
+      <p className="panel__hint diagnostics-section__hint">
+        Read-only placeholder from managed mode. Comparison population is not part of this slice.
+      </p>
+      <dl className="trade-management-summary-dl">
+        {listFields.map((key) => {
+          const raw = summary[key];
+          const count = Array.isArray(raw) ? raw.length : 0;
+          return (
+            <div key={key}>
+              <dt>{key}</dt>
+              <dd>{count} entries</dd>
+            </div>
+          );
+        })}
+        <div>
+          <dt>exit_layer_transition_matrix</dt>
+          <dd>{matrixKeys} keys</dd>
+        </div>
+      </dl>
+    </div>
+  );
+}
+
+export function TradeManagementDiagnosticsPanel({
+  summary,
+  baselineVsManagedSummary,
+}: Props) {
   const phases = phaseRows(summary);
   const exitLayers = countMapRows(summary.exit_layer_breakdown);
   const runner = summary.runner_capture_summary;
   const protectedSummary = summary.protected_trade_summary;
+  const managedBreakdowns = hasManagedLayerBreakdowns(summary);
 
   return (
     <section
@@ -72,8 +175,8 @@ export function TradeManagementDiagnosticsPanel({ summary }: Props) {
     >
       <h3 className="diagnostics-section__title">Trade Management Diagnostics</h3>
       <p className="panel__hint diagnostics-section__hint">
-        Read-only runtime diagnostics from diagnostic-only exit management. Event trace is not
-        rendered here.
+        Read-only runtime diagnostics from trade management (diagnostic-only and managed modes).
+        Event trace is rendered on Chart markers when present.
       </p>
 
       {phases.length > 0 && (
@@ -123,6 +226,22 @@ export function TradeManagementDiagnosticsPanel({ summary }: Props) {
           </div>
         </>
       )}
+
+      <ManagedLayerBreakdownTable
+        title="Stop management breakdown"
+        breakdownKey="stop_management_breakdown"
+        summary={summary}
+      />
+      <ManagedLayerBreakdownTable
+        title="Take management breakdown"
+        breakdownKey="take_management_breakdown"
+        summary={summary}
+      />
+      <ManagedLayerBreakdownTable
+        title="Runtime exit breakdown"
+        breakdownKey="runtime_exit_breakdown"
+        summary={summary}
+      />
 
       <SummaryMetricList
         title="Runner capture summary"
@@ -224,10 +343,16 @@ export function TradeManagementDiagnosticsPanel({ summary }: Props) {
         </>
       )}
 
+      {baselineVsManagedSummary && (
+        <BaselineVsManagedPlaceholder summary={baselineVsManagedSummary} />
+      )}
+
       {phases.length === 0 &&
         exitLayers.length === 0 &&
         !runner &&
-        !protectedSummary && (
+        !protectedSummary &&
+        !managedBreakdowns &&
+        !baselineVsManagedSummary && (
           <p className="empty-hint">Trade-management summary present but no displayable buckets.</p>
         )}
     </section>

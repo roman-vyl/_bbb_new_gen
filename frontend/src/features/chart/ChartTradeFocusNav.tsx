@@ -1,12 +1,18 @@
 import { useEffect, useState } from "react";
 
-import { getAdjacentTradeId, parseManualTradeIdInput } from "@/features/chart/tradeLookup";
+import {
+  formatTradeDisplayNumber,
+  getAdjacentTradeId,
+  parseManualTradeIdInput,
+  resolveTradeIdByDisplayNumber,
+  tradeIdsEqual,
+} from "@/features/chart/tradeLookup";
 import type { TradeRecord } from "@/api/types";
 
 type ChartTradeFocusNavProps = {
   trades: readonly TradeRecord[];
-  selectedTradeId: number;
-  onSelectTrade: (tradeId: number | null) => void;
+  selectedTradeId: number | string;
+  onSelectTrade: (tradeId: number | string | null) => void;
 };
 
 export function ChartTradeFocusNav({
@@ -14,7 +20,7 @@ export function ChartTradeFocusNav({
   selectedTradeId,
   onSelectTrade,
 }: ChartTradeFocusNavProps) {
-  const [draft, setDraft] = useState(() => String(selectedTradeId));
+  const [draft, setDraft] = useState(() => formatTradeDisplayNumber(trades, selectedTradeId));
   const [editing, setEditing] = useState(false);
 
   const prevId = getAdjacentTradeId(trades, selectedTradeId, -1);
@@ -22,20 +28,25 @@ export function ChartTradeFocusNav({
 
   useEffect(() => {
     if (!editing) {
-      setDraft(String(selectedTradeId));
+      setDraft(formatTradeDisplayNumber(trades, selectedTradeId));
     }
-  }, [selectedTradeId, editing]);
+  }, [selectedTradeId, editing, trades]);
 
   const commitDraft = () => {
     setEditing(false);
     const parsed = parseManualTradeIdInput(draft);
     if (parsed === null) {
-      setDraft(String(selectedTradeId));
+      setDraft(formatTradeDisplayNumber(trades, selectedTradeId));
+      return;
+    }
+    const resolved = resolveTradeIdByDisplayNumber(trades, parsed);
+    if (resolved === null) {
+      setDraft(formatTradeDisplayNumber(trades, selectedTradeId));
       return;
     }
     setDraft(String(parsed));
-    if (parsed !== selectedTradeId) {
-      onSelectTrade(parsed);
+    if (!tradeIdsEqual(resolved, selectedTradeId)) {
+      onSelectTrade(resolved);
     }
   };
 
@@ -72,7 +83,7 @@ export function ChartTradeFocusNav({
                 event.currentTarget.blur();
               }
               if (event.key === "Escape") {
-                setDraft(String(selectedTradeId));
+                setDraft(formatTradeDisplayNumber(trades, selectedTradeId));
                 setEditing(false);
                 event.currentTarget.blur();
               }

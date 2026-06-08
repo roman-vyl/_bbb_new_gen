@@ -6,8 +6,11 @@ import {
   deriveSelectedVariant,
   findLastClosedTradeId,
   findTradeById,
+  formatTradeDisplayNumber,
   getAdjacentTradeId,
   parseManualTradeIdInput,
+  resolveTradeIdByDisplayNumber,
+  tradeDisplayNumber,
   isTradeInVariant,
   resolveSelectedTradeEntryTimeMs,
   resolveTradeEntryTimeMs,
@@ -17,7 +20,7 @@ import {
 
 function makeTrade(tradeId: number | string, entryTimeMs: number): TradeRecord {
   return {
-    trade_id: tradeId as number,
+    trade_id: tradeId,
     direction: "long",
     status: "closed",
     entry_time_ms: entryTimeMs,
@@ -143,6 +146,15 @@ describe("findLastClosedTradeId", () => {
     const trades = [{ ...makeTrade(1, 1_000), status: "open" as const }];
     expect(findLastClosedTradeId(trades)).toBeNull();
   });
+
+  it("returns last closed string trade id without numeric normalization", () => {
+    const trades = [
+      makeTrade("long:100", 1_000_000),
+      { ...makeTrade("short:200", 2_000_000), status: "open" as const },
+      makeTrade("short:979", 3_000_000),
+    ];
+    expect(findLastClosedTradeId(trades)).toBe("short:979");
+  });
 });
 
 describe("defaultClosedTradeSelection", () => {
@@ -151,6 +163,14 @@ describe("defaultClosedTradeSelection", () => {
     expect(defaultClosedTradeSelection(trades)).toEqual({
       tradeId: 5,
       barTimeSec: 5_000,
+    });
+  });
+
+  it("focuses last closed managed string trade id", () => {
+    const trades = [makeTrade("short:979", 9_790_000)];
+    expect(defaultClosedTradeSelection(trades)).toEqual({
+      tradeId: "short:979",
+      barTimeSec: 9_790,
     });
   });
 });
@@ -177,12 +197,54 @@ describe("getAdjacentTradeId", () => {
   it("returns next and previous ids in report order", () => {
     expect(getAdjacentTradeId(trades, 1, 1)).toBe(2);
     expect(getAdjacentTradeId(trades, 2, -1)).toBe(1);
-    expect(getAdjacentTradeId(trades, 2, 1)).toBe(3);
+    expect(getAdjacentTradeId(trades, 2, 1)).toBe("3");
   });
 
   it("matches string selected id to numeric record id", () => {
     expect(getAdjacentTradeId(trades, "2", -1)).toBe(1);
-    expect(getAdjacentTradeId(trades, "2", 1)).toBe(3);
+    expect(getAdjacentTradeId(trades, "2", 1)).toBe("3");
+  });
+
+  it("returns raw string id for adjacent string trade records", () => {
+    const managedTrades = [
+      makeTrade("long:10", 1_000),
+      makeTrade("short:979", 2_000),
+    ];
+    expect(getAdjacentTradeId(managedTrades, "long:10", 1)).toBe("short:979");
+  });
+});
+
+describe("tradeDisplayNumber", () => {
+  const trades = [makeTrade("long:10", 1_000), makeTrade("short:979", 2_000)];
+
+  it("maps internal id to 1-based report index", () => {
+    expect(tradeDisplayNumber(trades, "long:10")).toBe(1);
+    expect(tradeDisplayNumber(trades, "short:979")).toBe(2);
+  });
+
+  it("keeps numeric ids for legacy reports", () => {
+    const legacy = [makeTrade(1, 1_000), makeTrade(2, 2_000)];
+    expect(tradeDisplayNumber(legacy, 2)).toBe(2);
+  });
+});
+
+describe("resolveTradeIdByDisplayNumber", () => {
+  const trades = [makeTrade("long:10", 1_000), makeTrade("short:979", 2_000)];
+
+  it("resolves display number to canonical trade_id", () => {
+    expect(resolveTradeIdByDisplayNumber(trades, 1)).toBe("long:10");
+    expect(resolveTradeIdByDisplayNumber(trades, 2)).toBe("short:979");
+  });
+
+  it("returns numeric id for out-of-range stale focus", () => {
+    expect(resolveTradeIdByDisplayNumber(trades, 99)).toBe(99);
+  });
+});
+
+describe("formatTradeDisplayNumber", () => {
+  it("formats managed ids as sequential numbers", () => {
+    const trades = [makeTrade("long:641890", 1_000)];
+    expect(formatTradeDisplayNumber(trades, "long:641890")).toBe("1");
   });
 });
 
@@ -197,5 +259,9 @@ describe("parseManualTradeIdInput", () => {
     expect(parseManualTradeIdInput("abc")).toBeNull();
     expect(parseManualTradeIdInput("12.5")).toBeNull();
     expect(parseManualTradeIdInput("0")).toBeNull();
+  });
+
+  it("rejects managed string ids (manual nav is numeric-only)", () => {
+    expect(parseManualTradeIdInput("short:979")).toBeNull();
   });
 });

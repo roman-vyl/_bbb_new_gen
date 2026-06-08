@@ -1,6 +1,7 @@
 import type {
   ContextConsumptionAttribution,
   SetupEntryDiagnostics,
+  TradeManagementDiagnostics,
   TradeRecord,
 } from "@/api/types";
 import { EM_DASH, formatMoney, formatReturnPct } from "@/features/reports/formatDiagnostics";
@@ -304,7 +305,18 @@ export function buildTradeDiagnosticFields(trade: TradeRecord): {
   return { core, diagnostics };
 }
 
-/** Selected-trade runtime management block (schema v6 diagnostic-only). */
+export function hasManagedTradeManagementFields(tm: TradeManagementDiagnostics): boolean {
+  return (
+    (tm.active_stop_at_exit !== undefined && tm.active_stop_at_exit !== null) ||
+    (tm.active_take_at_exit !== undefined &&
+      tm.active_take_at_exit !== null &&
+      tm.active_take_at_exit !== "initial") ||
+    (tm.exit_candidate_type !== undefined && tm.exit_candidate_type !== null) ||
+    (tm.managed_events?.length ?? 0) > 0
+  );
+}
+
+/** Selected-trade runtime management block (schema v6 diagnostic + managed). */
 export function buildTradeManagementDiagnosticFields(
   trade: TradeRecord,
 ): TradeDiagnosticField[] {
@@ -312,7 +324,7 @@ export function buildTradeManagementDiagnosticFields(
   if (!tm) {
     return [];
   }
-  return [
+  const fields: TradeDiagnosticField[] = [
     field("trade_management.phase_at_exit", "phase_at_exit", tm.phase_at_exit),
     field("trade_management.max_phase_reached", "max_phase_reached", tm.max_phase_reached),
     field(
@@ -348,5 +360,73 @@ export function buildTradeManagementDiagnosticFields(
     ),
     field("trade_management.exit_layer", "exit_layer", tm.exit_layer ?? EM_DASH),
     field("trade_management.exit_rule_id", "exit_rule_id", tm.exit_rule_id ?? EM_DASH),
+    field(
+      "trade_management.exit_component_id",
+      "exit_component_id",
+      tm.exit_component_id ?? EM_DASH,
+    ),
   ];
+
+  if (trade.exit_layer) {
+    fields.push(field("exit_layer", "exit_layer (record)", trade.exit_layer));
+  }
+  if (trade.managed_exit_candidate_type) {
+    fields.push(
+      field(
+        "managed_exit_candidate_type",
+        "exit_candidate_type (record)",
+        trade.managed_exit_candidate_type,
+      ),
+    );
+  }
+
+  if (tm.active_stop_at_exit !== undefined && tm.active_stop_at_exit !== null) {
+    fields.push(
+      field(
+        "trade_management.active_stop_at_exit",
+        "active_stop_at_exit",
+        formatPrice(tm.active_stop_at_exit),
+      ),
+    );
+  }
+  if (tm.active_take_at_exit) {
+    fields.push(
+      field("trade_management.active_take_at_exit", "active_take_at_exit", tm.active_take_at_exit),
+    );
+  }
+  if (tm.active_stop_component_id) {
+    fields.push(
+      field(
+        "trade_management.active_stop_component_id",
+        "active_stop_component_id",
+        tm.active_stop_component_id,
+      ),
+    );
+  }
+  if (tm.active_take_component_id) {
+    fields.push(
+      field(
+        "trade_management.active_take_component_id",
+        "active_take_component_id",
+        tm.active_take_component_id,
+      ),
+    );
+  }
+  if (tm.exit_candidate_type) {
+    fields.push(
+      field("trade_management.exit_candidate_type", "exit_candidate_type", tm.exit_candidate_type),
+    );
+  }
+  if (tm.managed_events && tm.managed_events.length > 0) {
+    fields.push(
+      field(
+        "trade_management.managed_events",
+        "managed_events",
+        String(tm.managed_events.length),
+        "Per-trade managed event trace count",
+      ),
+    );
+  }
+
+  return fields;
 }
