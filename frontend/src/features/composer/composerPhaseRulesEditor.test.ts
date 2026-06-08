@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { JsonObject } from "@/api/types";
+import { collectManagedRulesValidationErrors } from "@/features/composer/composerManagedExitManagement";
 import {
   collectPhaseRulesValidationErrors,
   createBlankPhaseRule,
@@ -24,12 +25,20 @@ describe("phaseRulesEditor helpers", () => {
     expect(rules.map((r) => r.to_phase)).toEqual(["proven", "protected", "runner"]);
   });
 
-  it("writePhaseRules enforces diagnostic_only product shape", () => {
+  it("writePhaseRules preserves mode and normalizes v2 shape", () => {
     const next = writePhaseRules({}, defaultDiagnosticPhaseRules());
     expect(next.mode).toBe("diagnostic_only");
     expect(readPhaseRules(next)).toHaveLength(3);
     expect(next.stop_management).toEqual([]);
+    expect(next.take_management).toEqual([]);
     expect(next.runtime_exits).toEqual([]);
+
+    const managed = writePhaseRules(
+      { mode: "managed", stop_management: [{ rule_id: "be" }] },
+      defaultDiagnosticPhaseRules(),
+    );
+    expect(managed.mode).toBe("managed");
+    expect(managed.stop_management).toHaveLength(1);
   });
 
   it("changing condition type updates shape correctly", () => {
@@ -108,13 +117,13 @@ describe("phaseRulesEditor helpers", () => {
     expect(errors.some((e) => e.path.includes(".atr"))).toBe(true);
   });
 
-  it("rejects non-empty stop_management in v1", () => {
+  it("rejects non-empty stop_management when mode is diagnostic_only", () => {
     const em = {
       ...createBlankExitManagement(),
       phase_rules: defaultDiagnosticPhaseRules(),
-      stop_management: [{ id: "x" }],
+      stop_management: [{ rule_id: "x", component_id: "break_even_stop" }],
     };
-    const errors = collectPhaseRulesValidationErrors(em, PATH);
+    const errors = collectManagedRulesValidationErrors(em, PATH);
     expect(errors.some((e) => e.path.endsWith(".stop_management"))).toBe(true);
   });
 

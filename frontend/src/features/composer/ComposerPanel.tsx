@@ -58,6 +58,7 @@ import {
   type ContextConsumptionDraft,
   type ContextProviderDraft,
 } from "./composerStrategyContexts";
+import { summarizeExitManagementProduct } from "./composerExitManagementProduct";
 import { ExitManagementProductPanel } from "./ExitManagementProductPanel";
 import { writeExitManagementOnStrategy } from "./composerPhaseRulesEditor";
 import { ParamFields } from "./ParamFields";
@@ -1606,12 +1607,11 @@ export function ComposerPanel() {
                 summary={joinInstanceSummaries(
                   configDraft.instances.map((inst) => {
                     const em = readExitManagement((inst.strategy ?? {}) as JsonObject);
-                    const mode = typeof em.mode === "string" ? em.mode : "legacy";
-                    const phaseCount = Array.isArray(em.phase_rules) ? em.phase_rules.length : 0;
-                    const legacyCount = readAlwaysOnManagementRules(
-                      (inst.strategy ?? {}) as JsonObject,
-                    ).length;
-                    return `${mode}; phase_rules=${phaseCount}; legacy_rules=${legacyCount}`;
+                    const s = summarizeExitManagementProduct(em);
+                    if (s.legacyRulesCount > 0) {
+                      return `legacy; rules=${s.legacyRulesCount}`;
+                    }
+                    return `${s.mode}; phases=${s.phaseRulesCount}; stop=${s.stopManagementCount}; take=${s.takeManagementCount}; runtime=${s.runtimeExitsCount}`;
                   }),
                 )}
                 open={openPipelineSections.has("exit_management")}

@@ -5,7 +5,9 @@ import {
   createBlankExitManagement,
   createProductExitManagement,
   hasLegacyExitManagementRules,
+  normalizeExitManagementV2,
 } from "@/features/composer/composerExitManagementProduct";
+import { collectManagedRulesValidationErrors } from "@/features/composer/composerManagedExitManagement";
 
 export const PHASE_RULE_TARGET_PHASES = [
   "proven",
@@ -101,7 +103,7 @@ export function exitManagementDraftIsLegacyQuarantined(exitManagement: JsonObjec
 }
 
 export function writePhaseRules(exitManagement: JsonObject, rules: PhaseRuleDraft[]): JsonObject {
-  return ensureDiagnosticOnlyProductShape({
+  return normalizeExitManagementV2({
     ...exitManagement,
     phase_rules: rules,
   });
@@ -116,7 +118,7 @@ export function writeExitManagementOnStrategy(
     ...strategy,
     trade_management: {
       ...tradeManagement,
-      exit_management: ensureDiagnosticOnlyProductShape(exitManagement),
+      exit_management: normalizeExitManagementV2(exitManagement),
     },
   };
 }
@@ -193,10 +195,10 @@ export function collectPhaseRulesValidationErrors(
   const emPath = `${pathPrefix}.trade_management.exit_management`;
 
   const mode = exitManagement.mode;
-  if (mode !== undefined && mode !== "diagnostic_only") {
+  if (mode !== undefined && mode !== "diagnostic_only" && mode !== "managed") {
     errors.push({
       path: `${emPath}.mode`,
-      message: "mode must be diagnostic_only for phase_rules authoring",
+      message: "mode must be diagnostic_only or managed",
     });
   }
 
@@ -206,22 +208,6 @@ export function collectPhaseRulesValidationErrors(
       message: "phase_rules must be an array",
     });
     return errors;
-  }
-
-  const stopManagement = exitManagement.stop_management;
-  if (stopManagement !== undefined && Array.isArray(stopManagement) && stopManagement.length > 0) {
-    errors.push({
-      path: `${emPath}.stop_management`,
-      message: "stop_management must be empty in v1",
-    });
-  }
-
-  const runtimeExits = exitManagement.runtime_exits;
-  if (runtimeExits !== undefined && Array.isArray(runtimeExits) && runtimeExits.length > 0) {
-    errors.push({
-      path: `${emPath}.runtime_exits`,
-      message: "runtime_exits must be empty in v1",
-    });
   }
 
   const seenRuleIds = new Set<string>();
@@ -338,18 +324,25 @@ export function collectExitManagementProductValidationErrors(
 ): ValidationErrorItem[] {
   const tradeManagement = (strategy.trade_management as JsonObject | undefined) ?? {};
   const exitManagement = (tradeManagement.exit_management as JsonObject | undefined) ?? {};
-  const hasPhaseRulesAuthoring =
-    exitManagement.mode === "diagnostic_only" ||
-    Array.isArray(exitManagement.phase_rules);
 
-  if (!hasPhaseRulesAuthoring) {
+  if (hasLegacyExitManagementRules(exitManagement)) {
     return [];
   }
 
-  return collectPhaseRulesValidationErrors(
-    ensureDiagnosticOnlyProductShape(exitManagement),
-    pathPrefix,
-  );
+  const hasProductAuthoring =
+    exitManagement.mode === "diagnostic_only" ||
+    exitManagement.mode === "managed" ||
+    Array.isArray(exitManagement.phase_rules);
+
+  if (!hasProductAuthoring) {
+    return [];
+  }
+
+  const normalized = normalizeExitManagementV2(exitManagement);
+  return [
+    ...collectPhaseRulesValidationErrors(normalized, pathPrefix),
+    ...collectManagedRulesValidationErrors(normalized, pathPrefix),
+  ];
 }
 
 export { EXIT_MANAGEMENT_PRODUCT_CONTRACT };

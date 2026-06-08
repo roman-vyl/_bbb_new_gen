@@ -5,7 +5,17 @@ import {
   hasLegacyExitManagementRules,
   summarizeExitManagementProduct,
 } from "@/features/composer/composerExitManagementProduct";
+import {
+  EXIT_MANAGEMENT_MODES,
+  writeExitManagementMode,
+} from "@/features/composer/composerManagedExitManagement";
 import { defaultDiagnosticPhaseRules } from "@/features/composer/composerPhaseRulesEditor";
+import {
+  ManagementRulesEditor,
+  RUNTIME_EXIT_COMPONENT_IDS,
+  STOP_MANAGEMENT_COMPONENT_IDS,
+  TAKE_MANAGEMENT_COMPONENT_IDS,
+} from "@/features/composer/ManagementRulesEditor";
 import { PhaseRulesEditor } from "@/features/composer/PhaseRulesEditor";
 
 type Props = {
@@ -24,6 +34,7 @@ export function ExitManagementProductPanel({
   const summary = summarizeExitManagementProduct(exitManagement);
   const hasLegacy = hasLegacyExitManagementRules(exitManagement);
   const authoringEnabled = Boolean(onChange) && !hasLegacy;
+  const isManaged = exitManagement.mode === "managed";
 
   return (
     <div
@@ -31,10 +42,10 @@ export function ExitManagementProductPanel({
       data-testid="exit-management-product-panel"
     >
       <p className="banner banner--info" role="status">
-        Product contract: <code>mode</code> = <code>diagnostic_only</code>,{" "}
-        <code>phase_rules</code>, reserved <code>stop_management</code> and{" "}
-        <code>runtime_exits</code>. Legacy <code>break_even_stop</code> rules are deprecated
-        compatibility-only — Composer does not offer them for new configs.
+        Product contract v2: <code>mode</code>, <code>phase_rules</code>,{" "}
+        <code>stop_management</code>, <code>take_management</code>, <code>runtime_exits</code>.
+        Legacy <code>always_on</code> / <code>profiles</code> management rules are deprecated —
+        Composer does not emit them for new configs.
       </p>
       {hasLegacy && (
         <div
@@ -88,11 +99,15 @@ export function ExitManagementProductPanel({
         </div>
         <div>
           <dt>stop_management</dt>
-          <dd>{summary.stopManagementCount} (reserved)</dd>
+          <dd>{summary.stopManagementCount}</dd>
+        </div>
+        <div>
+          <dt>take_management</dt>
+          <dd>{summary.takeManagementCount}</dd>
         </div>
         <div>
           <dt>runtime_exits</dt>
-          <dd>{summary.runtimeExitsCount} (reserved)</dd>
+          <dd>{summary.runtimeExitsCount}</dd>
         </div>
         {hasLegacy && (
           <div>
@@ -103,12 +118,63 @@ export function ExitManagementProductPanel({
       </dl>
 
       {authoringEnabled ? (
-        <PhaseRulesEditor
-          exitManagement={exitManagement}
-          pathPrefix={pathPrefix}
-          errors={errors}
-          onChange={onChange!}
-        />
+        <>
+          <label className="field composer-exit-management-product__mode">
+            <span>mode</span>
+            <select
+              data-testid="exit-management-mode-select"
+              value={exitManagement.mode === "managed" ? "managed" : "diagnostic_only"}
+              onChange={(e) =>
+                onChange!(writeExitManagementMode(exitManagement, e.target.value as "diagnostic_only" | "managed"))
+              }
+            >
+              {EXIT_MANAGEMENT_MODES.map((mode) => (
+                <option key={mode} value={mode}>
+                  {mode}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <PhaseRulesEditor
+            exitManagement={exitManagement}
+            pathPrefix={pathPrefix}
+            errors={errors}
+            onChange={onChange!}
+          />
+
+          {isManaged ? (
+            <>
+              <ManagementRulesEditor
+                exitManagement={exitManagement}
+                pathPrefix={pathPrefix}
+                layer="stop_management"
+                title="Stop management"
+                componentIds={STOP_MANAGEMENT_COMPONENT_IDS}
+                errors={errors}
+                onChange={onChange!}
+              />
+              <ManagementRulesEditor
+                exitManagement={exitManagement}
+                pathPrefix={pathPrefix}
+                layer="take_management"
+                title="Take management"
+                componentIds={TAKE_MANAGEMENT_COMPONENT_IDS}
+                errors={errors}
+                onChange={onChange!}
+              />
+              <ManagementRulesEditor
+                exitManagement={exitManagement}
+                pathPrefix={pathPrefix}
+                layer="runtime_exits"
+                title="Runtime exits"
+                componentIds={RUNTIME_EXIT_COMPONENT_IDS}
+                errors={errors}
+                onChange={onChange!}
+              />
+            </>
+          ) : null}
+        </>
       ) : null}
     </div>
   );

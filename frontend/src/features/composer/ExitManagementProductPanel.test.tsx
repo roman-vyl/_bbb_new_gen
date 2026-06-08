@@ -4,11 +4,14 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import managedSmoke from "../../../../research/experiments/specs/smoke/exit_management_managed_smoke.json";
 import { ExitManagementProductPanel } from "@/features/composer/ExitManagementProductPanel";
 import {
   countLegacyExitManagementRules,
   createBlankExitManagement,
+  normalizeExitManagementV2,
 } from "@/features/composer/composerExitManagementProduct";
+import { readManagementRules } from "@/features/composer/composerManagedExitManagement";
 import {
   defaultDiagnosticPhaseRules,
   readPhaseRules,
@@ -50,6 +53,7 @@ describe("ExitManagementProductPanel", () => {
           mode: "diagnostic_only",
           phase_rules: [{ rule_id: "to_proven" }],
           stop_management: [],
+          take_management: [],
           runtime_exits: [],
         }}
         pathPrefix="instances[0].strategy"
@@ -212,6 +216,7 @@ describe("ExitManagementProductPanel", () => {
       mode: "diagnostic_only",
       phase_rules: defaultDiagnosticPhaseRules(),
       stop_management: [],
+      take_management: [],
       runtime_exits: [],
     };
     render(
@@ -238,6 +243,7 @@ describe("ExitManagementProductPanel", () => {
       mode: "diagnostic_only",
       phase_rules: defaultDiagnosticPhaseRules(),
       stop_management: [],
+      take_management: [],
       runtime_exits: [],
     });
     const em = (next.trade_management as Record<string, unknown>).exit_management as Record<
@@ -247,7 +253,68 @@ describe("ExitManagementProductPanel", () => {
     expect(em.mode).toBe("diagnostic_only");
     expect(em.phase_rules).toEqual(defaultDiagnosticPhaseRules());
     expect(em.stop_management).toEqual([]);
+    expect(em.take_management).toEqual([]);
     expect(em.runtime_exits).toEqual([]);
     expect(em.always_on).toBeUndefined();
+  });
+
+  it("managed mode shows management rule editors", () => {
+    const strategy = (managedSmoke.instances[0] as Record<string, unknown>).strategy as Record<
+      string,
+      unknown
+    >;
+    const tm = strategy.trade_management as Record<string, unknown>;
+    const em = normalizeExitManagementV2(tm.exit_management as Record<string, unknown>);
+    render(
+      <ExitManagementProductPanel
+        exitManagement={em}
+        pathPrefix="instances[0].strategy"
+        onChange={vi.fn()}
+      />,
+    );
+    expect(screen.getByTestId("exit-management-mode-select")).toBeTruthy();
+    expect(screen.getByTestId("management-rules-editor-stop_management")).toBeTruthy();
+    expect(screen.getByTestId("management-rules-editor-take_management")).toBeTruthy();
+    expect(screen.getByTestId("management-rules-editor-runtime_exits")).toBeTruthy();
+    expect(screen.getByDisplayValue("be_at_protected")).toBeTruthy();
+    expect(screen.getByDisplayValue("disable_initial_tp_at_runner")).toBeTruthy();
+  });
+
+  it("switching mode to managed via select enables management editors", () => {
+    const onChange = vi.fn();
+    render(
+      <ExitManagementProductPanel
+        exitManagement={createBlankExitManagement()}
+        pathPrefix="instances[0].strategy"
+        onChange={onChange}
+      />,
+    );
+    fireEvent.change(screen.getByTestId("exit-management-mode-select"), {
+      target: { value: "managed" },
+    });
+    expect(onChange).toHaveBeenCalled();
+    const next = onChange.mock.calls[0]![0] as Record<string, unknown>;
+    expect(next.mode).toBe("managed");
+    expect(next.stop_management).toEqual([]);
+  });
+
+  it("managed smoke round-trip through writeExitManagementOnStrategy preserves arrays", () => {
+    const strategy = (managedSmoke.instances[0] as Record<string, unknown>).strategy as Record<
+      string,
+      unknown
+    >;
+    const tm = strategy.trade_management as Record<string, unknown>;
+    const em = normalizeExitManagementV2(tm.exit_management as Record<string, unknown>);
+    const next = writeExitManagementOnStrategy(strategy, em);
+    const savedEm = ((next.trade_management as Record<string, unknown>).exit_management as Record<
+      string,
+      unknown
+    >);
+    expect(savedEm).toEqual(em);
+    expect(readManagementRules(savedEm, "stop_management")).toHaveLength(2);
+    expect(readManagementRules(savedEm, "take_management")).toHaveLength(1);
+    expect(readManagementRules(savedEm, "runtime_exits")).toHaveLength(1);
+    expect(savedEm.always_on).toBeUndefined();
+    expect(savedEm.profiles).toBeUndefined();
   });
 });

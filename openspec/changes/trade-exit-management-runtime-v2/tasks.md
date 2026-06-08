@@ -504,28 +504,28 @@ Each rule row: `rule_id`, `component_id`, `activate_when`, `params` per Slice 1 
 
 **Acceptance criteria (required):**
 
-- [ ] Composer supports v2 `exit_management`: `mode`, `phase_rules`, `stop_management`, `take_management`, `runtime_exits`.
-- [ ] Composer can save and load current v2 managed config without losing fields.
-- [ ] Save round-trip preserves `phase_rules`, `stop_management`, `take_management`, `runtime_exits` (smoke fixture: `exit_management_managed_smoke.json`).
-- [ ] Validation / UI rejects or avoids legacy shape (`always_on`, `profiles`, `trigger_r`, `offset_r`, legacy BE authoring).
-- [ ] Existing `exit_policy` Composer behavior unchanged.
-- [ ] Composer-generated managed config runs on existing backend path (`status=ok`).
-- [ ] Existing non-managed configs (diagnostic_only, absent exit_management) still load/save/validate in Composer.
-- [ ] `npm test` + `npm run build` pass for touched Composer modules.
-- [ ] No `data_engine/` diff from Slice 10 work.
+- [x] Composer supports v2 `exit_management`: `mode`, `phase_rules`, `stop_management`, `take_management`, `runtime_exits`.
+- [x] Composer can save and load current v2 managed config without losing fields.
+- [x] Save round-trip preserves `phase_rules`, `stop_management`, `take_management`, `runtime_exits` (smoke fixture: `exit_management_managed_smoke.json`).
+- [x] Validation / UI rejects or avoids legacy shape (`always_on`, `profiles`, `trigger_r`, `offset_r`, legacy BE authoring).
+- [x] Existing `exit_policy` Composer behavior unchanged.
+- [x] Composer-generated managed config runs on existing backend path (`status=ok`).
+- [x] Existing non-managed configs (diagnostic_only, absent exit_management) still load/save/validate in Composer.
+- [x] `npm test` + `npm run build` pass for touched Composer modules.
+- [x] No `data_engine/` diff from Slice 10 work.
 
 **Tests:**
 
-- [ ] 10.1 Create managed config from Composer state — draft serializes v2 shape only.
-- [ ] 10.2 Load saved managed config into Composer — all management arrays round-trip.
-- [ ] 10.3 Save round-trip preserves `phase_rules` / `stop_management` / `take_management` / `runtime_exits`.
-- [ ] 10.4 Legacy shape not emitted (no `always_on` / `profiles` keys in saved JSON).
-- [ ] 10.5 Existing non-managed config still loads and validates.
-- [ ] 10.6 Composer smoke — author config equivalent to `exit_management_managed_smoke.json`; validate OK; optional `run.py` smoke.
+- [x] 10.1 Create managed config from Composer state — draft serializes v2 shape only.
+- [x] 10.2 Load saved managed config into Composer — all management arrays round-trip.
+- [x] 10.3 Save round-trip preserves `phase_rules` / `stop_management` / `take_management` / `runtime_exits`.
+- [x] 10.4 Legacy shape not emitted (no `always_on` / `profiles` keys in saved JSON).
+- [x] 10.5 Existing non-managed config still loads and validates.
+- [x] 10.6 Composer smoke — author config equivalent to `exit_management_managed_smoke.json`; validate OK; optional `run.py` smoke.
 
-- [ ] 10.7 Implement Composer managed `exit_management` editors.
-- [ ] 10.8 Wire catalog-driven component pickers and params forms.
-- [ ] 10.9 Integrate validate / save / load with existing config BFF flow.
+- [x] 10.7 Implement Composer managed `exit_management` editors.
+- [x] 10.8 Wire catalog-driven component pickers and params forms.
+- [x] 10.9 Integrate validate / save / load with existing config BFF flow.
 
 ### STOP — Checkpoint 10: Composer authoring v1 review
 

@@ -69,8 +69,9 @@ describe("composer exit_management product contract", () => {
     expect(countLegacyExitManagementRules(legacy)).toBe(2);
   });
 
-  it("product contract reserves empty stop_management and runtime_exits", () => {
+  it("product contract reserves empty management arrays", () => {
     expect(EXIT_MANAGEMENT_PRODUCT_CONTRACT.stop_management).toEqual([]);
+    expect(EXIT_MANAGEMENT_PRODUCT_CONTRACT.take_management).toEqual([]);
     expect(EXIT_MANAGEMENT_PRODUCT_CONTRACT.runtime_exits).toEqual([]);
   });
 
@@ -79,6 +80,7 @@ describe("composer exit_management product contract", () => {
       mode: "diagnostic_only",
       phase_rules: [],
       stop_management: [],
+      take_management: [],
       runtime_exits: [],
     });
   });
