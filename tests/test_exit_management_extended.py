@@ -185,9 +185,9 @@ def test_run_strategy_spec_without_exit_management_skips_managed_loop(
     pytest.importorskip("vectorbt")
 
     def _boom(*args: object, **kwargs: object) -> None:
-        raise AssertionError("run_managed_bar_loop must not run when exit_management is empty")
+        raise AssertionError("run_execution_combiner_loop must not run when exit_management is empty")
 
-    monkeypatch.setattr(backtest, "run_managed_bar_loop", _boom)
+    monkeypatch.setattr(backtest, "run_execution_combiner_loop", _boom)
     spec = make_ema_pullback_strategy_spec()
     assert not has_exit_management_rules(spec)
     result = backtest.run_strategy_spec(spec, _ohlcv(120))
@@ -208,9 +208,9 @@ def test_diagnostic_only_config_preserves_static_execution_parity(
     )
 
     def _boom(*args: object, **kwargs: object) -> None:
-        raise AssertionError("diagnostic_only must not use the legacy managed BE loop")
+        raise AssertionError("diagnostic_only must not use the execution combiner")
 
-    monkeypatch.setattr(backtest, "run_managed_bar_loop", _boom)
+    monkeypatch.setattr(backtest, "run_execution_combiner_loop", _boom)
     baseline = make_ema_pullback_strategy_spec()
     empty_management = empty_exit_management()
     diagnostic_management = ExitManagementSpec(
