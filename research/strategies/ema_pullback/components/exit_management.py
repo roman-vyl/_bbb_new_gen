@@ -1,6 +1,10 @@
-"""Exit-management components (stateful; configured under trade_management.exit_management).
+"""Exit-management catalog placeholder (legacy registry compatibility).
 
-``break_even_stop`` is deprecated legacy managed-combiner compatibility only (Slice 9).
+v2 managed exit_management **evaluators** live under
+``research.strategies.ema_pullback.execution.managed_components`` — a separate
+role-family from setup / blocker / trigger / exit_policy components.
+
+``break_even_stop`` here is deprecated legacy managed-combiner compatibility only (Slice 9).
 New product contract: ``mode``, ``phase_rules``, ``stop_management``, ``runtime_exits``.
 """
 

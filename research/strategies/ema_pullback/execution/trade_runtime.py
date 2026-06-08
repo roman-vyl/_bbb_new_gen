@@ -149,6 +149,7 @@ class ManagedExitContext:
 class ManagedTradeRuntimeState:
     runtime: TradeRuntimeState
     active_management: ActiveManagementSnapshot
+    exit_candidates: list[ExitCandidate] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -381,17 +382,22 @@ def _recompute_active_management_snapshot(
     take_management: tuple[TakeManagementRuleSpec, ...],
     runtime_exits: tuple[RuntimeExitRuleSpec, ...],
     previous: ActiveManagementSnapshot,
-) -> tuple[ActiveManagementSnapshot, list[TradeManagementEvent]]:
-    """Update managed-layer snapshot; component evaluators wire in Slice 3."""
+    atr_series_by_key: dict[tuple[str, int], pd.Series],
+) -> tuple[ActiveManagementSnapshot, list[TradeManagementEvent], list[ExitCandidate]]:
+    from research.strategies.ema_pullback.execution.managed_components.snapshot import (
+        evaluate_management_layers,
+    )
 
-    _ = (state, context, stop_management, take_management, runtime_exits, previous)
-    if not has_behavior_changing_management_rules(
+    result = evaluate_management_layers(
+        state,
+        context=context,
         stop_management=stop_management,
         take_management=take_management,
         runtime_exits=runtime_exits,
-    ):
-        return empty_active_management_snapshot(), []
-    return empty_active_management_snapshot(), []
+        previous=previous,
+        atr_series_by_key=atr_series_by_key,
+    )
+    return result.snapshot, result.events, result.candidates
 
 
 def _exit_executed_event(
@@ -462,6 +468,7 @@ def run_managed_exit_runtime(
             continue
 
         active_management = empty_active_management_snapshot()
+        trade_candidates: list[ExitCandidate] = []
         for bar_idx in range(entry_idx, exit_idx + 1):
             open_value = _finite_float(open_.iloc[bar_idx])
             high_value = _finite_float(high.iloc[bar_idx])
@@ -499,15 +506,17 @@ def run_managed_exit_runtime(
                 low=low_value,
                 close=close_value,
             )
-            active_management, layer_events = _recompute_active_management_snapshot(
+            active_management, layer_events, layer_candidates = _recompute_active_management_snapshot(
                 runtime_state,
                 context=context,
                 stop_management=stop_management,
                 take_management=take_management,
                 runtime_exits=runtime_exits,
                 previous=active_management,
+                atr_series_by_key=atr_series_by_key,
             )
             events.extend(layer_events)
+            trade_candidates.extend(layer_candidates)
 
         events.append(
             _exit_executed_event(
@@ -520,6 +529,7 @@ def run_managed_exit_runtime(
         states[runtime_state.trade_id] = ManagedTradeRuntimeState(
             runtime=runtime_state,
             active_management=active_management,
+            exit_candidates=trade_candidates,
         )
 
     return ManagedTradeRuntimeResult(states_by_trade_id=states, events=events)

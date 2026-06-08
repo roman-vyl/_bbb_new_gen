@@ -108,26 +108,26 @@ Research master-plan reference: `docs/research/21_state_driven_exit_management_v
 - Composer UI.
 
 **Acceptance criteria:**
-- [ ] Each layer produces at least one **candidate** or **snapshot update** on a fixture (stop price, take profile, runtime exit signal).
-- [ ] `break_even_stop`: after `protected`, `active_stop_updated` emitted and managed stop **candidate** present at breakeven (+ buffer); no assertion that trade closes yet.
-- [ ] `lock_profit_stop`: when active, `active_stop_updated` emitted and stop **candidate** at entry ± `lock_atr`×ATR (side-aware); tighten-only verified in unit test; no close assertion yet.
-- [ ] `take_profile_switch`: when `disable_fixed_tp` active, `active_take_updated` emitted and take profile reflects disabled fixed TP; managed TP **candidate set** altered (not final close).
-- [ ] `phase_runtime_exit`: when `activate_when` phase is met, `runtime_exit_triggered` emitted and exit **candidate** at bar close price; no `trigger` / pattern evaluation.
-- [ ] Per-layer unit tests pass in isolation (evaluator → snapshot/candidate/events only).
-- [ ] **No** outcome-vs-baseline or trade-count/PnL assertions in Slice 3.
+- [x] Each layer produces at least one **candidate** or **snapshot update** on a fixture (stop price, take profile, runtime exit signal).
+- [x] `break_even_stop`: after `protected`, `active_stop_updated` emitted and managed stop **candidate** present at breakeven (+ buffer); no assertion that trade closes yet.
+- [x] `lock_profit_stop`: when active, `active_stop_updated` emitted and stop **candidate** at entry ± `lock_atr`×ATR (side-aware); tighten-only verified in unit test; no close assertion yet.
+- [x] `take_profile_switch`: when `disable_fixed_tp` active, `active_take_updated` emitted and take profile reflects disabled fixed TP; managed TP **candidate set** altered (not final close).
+- [x] `phase_runtime_exit`: when `activate_when` phase is met, `runtime_exit_triggered` emitted and exit **candidate** at bar close price; no `trigger` / pattern evaluation.
+- [x] Per-layer unit tests pass in isolation (evaluator → snapshot/candidate/events only).
+- [x] **No** outcome-vs-baseline or trade-count/PnL assertions in Slice 3.
 
 **Tests:**
-- [ ] 3.1 `tests/test_managed_stop_components.py`
-- [ ] 3.2 `tests/test_managed_take_components.py`
-- [ ] 3.3 `tests/test_managed_runtime_exit_components.py`
-- [ ] 3.4 Fixture: `smoke_managed_component_pack_v2.json` (or per-layer fixtures)
+- [x] 3.1 `tests/test_managed_stop_components.py`
+- [x] 3.2 `tests/test_managed_take_components.py`
+- [x] 3.3 `tests/test_managed_runtime_exit_components.py`
+- [x] 3.4 Fixture: `smoke_managed_component_pack_v2.json` (or per-layer fixtures) — covered by per-layer unit/replay tests
 
-- [ ] 3.5 Implement `break_even_stop` evaluator.
-- [ ] 3.6 Implement `lock_profit_stop` evaluator (entry ± `lock_atr`×ATR, tighten-only, ATR missing → skip bar).
-- [ ] 3.7 Implement stop merge (tightest protective for long / loosest protective for short).
-- [ ] 3.8 Implement `take_profile_switch` evaluator.
-- [ ] 3.9 Implement `phase_runtime_exit` evaluator (active when `phase_at_least` met → candidate at `close`; no pattern triggers).
-- [ ] 3.10 Wire evaluators into managed loop (pre-arbitration).
+- [x] 3.5 Implement `break_even_stop` evaluator.
+- [x] 3.6 Implement `lock_profit_stop` evaluator (entry ± `lock_atr`×ATR, tighten-only, ATR missing → skip bar).
+- [x] 3.7 Implement stop merge (tightest protective for long / loosest protective for short).
+- [x] 3.8 Implement `take_profile_switch` evaluator.
+- [x] 3.9 Implement `phase_runtime_exit` evaluator (active when `phase_at_least` met → candidate at `close`; no pattern triggers).
+- [x] 3.10 Wire evaluators into managed loop (pre-arbitration).
 
 ### STOP — Checkpoint 3: Active layer / component contract review
 
