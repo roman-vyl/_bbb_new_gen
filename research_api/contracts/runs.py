@@ -14,7 +14,7 @@ class TradeOverlay(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    trade_id: int
+    trade_id: int | str
     direction: Literal["long", "short"]
     status: Literal["open", "closed"]
     entry_time_ms: int
@@ -41,8 +41,40 @@ class BreakEvenDiagnostics(BaseModel):
     active_stop_management_source: Literal["profile", "always_on"]
 
 
+ManagedTradeManagementEventType = Literal[
+    "phase_changed",
+    "active_stop_updated",
+    "active_take_updated",
+    "runtime_exit_triggered",
+    "exit_rule_triggered",
+    "exit_executed",
+]
+
+
+class TradeManagementEvent(BaseModel):
+    """Runtime trace event from trade-management (schema v6; diagnostic + managed)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    trade_id: str
+    time_ms: int | None = None
+    bar_index: int
+    side: Literal["long", "short"]
+    event_type: ManagedTradeManagementEventType
+    from_phase: str | None = None
+    to_phase: str | None = None
+    rule_id: str | None = None
+    component_id: str | None = None
+    price: float | None = None
+    stop_price: float | None = None
+    mfe_pct: float | None = None
+    mae_pct: float | None = None
+    bars_in_trade: int | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
 class TradeManagementDiagnostics(BaseModel):
-    """Diagnostic-only runtime block on closed trades (schema v6 additive)."""
+    """Trade-management runtime block on closed trades (schema v6; diagnostic + managed)."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -63,28 +95,12 @@ class TradeManagementDiagnostics(BaseModel):
     mfe_at_proven_pct: float | None = None
     mfe_at_protected_pct: float | None = None
     mfe_at_runner_pct: float | None = None
-
-
-class TradeManagementEvent(BaseModel):
-    """Runtime trace event from diagnostic-only trade-management (schema v6 additive)."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    trade_id: str
-    time_ms: int | None = None
-    bar_index: int
-    side: Literal["long", "short"]
-    event_type: Literal["phase_changed", "exit_executed"]
-    from_phase: str | None = None
-    to_phase: str | None = None
-    rule_id: str | None = None
-    component_id: str | None = None
-    price: float | None = None
-    stop_price: float | None = None
-    mfe_pct: float | None = None
-    mae_pct: float | None = None
-    bars_in_trade: int | None = None
-    metadata: dict[str, Any] = Field(default_factory=dict)
+    active_stop_at_exit: float | None = None
+    active_take_at_exit: str | None = None
+    active_stop_component_id: str | None = None
+    active_take_component_id: str | None = None
+    exit_candidate_type: str | None = None
+    managed_events: list[TradeManagementEvent] | None = None
 
 
 class TradeRecord(TradeOverlay):
@@ -131,6 +147,8 @@ class TradeRecord(TradeOverlay):
     entry_idx: int | None = None
     exit_idx: int | None = None
     break_even: BreakEvenDiagnostics | None = None
+    exit_layer: str | None = None
+    managed_exit_candidate_type: str | None = None
     trade_management: TradeManagementDiagnostics | None = None
 
 
@@ -256,6 +274,7 @@ class VariantMetrics(BaseModel):
     exit_component_quality_breakdown: dict[str, ExitComponentQualityBucketMetrics] | None = None
     path_diagnostics_summary: dict[str, Any] | None = None
     trade_management_summary: dict[str, Any] | None = None
+    baseline_vs_managed_summary: dict[str, Any] | None = None
 
 
 class PathDiagnosticsConfig(BaseModel):

@@ -361,17 +361,17 @@ Research master-plan reference: `docs/research/21_state_driven_exit_management_v
 - Composer.
 
 **Acceptance criteria:**
-- [ ] API types match research JSON shape from Slice 6 smoke artifact.
-- [ ] Existing report endpoints still serve legacy reports without managed fields.
-- [ ] API integration test or contract test against smoke JSON fixture.
+- [x] API types match research JSON shape from Slice 6 smoke artifact.
+- [x] Existing report endpoints still serve legacy reports without managed fields.
+- [x] API integration test or contract test against smoke JSON fixture.
 
 **Tests:**
-- [ ] 7.1 API contract tests for managed report fields.
-- [ ] 7.2 Manual or automated fetch of smoke run report through BFF.
+- [x] 7.1 API contract tests for managed report fields.
+- [x] 7.2 Manual or automated fetch of smoke run report through BFF.
 
-- [ ] 7.3 Add `research_api` types for managed fields.
-- [ ] 7.4 Wire read endpoints / response models.
-- [ ] 7.5 Verify against smoke JSON from Slice 6.
+- [x] 7.3 Add `research_api` types for managed fields.
+- [x] 7.4 Wire read endpoints / response models.
+- [x] 7.5 Verify against smoke JSON from Slice 6.
 
 ### STOP — Checkpoint 7: API / BFF read support review
 
