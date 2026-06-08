@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 from typing import Any, Mapping, Sequence
 
 from research.strategies.ema_pullback import component_builders as builders
@@ -57,9 +58,11 @@ from research.strategies.ema_pullback.spec import (
     PhaseRuleAtrSpec,
     PhaseRuleConditionSpec,
     PhaseRuleSpec,
+    PHASE_RUNTIME_EXIT_PRICES,
     PhaseRuntimeExitParamsSpec,
     RuntimeExitRuleSpec,
     STOP_MANAGEMENT_COMPONENT_IDS,
+    TRADE_MANAGEMENT_PHASES,
     StopManagementRuleSpec,
     TakeManagementRuleSpec,
     TakeProfileSwitchParamsSpec,
@@ -434,15 +437,33 @@ def _parse_phase_rule_atr(value: Any, *, path: str) -> PhaseRuleAtrSpec:
         raise EmaPullbackInstanceValidationError(str(exc)) from exc
 
 
+def _require_activate_when_phase(value: str, *, path: str) -> str:
+    if value not in TRADE_MANAGEMENT_PHASES:
+        allowed = ", ".join(repr(item) for item in TRADE_MANAGEMENT_PHASES)
+        raise EmaPullbackInstanceValidationError(
+            f"{path} must be one of: {allowed}; got {value!r}"
+        )
+    return value
+
+
+def _require_positive_finite_float(raw: Any, *, path: str) -> float:
+    try:
+        value = float(raw)
+    except (TypeError, ValueError) as exc:
+        raise EmaPullbackInstanceValidationError(f"{path} must be a number") from exc
+    if not math.isfinite(value) or value <= 0:
+        raise EmaPullbackInstanceValidationError(f"{path} must be a finite number > 0")
+    return value
+
+
 def _parse_management_activate_when(value: Any, *, path: str) -> ManagementActivateWhenSpec:
     payload = _require_mapping(path, value)
     _reject_unknown_fields(path, payload, {"phase_at_least"})
-    try:
-        return ManagementActivateWhenSpec(
-            phase_at_least=_require_non_empty_str(payload, "phase_at_least"),  # type: ignore[arg-type]
-        )
-    except ValueError as exc:
-        raise EmaPullbackInstanceValidationError(str(exc)) from exc
+    phase_at_least = _require_activate_when_phase(
+        _require_non_empty_str(payload, "phase_at_least"),
+        path=f"{path}.phase_at_least",
+    )
+    return ManagementActivateWhenSpec(phase_at_least=phase_at_least)  # type: ignore[arg-type]
 
 
 def _parse_management_atr_ref(value: Any, *, path: str) -> ManagementAtrRefSpec:
@@ -531,9 +552,13 @@ def _parse_lock_profit_stop_params(value: Any, *, path: str) -> LockProfitStopPa
     atr = None
     if "atr" in payload:
         atr = _parse_management_atr_ref(payload["atr"], path=f"{path}.atr")
+    lock_atr = _require_positive_finite_float(
+        _require_present(payload, "lock_atr"),
+        path=f"{path}.lock_atr",
+    )
     try:
         return LockProfitStopParamsSpec(
-            lock_atr=float(_require_present(payload, "lock_atr")),
+            lock_atr=lock_atr,
             atr_period=int(payload.get("atr_period", 14)),
             atr=atr,
         )
@@ -643,12 +668,13 @@ def _parse_phase_runtime_exit_params(
 ) -> PhaseRuntimeExitParamsSpec:
     payload = _require_mapping(path, value)
     _reject_unknown_fields(path, payload, {"exit_price"})
-    try:
-        return PhaseRuntimeExitParamsSpec(
-            exit_price=_require_non_empty_str(payload, "exit_price"),  # type: ignore[arg-type]
+    exit_price = _require_non_empty_str(payload, "exit_price")
+    if exit_price not in PHASE_RUNTIME_EXIT_PRICES:
+        allowed = ", ".join(repr(item) for item in PHASE_RUNTIME_EXIT_PRICES)
+        raise EmaPullbackInstanceValidationError(
+            f"{path}.exit_price must be one of: {allowed}; got {exit_price!r}"
         )
-    except ValueError as exc:
-        raise EmaPullbackInstanceValidationError(str(exc)) from exc
+    return PhaseRuntimeExitParamsSpec(exit_price=exit_price)  # type: ignore[arg-type]
 
 
 def _parse_exit_management_group(value: Any, *, path: str) -> ExitManagementGroupSpec:

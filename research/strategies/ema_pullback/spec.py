@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 import hashlib
 import json
+import math
 from typing import Any, Literal
 
 BREAK_EVEN_STOP_COMPONENT = "break_even_stop"
@@ -685,8 +686,8 @@ class LockProfitStopParamsSpec:
     atr: ManagementAtrRefSpec | None = None
 
     def __post_init__(self) -> None:
-        if self.lock_atr <= 0:
-            raise ValueError("lock_profit_stop params.lock_atr must be > 0")
+        if not math.isfinite(self.lock_atr) or self.lock_atr <= 0:
+            raise ValueError("lock_profit_stop params.lock_atr must be a finite number > 0")
         effective_period = self.atr.period if self.atr is not None else self.atr_period
         if effective_period <= 0:
             raise ValueError("lock_profit_stop params atr_period must be > 0")
@@ -892,7 +893,8 @@ class ExitManagementSpec:
         ):
             if rule.rule_id in seen_management_rule_ids:
                 raise ValueError(
-                    "trade_management.exit_management management rule_id must be unique: "
+                    "trade_management.exit_management management rule_id must be unique "
+                    "across stop_management, take_management, and runtime_exits: "
                     f"{rule.rule_id!r}"
                 )
             seen_management_rule_ids.add(rule.rule_id)

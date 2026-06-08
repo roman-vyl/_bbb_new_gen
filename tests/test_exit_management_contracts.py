@@ -349,7 +349,7 @@ def test_managed_rejects_phase_runtime_exit_non_close_price() -> None:
         runtime_exits=[rule]
     )
 
-    with pytest.raises(ValueError, match="exit_price must be one of"):
+    with pytest.raises(ValueError, match=r"params\.exit_price must be one of:.*got 'open'"):
         load_strategy_config(payload)
 
 
@@ -375,7 +375,53 @@ def test_managed_rejects_lock_profit_stop_invalid_lock_atr() -> None:
         stop_management=[rule]
     )
 
-    with pytest.raises(ValueError, match="lock_atr must be > 0"):
+    with pytest.raises(ValueError, match="lock_atr must be a finite number > 0"):
+        load_strategy_config(payload)
+
+
+@pytest.mark.parametrize("lock_atr", [float("nan"), float("inf"), float("-inf")])
+def test_managed_rejects_lock_profit_stop_non_finite_lock_atr(lock_atr: float) -> None:
+    payload = _fixture_payload()
+    rule = _managed_rule_payload("lock_profit_stop")
+    assert isinstance(rule["params"], dict)
+    rule["params"]["lock_atr"] = lock_atr
+    _trade_management(payload)["exit_management"] = _managed_exit_management(
+        stop_management=[rule]
+    )
+
+    with pytest.raises(ValueError, match="lock_atr must be a finite number > 0"):
+        load_strategy_config(payload)
+
+
+def test_managed_rejects_invalid_phase_at_least_typo() -> None:
+    payload = _fixture_payload()
+    rule = _managed_rule_payload("break_even_stop")
+    rule["activate_when"] = {"phase_at_least": "protcted"}
+    _trade_management(payload)["exit_management"] = _managed_exit_management(
+        stop_management=[rule]
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=r"activate_when\.phase_at_least must be one of:.*got 'protcted'",
+    ):
+        load_strategy_config(payload)
+
+
+def test_managed_rejects_duplicate_rule_id_across_management_arrays() -> None:
+    payload = _fixture_payload()
+    stop_rule = _managed_rule_payload("break_even_stop")
+    take_rule = _managed_rule_payload("take_profile_switch")
+    take_rule["rule_id"] = stop_rule["rule_id"]
+    _trade_management(payload)["exit_management"] = _managed_exit_management(
+        stop_management=[stop_rule],
+        take_management=[take_rule],
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="management rule_id must be unique across stop_management, take_management, and runtime_exits",
+    ):
         load_strategy_config(payload)
 
 
