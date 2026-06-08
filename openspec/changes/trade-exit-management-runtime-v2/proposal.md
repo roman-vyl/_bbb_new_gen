@@ -15,7 +15,7 @@ v2 adds **`mode: managed`** — a behavior-changing **managed exit state / candi
 - Add baseline vs managed comparison tooling (generic metrics; BE labels derived).
 - **Guardrail:** `managed` with empty `stop_management` / `take_management` / `runtime_exits` MUST match baseline parity (same as no behavior-changing rules).
 - **Single managed runtime path:** behavior-changing execution uses only v2 `run_managed_execution_loop` (`ManagedExitProvider` + `ExitCandidate` + `ExitArbitrator`). No legacy BE combiner runtime path.
-- **Legacy shape rejected:** `exit_management.always_on` / `profiles` / R-trigger `break_even_stop` rules are **not** supported as a runtime path; configs with that wire shape fail validation with an explicit error. No compatibility migration, no adapter shim, no unified `execution_combiner`.
+- **Legacy shape rejected (presence-based):** if `exit_management` contains `always_on` or `profiles` keys at all (including empty wrappers), validation fails with an explicit error. No runtime path, no authoring surface, no `run_managed_bar_loop` call-sites (including signal trace / diagnostics). No compatibility migration, no adapter shim, no unified `execution_combiner`. `exit_policy.always_on`/`profiles` unchanged.
 - **Unchanged:** existing entry pipeline (setup/blocker/trigger/direction → entries); existing `exit_policy` layer and Composer exit-policy authoring; HTF profile locking/gating stays in `exit_policy` — managed provider only consumes effective `exit_policy` outputs; `data_engine/`.
 
 ## Capabilities

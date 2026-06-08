@@ -321,15 +321,29 @@ The winning candidate SHALL be recorded on `exit_executed`. Losing bar-open cand
 - **AND** the trade does not close via `break_even_stop` on bar N
 
 ### Requirement: Legacy exit_management wire shape is rejected
-The legacy `exit_management.always_on` / `profiles` / `rules` shape with R-trigger `break_even_stop` (`trigger_r`, `offset_r`) SHALL NOT be supported as a runtime or validation-accepted config.
+The legacy `exit_management.always_on` / `profiles` wire shape SHALL NOT be supported as a runtime or validation-accepted config.
 
-When validation detects non-empty legacy management rules in that shape, it SHALL fail with:
+Validation SHALL use **presence-based rejection**: if `exit_management` contains an `always_on` or `profiles` key at all, validation SHALL fail — including empty `rules: []` or empty profile groups. Rejection is not limited to non-empty legacy rules.
+
+Error message:
 
 `Legacy exit_management shape is no longer supported; use mode=managed with stop_management/take_management/runtime_exits.`
 
-There SHALL be no compatibility migration, no adapter shim, and no `run_managed_bar_loop` execution routing for PnL.
+There SHALL be no compatibility migration, no adapter shim, and no `run_managed_bar_loop` call-sites in production code (backtest, signal trace, reports, diagnostics, API/BFF).
 
 New managed `break_even_stop` rules SHALL use the v2 `stop_management` contract with `activate_when` and uniform events.
+
+`exit_policy.always_on` / `profiles` SHALL remain unchanged and MUST NOT be conflated with legacy `exit_management` rejection.
+
+#### Scenario: Legacy always_on key rejected even when rules empty
+- **GIVEN** a strategy config contains `exit_management.always_on: { "rules": [] }`
+- **WHEN** validation runs
+- **THEN** validation fails with the legacy unsupported error message
+
+#### Scenario: Legacy profiles key rejected
+- **GIVEN** a strategy config contains `exit_management.profiles` with empty aligned/countertrend/neutral groups
+- **WHEN** validation runs
+- **THEN** validation fails with the legacy unsupported error message
 
 #### Scenario: Legacy always_on break_even config is rejected
 - **GIVEN** a strategy spec contains `exit_management.always_on.rules` with `component_id: "break_even_stop"` and `trigger_r`
@@ -346,6 +360,8 @@ New managed `break_even_stop` rules SHALL use the v2 `stop_management` contract 
 When behavior-changing managed rules are active, the backtest SHALL use only the v2 managed execution loop (`run_managed_execution_loop` with `ManagedExitProvider`, `ExitCandidate`, and `ExitArbitrator`).
 
 The backtest SHALL NOT route to `run_managed_bar_loop`, `_run_managed_strategy_spec`, or `has_exit_management_rules` for execution-path selection.
+
+No production module (including `signal_trace.py`, reports, diagnostics, API/BFF) SHALL call `run_managed_bar_loop`.
 
 There SHALL be exactly one behavior-changing bar-by-bar execution owner: the v2 managed execution loop.
 
@@ -387,7 +403,7 @@ The strategy spec SHALL support an optional `trade_management.exit_management` o
 - `take_management`: take-profile switch rules; MUST be empty for `diagnostic_only`; MAY be non-empty for `managed`.
 - `runtime_exits`: phase-gated runtime exit rules; MUST be empty for `diagnostic_only`; MAY be non-empty for `managed`.
 
-The legacy `exit_management.always_on/profiles/rules` `break_even_stop` shape SHALL NOT be accepted. Validation SHALL reject non-empty legacy management rules with an explicit unsupported-legacy error.
+The legacy `exit_management.always_on` / `profiles` wire shape SHALL NOT be accepted. Validation SHALL reject presence of those keys with an explicit unsupported-legacy error (including empty wrappers).
 
 #### Scenario: Config places runtime controller beside exit policy
 - **GIVEN** a strategy spec contains `trade_management.exit_policy`
@@ -414,10 +430,27 @@ The legacy `exit_management.always_on/profiles/rules` `break_even_stop` shape SH
 - **THEN** validation succeeds
 
 #### Scenario: Legacy BE shape fails validation
-- **GIVEN** a strategy spec uses `exit_management.always_on/profiles/rules` with `break_even_stop`
+- **GIVEN** a strategy spec uses `exit_management.always_on` or `exit_management.profiles` (any content, including empty)
 - **WHEN** validation runs
 - **THEN** validation fails with the legacy unsupported error message
 - **AND** no managed runtime path executes
+
+### Requirement: Legacy exit_management authoring surface is removed
+The supported strategy authoring API SHALL NOT expose legacy exit_management builders or catalog entries for R-trigger break-even.
+
+Specifically, production code SHALL NOT provide:
+
+- `break_even_stop_rule(trigger_r, offset_r)` or equivalent legacy builder;
+- `exit_management(always_on=…, profiles=…)` legacy BE builder;
+- registry/catalog descriptions of trigger_r-based `exit_management` components;
+- public `ExitManagementSpec.always_on`, `ExitManagementSpec.profiles`, or `ExitManagementRuleSpec(trigger_r)` as part of the supported contract.
+
+`exit_policy` authoring (`exit_policy.always_on`, `exit_policy.profiles`) SHALL remain unchanged.
+
+#### Scenario: Legacy builders are not importable from public authoring API
+- **GIVEN** a consumer imports the supported ema_pullback component builder surface
+- **WHEN** they search for legacy `break_even_stop_rule` with `trigger_r` or legacy `exit_management(always_on, profiles)`
+- **THEN** those symbols are not available as supported public authoring API
 
 ### Requirement: Runtime event trace records phase and exit events
 The runtime SHALL support `TradeManagementEvent` records with trade id, time, bar index, side, event type, phase transition fields, rule/component identifiers, price fields, MFE/MAE percent, bars in trade, exit layer, and metadata.

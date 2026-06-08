@@ -760,16 +760,23 @@ Runner-режим:
 ### Удалено / запрещено
 
 ```text
-run_managed_bar_loop как PnL/runtime path
+run_managed_bar_loop — нигде в production (не backtest, не signal_trace, не diagnostics)
 has_exit_management_rules() как selector execution path
-exit_management.always_on/profiles + trigger_r/offset_r как supported config
+exit_management.always_on или profiles — любое наличие ключа (даже rules: [])
+legacy authoring: break_even_stop_rule(trigger_r), exit_management(always_on/profiles) builders
 execution_combiner / execution_adapters / adapter shim
 автоматическая миграция старых JSON
 ```
 
-Legacy wire при загрузке конфига → явная ошибка:
+**Presence-based rejection:** если в `exit_management` есть ключ `always_on` или `profiles` — ошибка, независимо от содержимого.
+
+`exit_policy.always_on` / `profiles` — **не трогаем**.
+
+Ошибка:
 
 `Legacy exit_management shape is no longer supported; use mode=managed with stop_management/take_management/runtime_exits.`
+
+**Миграция:** `diagnostic_only` и конфиги без legacy shape — без изменений. Старые BE JSON с `exit_management.always_on/profiles` — breaking, переписать вручную на v2 `stop_management`.
 
 ---
 

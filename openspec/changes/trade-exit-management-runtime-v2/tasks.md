@@ -207,17 +207,17 @@ Research master-plan reference: `docs/research/21_state_driven_exit_management_v
 
 - Keep v2 Slice 4 (`7ab168f`): `ManagedExitProvider` + `ExitCandidate` + `ExitArbitrator` + `run_managed_execution_loop`.
 - Remove legacy BE runtime path: no `run_managed_bar_loop` / `_run_managed_strategy_spec` / `has_exit_management_rules` routing for PnL.
-- Reject legacy wire `exit_management.always_on` / `profiles` / R-trigger rules at validation — no migration, no adapter shim.
+- Reject legacy wire **by key presence**: if `exit_management` contains `always_on` or `profiles` keys at all → validation error (including empty `rules: []`). No migration, no adapter shim.
 - Do **not** add `execution_combiner.py` / `execution_adapters.py` (reverted `e5724b1` stays rejected).
 - Future unified combiner redesign is **out of scope**.
 
 **Scope:**
 
 - `backtest.py` routing: only default vectorbt path OR v2 `_run_execution_integrated_strategy_spec`.
-- `spec.py` / `instance_loader.py`: reject legacy management shape with explicit error message.
+- `spec.py` / `instance_loader.py`: **presence-based** rejection — any `always_on` or `profiles` key under `exit_management` fails validation (empty arrays/objects included).
 - `run_managed_execution_loop`: skip `update_end_of_bar_snapshot` on entry bar N; first update on N+1.
-- Remove or quarantine `run_managed_bar_loop` from runtime routing (may remain only for non-PnL diagnostics if needed — must not affect backtest closes).
-- `signal_trace.py`: stop using legacy loop for runtime path if applicable.
+- **Remove all production call-sites of `run_managed_bar_loop`.** Do not call it from `backtest.py`, `signal_trace.py`, reports, diagnostics, or API/BFF. Delete or archive the loop; no “diagnostics-only” exception.
+- Remove legacy authoring surface (see acceptance): builders, registry catalog, public `ExitManagementSpec.always_on`/`profiles` contract. **`exit_policy.always_on`/`profiles` unchanged.**
 - Verify `e5724b1` / combiner artifacts absent from tree.
 
 **Out of scope:**
@@ -230,9 +230,16 @@ Research master-plan reference: `docs/research/21_state_driven_exit_management_v
 
 **Acceptance criteria:**
 
-- [ ] Legacy `always_on`/`profiles`/`trigger_r` config fails validation with documented error string.
+- [ ] **Presence-based legacy rejection:** any config with `exit_management.always_on` or `exit_management.profiles` key fails validation (including `"rules": []`); documented error string.
+- [ ] **No production authoring surface for legacy exit_management:**
+  - no `break_even_stop_rule(trigger_r, offset_r)` builder;
+  - no `exit_management(always_on=…, profiles=…)` legacy BE builder;
+  - no registry/catalog entry describing trigger_r-based `exit_management`;
+  - no public `ExitManagementSpec.always_on` / `profiles` / `ExitManagementRuleSpec(trigger_r)` runtime contract in supported API.
+  - `exit_policy.always_on` / `profiles` **unchanged** — do not touch exit_policy authoring.
+- [ ] **No `run_managed_bar_loop` production call-sites:** grep-clean for imports/calls from `backtest.py`, `signal_trace.py`, reports, diagnostics, API/BFF.
 - [ ] `mode=managed` + non-empty management rules routes only to `run_managed_execution_loop`.
-- [ ] No `has_exit_management_rules` execution-path routing in `backtest.py`.
+- [ ] No `has_exit_management_rules` execution-path routing in `backtest.py`; remove `_run_managed_strategy_spec`.
 - [ ] `diagnostic_only` / managed empty arrays / absent exit_management preserve default vectorbt path and baseline parity.
 - [ ] Entry bar does not call provider end-of-bar update; first update on N+1.
 - [ ] Delayed activation tests still pass (snapshot N → active N+1).
@@ -241,20 +248,23 @@ Research master-plan reference: `docs/research/21_state_driven_exit_management_v
 
 **Tests:**
 
-- [ ] 4.5.1 Reject legacy wire shape — `tests/test_exit_management_contracts.py` (or dedicated test).
+- [ ] 4.5.1 Presence-based legacy rejection — empty `always_on.rules: []` and non-empty legacy both fail (`tests/test_exit_management_contracts.py`).
 - [ ] 4.5.2 Routing matrix — v2 managed vs default path integration tests.
 - [ ] 4.5.3 Entry-bar no provider update — `tests/test_managed_execution_integration.py`.
-- [ ] 4.5.4 Remove/update legacy BE runtime tests (`test_exit_management.py`, `test_exit_management_extended.py`) — legacy path no longer executes.
-- [ ] 4.5.5 Static guard: no combiner/adapter module references.
+- [ ] 4.5.4 Legacy BE runtime tests removed or archived — must not import/call production legacy routing (`test_exit_management.py`, `test_exit_management_extended.py`).
+- [ ] 4.5.5 Static guards: no combiner/adapter modules; no `run_managed_bar_loop` in production modules; no legacy authoring builders in public API.
+- [ ] 4.5.6 Authoring/registry cleanup tests or static import guards.
 
-- [ ] 4.5.6 Implement validation rejection for legacy shape.
-- [ ] 4.5.7 Remove legacy routing from `backtest.py`.
-- [ ] 4.5.8 Fix entry-bar lookahead in `run_managed_execution_loop`.
-- [ ] 4.5.9 Update `docs/research/21_state_driven_exit_management_v1.md` §17–18 to match decision.
+- [ ] 4.5.7 Implement presence-based validation rejection in `spec.py` / `instance_loader.py`.
+- [ ] 4.5.8 Remove legacy routing and `_run_managed_strategy_spec` from `backtest.py`.
+- [ ] 4.5.9 Remove `run_managed_bar_loop` from `signal_trace.py` and all other production call-sites; delete or archive loop module.
+- [ ] 4.5.10 Remove legacy authoring surface (`component_builders.py`, `components/registry.py`, legacy `ExitManagement*` spec types).
+- [ ] 4.5.11 Fix entry-bar lookahead in `run_managed_execution_loop`.
+- [ ] 4.5.12 Sync `docs/research/21_state_driven_exit_management_v1.md` §17–18.
 
 ### STOP — Checkpoint 4.5: Single managed path review
 
-**Review:** routing matrix, legacy rejection message, entry-bar rule, no second execution owner, combiner still absent.  
+**Review:** routing matrix; presence-based legacy rejection; no `run_managed_bar_loop` call-sites anywhere; legacy authoring surface removed; `exit_policy` untouched; entry-bar rule; combiner still absent.  
 **Do not proceed** to Slice 5 until approved.
 
 ---

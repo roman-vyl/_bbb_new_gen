@@ -40,7 +40,9 @@
 - `managed` + **empty** `stop_management`, `take_management`, `runtime_exits` → **baseline parity** (trade count, PnL, PF, exit reasons). Behavior-changing effects start only with non-empty management rules.
 - `phase_rules` semantics unchanged; they only change phase state, never close trades directly.
 
-**Migration:** no breaking change to existing `diagnostic_only` configs or reports. New optional fields on managed reports only.
+**Migration (v1 modes):** no breaking change to existing `diagnostic_only` configs, configs without legacy `exit_management` shape, or reports without managed fields. New optional fields on managed reports only.
+
+**Breaking (Slice 4.5):** configs using legacy `exit_management.always_on` / `profiles` / R-trigger `break_even_stop` are **rejected** — manual rewrite to v2 `stop_management` required. No auto-migration.
 
 ## Relationship with existing exit_policy and HTF context
 
@@ -135,11 +137,23 @@ Close is applied by the **execution layer** after combining `exit_policy` candid
 - `execution_combiner.py`, `execution_adapters.py`, adapter-based lifecycle owners.
 - Legacy config wire `exit_management.always_on` / `profiles` / R-trigger `break_even_stop` rules as a supported runtime shape.
 
-**Legacy shape validation:** if a config contains non-empty `exit_management.always_on.rules` or profile-scoped legacy `break_even_stop` rules (`trigger_r` / `offset_r` wire), validation SHALL fail with:
+**Legacy shape validation (presence-based):** if `exit_management` contains an `always_on` or `profiles` key **at all** (including empty `rules: []` or empty profile groups), validation SHALL fail with:
 
 `Legacy exit_management shape is no longer supported; use mode=managed with stop_management/take_management/runtime_exits.`
 
-No compatibility migration. Existing Step 18 JSON must be rewritten to v2 `stop_management` before use.
+Rejection is **key-presence-based**, not content-based. No compatibility migration.
+
+**Legacy authoring removal (Slice 4.5):** remove production authoring surface for legacy exit_management — not only runtime routing:
+
+- `component_builders.py`: no `break_even_stop_rule(trigger_r, offset_r)`, no legacy `exit_management(always_on, profiles)` builders.
+- `components/registry.py`: no catalog entry for trigger_r-based `exit_management`.
+- `spec.py`: remove or internalize `ExitManagementRuleSpec(trigger_r)`, `ExitManagementGroupSpec`, `ExitManagementProfilesSpec`, and `ExitManagementSpec.always_on`/`profiles` from the **supported** public contract.
+
+`exit_policy.always_on` / `profiles` MUST remain unchanged.
+
+**`run_managed_bar_loop`:** remove all production call-sites (`backtest.py`, `signal_trace.py`, reports, diagnostics, API/BFF). No “diagnostics-only” exception. Delete or archive; historical tests must not invoke production routing.
+
+**Pre-Slice 4.5 implementation gap (current tree):** `backtest.py` still routes `has_exit_management_rules` → `_run_managed_strategy_spec`; `signal_trace.py` still calls `run_managed_bar_loop`; `instance_loader.py` parses legacy keys when `mode` omitted; `run_managed_execution_loop` still calls `update_end_of_bar_snapshot` on entry bar. Slice 4.5 closes these gaps.
 
 ### v2 managed execution stack (sole behavior-changing path)
 
@@ -364,14 +378,15 @@ Per `docs/research/21_state_driven_exit_management_v1.md`:
 | Provider path diverges from diagnostic path | Separate test suites; `diagnostic_only` parity tests unchanged |
 | HTF profile + managed take interaction | Execution layer consumes effective `exit_policy` TP candidates; provider does not evaluate HTF; test with HTF fixture |
 | Scope creep into runner/Composer | Explicit non-goals; STOP gates per slice |
-| Legacy BE confusion | Distinct managed contract; no catalog authoring revival |
+| Legacy BE confusion | Presence-based config rejection; remove runtime + authoring surface; no diagnostics exception for `run_managed_bar_loop` |
 
 ## Migration Plan
 
-1. Ship slices 1–9 behind feature-complete tests per checkpoint; Slice 10 for archive readiness.
-2. Existing configs: no change required.
-3. New managed configs: opt-in via `mode: managed` + management rules.
-4. Rollback: revert to `diagnostic_only` or omit `exit_management`.
+1. Ship slices 1–9 behind feature-complete tests per checkpoint; Slice 4.5 before Slice 5; Slice 10 for archive readiness.
+2. **Existing configs without legacy `exit_management` shape:** no change required (including `diagnostic_only`, absent `exit_management`, `managed` empty arrays).
+3. **Existing legacy BE configs** using `exit_management.always_on` / `profiles` / `trigger_r`: **breaking** — must be manually rewritten to `mode=managed` + `stop_management` / `take_management` / `runtime_exits`. No auto-migration.
+4. New managed configs: opt-in via `mode: managed` + management rules.
+5. Rollback: revert to `diagnostic_only` or omit `exit_management` (not to legacy BE wire).
 
 ## Open Questions
 
