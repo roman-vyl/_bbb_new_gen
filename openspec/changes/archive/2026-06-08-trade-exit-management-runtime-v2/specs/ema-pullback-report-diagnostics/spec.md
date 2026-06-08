@@ -79,7 +79,7 @@ Component-specific labels such as `be_helped` SHALL be derived views and SHALL N
 
 ## MODIFIED Requirements
 
-### Requirement: Variant metrics include trade management summary
+### Requirement: Variant metrics include trade-management summary
 When at least one closed trade contains trade-management diagnostics, the variant metrics SHALL include `trade_management_summary`.
 
 For `diagnostic_only` reports, existing v1 summary fields (`by_phase_reached`, `runner_capture_summary`, exit-layer diagnostics where present) SHALL remain supported.

@@ -2,7 +2,7 @@
 
 End-to-end proof that managed v2 runs through `run.py` and serializes Slice 5 report fields in `research/results/latest.json`.
 
-**Status:** ACCEPTED (2026-06-08)
+**Status:** ACCEPTED (2026-06-08); Slice 11 re-verified (2026-06-08)
 
 ## Fixtures
 

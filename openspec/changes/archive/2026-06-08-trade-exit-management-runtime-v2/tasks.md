@@ -559,22 +559,22 @@ Each rule row: `rule_id`, `component_id`, `activate_when`, `params` per Slice 1 
 - Research doc phases 6–7 (component state rules, runner pack).
 
 **Acceptance criteria:**
-- [ ] All Slice 1–9 backend tests green.
-- [ ] Slice 10 frontend tests + build green.
-- [ ] `diagnostic_only` parity suite green.
-- [ ] Backend smoke + comparison smoke pass per `smoke.md` / `comparison.md`.
-- [ ] Composer smoke: managed config authors, validates, saves without legacy keys.
-- [ ] Workbench: Slice 8 managed report read still works; Composer-authored managed config runs end-to-end.
-- [ ] `git diff --stat data_engine/` empty.
-- [ ] `openspec validate trade-exit-management-runtime-v2 --strict` passes.
+- [x] All Slice 1–9 backend tests green.
+- [x] Slice 10 frontend tests + build green.
+- [x] `diagnostic_only` parity suite green.
+- [x] Backend smoke + comparison smoke pass per `smoke.md` / `comparison.md`.
+- [x] Composer smoke: managed config authors, validates, saves without legacy keys.
+- [x] Workbench: Slice 8 managed report read still works; Composer-authored managed config runs end-to-end.
+- [x] `git diff --stat data_engine/` empty.
+- [x] `openspec validate trade-exit-management-runtime-v2 --strict` passes.
 
 **Tests:**
-- [ ] 11.1 `python -m pytest tests/test_exit_management_contracts.py tests/test_trade_runtime_diagnostics.py tests/test_trade_runtime_managed_core.py tests/test_managed_stop_components.py tests/test_managed_take_components.py tests/test_managed_runtime_exit_components.py tests/test_exit_arbitration.py tests/test_managed_execution_integration.py tests/test_managed_report_contract.py tests/test_managed_comparison.py -q`
-- [ ] 11.2 `cd frontend && npm test && npm run build`
-- [ ] 11.3 Re-run backend smoke per `smoke.md`.
-- [ ] 11.4 Re-run paired comparison smoke per `comparison.md`.
-- [ ] 11.5 Composer manual acceptance + Workbench spot-check (Slice 10 fixtures).
-- [ ] 11.6 Final review against `docs/research/21_state_driven_exit_management_v1.md` phases 1–5 checklist.
+- [x] 11.1 `python -m pytest tests/test_exit_management_contracts.py tests/test_trade_runtime_diagnostics.py tests/test_trade_runtime_managed_core.py tests/test_managed_stop_components.py tests/test_managed_take_components.py tests/test_managed_runtime_exit_components.py tests/test_exit_arbitration.py tests/test_managed_execution_integration.py tests/test_managed_report_contract.py tests/test_managed_comparison.py -q`
+- [x] 11.2 `cd frontend && npm test && npm run build`
+- [x] 11.3 Re-run backend smoke per `smoke.md`.
+- [x] 11.4 Re-run paired comparison smoke per `comparison.md`.
+- [x] 11.5 Composer manual acceptance + Workbench spot-check (Slice 10 fixtures).
+- [x] 11.6 Final review against `docs/research/21_state_driven_exit_management_v1.md` phases 1–5 checklist.
 
 ### STOP — Checkpoint 11: Final smoke / archive readiness review
 

@@ -390,51 +390,6 @@ Rationale: OHLC does not reveal intrabar path; using bar N high/low before close
 - **THEN** no `update_end_of_bar_snapshot` call runs for that trade on bar N
 - **AND** provider end-of-bar update may run starting bar N+1 if the trade remains open
 
-## MODIFIED Requirements
-
-### Requirement: Exit management runtime is configured inside trade management
-The strategy spec SHALL support an optional `trade_management.exit_management` object beside `trade_management.exit_policy`. `exit_policy` SHALL remain the source of declarative exit components. `exit_management` SHALL own runtime state, phase evaluation, active management layers, managed provider outputs, and runtime trace when `mode` is `managed`. Close decisions SHALL be applied by the execution layer when `mode` is `managed`.
-
-`exit_management` SHALL support:
-
-- `mode`: `"diagnostic_only"`, `"managed"`, or omitted (no behavior-changing exit management).
-- `phase_rules`: ordered list of phase transition rules.
-- `stop_management`: behavior-changing stop rules; MUST be empty for `diagnostic_only`; MAY be non-empty for `managed`.
-- `take_management`: take-profile switch rules; MUST be empty for `diagnostic_only`; MAY be non-empty for `managed`.
-- `runtime_exits`: phase-gated runtime exit rules; MUST be empty for `diagnostic_only`; MAY be non-empty for `managed`.
-
-The legacy `exit_management.always_on` / `profiles` wire shape SHALL NOT be accepted. Validation SHALL reject presence of those keys with an explicit unsupported-legacy error (including empty wrappers).
-
-#### Scenario: Config places runtime controller beside exit policy
-- **GIVEN** a strategy spec contains `trade_management.exit_policy`
-- **WHEN** the spec also contains `trade_management.exit_management.mode: "diagnostic_only"` or `"managed"`
-- **THEN** validation accepts `exit_management` as a sibling of `exit_policy`
-- **AND** validation does not move runtime rules into `exit_policy`
-
-#### Scenario: Old config without exit management preserves behavior
-- **GIVEN** a strategy spec does not contain `trade_management.exit_management`
-- **WHEN** a backtest runs
-- **THEN** no trade-management phase diagnostics are emitted
-- **AND** the existing exit-policy behavior is preserved
-
-#### Scenario: Diagnostic-only rejects behavior-changing rule lists
-- **GIVEN** a strategy spec contains `trade_management.exit_management.mode: "diagnostic_only"`
-- **AND** `stop_management`, `take_management`, or `runtime_exits` contains one or more rules
-- **WHEN** validation runs
-- **THEN** validation fails with a message that behavior-changing exit management is not allowed in diagnostic-only mode
-
-#### Scenario: Managed mode accepts management rule lists
-- **GIVEN** a strategy spec contains `trade_management.exit_management.mode: "managed"`
-- **AND** `stop_management` contains a valid `break_even_stop` rule
-- **WHEN** validation runs
-- **THEN** validation succeeds
-
-#### Scenario: Legacy BE shape fails validation
-- **GIVEN** a strategy spec uses `exit_management.always_on` or `exit_management.profiles` (any content, including empty)
-- **WHEN** validation runs
-- **THEN** validation fails with the legacy unsupported error message
-- **AND** no managed runtime path executes
-
 ### Requirement: Legacy exit_management authoring surface is removed
 The supported strategy authoring API SHALL NOT expose legacy exit_management builders or catalog entries for R-trigger break-even.
 
@@ -451,59 +406,6 @@ Specifically, production code SHALL NOT provide:
 - **GIVEN** a consumer imports the supported ema_pullback component builder surface
 - **WHEN** they search for legacy `break_even_stop_rule` with `trigger_r` or legacy `exit_management(always_on, profiles)`
 - **THEN** those symbols are not available as supported public authoring API
-
-### Requirement: Runtime event trace records phase and exit events
-The runtime SHALL support `TradeManagementEvent` records with trade id, time, bar index, side, event type, phase transition fields, rule/component identifiers, price fields, MFE/MAE percent, bars in trade, exit layer, and metadata.
-
-In `diagnostic_only` mode, the runtime SHALL emit:
-
-- `phase_changed` when a phase rule changes the trade phase.
-- `exit_executed` when the real trade closes.
-
-In `managed` mode, the runtime SHALL additionally emit:
-
-- `active_stop_updated` when managed stop changes.
-- `active_take_updated` when managed take profile changes.
-- `runtime_exit_triggered` when a runtime exit rule fires.
-- `exit_rule_triggered` when the winning exit candidate is selected on a close bar.
-
-#### Scenario: Phase transition emits event
-- **GIVEN** a trade in `initial_risk`
-- **WHEN** rule `to_proven_at_1atr` moves it to `proven`
-- **THEN** the runtime records a `phase_changed` event
-- **AND** the event has `from_phase: "initial_risk"`
-- **AND** the event has `to_phase: "proven"`
-- **AND** the event has `rule_id: "to_proven_at_1atr"`
-
-#### Scenario: Closed trade emits final exit event
-- **GIVEN** a trade with runtime state
-- **WHEN** the trade closes
-- **THEN** the runtime records an `exit_executed` event
-- **AND** the event includes the current phase and exit attribution when available
-
-#### Scenario: Managed mode emits stop update before close
-- **GIVEN** a managed trade that updates an active stop before closing
-- **WHEN** the stop price changes
-- **THEN** an `active_stop_updated` event is recorded before `exit_executed`
-
-### Requirement: Exit priority is explicit before behavior-changing runtime exits
-The runtime contract SHALL define explicit same-bar priority for behavior-changing managed exits.
-
-`same_bar_policy: "v1"` SHALL be used by managed mode arbitration as defined in the managed arbitration requirement.
-
-`diagnostic_only` mode SHALL NOT alter exits using this priority; it only records diagnostics.
-
-#### Scenario: Diagnostic-only does not apply priority model
-- **GIVEN** a diagnostic-only config with phase rules
-- **WHEN** a bar would satisfy both an existing signal exit and a hypothetical managed exit
-- **THEN** the actual exit remains determined by the existing research execution path
-- **AND** diagnostic-only mode does not use reserved priority ordering to change the trade
-
-#### Scenario: Managed mode applies v1 priority model
-- **GIVEN** a managed config with multiple exit candidates on one bar
-- **WHEN** arbitration runs
-- **THEN** the winner is selected using `same_bar_policy: "v1"`
-- **AND** the result is reflected in `exit_executed`
 
 ### Requirement: Composer authoring v1 for managed exit_management (Slice 10)
 The Workbench Composer SHALL provide authoring UI for `trade_management.exit_management` using the v2 contract:
@@ -565,3 +467,101 @@ A Composer-generated managed config SHALL validate and run on the existing backe
 - **WHEN** the Composer loads, edits unrelated fields, and saves
 - **THEN** validation succeeds
 - **AND** `exit_management` shape remains valid for the selected mode
+
+## MODIFIED Requirements
+
+### Requirement: Exit management runtime is configured inside trade management
+The strategy spec SHALL support an optional `trade_management.exit_management` object beside `trade_management.exit_policy`. `exit_policy` SHALL remain the source of declarative exit components. `exit_management` SHALL own runtime state, phase evaluation, active management layers, managed provider outputs, and runtime trace when `mode` is `managed`. Close decisions SHALL be applied by the execution layer when `mode` is `managed`.
+
+`exit_management` SHALL support:
+
+- `mode`: `"diagnostic_only"`, `"managed"`, or omitted (no behavior-changing exit management).
+- `phase_rules`: ordered list of phase transition rules.
+- `stop_management`: behavior-changing stop rules; MUST be empty for `diagnostic_only`; MAY be non-empty for `managed`.
+- `take_management`: take-profile switch rules; MUST be empty for `diagnostic_only`; MAY be non-empty for `managed`.
+- `runtime_exits`: phase-gated runtime exit rules; MUST be empty for `diagnostic_only`; MAY be non-empty for `managed`.
+
+The legacy `exit_management.always_on` / `profiles` wire shape SHALL NOT be accepted. Validation SHALL reject presence of those keys with an explicit unsupported-legacy error (including empty wrappers).
+
+#### Scenario: Config places runtime controller beside exit policy
+- **GIVEN** a strategy spec contains `trade_management.exit_policy`
+- **WHEN** the spec also contains `trade_management.exit_management.mode: "diagnostic_only"` or `"managed"`
+- **THEN** validation accepts `exit_management` as a sibling of `exit_policy`
+- **AND** validation does not move runtime rules into `exit_policy`
+
+#### Scenario: Old config without exit management preserves behavior
+- **GIVEN** a strategy spec does not contain `trade_management.exit_management`
+- **WHEN** a backtest runs
+- **THEN** no trade-management phase diagnostics are emitted
+- **AND** the existing exit-policy behavior is preserved
+
+#### Scenario: Diagnostic-only rejects behavior-changing rule lists
+- **GIVEN** a strategy spec contains `trade_management.exit_management.mode: "diagnostic_only"`
+- **AND** `stop_management`, `take_management`, or `runtime_exits` contains one or more rules
+- **WHEN** validation runs
+- **THEN** validation fails with a message that behavior-changing exit management is not allowed in diagnostic-only mode
+
+#### Scenario: Managed mode accepts management rule lists
+- **GIVEN** a strategy spec contains `trade_management.exit_management.mode: "managed"`
+- **AND** `stop_management` contains a valid `break_even_stop` rule
+- **WHEN** validation runs
+- **THEN** validation succeeds
+
+#### Scenario: Legacy BE shape fails validation
+- **GIVEN** a strategy spec uses `exit_management.always_on` or `exit_management.profiles` (any content, including empty)
+- **WHEN** validation runs
+- **THEN** validation fails with the legacy unsupported error message
+- **AND** no managed runtime path executes
+
+### Requirement: Runtime event trace records phase and exit events
+The runtime SHALL support `TradeManagementEvent` records with trade id, time, bar index, side, event type, phase transition fields, rule/component identifiers, price fields, MFE/MAE percent, bars in trade, exit layer, and metadata.
+
+In `diagnostic_only` mode, the runtime SHALL emit:
+
+- `phase_changed` when a phase rule changes the trade phase.
+- `exit_executed` when the real trade closes.
+
+In `managed` mode, the runtime SHALL additionally emit:
+
+- `active_stop_updated` when managed stop changes.
+- `active_take_updated` when managed take profile changes.
+- `runtime_exit_triggered` when a runtime exit rule fires.
+- `exit_rule_triggered` when the winning exit candidate is selected on a close bar.
+
+#### Scenario: Phase transition emits event
+- **GIVEN** a trade in `initial_risk`
+- **WHEN** rule `to_proven_at_1atr` moves it to `proven`
+- **THEN** the runtime records a `phase_changed` event
+- **AND** the event has `from_phase: "initial_risk"`
+- **AND** the event has `to_phase: "proven"`
+- **AND** the event has `rule_id: "to_proven_at_1atr"`
+
+#### Scenario: Closed trade emits final exit event
+- **GIVEN** a trade with runtime state
+- **WHEN** the trade closes
+- **THEN** the runtime records an `exit_executed` event
+- **AND** the event includes the current phase and exit attribution when available
+
+#### Scenario: Managed mode emits stop update before close
+- **GIVEN** a managed trade that updates an active stop before closing
+- **WHEN** the stop price changes
+- **THEN** an `active_stop_updated` event is recorded before `exit_executed`
+
+### Requirement: Exit priority is explicit before behavior-changing runtime exits
+The runtime contract SHALL define explicit same-bar priority for behavior-changing managed exits.
+
+`same_bar_policy: "v1"` SHALL be used by managed mode arbitration as defined in the managed arbitration requirement.
+
+`diagnostic_only` mode SHALL NOT alter exits using this priority; it only records diagnostics.
+
+#### Scenario: Diagnostic-only does not apply priority model
+- **GIVEN** a diagnostic-only config with phase rules
+- **WHEN** a bar would satisfy both an existing signal exit and a hypothetical managed exit
+- **THEN** the actual exit remains determined by the existing research execution path
+- **AND** diagnostic-only mode does not use reserved priority ordering to change the trade
+
+#### Scenario: Managed mode applies v1 priority model
+- **GIVEN** a managed config with multiple exit candidates on one bar
+- **WHEN** arbitration runs
+- **THEN** the winner is selected using `same_bar_policy: "v1"`
+- **AND** the result is reflected in `exit_executed`

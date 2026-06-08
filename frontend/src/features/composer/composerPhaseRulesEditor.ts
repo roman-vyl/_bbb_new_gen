@@ -6,7 +6,6 @@ import {
   createBlankExitManagement,
   createProductExitManagement,
   exitManagementHasLegacyKeys,
-  hasLegacyExitManagementRules,
   normalizeExitManagementV2,
 } from "@/features/composer/composerExitManagementProduct";
 import { collectManagedRulesValidationErrors } from "@/features/composer/composerManagedExitManagement";
