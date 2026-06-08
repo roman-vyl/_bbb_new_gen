@@ -537,18 +537,64 @@ def run_managed_exit_runtime(
     return ManagedTradeRuntimeResult(states_by_trade_id=states, events=events)
 
 
+def managed_trade_management_block_for_trade(
+    record: dict[str, Any],
+    managed_state: ManagedTradeRuntimeState,
+    events: list[TradeManagementEvent],
+) -> dict[str, Any]:
+    block = trade_management_block_for_trade(
+        record,
+        managed_state.runtime,
+        events,
+    )
+    snapshot = managed_state.active_management
+    block["active_stop_at_exit"] = snapshot.active_stop_price
+    block["active_take_at_exit"] = snapshot.active_take_profile
+    block["active_stop_component_id"] = snapshot.active_stop_component_id
+    block["active_take_component_id"] = snapshot.active_take_component_id
+
+    exit_layer = record.get("exit_layer")
+    if isinstance(exit_layer, str) and exit_layer:
+        block["exit_layer"] = exit_layer
+
+    exit_executed = next(
+        (event for event in reversed(events) if event.event_type == "exit_executed"),
+        None,
+    )
+    if exit_executed is not None:
+        meta_layer = exit_executed.metadata.get("exit_layer")
+        if isinstance(meta_layer, str) and meta_layer:
+            block["exit_layer"] = meta_layer
+        if exit_executed.rule_id:
+            block["exit_rule_id"] = exit_executed.rule_id
+        if exit_executed.component_id:
+            block["exit_component_id"] = exit_executed.component_id
+
+    candidate_type = record.get("managed_exit_candidate_type")
+    if isinstance(candidate_type, str) and candidate_type:
+        block["exit_candidate_type"] = candidate_type
+
+    block["managed_events"] = [_event_payload(event) for event in events]
+    return block
+
+
 def apply_managed_trade_management_diagnostics(
     trade_records: list[dict[str, Any]],
     result: ManagedTradeRuntimeResult,
 ) -> None:
-    diagnostic_result = TradeRuntimeResult(
-        states_by_trade_id={
-            trade_id: managed.runtime
-            for trade_id, managed in result.states_by_trade_id.items()
-        },
-        events=result.events,
-    )
-    apply_trade_management_diagnostics(trade_records, diagnostic_result)
+    events_by_trade = _events_by_trade_id(result)
+    for record in trade_records:
+        if record.get("status") != "closed":
+            continue
+        trade_id = str(record.get("trade_id") or "")
+        managed_state = result.states_by_trade_id.get(trade_id)
+        if managed_state is None:
+            continue
+        record["trade_management"] = managed_trade_management_block_for_trade(
+            record,
+            managed_state,
+            events_by_trade.get(trade_id, ()),
+        )
 
 
 def build_trade_runtime_diagnostics(
@@ -839,7 +885,11 @@ def _summary_for_records(records: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-def build_trade_management_summary(trade_records: list[dict[str, Any]]) -> dict[str, Any] | None:
+def build_trade_management_summary(
+    trade_records: list[dict[str, Any]],
+    *,
+    managed_mode: bool = False,
+) -> dict[str, Any] | None:
     closed = [
         record
         for record in trade_records
@@ -878,7 +928,7 @@ def build_trade_management_summary(trade_records: list[dict[str, Any]]) -> dict[
         protected_not_runner
     )
 
-    return {
+    summary: dict[str, Any] = {
         "by_phase_reached": by_phase,
         "phase_transition_counts": phase_transition_counts,
         "exit_layer_breakdown": _exit_layer_mix(closed),
@@ -886,3 +936,10 @@ def build_trade_management_summary(trade_records: list[dict[str, Any]]) -> dict[
         "runner_capture_summary": runner_summary,
         "protected_trade_summary": protected_summary,
     }
+    if managed_mode:
+        from research.strategies.ema_pullback.execution.results import (
+            build_managed_layer_breakdowns,
+        )
+
+        summary.update(build_managed_layer_breakdowns(trade_records))
+    return summary

@@ -17,6 +17,7 @@ from research.strategies.ema_pullback.execution.result_models import (
 )
 from research.strategies.ema_pullback.execution.exit_attribution import build_exit_instance_component_map
 from research.strategies.ema_pullback.execution.results import (
+    baseline_vs_managed_summary_placeholder,
     build_bounce_counter_breakdown,
     build_exit_reason_breakdown,
     build_fee_diagnostics,
@@ -155,6 +156,7 @@ def build_trade_side_metrics(
     max_drawdown: float,
     fees_rate: float = 0.0,
     trade_management_summary: dict[str, Any] | None = None,
+    baseline_vs_managed_summary: dict[str, Any] | None = None,
 ) -> VariantMetrics:
     """Realized PnL / PF / win_rate use ``status == \"closed\"`` only; open rows are counted in ``open_trades``."""
 
@@ -181,6 +183,7 @@ def build_trade_side_metrics(
         fee_diagnostics=build_fee_diagnostics(trade_records, fees_rate=fees_rate),
         bounce_counter_breakdown=build_bounce_counter_breakdown(trade_records),
         trade_management_summary=trade_management_summary,
+        baseline_vs_managed_summary=baseline_vs_managed_summary,
         **build_trade_quality_breakdowns(trade_records),
     )
 
@@ -267,7 +270,10 @@ def _run_execution_integrated_strategy_spec(
     managed_runtime = execution_result_to_managed_runtime_result(loop_result)
     apply_managed_trade_management_diagnostics(trade_records, managed_runtime)
     trade_management_events = trade_management_events_payload(managed_runtime)
-    trade_management_summary = build_trade_management_summary(trade_records)
+    trade_management_summary = build_trade_management_summary(
+        trade_records,
+        managed_mode=True,
+    )
     sharpe, max_dd = _equity_metrics_from_trades(
         trade_records, init_cash=float(init_cash), n_bars=len(close)
     )
@@ -284,6 +290,7 @@ def _run_execution_integrated_strategy_spec(
             max_drawdown=max_dd,
             fees_rate=float(fees),
             trade_management_summary=trade_management_summary,
+            baseline_vs_managed_summary=baseline_vs_managed_summary_placeholder(),
         ),
         component_counters=list(signals.output_counters + exit_outputs.output_counters),
         trade_records=trade_records,
@@ -551,6 +558,7 @@ def run_strategy_spec(
     )
     trade_management_events: list[dict[str, Any]] | None = None
     trade_management_summary: dict[str, Any] | None = None
+    baseline_vs_managed_summary: dict[str, Any] | None = None
     exit_management = spec.trade_management.exit_management
     if exit_management.mode == "diagnostic_only":
         diagnostic_runtime = build_trade_runtime_diagnostics(
@@ -579,7 +587,13 @@ def run_strategy_spec(
         )
         apply_managed_trade_management_diagnostics(trade_records, managed_runtime)
         trade_management_events = trade_management_events_payload(managed_runtime)
-        trade_management_summary = build_trade_management_summary(trade_records)
+        trade_management_summary = build_trade_management_summary(
+            trade_records,
+            managed_mode=True,
+        )
+        baseline_vs_managed_summary = baseline_vs_managed_summary_placeholder()
+    else:
+        baseline_vs_managed_summary = None
 
     sharpe = ensure_finite_metric("sharpe_ratio", float(pf.sharpe_ratio()))
     max_dd_raw = pf.max_drawdown()
@@ -599,6 +613,7 @@ def run_strategy_spec(
             max_drawdown=max_dd_f,
             fees_rate=float(fees),
             trade_management_summary=trade_management_summary,
+            baseline_vs_managed_summary=baseline_vs_managed_summary,
         ),
         component_counters=list(signals.output_counters + exit_outputs.output_counters),
         trade_records=trade_records,

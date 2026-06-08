@@ -287,17 +287,17 @@ Research master-plan reference: `docs/research/21_state_driven_exit_management_v
 - Composer.
 
 **Acceptance criteria:**
-- [ ] Unit tests assert JSON shape for managed fields and breakdowns.
-- [ ] Legacy reports without managed fields still parse in tests.
-- [ ] Generic breakdown keys — no component-specific report branches.
+- [x] Unit tests assert JSON shape for managed fields and breakdowns.
+- [x] Legacy reports without managed fields still parse in tests.
+- [x] Generic breakdown keys — no component-specific report branches.
 
 **Tests:**
-- [ ] 5.1 `tests/test_managed_report_contract.py` — serialization unit tests.
-- [ ] 5.2 Extend existing report compatibility tests if present.
+- [x] 5.1 `tests/test_managed_report_contract.py` — serialization unit tests.
+- [x] 5.2 Extend existing report compatibility tests if present.
 
-- [ ] 5.3 Serialize per-trade managed attribution in `results.py`.
-- [ ] 5.4 Serialize variant breakdowns and extended event trace.
-- [ ] 5.5 Add placeholder `baseline_vs_managed_summary` shape (empty/null until Slice 9).
+- [x] 5.3 Serialize per-trade managed attribution in `results.py`.
+- [x] 5.4 Serialize variant breakdowns and extended event trace.
+- [x] 5.5 Add placeholder `baseline_vs_managed_summary` shape (empty/null until Slice 9).
 
 ### STOP — Checkpoint 5: Unified report contract review (backend only)
 

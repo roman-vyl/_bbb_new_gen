@@ -663,6 +663,14 @@ def build_execution_integrated_trade_records(
             record["exit_instance_id"] = exit_attr.exit_instance_id
             record["exit_kind"] = exit_attr.exit_kind
 
+        exit_layer = item.get("exit_layer")
+        if status == "closed" and isinstance(exit_layer, str):
+            record["exit_layer"] = exit_layer
+
+        winner = item.get("winner")
+        if status == "closed" and winner is not None and getattr(winner, "candidate_type", None):
+            record["managed_exit_candidate_type"] = winner.candidate_type
+
         if status == "closed" and gross_pnl is not None:
             record["gross_pnl"] = gross_pnl
             record["fees_paid"] = fees_paid
@@ -679,6 +687,85 @@ def build_execution_integrated_trade_records(
 
         out.append(record)
     return out
+
+
+_MANAGED_EXIT_CANDIDATE_BREAKDOWN: dict[str, str] = {
+    "managed_stop": "stop_management_breakdown",
+    "runtime_exit": "runtime_exit_breakdown",
+}
+
+
+def _empty_managed_breakdown_entry() -> dict[str, Any]:
+    return {"trade_count": 0, "pnl": 0.0, "win_count": 0}
+
+
+def _accumulate_managed_breakdown(
+    bucket: dict[str, Any],
+    component_key: str,
+    record: dict[str, Any],
+) -> None:
+    entry = bucket.setdefault(component_key, _empty_managed_breakdown_entry())
+    entry["trade_count"] = int(entry["trade_count"]) + 1
+    pnl = float(record.get("pnl") or 0.0)
+    entry["pnl"] = float(entry.get("pnl") or 0.0) + pnl
+    if pnl > 0.0:
+        entry["win_count"] = int(entry.get("win_count") or 0) + 1
+
+
+def build_managed_layer_breakdowns(
+    trade_records: list[dict[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    """Generic managed layer breakdowns keyed by component_id."""
+
+    stop_breakdown: dict[str, Any] = {}
+    take_breakdown: dict[str, Any] = {}
+    runtime_breakdown: dict[str, Any] = {}
+    for record in trade_records:
+        if record.get("status") != "closed":
+            continue
+        tm = record.get("trade_management")
+        if not isinstance(tm, dict):
+            continue
+
+        layer = tm.get("exit_layer")
+        component_id = tm.get("exit_component_id")
+        candidate_type = tm.get("exit_candidate_type") or record.get(
+            "managed_exit_candidate_type"
+        )
+        if layer == "exit_management" and isinstance(component_id, str) and component_id:
+            breakdown_key = _MANAGED_EXIT_CANDIDATE_BREAKDOWN.get(str(candidate_type or ""))
+            if breakdown_key == "stop_management_breakdown":
+                _accumulate_managed_breakdown(stop_breakdown, component_id, record)
+            elif breakdown_key == "runtime_exit_breakdown":
+                _accumulate_managed_breakdown(runtime_breakdown, component_id, record)
+
+        take_component_id = tm.get("active_take_component_id")
+        take_profile = tm.get("active_take_at_exit")
+        if isinstance(take_component_id, str) and take_component_id and take_profile not in (
+            None,
+            "initial",
+        ):
+            _accumulate_managed_breakdown(take_breakdown, take_component_id, record)
+
+    return {
+        "stop_management_breakdown": stop_breakdown,
+        "take_management_breakdown": take_breakdown,
+        "runtime_exit_breakdown": runtime_breakdown,
+    }
+
+
+def baseline_vs_managed_summary_placeholder() -> dict[str, Any]:
+    """Empty comparison summary shape; populated in Slice 9."""
+
+    return {
+        "saved_by_managed_stop": [],
+        "hurt_by_managed_stop": [],
+        "take_disabled_then_won": [],
+        "take_disabled_then_lost": [],
+        "runtime_exit_helped": [],
+        "runtime_exit_hurt": [],
+        "exit_layer_transition_matrix": {},
+    }
 
 
 def build_research_run_payload(
