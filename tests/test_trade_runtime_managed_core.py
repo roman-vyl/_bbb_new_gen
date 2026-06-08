@@ -16,10 +16,9 @@ from research.strategies.ema_pullback.execution.trade_runtime import (
     run_managed_exit_runtime,
     trade_management_events_payload,
 )
+from tests.phase_rule_test_helpers import make_phase_rule
 from research.strategies.ema_pullback.spec import (
     ExitManagementSpec,
-    PhaseRuleConditionSpec,
-    PhaseRuleSpec,
     empty_exit_management,
 )
 from research.strategies.ema_pullback.spec_instances import make_ema_pullback_strategy_spec
@@ -102,10 +101,11 @@ def test_managed_empty_arrays_emit_no_active_layer_events() -> None:
         low=low,
         close=close,
         phase_rules=(
-            PhaseRuleSpec(
-                rule_id="to_proven_after_2_bars",
-                to_phase="proven",
-                condition=PhaseRuleConditionSpec(type="bars_in_trade", threshold=2),
+            make_phase_rule(
+                "to_proven_after_2_bars",
+                "proven",
+                "bars_in_trade",
+                {"threshold": 2},
             ),
         ),
     )

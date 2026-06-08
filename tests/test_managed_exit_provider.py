@@ -21,10 +21,9 @@ from research.strategies.ema_pullback.execution.trade_runtime import (
 from research.strategies.ema_pullback.spec import (
     BreakEvenStopParamsSpec,
     ManagementActivateWhenSpec,
-    PhaseRuleConditionSpec,
-    PhaseRuleSpec,
     StopManagementRuleSpec,
 )
+from tests.phase_rule_test_helpers import make_phase_rule
 
 
 def _runtime_state(*, phase: str = "initial_risk") -> TradeRuntimeState:
@@ -87,10 +86,11 @@ def test_no_inherited_stop_returns_no_managed_stop_candidate() -> None:
 def test_end_of_bar_be_snapshot_effective_from_n_plus_1() -> None:
     provider = ManagedExitProvider(
         phase_rules=(
-            PhaseRuleSpec(
-                rule_id="to_protected",
-                to_phase="protected",
-                condition=PhaseRuleConditionSpec(type="bars_in_trade", threshold=1),
+            make_phase_rule(
+                "to_protected",
+                "protected",
+                "bars_in_trade",
+                {"threshold": 1},
             ),
         ),
         stop_management=(
@@ -141,10 +141,11 @@ def test_runtime_exit_armed_end_of_bar_n_not_bar_open_on_n() -> None:
 
     provider = ManagedExitProvider(
         phase_rules=(
-            PhaseRuleSpec(
-                rule_id="to_exhaustion",
-                to_phase="exhaustion",
-                condition=PhaseRuleConditionSpec(type="bars_in_trade", threshold=1),
+            make_phase_rule(
+                "to_exhaustion",
+                "exhaustion",
+                "bars_in_trade",
+                {"threshold": 1},
             ),
         ),
         stop_management=(),

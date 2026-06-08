@@ -14,11 +14,10 @@ from research.strategies.ema_pullback.execution.trade_runtime import (
     evaluate_phase_rules,
     trade_management_events_payload,
 )
-from research.strategies.ema_pullback.spec import (
-    PhaseRuleAtrSpec,
-    PhaseRuleConditionSpec,
-    PhaseRuleSpec,
+from research.strategies.ema_pullback.phase_rule_conditions.registry import (
+    PhaseRuleEvaluationContext,
 )
+from tests.phase_rule_test_helpers import make_phase_rule
 
 
 def _series(values: list[float]) -> pd.Series:
@@ -26,25 +25,6 @@ def _series(values: list[float]) -> pd.Series:
         values,
         index=pd.date_range("2024-01-01", periods=len(values), freq="h", tz="UTC"),
         dtype=float,
-    )
-
-
-def _phase_rule(
-    rule_id: str,
-    to_phase: str,
-    condition_type: str,
-    threshold: float,
-    *,
-    atr: PhaseRuleAtrSpec | None = None,
-) -> PhaseRuleSpec:
-    return PhaseRuleSpec(
-        rule_id=rule_id,
-        to_phase=to_phase,  # type: ignore[arg-type]
-        condition=PhaseRuleConditionSpec(
-            type=condition_type,  # type: ignore[arg-type]
-            threshold=threshold,
-            atr=atr,
-        ),
     )
 
 
@@ -142,17 +122,32 @@ def test_phase_rules_support_mfe_pct_bars_and_mfe_atr() -> None:
         low=low,
         close=close,
         phase_rules=(
-            _phase_rule(
+            make_phase_rule(
                 "to_proven_at_1atr",
                 "proven",
                 "mfe_atr",
-                1.0,
-                atr=PhaseRuleAtrSpec(timeframe="base", period=14),
+                {
+                    "threshold": 1.0,
+                    "atr": {"timeframe": "base", "period": 14},
+                },
             ),
-            _phase_rule("to_protected_after_2_bars", "protected", "bars_in_trade", 2),
-            _phase_rule("to_runner_at_5pct", "runner", "mfe_pct", 0.05),
+            make_phase_rule(
+                "to_protected_after_2_bars",
+                "protected",
+                "bars_in_trade",
+                {"threshold": 2},
+            ),
+            make_phase_rule(
+                "to_runner_at_5pct",
+                "runner",
+                "mfe_pct",
+                {"threshold": 0.05},
+            ),
         ),
-        atr_series_by_key={("base", 14): atr},
+        eval_context=PhaseRuleEvaluationContext(
+            atr_series_by_key={("base", 14): atr},
+            adx_dmi_series_by_key={},
+        ),
     )
 
     phase_events = [event for event in result.events if event.event_type == "phase_changed"]
@@ -190,7 +185,7 @@ def test_runtime_phase_evaluation_does_not_move_backwards() -> None:
 
     events = evaluate_phase_rules(
         state,
-        (_phase_rule("late_protected", "protected", "mfe_pct", 0.01),),
+        (make_phase_rule("late_protected", "protected", "mfe_pct", {"threshold": 0.01}),),
         bar_index=4,
         time_ms=0,
     )
@@ -252,9 +247,14 @@ def test_closed_runner_trade_serializes_trade_management_block_and_summary() -> 
         low=low,
         close=close,
         phase_rules=(
-            _phase_rule("to_proven_at_1pct", "proven", "mfe_pct", 0.01),
-            _phase_rule("to_protected_after_2_bars", "protected", "bars_in_trade", 2),
-            _phase_rule("to_runner_at_5pct", "runner", "mfe_pct", 0.05),
+            make_phase_rule("to_proven_at_1pct", "proven", "mfe_pct", {"threshold": 0.01}),
+            make_phase_rule(
+                "to_protected_after_2_bars",
+                "protected",
+                "bars_in_trade",
+                {"threshold": 2},
+            ),
+            make_phase_rule("to_runner_at_5pct", "runner", "mfe_pct", {"threshold": 0.05}),
         ),
     )
 
@@ -315,7 +315,9 @@ def test_initial_risk_trade_serializes_missing_milestones_as_null_not_zero() -> 
         high=high,
         low=low,
         close=close,
-        phase_rules=(_phase_rule("to_runner_at_5pct", "runner", "mfe_pct", 0.05),),
+        phase_rules=(
+            make_phase_rule("to_runner_at_5pct", "runner", "mfe_pct", {"threshold": 0.05}),
+        ),
     )
 
     apply_trade_management_diagnostics(trades, result)
@@ -348,7 +350,14 @@ def test_trade_management_events_payload_is_sorted_and_v1_event_types_only() -> 
         high=high,
         low=low,
         close=close,
-        phase_rules=(_phase_rule("to_proven_after_1_bar", "proven", "bars_in_trade", 1),),
+        phase_rules=(
+            make_phase_rule(
+                "to_proven_after_1_bar",
+                "proven",
+                "bars_in_trade",
+                {"threshold": 1},
+            ),
+        ),
     )
 
     payload = trade_management_events_payload(result)

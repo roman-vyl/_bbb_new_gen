@@ -99,21 +99,18 @@ def _uses_managed_execution_integration(spec: EmaPullbackStrategySpec) -> bool:
     )
 
 
-def _atr_series_for_phase_rules(
+def _phase_rule_eval_context(
     enriched: pd.DataFrame,
     spec: EmaPullbackStrategySpec,
-) -> dict[tuple[str, int], pd.Series]:
-    """Return already-materialized ATR columns needed by diagnostic phase rules."""
+):
+    from research.strategies.ema_pullback.phase_rule_conditions.registry import (
+        build_evaluation_context_from_enriched,
+    )
 
-    out: dict[tuple[str, int], pd.Series] = {}
-    for rule in spec.trade_management.exit_management.phase_rules:
-        atr = rule.condition.atr
-        if atr is None:
-            continue
-        column = f"atr_close_{atr.timeframe}_{atr.period}"
-        if column in enriched.columns:
-            out[(atr.timeframe, atr.period)] = enriched[column].astype(float)
-    return out
+    return build_evaluation_context_from_enriched(
+        enriched,
+        spec.trade_management.exit_management.phase_rules,
+    )
 
 
 def _build_side_metrics(records: list[dict[str, Any]], init_cash: float) -> SideMetrics:
@@ -247,7 +244,7 @@ def _run_execution_integrated_strategy_spec(
         stop_management=em.stop_management,
         take_management=em.take_management,
         runtime_exits=em.runtime_exits,
-        atr_series_by_key=_atr_series_for_phase_rules(enriched, spec),
+        phase_eval_context=_phase_rule_eval_context(enriched, spec),
     )
     loop_result = run_managed_execution_loop(
         spec=spec,
@@ -567,7 +564,7 @@ def run_strategy_spec(
             low=low_s,
             close=close,
             phase_rules=exit_management.phase_rules,
-            atr_series_by_key=_atr_series_for_phase_rules(enriched, spec),
+            eval_context=_phase_rule_eval_context(enriched, spec),
         )
         apply_trade_management_diagnostics(trade_records, diagnostic_runtime)
         trade_management_events = trade_management_events_payload(diagnostic_runtime)
@@ -583,7 +580,7 @@ def run_strategy_spec(
             stop_management=exit_management.stop_management,
             take_management=exit_management.take_management,
             runtime_exits=exit_management.runtime_exits,
-            atr_series_by_key=_atr_series_for_phase_rules(enriched, spec),
+            eval_context=_phase_rule_eval_context(enriched, spec),
         )
         apply_managed_trade_management_diagnostics(trade_records, managed_runtime)
         trade_management_events = trade_management_events_payload(managed_runtime)

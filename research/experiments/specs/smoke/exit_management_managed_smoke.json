@@ -16,7 +16,10 @@
         "base_timeframe": "5m"
       },
       "strategy": {
-        "trade_sides": ["long", "short"],
+        "trade_sides": [
+          "long",
+          "short"
+        ],
         "anchor_stack": {
           "source": "close",
           "timeframe": "base",
@@ -101,11 +104,13 @@
                 "rule_id": "managed_proven_1atr",
                 "to_phase": "proven",
                 "condition": {
-                  "type": "mfe_atr",
-                  "threshold": 1.0,
-                  "atr": {
-                    "timeframe": "base",
-                    "period": 14
+                  "component_id": "mfe_atr",
+                  "params": {
+                    "threshold": 1.0,
+                    "atr": {
+                      "timeframe": "base",
+                      "period": 14
+                    }
                   }
                 }
               },
@@ -113,11 +118,13 @@
                 "rule_id": "managed_protected_2atr",
                 "to_phase": "protected",
                 "condition": {
-                  "type": "mfe_atr",
-                  "threshold": 2.0,
-                  "atr": {
-                    "timeframe": "base",
-                    "period": 14
+                  "component_id": "mfe_atr",
+                  "params": {
+                    "threshold": 2.0,
+                    "atr": {
+                      "timeframe": "base",
+                      "period": 14
+                    }
                   }
                 }
               },
@@ -125,11 +132,13 @@
                 "rule_id": "managed_runner_4atr",
                 "to_phase": "runner",
                 "condition": {
-                  "type": "mfe_atr",
-                  "threshold": 4.0,
-                  "atr": {
-                    "timeframe": "base",
-                    "period": 14
+                  "component_id": "mfe_atr",
+                  "params": {
+                    "threshold": 4.0,
+                    "atr": {
+                      "timeframe": "base",
+                      "period": 14
+                    }
                   }
                 }
               },
@@ -137,11 +146,13 @@
                 "rule_id": "managed_exhaustion_8atr",
                 "to_phase": "exhaustion",
                 "condition": {
-                  "type": "mfe_atr",
-                  "threshold": 8.0,
-                  "atr": {
-                    "timeframe": "base",
-                    "period": 14
+                  "component_id": "mfe_atr",
+                  "params": {
+                    "threshold": 8.0,
+                    "atr": {
+                      "timeframe": "base",
+                      "period": 14
+                    }
                   }
                 }
               }

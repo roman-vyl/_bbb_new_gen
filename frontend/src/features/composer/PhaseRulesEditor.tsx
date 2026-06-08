@@ -4,12 +4,12 @@ import type { JsonObject, ValidationErrorItem } from "@/api/types";
 
 import { normalizeExitManagementV2 } from "@/features/composer/composerExitManagementProduct";
 import {
-  PHASE_RULE_CONDITION_TYPES,
+  PHASE_RULE_CONDITION_COMPONENT_IDS,
   PHASE_RULE_TARGET_PHASES,
-  type PhaseRuleConditionType,
+  type PhaseRuleConditionComponentId,
   createBlankPhaseRule,
   defaultDiagnosticPhaseRules,
-  normalizeConditionForType,
+  normalizeConditionForComponent,
   phaseRulePath,
   readPhaseRules,
   updatePhaseRuleField,
@@ -110,8 +110,11 @@ export function PhaseRulesEditor({
       <div className="composer-phase-rules__list">
         {rules.map((rule, index) => {
           const condition = (rule.condition as JsonObject | undefined) ?? {};
-          const condType = String(condition.type ?? "mfe_atr") as PhaseRuleConditionType;
-          const atr = (condition.atr as JsonObject | undefined) ?? {};
+          const componentId = String(
+            condition.component_id ?? "mfe_atr",
+          ) as PhaseRuleConditionComponentId;
+          const params = (condition.params as JsonObject | undefined) ?? {};
+          const atr = (params.atr as JsonObject | undefined) ?? {};
           const ruleErrors = ruleErrorsByIndex[index] ?? [];
           const rulePath = phaseRulePath(pathPrefix, index);
 
@@ -184,86 +187,56 @@ export function PhaseRulesEditor({
               />
 
               <label className="field">
-                <span>condition.type</span>
+                <span>condition.component_id</span>
                 <select
-                  value={condType}
+                  value={componentId}
                   disabled={disabled}
                   onChange={(e) => {
-                    const type = e.target.value as PhaseRuleConditionType;
+                    const nextId = e.target.value as PhaseRuleConditionComponentId;
                     updateRule(index, {
-                      condition: normalizeConditionForType({}, type),
+                      condition: normalizeConditionForComponent({}, nextId),
                     });
                   }}
                 >
-                  {PHASE_RULE_CONDITION_TYPES.map((type) => (
-                    <option key={type} value={type}>
-                      {type}
+                  {PHASE_RULE_CONDITION_COMPONENT_IDS.map((id) => (
+                    <option key={id} value={id}>
+                      {id}
                     </option>
                   ))}
                 </select>
               </label>
 
-              <label className="field">
-                <span>
-                  {condType === "mfe_pct"
-                    ? "threshold (decimal ratio, e.g. 0.02 = 2% MFE)"
-                    : condType === "bars_in_trade"
-                      ? "threshold (bars, integer ≥ 1)"
-                      : "threshold (MFE in ATR multiples)"}
-                </span>
-                <input
-                  type="number"
-                  step={condType === "bars_in_trade" ? 1 : condType === "mfe_pct" ? 0.001 : 0.1}
-                  min={condType === "bars_in_trade" ? 1 : 0.0001}
-                  value={
-                    typeof condition.threshold === "number" ? condition.threshold : ""
-                  }
-                  disabled={disabled}
-                  onChange={(e) => {
-                    const raw = e.target.value;
-                    const parsed =
-                      condType === "bars_in_trade"
-                        ? parseInt(raw, 10)
-                        : parseFloat(raw);
-                    updateRule(index, {
-                      condition: { threshold: Number.isFinite(parsed) ? parsed : raw },
-                    });
-                  }}
-                />
-              </label>
-              <FieldErrors
-                errors={ruleErrors.filter((e) => e.path.startsWith(`${rulePath}.condition`))}
-              />
-
-              {condType === "mfe_atr" ? (
-                <div className="composer-phase-rules__atr">
+              {componentId === "adx_di_threshold" ? (
+                <>
                   <label className="field">
-                    <span>atr.timeframe</span>
+                    <span>params.timeframe</span>
                     <input
                       type="text"
-                      value={String(atr.timeframe ?? "base")}
+                      value={String(params.timeframe ?? "base")}
                       disabled={disabled}
                       onChange={(e) =>
                         updateRule(index, {
-                          condition: { atr: { ...atr, timeframe: e.target.value } },
+                          condition: {
+                            params: { ...params, timeframe: e.target.value },
+                          },
                         })
                       }
                     />
                   </label>
                   <label className="field">
-                    <span>atr.period</span>
+                    <span>params.period</span>
                     <input
                       type="number"
                       step={1}
                       min={1}
-                      value={typeof atr.period === "number" ? atr.period : ""}
+                      value={typeof params.period === "number" ? params.period : ""}
                       disabled={disabled}
                       onChange={(e) => {
                         const parsed = parseInt(e.target.value, 10);
                         updateRule(index, {
                           condition: {
-                            atr: {
-                              ...atr,
+                            params: {
+                              ...params,
                               period: Number.isFinite(parsed) ? parsed : e.target.value,
                             },
                           },
@@ -271,8 +244,142 @@ export function PhaseRulesEditor({
                       }}
                     />
                   </label>
-                </div>
-              ) : null}
+                  <label className="field">
+                    <span>params.adx_threshold</span>
+                    <input
+                      type="number"
+                      step={0.1}
+                      min={0.0001}
+                      value={
+                        typeof params.adx_threshold === "number" ? params.adx_threshold : ""
+                      }
+                      disabled={disabled}
+                      onChange={(e) => {
+                        const parsed = parseFloat(e.target.value);
+                        updateRule(index, {
+                          condition: {
+                            params: {
+                              ...params,
+                              adx_threshold: Number.isFinite(parsed)
+                                ? parsed
+                                : e.target.value,
+                            },
+                          },
+                        });
+                      }}
+                    />
+                  </label>
+                  <label className="field composer-field--checkbox">
+                    <input
+                      type="checkbox"
+                      checked={params.require_di_alignment !== false}
+                      disabled={disabled}
+                      onChange={(e) =>
+                        updateRule(index, {
+                          condition: {
+                            params: {
+                              ...params,
+                              require_di_alignment: e.target.checked,
+                            },
+                          },
+                        })
+                      }
+                    />
+                    <span>params.require_di_alignment</span>
+                  </label>
+                </>
+              ) : (
+                <>
+                  <label className="field">
+                    <span>
+                      {componentId === "mfe_pct"
+                        ? "params.threshold (decimal ratio, e.g. 0.02 = 2% MFE)"
+                        : componentId === "bars_in_trade"
+                          ? "params.threshold (bars, integer ≥ 1)"
+                          : "params.threshold (MFE in ATR multiples)"}
+                    </span>
+                    <input
+                      type="number"
+                      step={
+                        componentId === "bars_in_trade"
+                          ? 1
+                          : componentId === "mfe_pct"
+                            ? 0.001
+                            : 0.1
+                      }
+                      min={componentId === "bars_in_trade" ? 1 : 0.0001}
+                      value={typeof params.threshold === "number" ? params.threshold : ""}
+                      disabled={disabled}
+                      onChange={(e) => {
+                        const raw = e.target.value;
+                        const parsed =
+                          componentId === "bars_in_trade"
+                            ? parseInt(raw, 10)
+                            : parseFloat(raw);
+                        updateRule(index, {
+                          condition: {
+                            params: {
+                              ...params,
+                              threshold: Number.isFinite(parsed) ? parsed : raw,
+                            },
+                          },
+                        });
+                      }}
+                    />
+                  </label>
+
+                  {componentId === "mfe_atr" ? (
+                    <div className="composer-phase-rules__atr">
+                      <label className="field">
+                        <span>params.atr.timeframe</span>
+                        <input
+                          type="text"
+                          value={String(atr.timeframe ?? "base")}
+                          disabled={disabled}
+                          onChange={(e) =>
+                            updateRule(index, {
+                              condition: {
+                                params: {
+                                  ...params,
+                                  atr: { ...atr, timeframe: e.target.value },
+                                },
+                              },
+                            })
+                          }
+                        />
+                      </label>
+                      <label className="field">
+                        <span>params.atr.period</span>
+                        <input
+                          type="number"
+                          step={1}
+                          min={1}
+                          value={typeof atr.period === "number" ? atr.period : ""}
+                          disabled={disabled}
+                          onChange={(e) => {
+                            const parsed = parseInt(e.target.value, 10);
+                            updateRule(index, {
+                              condition: {
+                                params: {
+                                  ...params,
+                                  atr: {
+                                    ...atr,
+                                    period: Number.isFinite(parsed) ? parsed : e.target.value,
+                                  },
+                                },
+                              },
+                            });
+                          }}
+                        />
+                      </label>
+                    </div>
+                  ) : null}
+                </>
+              )}
+
+              <FieldErrors
+                errors={ruleErrors.filter((e) => e.path.startsWith(`${rulePath}.condition`))}
+              />
             </fieldset>
           );
         })}

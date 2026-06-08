@@ -53,7 +53,6 @@ from research.strategies.ema_pullback.spec import (
     LockProfitStopParamsSpec,
     ManagementActivateWhenSpec,
     ManagementAtrRefSpec,
-    PhaseRuleAtrSpec,
     PhaseRuleConditionSpec,
     PhaseRuleSpec,
     PHASE_RUNTIME_EXIT_PRICES,
@@ -368,28 +367,20 @@ def _parse_phase_rule(value: Any, *, path: str) -> PhaseRuleSpec:
 
 
 def _parse_phase_rule_condition(value: Any, *, path: str) -> PhaseRuleConditionSpec:
-    payload = _require_mapping(path, value)
-    _reject_unknown_fields(path, payload, {"type", "threshold", "atr"})
-    atr = None
-    if "atr" in payload and payload["atr"] is not None:
-        atr = _parse_phase_rule_atr(payload["atr"], path=f"{path}.atr")
-    try:
-        return PhaseRuleConditionSpec(
-            type=_require_non_empty_str(payload, "type"),  # type: ignore[arg-type]
-            threshold=float(_require_present(payload, "threshold")),
-            atr=atr,
-        )
-    except (TypeError, ValueError) as exc:
-        raise EmaPullbackInstanceValidationError(str(exc)) from exc
+    from research.strategies.ema_pullback.phase_rule_conditions.registry import (
+        LEGACY_PHASE_CONDITION_TYPE_ERROR,
+        parse_phase_rule_condition,
+    )
 
-
-def _parse_phase_rule_atr(value: Any, *, path: str) -> PhaseRuleAtrSpec:
     payload = _require_mapping(path, value)
-    _reject_unknown_fields(path, payload, {"timeframe", "period"})
+    if "type" in payload:
+        raise EmaPullbackInstanceValidationError(LEGACY_PHASE_CONDITION_TYPE_ERROR)
+    _reject_unknown_fields(path, payload, {"component_id", "params"})
     try:
-        return PhaseRuleAtrSpec(
-            timeframe=_require_non_empty_str(payload, "timeframe"),
-            period=int(_require_present(payload, "period")),
+        return parse_phase_rule_condition(
+            _require_non_empty_str(payload, "component_id"),
+            _require_present(payload, "params"),
+            path=f"{path}.params",
         )
     except (TypeError, ValueError) as exc:
         raise EmaPullbackInstanceValidationError(str(exc)) from exc

@@ -278,12 +278,18 @@ describe("collectComposerStrategyErrors exit_management phase_rules", () => {
             {
               rule_id: "",
               to_phase: "runner",
-              condition: { type: "bars_in_trade", threshold: 3 },
+              condition: {
+                component_id: "bars_in_trade",
+                params: { threshold: 3 },
+              },
             },
             {
               rule_id: "proven_late",
               to_phase: "proven",
-              condition: { type: "bars_in_trade", threshold: 1 },
+              condition: {
+                component_id: "bars_in_trade",
+                params: { threshold: 1 },
+              },
             },
           ],
           stop_management: [],

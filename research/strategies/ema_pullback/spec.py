@@ -8,10 +8,14 @@ import json
 import math
 from typing import Any, Literal
 
+from research.strategies.ema_pullback.phase_rule_conditions.params import (
+    PHASE_RULE_CONDITION_COMPONENT_IDS,
+    PhaseRuleConditionParams,
+)
+
 BREAK_EVEN_STOP_COMPONENT = "break_even_stop"
 PROFILE_ORDER = ("aligned", "countertrend", "neutral")
 TRADE_MANAGEMENT_PHASES = ("initial_risk", "proven", "protected", "runner", "exhaustion")
-EXIT_MANAGEMENT_CONDITION_TYPES = ("mfe_atr", "mfe_pct", "bars_in_trade")
 EXIT_MANAGEMENT_MODES = ("diagnostic_only", "managed")
 STOP_MANAGEMENT_COMPONENT_IDS = ("break_even_stop", "lock_profit_stop")
 TAKE_MANAGEMENT_COMPONENT_IDS = ("take_profile_switch",)
@@ -553,33 +557,17 @@ class ExitPolicySpec:
 
 
 @dataclass(frozen=True)
-class PhaseRuleAtrSpec:
-    timeframe: str = "base"
-    period: int = 14
-
-    def __post_init__(self) -> None:
-        if not self.timeframe.strip():
-            raise ValueError("phase_rules condition atr.timeframe must be non-empty")
-        if self.period <= 0:
-            raise ValueError("phase_rules condition atr.period must be > 0")
-
-
-@dataclass(frozen=True)
 class PhaseRuleConditionSpec:
-    type: Literal["mfe_atr", "mfe_pct", "bars_in_trade"]
-    threshold: float
-    atr: PhaseRuleAtrSpec | None = None
+    component_id: str
+    params: PhaseRuleConditionParams
 
     def __post_init__(self) -> None:
-        if self.type not in EXIT_MANAGEMENT_CONDITION_TYPES:
-            allowed = ", ".join(repr(item) for item in EXIT_MANAGEMENT_CONDITION_TYPES)
-            raise ValueError(f"phase_rules condition.type must be one of: {allowed}")
-        if self.threshold <= 0:
-            raise ValueError("phase_rules condition.threshold must be > 0")
-        if self.type == "mfe_atr" and self.atr is None:
-            raise ValueError("phase_rules condition atr is required for mfe_atr")
-        if self.type != "mfe_atr" and self.atr is not None:
-            raise ValueError("phase_rules condition atr is only allowed for mfe_atr")
+        if self.component_id not in PHASE_RULE_CONDITION_COMPONENT_IDS:
+            allowed = ", ".join(repr(item) for item in PHASE_RULE_CONDITION_COMPONENT_IDS)
+            raise ValueError(
+                f"phase_rules condition.component_id must be one of: {allowed}; "
+                f"got {self.component_id!r}"
+            )
 
 
 @dataclass(frozen=True)

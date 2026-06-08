@@ -17,6 +17,10 @@ from typing import Any, Literal
 
 import pandas as pd
 
+from research.strategies.ema_pullback.phase_rule_conditions.registry import (
+    PhaseRuleEvaluationContext,
+    evaluate_phase_rule_condition,
+)
 from research.strategies.ema_pullback.spec import (
     ExitManagementMode,
     PhaseRuleSpec,
@@ -195,13 +199,6 @@ def _phase_rank(phase: str) -> int:
     return TRADE_MANAGEMENT_PHASES.index(phase)
 
 
-def _atr_key(rule: PhaseRuleSpec) -> tuple[str, int] | None:
-    atr = rule.condition.atr
-    if atr is None:
-        return None
-    return (atr.timeframe, atr.period)
-
-
 def _finite_float(value: Any) -> float | None:
     try:
         out = float(value)
@@ -275,31 +272,16 @@ def update_trade_runtime_state(
     state.mae_pct = (state.worst_price - state.entry_price) / state.entry_price
 
 
-def _condition_met(
-    state: TradeRuntimeState,
-    rule: PhaseRuleSpec,
-    *,
-    bar_index: int,
-    atr_series_by_key: dict[tuple[str, int], pd.Series],
-) -> bool:
-    condition = rule.condition
-    if condition.type == "mfe_pct":
-        return state.mfe_pct >= condition.threshold
-    if condition.type == "bars_in_trade":
-        return state.bars_in_trade >= condition.threshold
-    if condition.type == "mfe_atr":
-        key = _atr_key(rule)
-        if key is None:
-            return False
-        atr_series = atr_series_by_key.get(key)
-        if atr_series is None or not (0 <= bar_index < len(atr_series)):
-            return False
-        atr_value = _finite_float(atr_series.iloc[bar_index])
-        if atr_value is None or atr_value <= 0:
-            return False
-        favorable_distance = abs(state.mfe_price - state.entry_price)
-        return favorable_distance >= (condition.threshold * atr_value)
-    return False
+def _resolve_eval_context(
+    eval_context: PhaseRuleEvaluationContext | None,
+    atr_series_by_key: dict[tuple[str, int], pd.Series] | None,
+) -> PhaseRuleEvaluationContext:
+    if eval_context is not None:
+        return eval_context
+    return PhaseRuleEvaluationContext(
+        atr_series_by_key=atr_series_by_key or {},
+        adx_dmi_series_by_key={},
+    )
 
 
 def evaluate_phase_rules(
@@ -308,26 +290,32 @@ def evaluate_phase_rules(
     *,
     bar_index: int,
     time_ms: int,
+    eval_context: PhaseRuleEvaluationContext | None = None,
     atr_series_by_key: dict[tuple[str, int], pd.Series] | None = None,
 ) -> list[TradeManagementEvent]:
     """Apply ordered monotonic phase rules to one state on one bar."""
 
     events: list[TradeManagementEvent] = []
-    atr_series_by_key = atr_series_by_key or {}
+    context = _resolve_eval_context(eval_context, atr_series_by_key)
     for rule in phase_rules:
         if _phase_rank(rule.to_phase) <= _phase_rank(state.phase):
             continue
-        if not _condition_met(
+        result = evaluate_phase_rule_condition(
             state,
-            rule,
+            rule.condition,
             bar_index=bar_index,
-            atr_series_by_key=atr_series_by_key,
-        ):
+            eval_context=context,
+        )
+        if not result.met:
             continue
         from_phase = state.phase
         state.phase = rule.to_phase  # type: ignore[assignment]
         if _phase_rank(state.phase) > _phase_rank(state.max_phase_reached):
             state.max_phase_reached = state.phase
+        metadata: dict[str, Any] = {
+            "condition_component_id": rule.condition.component_id,
+            **result.diagnostics,
+        }
         events.append(
             TradeManagementEvent(
                 trade_id=state.trade_id,
@@ -338,13 +326,13 @@ def evaluate_phase_rules(
                 from_phase=from_phase,
                 to_phase=state.phase,
                 rule_id=rule.rule_id,
-                component_id=None,
+                component_id=rule.condition.component_id,
                 price=state.mfe_price,
                 stop_price=state.active_stop_price,
                 mfe_pct=state.mfe_pct,
                 mae_pct=state.mae_pct,
                 bars_in_trade=state.bars_in_trade,
-                metadata={"condition_type": rule.condition.type},
+                metadata=metadata,
             )
         )
     return events
@@ -440,6 +428,7 @@ def run_managed_exit_runtime(
     stop_management: tuple[StopManagementRuleSpec, ...] = (),
     take_management: tuple[TakeManagementRuleSpec, ...] = (),
     runtime_exits: tuple[RuntimeExitRuleSpec, ...] = (),
+    eval_context: PhaseRuleEvaluationContext | None = None,
     atr_series_by_key: dict[tuple[str, int], pd.Series] | None = None,
 ) -> ManagedTradeRuntimeResult:
     """Bar-by-bar managed runtime entry point (research execution path).
@@ -453,7 +442,8 @@ def run_managed_exit_runtime(
     index = close.index
     states: dict[str, ManagedTradeRuntimeState] = {}
     events: list[TradeManagementEvent] = []
-    atr_series_by_key = atr_series_by_key or {}
+    context = _resolve_eval_context(eval_context, atr_series_by_key)
+    atr_for_management = context.atr_series_by_key
 
     for trade in trade_records:
         if trade.get("status") != "closed":
@@ -496,10 +486,10 @@ def run_managed_exit_runtime(
                     phase_rules,
                     bar_index=bar_idx,
                     time_ms=time_ms,
-                    atr_series_by_key=atr_series_by_key,
+                    eval_context=context,
                 )
             )
-            context = _build_managed_exit_context(
+            managed_context = _build_managed_exit_context(
                 runtime_state,
                 bar_index=bar_idx,
                 time_ms=time_ms,
@@ -510,12 +500,12 @@ def run_managed_exit_runtime(
             )
             active_management, layer_events, layer_candidates = _recompute_active_management_snapshot(
                 runtime_state,
-                context=context,
+                context=managed_context,
                 stop_management=stop_management,
                 take_management=take_management,
                 runtime_exits=runtime_exits,
                 previous=active_management,
-                atr_series_by_key=atr_series_by_key,
+                atr_series_by_key=atr_for_management,
             )
             events.extend(layer_events)
             trade_candidates.extend(layer_candidates)
@@ -604,6 +594,7 @@ def build_trade_runtime_diagnostics(
     low: pd.Series,
     close: pd.Series,
     phase_rules: tuple[PhaseRuleSpec, ...],
+    eval_context: PhaseRuleEvaluationContext | None = None,
     atr_series_by_key: dict[tuple[str, int], pd.Series] | None = None,
 ) -> TradeRuntimeResult:
     """Build diagnostic runtime state from actual closed trade windows only."""
@@ -611,7 +602,7 @@ def build_trade_runtime_diagnostics(
     index = close.index
     states: dict[str, TradeRuntimeState] = {}
     events: list[TradeManagementEvent] = []
-    atr_series_by_key = atr_series_by_key or {}
+    context = _resolve_eval_context(eval_context, atr_series_by_key)
 
     for trade in trade_records:
         if trade.get("status") != "closed":
@@ -644,7 +635,7 @@ def build_trade_runtime_diagnostics(
                     phase_rules,
                     bar_index=bar_idx,
                     time_ms=_index_to_time_ms(index, bar_idx),
-                    atr_series_by_key=atr_series_by_key,
+                    eval_context=context,
                 )
             )
 

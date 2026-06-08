@@ -19,9 +19,20 @@ export const PHASE_RULE_TARGET_PHASES = [
 
 export type PhaseRuleTargetPhase = (typeof PHASE_RULE_TARGET_PHASES)[number];
 
-export const PHASE_RULE_CONDITION_TYPES = ["mfe_atr", "mfe_pct", "bars_in_trade"] as const;
+export const PHASE_RULE_CONDITION_COMPONENT_IDS = [
+  "mfe_atr",
+  "mfe_pct",
+  "bars_in_trade",
+  "adx_di_threshold",
+] as const;
 
-export type PhaseRuleConditionType = (typeof PHASE_RULE_CONDITION_TYPES)[number];
+export type PhaseRuleConditionComponentId =
+  (typeof PHASE_RULE_CONDITION_COMPONENT_IDS)[number];
+
+/** @deprecated Use PHASE_RULE_CONDITION_COMPONENT_IDS */
+export const PHASE_RULE_CONDITION_TYPES = PHASE_RULE_CONDITION_COMPONENT_IDS;
+/** @deprecated Use PhaseRuleConditionComponentId */
+export type PhaseRuleConditionType = PhaseRuleConditionComponentId;
 
 /** Monotonic phase progression order (initial_risk is implicit start). */
 export const TRADE_MANAGEMENT_PHASE_ORDER = [
@@ -40,27 +51,33 @@ export function defaultDiagnosticPhaseRules(): PhaseRuleDraft[] {
       rule_id: "to_proven_at_1atr",
       to_phase: "proven",
       condition: {
-        type: "mfe_atr",
-        threshold: 1.0,
-        atr: { timeframe: "base", period: 14 },
+        component_id: "mfe_atr",
+        params: {
+          threshold: 1.0,
+          atr: { timeframe: "base", period: 14 },
+        },
       },
     },
     {
       rule_id: "to_protected_at_1_5atr",
       to_phase: "protected",
       condition: {
-        type: "mfe_atr",
-        threshold: 1.5,
-        atr: { timeframe: "base", period: 14 },
+        component_id: "mfe_atr",
+        params: {
+          threshold: 1.5,
+          atr: { timeframe: "base", period: 14 },
+        },
       },
     },
     {
       rule_id: "to_runner_at_2_5atr",
       to_phase: "runner",
       condition: {
-        type: "mfe_atr",
-        threshold: 2.5,
-        atr: { timeframe: "base", period: 14 },
+        component_id: "mfe_atr",
+        params: {
+          threshold: 2.5,
+          atr: { timeframe: "base", period: 14 },
+        },
       },
     },
   ];
@@ -71,9 +88,11 @@ export function createBlankPhaseRule(index = 0): PhaseRuleDraft {
     rule_id: `phase_rule_${index + 1}`,
     to_phase: "proven",
     condition: {
-      type: "mfe_atr",
-      threshold: 1.0,
-      atr: { timeframe: "base", period: 14 },
+      component_id: "mfe_atr",
+      params: {
+        threshold: 1.0,
+        atr: { timeframe: "base", period: 14 },
+      },
     },
   };
 }
@@ -144,32 +163,60 @@ function isPositiveInteger(value: unknown): value is number {
   return typeof value === "number" && Number.isInteger(value) && value >= 1;
 }
 
-export function normalizeConditionForType(
+export function normalizeConditionForComponent(
   condition: JsonObject,
-  type: PhaseRuleConditionType,
+  componentId: PhaseRuleConditionComponentId,
 ): JsonObject {
-  const threshold = condition.threshold;
-  if (type === "mfe_atr") {
-    const atr = (condition.atr as JsonObject | undefined) ?? {};
+  const params = (condition.params as JsonObject | undefined) ?? {};
+  if (componentId === "mfe_atr") {
+    const atr = (params.atr as JsonObject | undefined) ?? {};
     return {
-      type,
-      threshold: typeof threshold === "number" ? threshold : 1.0,
-      atr: {
-        timeframe: typeof atr.timeframe === "string" ? atr.timeframe : "base",
-        period: typeof atr.period === "number" ? atr.period : 14,
+      component_id: componentId,
+      params: {
+        threshold: typeof params.threshold === "number" ? params.threshold : 1.0,
+        atr: {
+          timeframe: typeof atr.timeframe === "string" ? atr.timeframe : "base",
+          period: typeof atr.period === "number" ? atr.period : 14,
+        },
       },
     };
   }
-  if (type === "mfe_pct") {
+  if (componentId === "mfe_pct") {
     return {
-      type,
-      threshold: typeof threshold === "number" ? threshold : 0.02,
+      component_id: componentId,
+      params: {
+        threshold: typeof params.threshold === "number" ? params.threshold : 0.02,
+      },
+    };
+  }
+  if (componentId === "bars_in_trade") {
+    return {
+      component_id: componentId,
+      params: {
+        threshold: typeof params.threshold === "number" ? params.threshold : 1,
+      },
     };
   }
   return {
-    type,
-    threshold: typeof threshold === "number" ? threshold : 1,
+    component_id: componentId,
+    params: {
+      timeframe: typeof params.timeframe === "string" ? params.timeframe : "base",
+      period: typeof params.period === "number" ? params.period : 14,
+      adx_threshold: typeof params.adx_threshold === "number" ? params.adx_threshold : 25,
+      require_di_alignment:
+        typeof params.require_di_alignment === "boolean"
+          ? params.require_di_alignment
+          : true,
+    },
   };
+}
+
+/** @deprecated Use normalizeConditionForComponent */
+export function normalizeConditionForType(
+  condition: JsonObject,
+  type: PhaseRuleConditionComponentId,
+): JsonObject {
+  return normalizeConditionForComponent(condition, type);
 }
 
 export function updatePhaseRuleField(
@@ -180,12 +227,105 @@ export function updatePhaseRuleField(
   if (patch.condition) {
     const prevCondition = (rule.condition as JsonObject | undefined) ?? {};
     const merged = { ...prevCondition, ...patch.condition };
-    const type = String(
-      merged.type ?? prevCondition.type ?? "mfe_atr",
-    ) as PhaseRuleConditionType;
-    next.condition = normalizeConditionForType(merged, type);
+    const componentId = String(
+      merged.component_id ?? prevCondition.component_id ?? "mfe_atr",
+    ) as PhaseRuleConditionComponentId;
+    next.condition = normalizeConditionForComponent(merged, componentId);
   }
   return next;
+}
+
+function validateConditionParams(
+  componentId: PhaseRuleConditionComponentId,
+  params: JsonObject,
+  conditionPath: string,
+): ValidationErrorItem[] {
+  const errors: ValidationErrorItem[] = [];
+  const paramsPath = `${conditionPath}.params`;
+
+  if (componentId === "mfe_atr") {
+    const threshold = params.threshold;
+    if (!isPositiveFinite(threshold)) {
+      errors.push({
+        path: `${paramsPath}.threshold`,
+        message: "threshold must be a positive number",
+      });
+    }
+    const atr = params.atr;
+    if (!atr || typeof atr !== "object" || Array.isArray(atr)) {
+      errors.push({
+        path: `${paramsPath}.atr`,
+        message: "mfe_atr requires params.atr.timeframe and params.atr.period",
+      });
+    } else {
+      const atrObj = atr as JsonObject;
+      const timeframe =
+        typeof atrObj.timeframe === "string" ? atrObj.timeframe.trim() : "";
+      if (!timeframe) {
+        errors.push({
+          path: `${paramsPath}.atr.timeframe`,
+          message: "atr.timeframe is required for mfe_atr",
+        });
+      }
+      if (!isPositiveInteger(atrObj.period)) {
+        errors.push({
+          path: `${paramsPath}.atr.period`,
+          message: "atr.period must be an integer ≥ 1",
+        });
+      }
+    }
+    return errors;
+  }
+
+  if (componentId === "mfe_pct") {
+    if (!isPositiveFinite(params.threshold)) {
+      errors.push({
+        path: `${paramsPath}.threshold`,
+        message: "threshold must be a positive number",
+      });
+    }
+    return errors;
+  }
+
+  if (componentId === "bars_in_trade") {
+    if (!isPositiveInteger(params.threshold)) {
+      errors.push({
+        path: `${paramsPath}.threshold`,
+        message: "bars_in_trade threshold must be an integer ≥ 1",
+      });
+    }
+    return errors;
+  }
+
+  const timeframe = typeof params.timeframe === "string" ? params.timeframe.trim() : "";
+  if (!timeframe) {
+    errors.push({
+      path: `${paramsPath}.timeframe`,
+      message: "timeframe is required for adx_di_threshold",
+    });
+  }
+  if (!isPositiveInteger(params.period)) {
+    errors.push({
+      path: `${paramsPath}.period`,
+      message: "period must be an integer ≥ 1",
+    });
+  }
+  if (!isPositiveFinite(params.adx_threshold)) {
+    errors.push({
+      path: `${paramsPath}.adx_threshold`,
+      message: "adx_threshold must be a positive number",
+    });
+  }
+  if (
+    params.require_di_alignment !== undefined &&
+    typeof params.require_di_alignment !== "boolean"
+  ) {
+    errors.push({
+      path: `${paramsPath}.require_di_alignment`,
+      message: "require_di_alignment must be a boolean",
+    });
+  }
+  return errors;
 }
 
 export function collectPhaseRulesValidationErrors(
@@ -248,72 +388,45 @@ export function collectPhaseRulesValidationErrors(
 
     const condition = (rule.condition as JsonObject | undefined) ?? {};
     const conditionPath = `${rulePath}.condition`;
-    const condType = typeof condition.type === "string" ? condition.type : "";
-    if (!PHASE_RULE_CONDITION_TYPES.includes(condType as PhaseRuleConditionType)) {
+    if (typeof condition.type === "string") {
       errors.push({
         path: `${conditionPath}.type`,
-        message: `condition.type must be one of: ${PHASE_RULE_CONDITION_TYPES.join(", ")}`,
+        message:
+          "unsupported legacy condition.type; use condition.component_id and params",
       });
       return;
     }
 
-    const threshold = condition.threshold;
-    if (!isPositiveFinite(threshold)) {
+    const componentId =
+      typeof condition.component_id === "string" ? condition.component_id : "";
+    if (
+      !PHASE_RULE_CONDITION_COMPONENT_IDS.includes(
+        componentId as PhaseRuleConditionComponentId,
+      )
+    ) {
       errors.push({
-        path: `${conditionPath}.threshold`,
-        message: "threshold must be a positive number",
+        path: `${conditionPath}.component_id`,
+        message: `condition.component_id must be one of: ${PHASE_RULE_CONDITION_COMPONENT_IDS.join(", ")}`,
       });
+      return;
     }
 
-    if (condType === "bars_in_trade") {
-      if (!isPositiveInteger(threshold)) {
-        errors.push({
-          path: `${conditionPath}.threshold`,
-          message: "bars_in_trade threshold must be an integer ≥ 1",
-        });
-      }
-      if (condition.atr !== undefined) {
-        errors.push({
-          path: `${conditionPath}.atr`,
-          message: "atr is only allowed for mfe_atr conditions",
-        });
-      }
+    const params = condition.params;
+    if (!params || typeof params !== "object" || Array.isArray(params)) {
+      errors.push({
+        path: `${conditionPath}.params`,
+        message: "condition.params must be an object",
+      });
+      return;
     }
 
-    if (condType === "mfe_pct") {
-      if (condition.atr !== undefined) {
-        errors.push({
-          path: `${conditionPath}.atr`,
-          message: "atr is only allowed for mfe_atr conditions",
-        });
-      }
-    }
-
-    if (condType === "mfe_atr") {
-      const atr = condition.atr;
-      if (!atr || typeof atr !== "object" || Array.isArray(atr)) {
-        errors.push({
-          path: `${conditionPath}.atr`,
-          message: "mfe_atr requires atr.timeframe and atr.period",
-        });
-      } else {
-        const atrObj = atr as JsonObject;
-        const timeframe =
-          typeof atrObj.timeframe === "string" ? atrObj.timeframe.trim() : "";
-        if (!timeframe) {
-          errors.push({
-            path: `${conditionPath}.atr.timeframe`,
-            message: "atr.timeframe is required for mfe_atr",
-          });
-        }
-        if (!isPositiveInteger(atrObj.period)) {
-          errors.push({
-            path: `${conditionPath}.atr.period`,
-            message: "atr.period must be an integer ≥ 1",
-          });
-        }
-      }
-    }
+    errors.push(
+      ...validateConditionParams(
+        componentId as PhaseRuleConditionComponentId,
+        params as JsonObject,
+        conditionPath,
+      ),
+    );
   });
 
   return errors;
