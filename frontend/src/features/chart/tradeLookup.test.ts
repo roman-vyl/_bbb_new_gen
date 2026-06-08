@@ -6,8 +6,11 @@ import {
   deriveSelectedVariant,
   findLastClosedTradeId,
   findTradeById,
+  formatTradeDisplayNumber,
   getAdjacentTradeId,
   parseManualTradeIdInput,
+  resolveTradeIdByDisplayNumber,
+  tradeDisplayNumber,
   isTradeInVariant,
   resolveSelectedTradeEntryTimeMs,
   resolveTradeEntryTimeMs,
@@ -208,6 +211,40 @@ describe("getAdjacentTradeId", () => {
       makeTrade("short:979", 2_000),
     ];
     expect(getAdjacentTradeId(managedTrades, "long:10", 1)).toBe("short:979");
+  });
+});
+
+describe("tradeDisplayNumber", () => {
+  const trades = [makeTrade("long:10", 1_000), makeTrade("short:979", 2_000)];
+
+  it("maps internal id to 1-based report index", () => {
+    expect(tradeDisplayNumber(trades, "long:10")).toBe(1);
+    expect(tradeDisplayNumber(trades, "short:979")).toBe(2);
+  });
+
+  it("keeps numeric ids for legacy reports", () => {
+    const legacy = [makeTrade(1, 1_000), makeTrade(2, 2_000)];
+    expect(tradeDisplayNumber(legacy, 2)).toBe(2);
+  });
+});
+
+describe("resolveTradeIdByDisplayNumber", () => {
+  const trades = [makeTrade("long:10", 1_000), makeTrade("short:979", 2_000)];
+
+  it("resolves display number to canonical trade_id", () => {
+    expect(resolveTradeIdByDisplayNumber(trades, 1)).toBe("long:10");
+    expect(resolveTradeIdByDisplayNumber(trades, 2)).toBe("short:979");
+  });
+
+  it("returns numeric id for out-of-range stale focus", () => {
+    expect(resolveTradeIdByDisplayNumber(trades, 99)).toBe(99);
+  });
+});
+
+describe("formatTradeDisplayNumber", () => {
+  it("formats managed ids as sequential numbers", () => {
+    const trades = [makeTrade("long:641890", 1_000)];
+    expect(formatTradeDisplayNumber(trades, "long:641890")).toBe("1");
   });
 });
 

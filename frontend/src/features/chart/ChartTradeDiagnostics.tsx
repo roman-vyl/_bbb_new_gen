@@ -30,6 +30,8 @@ import type { SignalTraceLoadStatus } from "@/shared/context/signalTraceLoadPoli
 type Props = {
   trade: TradeRecord | undefined;
   selectedTradeId: number | string;
+  /** 1-based index in variant trade_records for UI labels. */
+  tradeDisplayNumber?: number;
   strategySpec: JsonObject | undefined;
   chartEmaOverlays: ChartEmaOverlay[];
   chartAuxEmaOverlays?: ChartAuxEmaOverlay[];
@@ -141,6 +143,7 @@ function CausalSection({
 export function ChartTradeDiagnostics({
   trade,
   selectedTradeId,
+  tradeDisplayNumber: tradeDisplayNumberProp,
   strategySpec,
   chartEmaOverlays,
   chartAuxEmaOverlays = [],
@@ -154,7 +157,9 @@ export function ChartTradeDiagnostics({
         className="chart-trade-diagnostics trade-detail"
         data-testid="chart-trade-diagnostics"
       >
-        <h3 className="chart-trade-diagnostics__title">Trade #{selectedTradeId}</h3>
+        <h3 className="chart-trade-diagnostics__title">
+          Trade #{tradeDisplayNumberProp ?? selectedTradeId}
+        </h3>
         <p className="chart-trade-diagnostics__empty" data-testid="chart-trade-diagnostics-stale">
           {focusWarning ?? "Trade not found in the current variant."}
         </p>
@@ -210,7 +215,9 @@ export function ChartTradeDiagnostics({
   return (
     <aside className="chart-trade-diagnostics trade-detail" data-testid="chart-trade-diagnostics">
       <div className="chart-trade-diagnostics__heading">
-        <h3 className="chart-trade-diagnostics__title">Trade #{trade.trade_id}</h3>
+        <h3 className="chart-trade-diagnostics__title">
+          Trade #{tradeDisplayNumberProp ?? trade.trade_id}
+        </h3>
         <TradeStatusChip status={trade.status} />
       </div>
       <TradeResultSummary

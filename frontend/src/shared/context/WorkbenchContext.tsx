@@ -99,6 +99,7 @@ import {
   defaultClosedTradeSelection,
   deriveSelectedVariant,
   findTradeById,
+  formatTradeDisplayNumber,
   isTradeInVariant,
   resolveSelectedTradeEntryTimeMs,
   resolveTradeEntryTimeMs,
@@ -665,14 +666,14 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       return {
         trade: undefined,
         entryTimeMs: null,
-        warning: `Trade #${selectedTradeId} not found in variant trade_records.`,
+        warning: `Trade #${formatTradeDisplayNumber(selectedVariant.trade_records, selectedTradeId)} not found in variant trade_records.`,
       };
     }
     if (entryTimeMs === null) {
       return {
         trade,
         entryTimeMs: null,
-        warning: `Trade #${trade.trade_id} has no valid entry_time_ms in report.`,
+        warning: `Trade #${formatTradeDisplayNumber(selectedVariant.trade_records, trade.trade_id)} has no valid entry_time_ms in report.`,
       };
     }
     return { trade, entryTimeMs, warning: null };

@@ -2,7 +2,7 @@ import type { SeriesMarker, Time } from "lightweight-charts";
 
 import { msToChartTime, type TradeManagementEvent, type TradeRecord } from "@/api/types";
 import { filterMarkersToTimeRange } from "@/features/chart/chartMarkers";
-import { tradeIdsEqual } from "@/features/chart/tradeLookup";
+import { buildTradeDisplayNumberLookup, tradeIdsEqual } from "@/features/chart/tradeLookup";
 
 export const TRADE_MANAGEMENT_MARKER_LEGEND = [
   { kind: "phase_proven", label: "Proven", description: "Phase transition · proven" },
@@ -278,15 +278,26 @@ const MANAGED_LAYER_EVENT_TYPES = new Set<TradeManagementEvent["event_type"]>([
   "exit_executed",
 ]);
 
+function highlightedMarkerLabel(
+  prefix: string,
+  tradeId: number | string | null | undefined,
+  lookup: ReadonlyMap<string, number>,
+): string {
+  const display = lookup.get(String(tradeId ?? ""));
+  return display !== undefined ? `${prefix}#${display}` : prefix;
+}
+
 export function buildTradeManagementEventChartMarkers(
   events: readonly TradeManagementEvent[],
   options: {
     showPhases: boolean;
     showExits: boolean;
     selectedTradeId: number | string | null;
+    trades?: readonly TradeRecord[];
   },
 ): SeriesMarker<Time>[] {
   const out: SeriesMarker<Time>[] = [];
+  const displayLookup = buildTradeDisplayNumberLookup(options.trades ?? []);
 
   for (const event of events) {
     const timeSec = eventChartTime(event);
@@ -308,7 +319,9 @@ export function buildTradeManagementEventChartMarkers(
         position: style.position,
         color: style.color,
         shape: style.shape,
-        text: highlighted ? `${label}#${event.trade_id}` : label,
+        text: highlighted
+          ? highlightedMarkerLabel(label, event.trade_id, displayLookup)
+          : label,
       });
       continue;
     }
@@ -324,7 +337,9 @@ export function buildTradeManagementEventChartMarkers(
         position: style.position,
         color: style.color,
         shape: style.shape,
-        text: highlighted ? `Exit#${event.trade_id}` : "Exit",
+        text: highlighted
+          ? highlightedMarkerLabel("Exit", event.trade_id, displayLookup)
+          : "Exit",
       });
       continue;
     }
@@ -335,7 +350,9 @@ export function buildTradeManagementEventChartMarkers(
       position: style.position,
       color: style.color,
       shape: style.shape,
-      text: highlighted ? `${style.label}#${event.trade_id}` : style.label,
+      text: highlighted
+        ? highlightedMarkerLabel(style.label, event.trade_id, displayLookup)
+        : style.label,
     });
   }
 
@@ -349,6 +366,7 @@ export function buildTradeManagementEventsForView(
     showExits: boolean;
     selectedTradeId: number | string | null;
     viewCandles: { time: number }[];
+    trades?: readonly TradeRecord[];
     maxWithoutSelection?: number;
   },
 ): SeriesMarker<Time>[] {
@@ -372,6 +390,7 @@ export function buildTradeManagementEventsForView(
     showPhases: options.showPhases,
     showExits: options.showExits,
     selectedTradeId: options.selectedTradeId,
+    trades: options.trades,
   });
 }
 

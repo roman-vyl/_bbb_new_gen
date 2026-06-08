@@ -52,6 +52,22 @@ function sampleExitEvent(overrides: Partial<TradeManagementEvent> = {}): TradeMa
 
 const viewCandles = [{ time: 1714561200 }, { time: 1714570800 }];
 
+function minimalTrade(tradeId: number | string): TradeRecord {
+  return {
+    trade_id: tradeId,
+    direction: "long",
+    status: "closed",
+    entry_time_ms: 1_000,
+    exit_time_ms: 2_000,
+    entry_price: 100,
+    exit_price: 101,
+    size: 1,
+    pnl: 1,
+    return_pct: 0.01,
+    exit_reason: "signal:test",
+  };
+}
+
 describe("hasTradeManagementEvents", () => {
   it("returns false for missing events", () => {
     expect(hasTradeManagementEvents(undefined)).toBe(false);
@@ -104,6 +120,33 @@ describe("buildTradeManagementEventChartMarkers", () => {
     expect(markers[0]?.text).toBe("Exit");
   });
 
+  it("uses sequential display number in highlighted marker text", () => {
+    const markers = buildTradeManagementEventChartMarkers(
+      [sampleExitEvent({ trade_id: "long:641890" })],
+      {
+        showPhases: false,
+        showExits: true,
+        selectedTradeId: "long:641890",
+        trades: [
+          {
+            trade_id: "long:641890",
+            direction: "long",
+            status: "closed",
+            entry_time_ms: 1_000,
+            exit_time_ms: 2_000,
+            entry_price: 100,
+            exit_price: 101,
+            size: 1,
+            pnl: 1,
+            return_pct: 0.01,
+            exit_reason: "unknown",
+          },
+        ],
+      },
+    );
+    expect(markers[0]?.text).toBe("Exit#1");
+  });
+
   it("toggle OFF hides trade-management markers", () => {
     const events = [samplePhaseEvent(), sampleExitEvent()];
     expect(
@@ -147,6 +190,7 @@ describe("buildTradeManagementEventChartMarkers", () => {
       showExits: false,
       selectedTradeId: 2,
       viewCandles,
+      trades: [minimalTrade(1), minimalTrade(2)],
     });
     expect(markers).toHaveLength(1);
     expect(markers[0]?.text).toBe("Runner#2");

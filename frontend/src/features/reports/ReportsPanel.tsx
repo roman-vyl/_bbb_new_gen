@@ -32,7 +32,7 @@ import {
   type TradeDiagnosticsFilterState,
 } from "@/features/reports/tradeDiagnosticsFilters";
 import { DIAGNOSTICS_COLUMNS } from "@/features/reports/tradeTableColumns";
-import { findTradeById, tradeIdsEqual } from "@/features/chart/tradeLookup";
+import { findTradeById, tradeDisplayNumber, tradeIdsEqual } from "@/features/chart/tradeLookup";
 import { useWorkbench } from "@/shared/context/WorkbenchContext";
 
 export function ReportsPanel() {
@@ -300,10 +300,11 @@ export function ReportsPanel() {
             </tr>
           </thead>
           <tbody>
-            {trades.map((trade) => (
+            {trades.map((trade, index) => (
               <TradeRow
                 key={trade.trade_id}
                 trade={trade}
+                displayNumber={index + 1}
                 selected={tradeIdsEqual(selectedTradeId, trade.trade_id)}
                 showDiagnosticsColumns={showDiagnosticsColumns}
                 onSelect={() => selectTrade(trade.trade_id)}
@@ -315,7 +316,12 @@ export function ReportsPanel() {
       </div>
 
       {selectedTradeId !== null && (
-        <TradeDetail trade={findTradeById(selectedVariant.trade_records, selectedTradeId)} />
+        <TradeDetail
+          trade={findTradeById(selectedVariant.trade_records, selectedTradeId)}
+          displayNumber={
+            tradeDisplayNumber(selectedVariant.trade_records, selectedTradeId) ?? undefined
+          }
+        />
       )}
     </section>
   );
@@ -323,18 +329,20 @@ export function ReportsPanel() {
 
 function TradeRow({
   trade,
+  displayNumber,
   selected,
   showDiagnosticsColumns,
   onSelect,
 }: {
   trade: TradeRecord;
+  displayNumber: number;
   selected: boolean;
   showDiagnosticsColumns: boolean;
   onSelect: () => void;
 }) {
   return (
     <tr className={selected ? "trade-row trade-row--selected" : "trade-row"} onClick={onSelect}>
-      <td>{trade.trade_id}</td>
+      <td>{displayNumber}</td>
       <td>{trade.direction}</td>
       <td>{trade.status}</td>
       <td>{formatMs(trade.entry_time_ms)}</td>
@@ -351,14 +359,20 @@ function TradeRow({
   );
 }
 
-function TradeDetail({ trade }: { trade: TradeRecord | undefined }) {
+function TradeDetail({
+  trade,
+  displayNumber,
+}: {
+  trade: TradeRecord | undefined;
+  displayNumber?: number;
+}) {
   if (!trade) return null;
   const { core, diagnostics } = buildTradeDiagnosticFields(trade);
 
   return (
     <aside className="trade-detail">
       <div className="trade-detail__heading">
-        <h3>Trade #{trade.trade_id}</h3>
+        <h3>Trade #{displayNumber ?? trade.trade_id}</h3>
         <TradeStatusChip status={trade.status} />
       </div>
       <dl>

@@ -43,11 +43,11 @@ export function exitReasonMarkerLabel(exitReason: string): string | null {
   return item?.label ?? "UNK";
 }
 
-function entryMarkerText(trade: TradeRecord, highlighted: boolean): string {
+function entryMarkerText(displayNumber: number, trade: TradeRecord, highlighted: boolean): string {
   if (trade.status === "open") {
-    return highlighted ? `OPEN#${trade.trade_id}` : "OPEN";
+    return highlighted ? `OPEN#${displayNumber}` : "OPEN";
   }
-  return highlighted ? `E#${trade.trade_id}` : "E";
+  return highlighted ? `E#${displayNumber}` : "E";
 }
 
 function exitMarkerColor(kind: ExitReasonMarkerKind, highlighted: boolean): string {
@@ -75,7 +75,9 @@ export function buildTradeMarkers(
 ): SeriesMarker<Time>[] {
   const markers: SeriesMarker<Time>[] = [];
 
-  for (const trade of trades) {
+  for (let index = 0; index < trades.length; index++) {
+    const trade = trades[index]!;
+    const displayNumber = index + 1;
     const highlighted = tradeIdsEqual(selectedTradeId, trade.trade_id);
     const entryTime = msToChartTime(trade.entry_time_ms) as Time;
 
@@ -84,7 +86,7 @@ export function buildTradeMarkers(
       position: trade.direction === "long" ? "belowBar" : "aboveBar",
       color: highlighted ? "#fbbf24" : trade.direction === "long" ? "#22c55e" : "#ef4444",
       shape: trade.direction === "long" ? "arrowUp" : "arrowDown",
-      text: entryMarkerText(trade, highlighted),
+      text: entryMarkerText(displayNumber, trade, highlighted),
     });
 
     if (trade.status !== "closed" || trade.exit_time_ms === null) {
@@ -103,7 +105,7 @@ export function buildTradeMarkers(
       position: trade.direction === "long" ? "aboveBar" : "belowBar",
       color: exitMarkerColor(exitKind, highlighted),
       shape: "circle",
-      text: highlighted ? `${exitLabel}#${trade.trade_id}` : exitLabel,
+      text: highlighted ? `${exitLabel}#${displayNumber}` : exitLabel,
     });
   }
 

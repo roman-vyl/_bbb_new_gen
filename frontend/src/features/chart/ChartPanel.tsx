@@ -70,7 +70,7 @@ import { shouldSuppressPanShiftRequest } from "@/features/chart/chartViewport";
 import { createChartInteractionAdapter } from "@/features/chart/runtime/interactionAdapter";
 import { executeViewportCommand } from "@/features/chart/runtime/executeViewportCommand";
 import { CHART_RENDER_WINDOW_SIZE } from "@/features/chart/chartDataWindowManager";
-import { findTradeById } from "@/features/chart/tradeLookup";
+import { findTradeById, tradeDisplayNumber } from "@/features/chart/tradeLookup";
 
 import { useWorkbench } from "@/shared/context/WorkbenchContext";
 
@@ -786,6 +786,7 @@ export function ChartPanel() {
             showExits: chartShowTradeManagementExitMarkers,
             selectedTradeId,
             viewCandles: chartCandles,
+            trades: selectedVariant.trade_records,
           },
         );
         tradeMarkerCount = tradeMarkers.length;
@@ -837,7 +838,10 @@ export function ChartPanel() {
 
 
 
-    const specs = buildTradePriceLineSpecs(selectedTrade);
+    const specs = buildTradePriceLineSpecs(
+      selectedTrade,
+      tradeDisplayNumber(selectedVariant?.trade_records ?? [], selectedTrade.trade_id) ?? undefined,
+    );
 
     tradePriceLinesRef.current = specs.map((spec) => series.createPriceLine(spec.options));
 
@@ -1029,6 +1033,7 @@ export function ChartPanel() {
                 <ChartTradeDiagnostics
                   trade={selectedTrade}
                   selectedTradeId={selectedTradeId}
+                  tradeDisplayNumber={tradeDisplayNumber(trades, selectedTradeId) ?? undefined}
                   strategySpec={selectedVariant.strategy_spec}
                   chartEmaOverlays={chartEmaOverlays}
                   chartAuxEmaOverlays={chartDisplayAuxEmaOverlays}

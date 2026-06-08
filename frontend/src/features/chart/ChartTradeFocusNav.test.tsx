@@ -105,6 +105,29 @@ describe("ChartTradeFocusNav", () => {
     expect((input as HTMLInputElement).value).toBe("2");
   });
 
+  it("shows sequential display number for managed string trade ids", () => {
+    const managedTrades: TradeRecord[] = [
+      {
+        ...trades[0]!,
+        trade_id: "long:641890",
+      },
+      {
+        ...trades[1]!,
+        trade_id: "short:979",
+      },
+    ];
+    render(
+      <ChartTradeFocusNav
+        trades={managedTrades}
+        selectedTradeId="short:979"
+        onSelectTrade={vi.fn()}
+      />,
+    );
+    expect((screen.getByRole("textbox", { name: "Trade number" }) as HTMLInputElement).value).toBe(
+      "2",
+    );
+  });
+
   it("allows jump to id not in list (stale focus)", () => {
     const onSelectTrade = vi.fn();
     render(
