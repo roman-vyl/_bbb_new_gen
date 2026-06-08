@@ -21,7 +21,7 @@ from research.strategies.ema_pullback.execution.exit_attribution import (
     _stop_hit_short,
     fill_price_for_distance_exit,
 )
-from research.strategies.ema_pullback.execution.exits import PortfolioExitOutputs
+from research.strategies.ema_pullback.execution.exits import PortfolioExitOutputs, PROFILE_ORDER
 from research.strategies.ema_pullback.spec import (
     BREAK_EVEN_STOP_COMPONENT,
     EmaPullbackStrategySpec,
@@ -492,28 +492,170 @@ def run_managed_bar_loop(
     index_ms: np.ndarray | None = None,
     component_map: dict[str, str] | None = None,
 ) -> tuple[list[dict[str, Any]], list[BarManagementTrace | None]]:
-    """Legacy break_even_stop path — delegates to unified execution combiner."""
+    """Bar-by-bar simulation when exit_management rules are present."""
 
-    from research.strategies.ema_pullback.execution.execution_adapters import (
-        LegacyBreakEvenExitAdapter,
-    )
-    from research.strategies.ema_pullback.execution.execution_combiner import (
-        run_execution_combiner_loop,
-    )
+    n = len(close)
+    open_pos: _OpenPosition | None = None
+    closed: list[dict[str, Any]] = []
+    traces: list[BarManagementTrace | None] = [None] * n
 
-    traces: list[BarManagementTrace | None] = []
-    adapter = LegacyBreakEvenExitAdapter(spec=spec, close=close)
-    result = run_execution_combiner_loop(
-        spec=spec,
-        close=close,
-        open_=open_,
-        high=high,
-        low=low,
-        entries=entries,
-        short_entries=short_entries,
-        exit_outputs=exit_outputs,
-        adapter=adapter,
-        component_map=component_map,
-        traces_out=traces,
-    )
-    return result.closed, traces
+    def profile_at(i: int, side: Literal["long", "short"]) -> str:
+        s = (
+            exit_outputs.profile_long.iloc[i]
+            if side == "long"
+            else exit_outputs.profile_short.iloc[i]
+        )
+        p = str(s)
+        return p if p in PROFILE_ORDER else "neutral"
+
+    for i in range(n):
+        o = float(open_.iloc[i])
+        h = float(high.iloc[i])
+        l = float(low.iloc[i])
+        c = float(close.iloc[i])
+
+        if open_pos is not None and open_pos.pending_stop is not None:
+            open_pos.effective_stop = _tighten_stop(
+                open_pos.effective_stop,
+                open_pos.pending_stop,
+                direction=open_pos.direction,
+            )
+            open_pos.pending_stop = None
+
+        if open_pos is not None:
+            prof = open_pos.locked_profile
+            long_x = bool(exit_outputs.long_exits_by_profile[prof].iloc[i])
+            short_x = bool(exit_outputs.short_exits_by_profile[prof].iloc[i])
+            anchor = float(close.iloc[open_pos.entry_idx])
+            exit_attr = _check_bar_exits(
+                open_pos,
+                bar_idx=i,
+                open_=o,
+                high=h,
+                low=l,
+                close=c,
+                stop_anchor=anchor,
+                long_exit=long_x,
+                short_exit=short_x,
+                ctx=exit_outputs.attribution,
+                component_map=component_map,
+            )
+            if exit_attr is not None:
+                exit_px = _managed_exit_fill_price(
+                    open_pos,
+                    open_=o,
+                    high=h,
+                    low=l,
+                    close=c,
+                    stop_anchor=anchor,
+                    exit_attr=exit_attr,
+                )
+                closed.append(
+                    {
+                        "position": open_pos,
+                        "exit_idx": i,
+                        "exit_price": exit_px,
+                        "exit_attribution": exit_attr,
+                    }
+                )
+                open_pos = None
+            elif open_pos.resolved is not None and not open_pos.triggered:
+                hit, trig_px = _trigger_reached(
+                    direction=open_pos.direction,
+                    entry_price=open_pos.entry_price,
+                    initial_risk=open_pos.initial_risk,
+                    trigger_r=open_pos.resolved.rule.trigger_r,
+                    high=h,
+                    low=l,
+                )
+                if hit:
+                    moved = _moved_stop_price(
+                        direction=open_pos.direction,
+                        entry_price=open_pos.entry_price,
+                        initial_risk=open_pos.initial_risk,
+                        offset_r=open_pos.resolved.rule.offset_r,
+                    )
+                    open_pos.triggered = True
+                    open_pos.trigger_idx = i
+                    open_pos.trigger_price = trig_px
+                    open_pos.stop_moved_to = moved
+                    open_pos.pending_stop = moved
+
+        if open_pos is None:
+            if bool(entries.iloc[i]) and spec.trade_sides.includes("long"):
+                prof = profile_at(i, "long")
+                resolved = resolve_management_rule(spec.trade_management.exit_management, prof)
+                sl_px, sl_r, tp_r = _initial_stop_at_entry(
+                    direction="long",
+                    entry_idx=i,
+                    locked_profile=prof,
+                    close=close,
+                    exit_outputs=exit_outputs,
+                )
+                open_pos = _OpenPosition(
+                    direction="long",
+                    entry_idx=i,
+                    entry_price=c,
+                    locked_profile=prof,
+                    resolved=resolved,
+                    initial_stop_price=sl_px,
+                    initial_risk=abs(c - sl_px),
+                    effective_stop=sl_px,
+                    sl_ratio=sl_r,
+                    tp_ratio=tp_r,
+                )
+            elif bool(short_entries.iloc[i]) and spec.trade_sides.includes("short"):
+                prof = profile_at(i, "short")
+                resolved = resolve_management_rule(spec.trade_management.exit_management, prof)
+                sl_px, sl_r, tp_r = _initial_stop_at_entry(
+                    direction="short",
+                    entry_idx=i,
+                    locked_profile=prof,
+                    close=close,
+                    exit_outputs=exit_outputs,
+                )
+                open_pos = _OpenPosition(
+                    direction="short",
+                    entry_idx=i,
+                    entry_price=c,
+                    locked_profile=prof,
+                    resolved=resolved,
+                    initial_stop_price=sl_px,
+                    initial_risk=abs(sl_px - c),
+                    effective_stop=sl_px,
+                    sl_ratio=sl_r,
+                    tp_ratio=tp_r,
+                )
+
+        if open_pos is not None:
+            tr = _bar_trace(open_pos)
+            if tr is not None and open_pos.trigger_idx == i:
+                tr = BarManagementTrace(
+                    effective_stop_price=open_pos.effective_stop,
+                    pending_stop_price=open_pos.pending_stop,
+                    break_even_active=True,
+                    break_even_triggered_on_bar=True,
+                    break_even_trigger_price=open_pos.trigger_price,
+                    break_even_stop_moved_to=open_pos.stop_moved_to,
+                    break_even_initial_risk=open_pos.initial_risk,
+                    break_even_instance_id=open_pos.resolved.rule.instance_id
+                    if open_pos.resolved
+                    else None,
+                    active_stop_management_source=open_pos.resolved.source
+                    if open_pos.resolved
+                    else None,
+                    position_direction=open_pos.direction,
+                )
+            traces[i] = tr
+
+    if open_pos is not None:
+        closed.append(
+            {
+                "position": open_pos,
+                "exit_idx": n - 1,
+                "exit_price": float(close.iloc[n - 1]),
+                "open": True,
+            }
+        )
+
+    return closed, traces

@@ -384,7 +384,7 @@ def test_diagnostic_only_path_unchanged(monkeypatch: pytest.MonkeyPatch) -> None
     def _integration_must_not_run(*args: object, **kwargs: object) -> None:
         raise AssertionError("execution integration must not run for diagnostic_only")
 
-    monkeypatch.setattr(backtest, "run_execution_combiner_loop", _integration_must_not_run)
+    monkeypatch.setattr(backtest, "run_managed_execution_loop", _integration_must_not_run)
 
     base = make_ema_pullback_strategy_spec()
     empty = empty_exit_management()

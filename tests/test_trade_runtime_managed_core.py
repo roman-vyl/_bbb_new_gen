@@ -136,12 +136,12 @@ def test_managed_empty_arrays_parity_vs_baseline(
 ) -> None:
     pytest.importorskip("vectorbt")
 
-    def _combiner_must_not_run(*args: object, **kwargs: object) -> None:
+    def _legacy_loop_must_not_run(*args: object, **kwargs: object) -> None:
         raise AssertionError(
-            "execution combiner must not run for managed v2 empty arrays (vectorbt path)"
+            "legacy break_even run_managed_bar_loop must not run for managed v2 empty arrays"
         )
 
-    monkeypatch.setattr(backtest, "run_execution_combiner_loop", _combiner_must_not_run)
+    monkeypatch.setattr(backtest, "run_managed_bar_loop", _legacy_loop_must_not_run)
 
     baseline = make_ema_pullback_strategy_spec()
     managed = replace(

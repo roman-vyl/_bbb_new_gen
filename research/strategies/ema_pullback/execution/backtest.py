@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from typing import Any, Literal
+from typing import Any
 
 from data_engine.contracts import pandas_freq_alias
 import pandas as pd
@@ -27,19 +27,14 @@ from research.strategies.ema_pullback.execution.results import (
 )
 from research.strategies.ema_pullback.components.setup import ema_bounce_counter_setup_trace
 from research.strategies.ema_pullback.context.pipeline import build_context_bundle_for_spec
-from research.strategies.ema_pullback.execution.execution_adapters import (
-    LegacyBreakEvenExitAdapter,
-    ManagedExitProviderAdapter,
+from research.strategies.ema_pullback.execution.exit_management import (
+    has_exit_management_rules,
+    run_managed_bar_loop,
 )
-from research.strategies.ema_pullback.execution.execution_combiner import (
-    ExecutionExitAdapter,
-    run_execution_combiner_loop,
-)
-from research.strategies.ema_pullback.execution.exit_management import has_exit_management_rules
 from research.strategies.ema_pullback.execution.exits import build_exit_outputs_from_spec
 from research.strategies.ema_pullback.execution.managed_execution_loop import (
-    ManagedExecutionLoopResult,
     execution_result_to_managed_runtime_result,
+    run_managed_execution_loop,
 )
 from research.strategies.ema_pullback.execution.managed_exit_provider import ManagedExitProvider
 from research.strategies.ema_pullback.execution.results import (
@@ -106,30 +101,6 @@ def _uses_managed_execution_integration(spec: EmaPullbackStrategySpec) -> bool:
         take_management=em.take_management,
         runtime_exits=em.runtime_exits,
     )
-
-
-def _needs_execution_combiner(spec: EmaPullbackStrategySpec) -> bool:
-    return has_exit_management_rules(spec) or _uses_managed_execution_integration(spec)
-
-
-def _build_execution_exit_adapter(
-    spec: EmaPullbackStrategySpec,
-    enriched: pd.DataFrame,
-    close: pd.Series,
-) -> tuple[ExecutionExitAdapter, Literal["legacy", "v2"]]:
-    if has_exit_management_rules(spec):
-        return LegacyBreakEvenExitAdapter(spec=spec, close=close), "legacy"
-    if _uses_managed_execution_integration(spec):
-        em = spec.trade_management.exit_management
-        provider = ManagedExitProvider(
-            phase_rules=em.phase_rules,
-            stop_management=em.stop_management,
-            take_management=em.take_management,
-            runtime_exits=em.runtime_exits,
-            atr_series_by_key=_atr_series_for_phase_rules(enriched, spec),
-        )
-        return ManagedExitProviderAdapter(provider=provider, index=close.index), "v2"
-    raise ValueError("execution combiner adapter requested but spec has no combiner path")
 
 
 def _atr_series_for_phase_rules(
@@ -254,7 +225,7 @@ def _equity_metrics_from_trades(
     )
 
 
-def _run_execution_combiner_strategy_spec(
+def _run_execution_integrated_strategy_spec(
     spec: EmaPullbackStrategySpec,
     enriched: pd.DataFrame,
     plan: Any,
@@ -265,8 +236,6 @@ def _run_execution_combiner_strategy_spec(
     init_cash: float,
     fees: float,
     slippage: float,
-    adapter: ExecutionExitAdapter,
-    adapter_kind: Literal["legacy", "v2"],
 ) -> VariantResult:
     open_s, high_s, low_s = _open_high_low_for_vectorbt(enriched)
     close = enriched["close"].astype(float)
@@ -274,7 +243,15 @@ def _run_execution_combiner_strategy_spec(
     short_entries_for_portfolio = (
         signals.short_entries.fillna(False).astype(bool) & exit_outputs.stop_ready_short
     )
-    combiner_result = run_execution_combiner_loop(
+    em = spec.trade_management.exit_management
+    provider = ManagedExitProvider(
+        phase_rules=em.phase_rules,
+        stop_management=em.stop_management,
+        take_management=em.take_management,
+        runtime_exits=em.runtime_exits,
+        atr_series_by_key=_atr_series_for_phase_rules(enriched, spec),
+    )
+    loop_result = run_managed_execution_loop(
         spec=spec,
         close=close,
         open_=open_s,
@@ -283,44 +260,19 @@ def _run_execution_combiner_strategy_spec(
         entries=entries_for_portfolio,
         short_entries=short_entries_for_portfolio,
         exit_outputs=exit_outputs,
-        adapter=adapter,
+        provider=provider,
         component_map=build_exit_instance_component_map(spec),
     )
-    trade_management_events: list[dict[str, Any]] | None = None
-    trade_management_summary: dict[str, Any] | None = None
-    if adapter_kind == "v2":
-        assert isinstance(adapter, ManagedExitProviderAdapter)
-        trade_records = build_execution_integrated_trade_records(
-            combiner_result.closed,
-            index=close.index,
-            fees_rate=float(fees),
-            base_timeframe=spec.base_timeframe,
-        )
-        managed_runtime = execution_result_to_managed_runtime_result(
-            ManagedExecutionLoopResult(
-                closed=combiner_result.closed,
-                events=combiner_result.events,
-                states_by_trade_id=adapter.states_by_trade_id,
-            )
-        )
-        apply_managed_trade_management_diagnostics(trade_records, managed_runtime)
-        trade_management_events = trade_management_events_payload(managed_runtime)
-        trade_management_summary = build_trade_management_summary(trade_records)
-    else:
-        trade_records = build_managed_trade_records(
-            combiner_result.closed,
-            index=close.index,
-            close=close,
-            high=high_s,
-            low=low_s,
-            open_=open_s,
-            attribution=exit_outputs.attribution,
-            fees_rate=float(fees),
-            base_timeframe=spec.base_timeframe,
-            profile_long=exit_outputs.profile_long,
-            profile_short=exit_outputs.profile_short,
-            context_state=exit_outputs.context_state,
-        )
+    trade_records = build_execution_integrated_trade_records(
+        loop_result.closed,
+        index=close.index,
+        fees_rate=float(fees),
+        base_timeframe=spec.base_timeframe,
+    )
+    managed_runtime = execution_result_to_managed_runtime_result(loop_result)
+    apply_managed_trade_management_diagnostics(trade_records, managed_runtime)
+    trade_management_events = trade_management_events_payload(managed_runtime)
+    trade_management_summary = build_trade_management_summary(trade_records)
     sharpe, max_dd = _equity_metrics_from_trades(
         trade_records, init_cash=float(init_cash), n_bars=len(close)
     )
@@ -341,6 +293,70 @@ def _run_execution_combiner_strategy_spec(
         component_counters=list(signals.output_counters + exit_outputs.output_counters),
         trade_records=trade_records,
         trade_management_events=trade_management_events,
+    )
+
+
+def _run_managed_strategy_spec(
+    spec: EmaPullbackStrategySpec,
+    enriched: pd.DataFrame,
+    plan: Any,
+    *,
+    signals: Any,
+    exit_outputs: Any,
+    context_bundle: Any,
+    init_cash: float,
+    fees: float,
+    slippage: float,
+) -> VariantResult:
+    open_s, high_s, low_s = _open_high_low_for_vectorbt(enriched)
+    close = enriched["close"].astype(float)
+    entries_for_portfolio = signals.entries.fillna(False).astype(bool) & exit_outputs.stop_ready_long
+    short_entries_for_portfolio = (
+        signals.short_entries.fillna(False).astype(bool) & exit_outputs.stop_ready_short
+    )
+    closed, _traces = run_managed_bar_loop(
+        spec=spec,
+        close=close,
+        open_=open_s,
+        high=high_s,
+        low=low_s,
+        entries=entries_for_portfolio,
+        short_entries=short_entries_for_portfolio,
+        exit_outputs=exit_outputs,
+        component_map=build_exit_instance_component_map(spec),
+    )
+    trade_records = build_managed_trade_records(
+        closed,
+        index=close.index,
+        close=close,
+        high=high_s,
+        low=low_s,
+        open_=open_s,
+        attribution=exit_outputs.attribution,
+        fees_rate=float(fees),
+        base_timeframe=spec.base_timeframe,
+        profile_long=exit_outputs.profile_long,
+        profile_short=exit_outputs.profile_short,
+        context_state=exit_outputs.context_state,
+    )
+    sharpe, max_dd = _equity_metrics_from_trades(
+        trade_records, init_cash=float(init_cash), n_bars=len(close)
+    )
+    return VariantResult(
+        variant=spec.variant,
+        config_id=strategy_spec_config_id(spec),
+        symbol=spec.symbol.strip().upper(),
+        timeframe=spec.base_timeframe.strip(),
+        strategy_spec=strategy_spec_to_dict(spec),
+        metrics=build_trade_side_metrics(
+            trade_records,
+            float(init_cash),
+            sharpe=sharpe,
+            max_drawdown=max_dd,
+            fees_rate=float(fees),
+        ),
+        component_counters=list(signals.output_counters + exit_outputs.output_counters),
+        trade_records=trade_records,
     )
 
 
@@ -375,10 +391,8 @@ def run_strategy_spec(
     # Future diagnostic_only trade-management must run after actual trade_records
     # are built from the chosen path. It must not feed phase state back into
     # vectorbt masks, stops, exits, or legacy BE managed decisions.
-    if _needs_execution_combiner(spec):
-        close = enriched["close"].astype(float)
-        adapter, adapter_kind = _build_execution_exit_adapter(spec, enriched, close)
-        return _run_execution_combiner_strategy_spec(
+    if has_exit_management_rules(spec):
+        return _run_managed_strategy_spec(
             spec,
             enriched,
             plan,
@@ -388,8 +402,19 @@ def run_strategy_spec(
             init_cash=init_cash,
             fees=fees,
             slippage=slippage,
-            adapter=adapter,
-            adapter_kind=adapter_kind,
+        )
+
+    if _uses_managed_execution_integration(spec):
+        return _run_execution_integrated_strategy_spec(
+            spec,
+            enriched,
+            plan,
+            signals=signals,
+            exit_outputs=exit_outputs,
+            context_bundle=context_bundle,
+            init_cash=init_cash,
+            fees=fees,
+            slippage=slippage,
         )
 
     close = enriched["close"].astype(float)
