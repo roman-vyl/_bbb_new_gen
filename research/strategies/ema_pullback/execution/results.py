@@ -755,17 +755,13 @@ def build_managed_layer_breakdowns(
 
 
 def baseline_vs_managed_summary_placeholder() -> dict[str, Any]:
-    """Empty comparison summary shape; populated in Slice 9."""
+    """Empty comparison summary shape when no paired baseline run is available."""
 
-    return {
-        "saved_by_managed_stop": [],
-        "hurt_by_managed_stop": [],
-        "take_disabled_then_won": [],
-        "take_disabled_then_lost": [],
-        "runtime_exit_helped": [],
-        "runtime_exit_hurt": [],
-        "exit_layer_transition_matrix": {},
-    }
+    from research.strategies.ema_pullback.execution.managed_comparison import (
+        baseline_vs_managed_summary_placeholder as _placeholder,
+    )
+
+    return _placeholder()
 
 
 def build_research_run_payload(

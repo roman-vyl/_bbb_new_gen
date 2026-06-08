@@ -414,6 +414,8 @@ Research master-plan reference: `docs/research/21_state_driven_exit_management_v
 
 ### STOP — Checkpoint 8: Frontend read-support review
 
+**Status:** ACCEPTED (2026-06-08). Managed diagnostics read-only in Reports/Chart; string `trade_id` default focus fixup included.
+
 **Review:** UI parity with API contract, legacy report safety.  
 **Do not proceed** to Slice 9 until approved.
 
@@ -435,20 +437,20 @@ Research master-plan reference: `docs/research/21_state_driven_exit_management_v
 - Runner pack.
 
 **Acceptance criteria:**
-- [ ] Paired fixture runs produce non-empty `baseline_vs_managed_summary` where outcomes differ.
-- [ ] `be_helped`/`be_hurt` computable from `stop_management_breakdown` without separate schema fields.
-- [ ] Transition matrix covers `exit_policy` → `exit_management` moves.
+- [x] Paired fixture runs produce non-empty `baseline_vs_managed_summary` where outcomes differ.
+- [x] `be_helped`/`be_hurt` computable from `stop_management_breakdown` without separate schema fields.
+- [x] Transition matrix covers `exit_policy` → `exit_management` moves.
 
 **Tests:**
-- [ ] 9.1 `tests/test_managed_comparison.py` on synthetic paired trade sets.
+- [x] 9.1 `tests/test_managed_comparison.py` on synthetic paired trade sets.
 
-- [ ] 9.2 Implement comparison aggregator.
-- [ ] 9.3 Wire into report generation or standalone diff command.
-- [ ] 9.4 Add experiment fixture pair for manual validation.
+- [x] 9.2 Implement comparison aggregator.
+- [x] 9.3 Wire into report generation or standalone diff command.
+- [x] 9.4 Add experiment fixture pair for manual validation.
 
 ### STOP — Checkpoint 9: Comparison tooling review
 
-**Review:** metric definitions, paired-run ergonomics.  
+**Review:** metric definitions, paired-run ergonomics. See `comparison.md`.  
 **Do not proceed** to Slice 10 until approved.
 
 ---
