@@ -84,22 +84,18 @@ export function resolveVariantKeyForReport(loaded: RunReport, previousKey: strin
 }
 
 /** Last closed trade in report order (typical backtest: final closed position). */
-export function findLastClosedTradeId(trades: readonly TradeRecord[]): number | null {
+export function findLastClosedTradeId(trades: readonly TradeRecord[]): number | string | null {
   for (let i = trades.length - 1; i >= 0; i--) {
     const trade = trades[i]!;
-    if (trade.status !== "closed") {
-      continue;
-    }
-    const id = normalizeTradeId(trade.trade_id);
-    if (id !== null) {
-      return id;
+    if (trade.status === "closed") {
+      return trade.trade_id;
     }
   }
   return null;
 }
 
 export type TradeFocusSelection = {
-  tradeId: number | null;
+  tradeId: number | string | null;
   barTimeSec: number | null;
 };
 
