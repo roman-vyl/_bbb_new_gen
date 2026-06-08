@@ -10,7 +10,7 @@ v2 adds **`mode: managed`** — a behavior-changing runtime overlay that activat
 - Introduce bar-by-bar managed runtime core with `ActiveManagementSnapshot`, `ExitCandidate`, and `ExitArbitrator`.
 - Implement component pack v1 for all three active layers (not BE-only): `break_even_stop`, `lock_profit_stop` (minimal working: entry ± `lock_atr`×ATR, side-aware, tighten-only), `take_profile_switch`, `phase_runtime_exit` (phase-gated exit at bar `close` via `params.exit_price: "close"` — no pattern triggers in v2).
 - Define uniform managed events: `phase_changed`, `active_stop_updated`, `active_take_updated`, `runtime_exit_triggered`, `exit_rule_triggered`, `exit_executed`.
-- Wire exit arbitration across `exit_policy` (initial/fallback) and `exit_management` (managed overlay) candidates.
+- Wire **causal** managed close path: bar-open exit arbitration across `exit_policy` and inherited `exit_management` snapshot; **delayed activation** (phase/snapshot updates on bar N apply from bar N+1).
 - Extend report/API/frontend with **generic** managed-layer breakdowns (`exit_layer`, `rule_id`, `component_id`) — not per-component schemas.
 - Add baseline vs managed comparison tooling (generic metrics; BE labels derived).
 - **Guardrail:** `managed` with empty `stop_management` / `take_management` / `runtime_exits` MUST match baseline parity (same as no behavior-changing rules).

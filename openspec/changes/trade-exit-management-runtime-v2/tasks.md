@@ -101,7 +101,7 @@ Research master-plan reference: `docs/research/21_state_driven_exit_management_v
 - New managed `break_even_stop` only — not legacy combiner shape.
 
 **Out of scope:**
-- Exit arbitration and trade close (Slice 4) — evaluators produce candidates/state/events only.
+- Causal close path and trade close (Slice 4) — evaluators produce candidates/state/events only; no bar-open arbitration yet.
 - Final close ownership, `exit_executed`, PnL/outcome changes vs baseline.
 - Report serialization (Slice 5).
 - ADX/EMA/runner components.
@@ -136,42 +136,57 @@ Research master-plan reference: `docs/research/21_state_driven_exit_management_v
 
 ---
 
-## Slice 4 — Exit arbitration
+## Slice 4 — Causal managed close path + delayed activation
 
-**Goal:** `ExitArbitrator` with `same_bar_policy: "v1"` across `exit_policy` and `exit_management` candidates.
+**Goal:** Live causal bar loop + `ExitArbitrator` so managed rules can close trades **without OHLC lookahead**. Management snapshot and phase updates from bar N apply from bar **N+1**; exits on bar N use only state inherited from bar **N−1**.
+
+**Causal bar order (normative):**
+
+1. Start bar N with inherited `phase` + `ActiveManagementSnapshot` (from end of N−1).
+2. Build exit candidates from **bar-open-active** state only (`exit_policy` + inherited managed stop / take profile / armed runtime exits).
+3. Arbitrate among those candidates (`same_bar_policy: "v1"`).
+4. If winner → close; stop.
+5. Else: update MFE/MAE; evaluate `phase_rules`; recompute **next** snapshot via Slice 3 evaluators; emit layer events; snapshot active from N+1.
 
 **Scope:**
-- `research/strategies/ema_pullback/execution/exit_arbitration.py` (new module or equivalent).
-- Collect candidates: initial SL, managed active stop, initial/managed TP, runtime exit, signal exits.
-- Consume **effective `exit_policy` outputs/candidates** from the existing exit-policy pipeline as arbitration inputs. Do **not** evaluate HTF context in managed runtime; do **not** duplicate or reinterpret HTF profile switching.
-- Winner → managed trade close in research path; `exit_rule_triggered` + `exit_executed` with `exit_layer`, `exit_rule_id`, `exit_component_id`, optional `losing_candidates`, `same_bar_policy`.
+- Refactor managed loop from post-close replay to **inline open-trade** path in research execution (`backtest.py` + `trade_runtime.py`).
+- `research/strategies/ema_pullback/execution/exit_arbitration.py` — `ExitArbitrator`, v1 priority among **bar-open-active** candidates only.
+- Collect `exit_policy` candidates from effective pipeline outputs (initial SL/TP/signal; respect inherited managed take profile). No HTF evaluation in managed runtime.
+- Build managed candidates from **inherited snapshot only** (not from snapshot computed later on same bar).
+- Winner → trade close in research path; `exit_rule_triggered` + `exit_executed` with attribution metadata.
+- **Delayed activation:** new `break_even_stop` / `lock_profit_stop` / take switch / runtime arm from phase change on bar N → eligible for exits starting bar N+1.
 
 **Out of scope:**
-- OHLC intrabar priority v2.
+- OHLC intrabar path modeling v2 (`open→high→low` vs `open→low→high`).
+- Arbitrating candidates that first become eligible on the same bar as the phase/snapshot change.
 - Report serialization (Slice 5).
 - API, frontend, comparison tooling.
 
 **Acceptance criteria:**
-- [ ] Managed candidates from Slice 3 enter arbitration and can **win** close selection.
-- [ ] Behavior-changing outcome: managed config with non-empty rules **differs** from empty managed config / baseline on at least one fixture (trade close bar, exit reason, or PnL).
-- [ ] `break_even_stop` end-to-end: protected → BE → trade closes via `exit_management` (`exit_layer`, `exit_rule_id`, `exit_component_id`).
-- [ ] Same-bar multi-candidate fixtures resolve deterministically per v1 priority.
-- [ ] Initial SL wins over managed stop when both hit (v1 policy).
-- [ ] Managed stop wins over TP when both hit (v1 policy).
+- [ ] Live causal loop: exit check **before** end-of-bar phase/snapshot update; next snapshot applies from following bar.
+- [ ] Managed candidates from inherited snapshot can **win** close selection.
+- [ ] Behavior-changing outcome: managed config with non-empty rules **differs** from empty managed / baseline on at least one fixture.
+- [ ] `break_even_stop`: phase reaches `protected` on bar N → BE stop can close trade on bar **≥ N+1** when price hits (not on bar N of phase transition).
+- [ ] Same-bar conflicts among **bar-open-active** candidates resolve per v1 priority.
+- [ ] Initial SL wins over **already-active** managed stop when both hit.
+- [ ] **Already-active** managed stop wins over TP when both hit.
+- [ ] **Newly activated** managed stop on bar N does **not** participate in bar N arbitration.
 - [ ] `exit_layer` correctly `exit_policy` vs `exit_management`.
 
 **Tests:**
-- [ ] 4.1 `tests/test_exit_arbitration.py` — matrix of same-bar conflicts.
-- [ ] 4.2 Integration test: managed BE close end-to-end through arbitrator (first outcome-changing proof).
-- [ ] 4.3 Outcome-vs-empty-managed parity/break test on component-pack fixture.
+- [ ] 4.1 `tests/test_exit_arbitration.py` — bar-open-active conflict matrix.
+- [ ] 4.2 `tests/test_managed_causal_loop.py` — delayed activation (phase on N → stop exit on N+1).
+- [ ] 4.3 Integration: managed BE close end-to-end (first outcome-changing proof).
+- [ ] 4.4 Outcome-vs-empty-managed break test on component-pack fixture.
 
-- [ ] 4.4 Implement `ExitArbitrator` and v1 policy table.
-- [ ] 4.5 Connect arbitrator to managed loop close path (Slice 3 candidates → winning close).
-- [ ] 4.6 Record `losing_candidates` metadata where specified.
+- [ ] 4.5 Implement `ExitArbitrator` and v1 policy table (bar-open scope).
+- [ ] 4.6 Refactor managed loop to causal inline close path; reuse Slice 3 evaluators for end-of-bar snapshot.
+- [ ] 4.7 Wire `exit_policy` candidate collection from effective outputs.
+- [ ] 4.8 Record `losing_candidates` metadata where specified.
 
-### STOP — Checkpoint 4: Exit arbitration review
+### STOP — Checkpoint 4: Causal close path review
 
-**Review:** priority table, exit_policy candidate sourcing (effective outputs only — no HTF in managed runtime), close path ownership.  
+**Review:** causal bar order, delayed activation, bar-open arbitration scope, exit_policy candidate sourcing, close path ownership.  
 **Do not proceed** to Slice 5 until approved.
 
 ---

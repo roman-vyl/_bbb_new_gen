@@ -63,16 +63,40 @@ The managed runtime SHALL NOT evaluate HTF context itself. If `exit_policy` lock
 ### Requirement: Managed runtime evaluates trades bar-by-bar during open life
 When `exit_management.mode` is `managed`, the runtime SHALL evaluate each open trade on every bar from entry through close using a bar-by-bar managed loop inside the research execution path.
 
-The managed loop SHALL update trade state, evaluate phase rules, recompute active management snapshot, collect exit candidates, arbitrate, and record events.
-
 The runtime MUST NOT create a second simulated trade path, shadow portfolio, or pseudo-trades.
 
-#### Scenario: Managed mode can close before vectorbt baseline exit
+#### Scenario: Managed mode can close via inherited breakeven stop after protected
 - **GIVEN** a managed config with a `stop_management` rule that places breakeven after `protected`
-- **AND** a trade reaches `protected` then returns to breakeven before the original stop loss
-- **WHEN** the managed bar-by-bar loop runs
-- **THEN** the trade closes via `exit_management` on the breakeven stop hit bar
+- **AND** a trade reaches `protected` on bar N
+- **AND** price returns to breakeven on a later bar M where M > N
+- **WHEN** the causal managed bar-by-bar loop runs
+- **THEN** the trade closes via `exit_management` on bar M using the breakeven stop that was active from bar N+1 onward
 - **AND** the close is attributed with `exit_layer: "exit_management"`
+- **AND** the trade does not close on bar N solely because phase became `protected` on that bar
+
+### Requirement: Causal managed bar order with delayed activation
+On each bar N of an open managed trade, the runtime SHALL follow this order:
+
+1. Inherit `phase` and `ActiveManagementSnapshot` from the end of bar N−1 (neutral snapshot on entry bar until end-of-entry-bar update applies from bar N+1).
+2. Collect exit candidates from **bar-open-active** state only: effective `exit_policy` candidates plus managed stop, take profile, and armed runtime exits from the inherited snapshot.
+3. If multiple bar-open candidates are hit on bar N OHLC, select one winner using `same_bar_policy: "v1"`.
+4. If a winner is selected, close the trade and stop further processing for that trade on later bars.
+5. If no close on bar N, update MFE/MAE and `bars_in_trade` from bar N OHLC, evaluate `phase_rules`, recompute the next `ActiveManagementSnapshot`, emit management layer events, and apply the new snapshot from bar N+1.
+
+Rules that become eligible because of phase or snapshot changes computed **at end of bar N** MUST NOT produce exit candidates on bar N.
+
+#### Scenario: New breakeven stop does not exit on phase transition bar
+- **GIVEN** a `stop_management` `break_even_stop` rule with `activate_when.phase_at_least: "protected"`
+- **AND** a trade transitions to `protected` on bar N due to `phase_rules`
+- **WHEN** bar N is evaluated
+- **THEN** breakeven stop is not an exit candidate on bar N
+- **AND** breakeven stop may become an exit candidate starting bar N+1 if present in the inherited snapshot
+
+#### Scenario: Armed runtime exit uses previous bar arm state
+- **GIVEN** a `phase_runtime_exit` rule that becomes armed when phase reaches `exhaustion` on bar N
+- **WHEN** bar N is evaluated for exits
+- **THEN** runtime exit is not a bar-open candidate on bar N
+- **AND** runtime exit may be a bar-open candidate on bar N+1 if armed in the inherited snapshot
 
 ### Requirement: Active management snapshot tracks all managed layers
 For each open trade in managed mode, the runtime SHALL maintain an active management snapshot including at minimum:
@@ -100,11 +124,13 @@ A rule SHALL become active when the trade's current phase is at or beyond the co
 
 Phase rules SHALL only change phase state and MUST NOT directly close trades or move stops.
 
-#### Scenario: Stop rule activates after protected
+#### Scenario: Stop rule activates after protected with delayed exit eligibility
 - **GIVEN** a `stop_management` rule with `activate_when.phase_at_least: "protected"`
-- **WHEN** the trade phase becomes `protected`
-- **THEN** the rule becomes active on that bar or later
+- **WHEN** the trade phase becomes `protected` on bar N
+- **THEN** the rule is included in the snapshot computed at end of bar N
+- **AND** the rule's stop may affect exits starting bar N+1
 - **AND** the rule remains inactive before `protected`
+- **AND** the rule does not produce bar-open exit candidates on bar N
 
 ### Requirement: Component pack v1 covers all active management layers
 Managed mode v2 SHALL support the following component contracts:
@@ -167,9 +193,9 @@ Each component SHALL be testable in isolation and SHALL be able to influence tra
 - **WHEN** validation runs for v2
 - **THEN** validation fails with a message that pattern triggers are not supported in v2
 
-#### Scenario: Phase runtime exit can close via arbitration
-- **GIVEN** a managed config with `phase_runtime_exit` active on a bar
-- **AND** no higher-priority exit candidate wins under `same_bar_policy: "v1"`
+#### Scenario: Phase runtime exit can close via arbitration when armed before bar
+- **GIVEN** a managed config with `phase_runtime_exit` armed in the inherited snapshot at bar open
+- **AND** no higher-priority bar-open exit candidate wins under `same_bar_policy: "v1"`
 - **WHEN** arbitration runs on that bar
 - **THEN** the trade MAY close via `exit_management`
 - **AND** `exit_executed` includes `exit_component_id: "phase_runtime_exit"`
@@ -195,28 +221,37 @@ Events SHALL be ordered by bar index and creation order within the bar.
 - **AND** `exit_executed` has `exit_layer: "exit_management"`
 - **AND** `exit_executed` includes the winning `rule_id` and `component_id`
 
-### Requirement: Same-bar exit arbitration uses explicit v1 policy
-When multiple exit candidates are present on one bar, the runtime SHALL select exactly one winner using `same_bar_policy: "v1"` with this priority order:
+### Requirement: Same-bar exit arbitration uses explicit v1 policy among bar-open-active candidates
+When multiple **bar-open-active** exit candidates are hit on one bar, the runtime SHALL select exactly one winner using `same_bar_policy: "v1"` with this priority order:
 
 1. initial stop loss from `exit_policy`
-2. managed active stop from `exit_management`
+2. managed active stop from `exit_management` (inherited snapshot only)
 3. initial take profit, managed take, or safety take
-4. runtime exit from `exit_management`
+4. runtime exit from `exit_management` (inherited armed state only)
 5. signal exit from `exit_policy`
 
-The winning candidate SHALL be recorded on `exit_executed`. Losing candidates on the same bar MAY be recorded as optional metadata.
+Candidates that become eligible only from end-of-bar phase or snapshot updates on the same bar MUST be excluded from this arbitration.
 
-#### Scenario: Initial stop loss wins over managed breakeven on same bar
-- **GIVEN** a bar where both initial stop loss and managed active stop are hit
-- **WHEN** arbitration runs with `same_bar_policy: "v1"`
+The winning candidate SHALL be recorded on `exit_executed`. Losing bar-open candidates on the same bar MAY be recorded as optional metadata.
+
+#### Scenario: Initial stop loss wins over already-active managed breakeven
+- **GIVEN** a bar where both initial stop loss and an **already-active** managed stop are hit
+- **WHEN** arbitration runs with `same_bar_policy: "v1"` on bar-open-active candidates
 - **THEN** the winner is the initial stop loss candidate
 - **AND** `exit_layer` is `exit_policy`
 
-#### Scenario: Managed stop wins over take profit on same bar
-- **GIVEN** a bar where both managed active stop and take profit candidates are hit
-- **WHEN** arbitration runs with `same_bar_policy: "v1"`
+#### Scenario: Already-active managed stop wins over take profit
+- **GIVEN** a bar where both an **already-active** managed stop and take profit candidates are hit
+- **WHEN** arbitration runs with `same_bar_policy: "v1"` on bar-open-active candidates
 - **THEN** the winner is the managed active stop candidate
 - **AND** `exit_layer` is `exit_management`
+
+#### Scenario: Newly activated managed stop excluded from same-bar arbitration
+- **GIVEN** a bar N where phase first reaches `protected` and a `break_even_stop` rule would become active in the end-of-bar snapshot
+- **AND** price on bar N would hit breakeven if that stop were active
+- **WHEN** bar N exit arbitration runs
+- **THEN** breakeven is not among bar-open candidates
+- **AND** the trade does not close via `break_even_stop` on bar N
 
 ### Requirement: Legacy break-even shape is not managed v2 authoring target
 The legacy `exit_management.always_on/profiles/rules` `break_even_stop` shape SHALL remain deprecated backward-compatible parsing only.

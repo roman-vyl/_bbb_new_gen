@@ -74,7 +74,7 @@ Implementation follows **vertical slices** with mandatory **STOP / review** gate
 | 1 | Contracts & parsing |
 | 2 | Managed runtime core (empty-array parity) |
 | 3 | Active layer component pack v1 |
-| 4 | Exit arbitration |
+| 4 | Causal managed close path + delayed activation |
 | 5 | Backend report serialization only |
 | 6 | Backend smoke / backend acceptance |
 | 7 | API / BFF read support |
@@ -88,22 +88,37 @@ Implementation follows **vertical slices** with mandatory **STOP / review** gate
 
 ## Managed runtime core
 
-Bar-by-bar loop for each open trade (entry bar through close):
+**Slices 2–3 (delivered):** post-close **replay** loop builds phase trace, `ActiveManagementSnapshot`, evaluator outputs, and events. Evaluators are pure functions under `execution/managed_components/`. Replay order (phase → snapshot on same bar) is acceptable for Slice 3 isolation tests only.
 
-1. Update `TradeRuntimeState` (prices, MFE/MAE, `bars_in_trade`).
-2. Evaluate `phase_rules` → optional `phase_changed`.
-3. Resolve active management rules for current phase (`activate_when.phase_at_least`).
-4. Recompute `ActiveManagementSnapshot` (stop, take profile, runtime exit arm state).
-5. Collect `ExitCandidate`s from managed layers + `exit_policy` layer.
-6. Run `ExitArbitrator` → close or continue.
-7. Append uniform events.
+**Slice 4+ (causal close path):** the live managed loop for open trades MUST follow **delayed activation** — no lookahead from phase changes or new management rules on the same bar.
+
+### Causal bar order (normative from Slice 4)
+
+On bar **N**, for each open trade:
+
+1. **Inherit state from end of bar N−1:** `phase`, `ActiveManagementSnapshot` (active stop, take profile, armed runtime exits). Entry bar uses neutral snapshot until bar N+1 after entry.
+
+2. **Exit evaluation at bar open (active-before-bar only):**
+   - Collect `exit_policy` candidates (initial SL/TP, signal exits per effective locked profile).
+   - Collect managed candidates **only from the inherited snapshot** (already-active stop, take profile, armed runtime exits).
+   - Run `ExitArbitrator` with `same_bar_policy: "v1"` among **candidates active at bar open**.
+   - If a winner hits on bar N OHLC → close trade, emit `exit_rule_triggered` + `exit_executed`, stop.
+
+3. **If trade still open — end-of-bar state update:**
+   - Update MFE/MAE/`bars_in_trade` from bar N OHLC.
+   - Evaluate `phase_rules` → optional `phase_changed`.
+   - Recompute **next** `ActiveManagementSnapshot` from evaluators (rules newly eligible after this bar's phase).
+   - Emit `active_stop_updated` / `active_take_updated` / `runtime_exit_triggered` when snapshot changes.
+   - Persist snapshot as **active from bar N+1**.
+
+**Why:** OHLC does not define intrabar path (`open→high→low→close` vs `open→low→high→close`). A stop or runtime exit that **first becomes eligible** because of phase/MFE observed on bar N cannot causally affect bar N exits — only bar N+1 onward.
 
 **Domain objects:**
 
-- `ActiveManagementSnapshot` — current managed stop/take/runtime state + rule/component ids.
+- `ActiveManagementSnapshot` — managed stop/take/runtime state **effective for the next bar** after it is computed.
 - `ExitCandidate` — `layer`, `rule_id`, `component_id`, `price`, `bar`, `reason`.
-- `ExitArbitrator` — applies `same_bar_policy` version `v1`.
-- `ManagedExitContext` — bar OHLC, ATR, feature columns for evaluators.
+- `ExitArbitrator` — resolves conflicts among **bar-open-active** candidates only; `same_bar_policy: "v1"`.
+- `ManagedExitContext` — bar OHLC, ATR, feature refs for evaluators.
 
 **Integration:** extend existing research execution path (`backtest.py` / managed bar loop); research layer remains source of truth — not vectorbt callbacks.
 
@@ -131,7 +146,8 @@ Three parallel management arrays; each rule: `rule_id`, `component_id`, `activat
 - `phase_runtime_exit` — **phase-gated close at bar close** (no pattern catalog in v2):
   - **Activation:** `activate_when.phase_at_least` only (e.g. `exhaustion`).
   - **Params:** `exit_price: "close"` (only supported value in v2).
-  - **Behavior:** when rule is active on a bar, emit `runtime_exit_triggered` and add runtime exit **candidate** at that bar's close price. Final close ownership is Slice 4 arbitration.
+  - **Behavior (Slice 3 replay):** when rule is active on a bar, emit `runtime_exit_triggered` and add runtime exit **candidate** at that bar's close price (diagnostics only).
+  - **Behavior (Slice 4 causal):** when a rule becomes armed on bar N, runtime exit **candidates** may win closes starting bar N+1; bar N exits use only rules armed through bar N−1.
   - **No `trigger` block** and no `exhaustion_pattern` / component triggers in v2 — future change.
 
 Example:
@@ -147,19 +163,28 @@ Example:
 
 **Legacy `break_even_stop`:** deprecated combiner shape remains parse-only compatibility; **new** managed `break_even_stop` uses `activate_when` + uniform events — different contract.
 
-## Exit arbitration
+## Causal close path and bar-open arbitration (Slice 4)
 
-Per bar, candidates may include: initial SL, managed active stop, initial/managed TP, runtime exit, signal exits.
+**Not in scope for Slice 4:** arbitrating candidates that only became eligible because of phase/snapshot updates on the **same** bar.
 
-**v1 `same_bar_policy` priority (high → low):**
+**Bar-open candidate set** may include:
+
+- `exit_policy`: initial SL, TP (respecting inherited managed take profile), signal exits.
+- `exit_management`: managed stop price from **inherited** snapshot; runtime exit if **armed in inherited** snapshot.
+
+**v1 `same_bar_policy` priority (high → low)** — among bar-open-active candidates only:
 
 1. initial stop loss (`exit_policy`)
-2. managed active stop (`exit_management`)
+2. managed active stop (`exit_management`) — must have been active before this bar
 3. initial take profit / managed take / safety take
-4. runtime exit (`exit_management`)
+4. runtime exit (`exit_management`) — must have been armed before this bar
 5. signal exit (`exit_policy`)
 
+**Excluded from same-bar arbitration on bar N:** managed stop, take profile switch, or runtime exit arm that first appears in the snapshot computed **after** bar N state update (effective bar N+1).
+
 Winner recorded on `exit_executed` with `exit_layer`, `exit_rule_id`, `exit_component_id`, `same_bar_policy: "v1"`. Optional `losing_candidates` in metadata.
+
+**Example:** trade reaches `protected` on bar 10 → `break_even_stop` snapshot computed end of bar 10 → BE stop can hit starting bar 11, not bar 10.
 
 ## Unified managed event / report contract
 
@@ -209,12 +234,15 @@ Per `docs/research/21_state_driven_exit_management_v1.md`:
 | Research combiner owns closes | Matches v1 integration audit | vectorbt callback-driven stops — rejected |
 | Generic report breakdown by `component_id` | Future components need no schema change | Per-component report sections — rejected |
 | `phase_at_least` only for `activate_when` v2 | Minimal activation contract | Full condition component tree — deferred to phase 6 |
+| **Delayed activation (causal bar order)** | Removes OHLC lookahead; phase/snapshot updates apply from next bar | Same-bar phase→stop→arbitrate — rejected; ambiguous intrabar ordering |
+| **Same-bar policy = bar-open candidates only** | Clear conflict resolution without new-rule same-bar hits | Arbitrate all candidates computed on bar — rejected as lookahead |
 
 ## Risks / Trade-offs
 
 | Risk | Mitigation |
 |------|------------|
-| Same-bar priority ambiguity | Freeze `same_bar_policy: v1` in spec; record `losing_candidates` |
+| Same-bar priority ambiguity | Freeze `same_bar_policy: v1` for **bar-open-active** set only; record `losing_candidates` |
+| Slice 3 replay order vs Slice 4 causal loop | Slice 3 tests stay evaluator-isolated; Slice 4 refactors live loop + adds causal integration tests |
 | Managed loop diverges from diagnostic path | Separate test suites; `diagnostic_only` parity tests unchanged |
 | HTF profile + managed take interaction | Managed runtime consumes effective `exit_policy` TP candidates only; no HTF reimplementation; test with HTF fixture |
 | Scope creep into runner/Composer | Explicit non-goals; STOP gates per slice |
