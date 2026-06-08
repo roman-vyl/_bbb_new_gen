@@ -320,18 +320,59 @@ The winning candidate SHALL be recorded on `exit_executed`. Losing bar-open cand
 - **THEN** breakeven is not among bar-open candidates
 - **AND** the trade does not close via `break_even_stop` on bar N
 
-### Requirement: Legacy break-even shape is not managed v2 authoring target
-The legacy `exit_management.always_on/profiles/rules` `break_even_stop` shape SHALL remain deprecated backward-compatible parsing only.
+### Requirement: Legacy exit_management wire shape is rejected
+The legacy `exit_management.always_on` / `profiles` / `rules` shape with R-trigger `break_even_stop` (`trigger_r`, `offset_r`) SHALL NOT be supported as a runtime or validation-accepted config.
+
+When validation detects non-empty legacy management rules in that shape, it SHALL fail with:
+
+`Legacy exit_management shape is no longer supported; use mode=managed with stop_management/take_management/runtime_exits.`
+
+There SHALL be no compatibility migration, no adapter shim, and no `run_managed_bar_loop` execution routing for PnL.
 
 New managed `break_even_stop` rules SHALL use the v2 `stop_management` contract with `activate_when` and uniform events.
 
-Product authoring and catalog surfaces MUST NOT revive legacy break-even authoring in v2.
+#### Scenario: Legacy always_on break_even config is rejected
+- **GIVEN** a strategy spec contains `exit_management.always_on.rules` with `component_id: "break_even_stop"` and `trigger_r`
+- **WHEN** validation runs
+- **THEN** validation fails with the legacy unsupported error message
 
 #### Scenario: Managed break-even uses new contract
 - **GIVEN** a new managed config authors breakeven protection
 - **WHEN** validation runs
 - **THEN** the rule is expressed under `stop_management` with `component_id: "break_even_stop"`
-- **AND** the legacy always_on/profile rule shape is not required
+- **AND** the legacy always_on/profile rule shape is not accepted
+
+### Requirement: Single managed runtime execution path
+When behavior-changing managed rules are active, the backtest SHALL use only the v2 managed execution loop (`run_managed_execution_loop` with `ManagedExitProvider`, `ExitCandidate`, and `ExitArbitrator`).
+
+The backtest SHALL NOT route to `run_managed_bar_loop`, `_run_managed_strategy_spec`, or `has_exit_management_rules` for execution-path selection.
+
+There SHALL be exactly one behavior-changing bar-by-bar execution owner: the v2 managed execution loop.
+
+#### Scenario: Managed config routes to v2 execution loop
+- **GIVEN** a strategy spec with `mode=managed` and non-empty `stop_management`
+- **WHEN** a backtest runs
+- **THEN** execution uses `run_managed_execution_loop`
+- **AND** does not use `run_managed_bar_loop` for trade closes
+
+#### Scenario: Default path unchanged for non-behavior-changing configs
+- **GIVEN** a strategy spec without behavior-changing managed rules
+- **WHEN** a backtest runs
+- **THEN** execution uses the default vectorbt / `from_signals` path
+- **AND** trade outcomes match baseline parity expectations
+
+### Requirement: Provider end-of-bar update does not run on entry bar
+When a position opens on bar N from a precomputed entry signal at bar close, the execution layer SHALL NOT call `update_end_of_bar_snapshot` on bar N.
+
+The first provider end-of-bar update for that trade SHALL occur no earlier than bar N+1.
+
+Rationale: OHLC does not reveal intrabar path; using bar N high/low before close-entry would be lookahead.
+
+#### Scenario: Entry bar skips provider snapshot update
+- **GIVEN** a managed trade that opens on bar N from an entry signal
+- **WHEN** bar N completes
+- **THEN** no `update_end_of_bar_snapshot` call runs for that trade on bar N
+- **AND** provider end-of-bar update may run starting bar N+1 if the trade remains open
 
 ## MODIFIED Requirements
 
@@ -340,13 +381,13 @@ The strategy spec SHALL support an optional `trade_management.exit_management` o
 
 `exit_management` SHALL support:
 
-- `mode`: `"diagnostic_only"`, `"managed"`, or omitted defaulting to behavior-compatible disabled/legacy handling.
+- `mode`: `"diagnostic_only"`, `"managed"`, or omitted (no behavior-changing exit management).
 - `phase_rules`: ordered list of phase transition rules.
 - `stop_management`: behavior-changing stop rules; MUST be empty for `diagnostic_only`; MAY be non-empty for `managed`.
 - `take_management`: take-profile switch rules; MUST be empty for `diagnostic_only`; MAY be non-empty for `managed`.
 - `runtime_exits`: phase-gated runtime exit rules; MUST be empty for `diagnostic_only`; MAY be non-empty for `managed`.
 
-The legacy `exit_management.always_on/profiles/rules` `break_even_stop` shape SHALL NOT be considered part of the managed v2 provider contract. It MAY remain temporarily as deprecated backward-compatible parsing support for existing artifacts, but new managed provider behavior MUST NOT depend on it.
+The legacy `exit_management.always_on/profiles/rules` `break_even_stop` shape SHALL NOT be accepted. Validation SHALL reject non-empty legacy management rules with an explicit unsupported-legacy error.
 
 #### Scenario: Config places runtime controller beside exit policy
 - **GIVEN** a strategy spec contains `trade_management.exit_policy`
@@ -372,11 +413,11 @@ The legacy `exit_management.always_on/profiles/rules` `break_even_stop` shape SH
 - **WHEN** validation runs
 - **THEN** validation succeeds
 
-#### Scenario: Legacy BE shape is not managed v2 input
-- **GIVEN** an existing strategy spec uses `exit_management.always_on/profiles/rules` with `break_even_stop`
-- **WHEN** managed exit provider v2 is implemented
-- **THEN** the managed exit provider does not read those legacy rules as managed `stop_management` inputs
-- **AND** any continued support for that shape is treated as deprecated compatibility only
+#### Scenario: Legacy BE shape fails validation
+- **GIVEN** a strategy spec uses `exit_management.always_on/profiles/rules` with `break_even_stop`
+- **WHEN** validation runs
+- **THEN** validation fails with the legacy unsupported error message
+- **AND** no managed runtime path executes
 
 ### Requirement: Runtime event trace records phase and exit events
 The runtime SHALL support `TradeManagementEvent` records with trade id, time, bar index, side, event type, phase transition fields, rule/component identifiers, price fields, MFE/MAE percent, bars in trade, exit layer, and metadata.

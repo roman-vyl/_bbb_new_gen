@@ -195,6 +195,66 @@ Research master-plan reference: `docs/research/21_state_driven_exit_management_v
 ### STOP — Checkpoint 4: Execution integration review
 
 **Review:** execution ownership boundary, provider interface, delayed activation, bar-open arbitration scope, exit_policy candidate sourcing.  
+**Do not proceed** to Slice 4.5 until approved.
+
+---
+
+## Slice 4.5 — Legacy path removal & routing cleanup
+
+**Goal:** Single managed runtime path — remove legacy BE combiner execution; reject legacy config wire; fix entry-bar provider lookahead.
+
+**Decision (normative):**
+
+- Keep v2 Slice 4 (`7ab168f`): `ManagedExitProvider` + `ExitCandidate` + `ExitArbitrator` + `run_managed_execution_loop`.
+- Remove legacy BE runtime path: no `run_managed_bar_loop` / `_run_managed_strategy_spec` / `has_exit_management_rules` routing for PnL.
+- Reject legacy wire `exit_management.always_on` / `profiles` / R-trigger rules at validation — no migration, no adapter shim.
+- Do **not** add `execution_combiner.py` / `execution_adapters.py` (reverted `e5724b1` stays rejected).
+- Future unified combiner redesign is **out of scope**.
+
+**Scope:**
+
+- `backtest.py` routing: only default vectorbt path OR v2 `_run_execution_integrated_strategy_spec`.
+- `spec.py` / `instance_loader.py`: reject legacy management shape with explicit error message.
+- `run_managed_execution_loop`: skip `update_end_of_bar_snapshot` on entry bar N; first update on N+1.
+- Remove or quarantine `run_managed_bar_loop` from runtime routing (may remain only for non-PnL diagnostics if needed — must not affect backtest closes).
+- `signal_trace.py`: stop using legacy loop for runtime path if applicable.
+- Verify `e5724b1` / combiner artifacts absent from tree.
+
+**Out of scope:**
+
+- Legacy JSON auto-migration.
+- `execution_combiner` / adapter unification.
+- `data_engine/` changes.
+- Entry pipeline changes.
+- Slice 5+ features beyond routing prerequisites.
+
+**Acceptance criteria:**
+
+- [ ] Legacy `always_on`/`profiles`/`trigger_r` config fails validation with documented error string.
+- [ ] `mode=managed` + non-empty management rules routes only to `run_managed_execution_loop`.
+- [ ] No `has_exit_management_rules` execution-path routing in `backtest.py`.
+- [ ] `diagnostic_only` / managed empty arrays / absent exit_management preserve default vectorbt path and baseline parity.
+- [ ] Entry bar does not call provider end-of-bar update; first update on N+1.
+- [ ] Delayed activation tests still pass (snapshot N → active N+1).
+- [ ] No `execution_combiner`, `execution_adapters`, or adapter-based combiner in codebase.
+- [ ] Existing Slice 4 tests (`test_exit_arbitration`, `test_managed_exit_provider`, `test_managed_execution_integration`) pass.
+
+**Tests:**
+
+- [ ] 4.5.1 Reject legacy wire shape — `tests/test_exit_management_contracts.py` (or dedicated test).
+- [ ] 4.5.2 Routing matrix — v2 managed vs default path integration tests.
+- [ ] 4.5.3 Entry-bar no provider update — `tests/test_managed_execution_integration.py`.
+- [ ] 4.5.4 Remove/update legacy BE runtime tests (`test_exit_management.py`, `test_exit_management_extended.py`) — legacy path no longer executes.
+- [ ] 4.5.5 Static guard: no combiner/adapter module references.
+
+- [ ] 4.5.6 Implement validation rejection for legacy shape.
+- [ ] 4.5.7 Remove legacy routing from `backtest.py`.
+- [ ] 4.5.8 Fix entry-bar lookahead in `run_managed_execution_loop`.
+- [ ] 4.5.9 Update `docs/research/21_state_driven_exit_management_v1.md` §17–18 to match decision.
+
+### STOP — Checkpoint 4.5: Single managed path review
+
+**Review:** routing matrix, legacy rejection message, entry-bar rule, no second execution owner, combiner still absent.  
 **Do not proceed** to Slice 5 until approved.
 
 ---

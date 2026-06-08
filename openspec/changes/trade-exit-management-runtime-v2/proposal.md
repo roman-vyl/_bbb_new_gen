@@ -14,7 +14,9 @@ v2 adds **`mode: managed`** — a behavior-changing **managed exit state / candi
 - Extend report/API/frontend with **generic** managed-layer breakdowns (`exit_layer`, `rule_id`, `component_id`) — not per-component schemas.
 - Add baseline vs managed comparison tooling (generic metrics; BE labels derived).
 - **Guardrail:** `managed` with empty `stop_management` / `take_management` / `runtime_exits` MUST match baseline parity (same as no behavior-changing rules).
-- **Unchanged:** existing entry pipeline (setup/blocker/trigger/direction → entries); existing `exit_policy` layer and Composer exit-policy authoring; HTF profile locking/gating stays in `exit_policy` — managed provider only consumes effective `exit_policy` outputs; `data_engine/`; legacy `break_even_stop` deprecated shape (no revival).
+- **Single managed runtime path:** behavior-changing execution uses only v2 `run_managed_execution_loop` (`ManagedExitProvider` + `ExitCandidate` + `ExitArbitrator`). No legacy BE combiner runtime path.
+- **Legacy shape rejected:** `exit_management.always_on` / `profiles` / R-trigger `break_even_stop` rules are **not** supported as a runtime path; configs with that wire shape fail validation with an explicit error. No compatibility migration, no adapter shim, no unified `execution_combiner`.
+- **Unchanged:** existing entry pipeline (setup/blocker/trigger/direction → entries); existing `exit_policy` layer and Composer exit-policy authoring; HTF profile locking/gating stays in `exit_policy` — managed provider only consumes effective `exit_policy` outputs; `data_engine/`.
 
 ## Capabilities
 
@@ -36,6 +38,6 @@ _None — extends existing capabilities via delta specs._
 | **frontend** | Report panels read unified managed breakdowns (no Composer authoring in v2) |
 | **data_engine** | None |
 
-**Non-goals (this change):** component-based state rules (`component_id` phase conditions), runner management pack (ADX/EMA trail/exhaustion), full Composer managed-mode editors, second trade path / second portfolio, exit_management as entry or lifecycle owner, vectorbt callback as source of truth, legacy BE authoring, partial take/scale-out, OHLC intrabar priority v2.
+**Non-goals (this change):** component-based state rules (`component_id` phase conditions), runner management pack (ADX/EMA trail/exhaustion), full Composer managed-mode editors, second trade path / second portfolio, exit_management as entry or lifecycle owner, vectorbt callback as source of truth, legacy BE runtime / `run_managed_bar_loop` execution path, legacy JSON migration, adapter-based execution combiner (`execution_combiner` / `execution_adapters`), partial take/scale-out, OHLC intrabar priority v2.
 
 **Future (separate changes):** research doc phases 6–8 — component state rules, runner pack, Composer authoring.

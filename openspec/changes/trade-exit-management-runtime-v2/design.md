@@ -22,7 +22,7 @@
 - Component-based `phase_rules` (`component_id` conditions) — future change.
 - Runner pack (ADX/DI, EMA trail, structure stop, exhaustion triggers) — future change.
 - Full Composer authoring for `stop_management` / `take_management` / `runtime_exits`.
-- `data_engine/` changes; vectorbt callback redesign; legacy `break_even_stop` product authoring.
+- `data_engine/` changes; vectorbt callback redesign; legacy BE combiner runtime path; adapter-based execution combiner redesign; legacy JSON migration.
 - OHLC intrabar path modeling v2; partial take / scale-out.
 
 ## Runtime modes and migration from v1 foundation
@@ -116,6 +116,60 @@ The execution layer calls the managed exit provider once per bar for each open t
 2. **Bar close (if still open):** pass bar OHLC and runtime state; receive end-of-bar snapshot update, phase events, and managed layer events effective from the next bar.
 
 Close is applied by the **execution layer** after combining `exit_policy` candidates with provider candidates.
+
+## Execution routing (decision — single managed runtime path)
+
+**Decision (post–Checkpoint 4):** remove legacy BE combiner as a runtime path. Do **not** build a unified `execution_combiner` or adapter shim (reverted `e5724b1` remains rejected).
+
+`backtest.run_strategy_spec` SHALL use **two** execution paths only:
+
+| Path | Gate | Implementation |
+|------|------|----------------|
+| **Default** | No behavior-changing managed rules (`mode` absent, `diagnostic_only`, or `managed` with empty management arrays) | `vectorbt.Portfolio.from_signals` + `exit_policy` |
+| **v2 managed** | `mode=managed` + non-empty `stop_management` / `take_management` / `runtime_exits` | `run_managed_execution_loop` → `_run_execution_integrated_strategy_spec` |
+
+**Removed / forbidden:**
+
+- `has_exit_management_rules()` as execution-path selector.
+- `run_managed_bar_loop` / `_run_managed_strategy_spec` as PnL/runtime path.
+- `execution_combiner.py`, `execution_adapters.py`, adapter-based lifecycle owners.
+- Legacy config wire `exit_management.always_on` / `profiles` / R-trigger `break_even_stop` rules as a supported runtime shape.
+
+**Legacy shape validation:** if a config contains non-empty `exit_management.always_on.rules` or profile-scoped legacy `break_even_stop` rules (`trigger_r` / `offset_r` wire), validation SHALL fail with:
+
+`Legacy exit_management shape is no longer supported; use mode=managed with stop_management/take_management/runtime_exits.`
+
+No compatibility migration. Existing Step 18 JSON must be rewritten to v2 `stop_management` before use.
+
+### v2 managed execution stack (sole behavior-changing path)
+
+```text
+entries / short_entries  (entry pipeline — unchanged)
+  → execution layer open/hold/close (run_managed_execution_loop)
+      → exit_policy candidates (existing pipeline outputs)
+      → ManagedExitProvider.get_bar_open_candidates (inherited snapshot)
+      → ExitArbitrator v1
+      → close + exit_rule_triggered / exit_executed
+      → ManagedExitProvider.update_end_of_bar_snapshot (if still open)
+```
+
+`exit_management` remains a **provider** for already-open trades. Execution layer owns lifecycle and close.
+
+### Bar sequencing (normative)
+
+1. `position_was_open_at_bar_start` captured at bar open.
+2. If open at bar start: bar-open candidates → arbitrate → close if winner.
+3. Entry only if **not** open at bar start (no same-bar re-entry after close).
+4. **Entry bar rule:** if position opened on bar N at close, **do not** call `update_end_of_bar_snapshot` on bar N; first provider end-of-bar update on bar N+1 (OHLC intrabar path unknown before close-entry).
+5. **Delayed activation:** snapshot computed at end of bar N active from bar N+1 only.
+
+### Out of scope (explicit)
+
+- Unified execution combiner redesign across legacy + v2.
+- Adapter wrappers (`LegacyBreakEvenExitAdapter`, `ManagedExitProviderAdapter`).
+- Automatic migration of legacy JSON to v2 wire shape.
+
+Human-readable narrative: `docs/research/21_state_driven_exit_management_v1.md` §17–18.
 
 ## Slice / checkpoint execution model
 
