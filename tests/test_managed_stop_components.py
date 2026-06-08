@@ -21,12 +21,11 @@ from research.strategies.ema_pullback.execution.trade_runtime import (
     empty_active_management_snapshot,
     run_managed_exit_runtime,
 )
+from tests.phase_rule_test_helpers import make_phase_rule
 from research.strategies.ema_pullback.spec import (
     BreakEvenStopParamsSpec,
     LockProfitStopParamsSpec,
     ManagementActivateWhenSpec,
-    PhaseRuleConditionSpec,
-    PhaseRuleSpec,
     StopManagementRuleSpec,
 )
 
@@ -172,10 +171,11 @@ def test_break_even_after_protected_emits_active_stop_updated() -> None:
         low=low,
         close=close,
         phase_rules=(
-            PhaseRuleSpec(
-                rule_id="to_protected",
-                to_phase="protected",
-                condition=PhaseRuleConditionSpec(type="bars_in_trade", threshold=2),
+            make_phase_rule(
+                "to_protected",
+                "protected",
+                "bars_in_trade",
+                {"threshold": 2},
             ),
         ),
         stop_management=(_be_rule(buffer=0.0),),

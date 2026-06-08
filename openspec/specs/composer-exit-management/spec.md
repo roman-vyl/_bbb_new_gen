@@ -56,3 +56,34 @@ Validate SHALL reject invalid exit-management drafts: empty `instance_id`, dupli
 - **WHEN** validate runs
 - **THEN** validation succeeds
 
+### Requirement: Composer authors phase rule conditions via component catalog
+The phase-rules editor SHALL expose an allowlisted condition component picker (`mfe_atr`, `mfe_pct`, `bars_in_trade`, `adx_di_threshold`) and render params fields per selected `component_id`.
+
+For `bars_in_trade`, `params.threshold` MUST be authored and validated as an integer `>= 1`.
+
+For `adx_di_threshold`, authors MUST be able to set `timeframe`, `period`, `adx_threshold`, and `require_di_alignment`.
+
+Adding a phase condition MUST NOT auto-create blockers, stop_management rules, or runtime exits. Pairing with `break_even_stop` or `take_profile_switch` remains explicit separate authoring.
+
+#### Scenario: Author adds adx_di_threshold for protected phase
+- **WHEN** the author adds a phase rule with `to_phase: "protected"` and condition component `adx_di_threshold`
+- **AND** sets `params.timeframe: "base"`, `params.period: 14`, `params.adx_threshold: 40`, `params.require_di_alignment: true`
+- **THEN** the draft serializes `condition: { component_id, params }` under `phase_rules`
+- **AND** no blocker or stop rule is added automatically
+
+#### Scenario: Composer rejects non-integer bars_in_trade threshold
+- **GIVEN** a draft phase rule with `condition.component_id: "bars_in_trade"` and `params.threshold: 2.5`
+- **WHEN** Composer validate runs
+- **THEN** validation fails with a clear error that threshold must be an integer `>= 1`
+
+#### Scenario: Author migrates mfe_atr preset to component style
+- **WHEN** the author uses the default diagnostic phase preset after this change
+- **THEN** each rule's condition uses `component_id: "mfe_atr"` with equivalent `params`
+- **AND** no `condition.type` field is present in the saved draft
+
+#### Scenario: Composer round-trips component-style phase rules with stop_management
+- **GIVEN** a saved config with `adx_di_threshold` phase rule and separate `break_even_stop` under `stop_management`
+- **WHEN** Composer loads, saves, and reloads
+- **THEN** both rules are preserved without field loss
+- **AND** backend validation accepts the draft
+

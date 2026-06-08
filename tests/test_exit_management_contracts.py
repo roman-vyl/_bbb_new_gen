@@ -46,15 +46,20 @@ def _diagnostic_only_exit_management() -> dict[str, object]:
                 "rule_id": "to_proven_at_1atr",
                 "to_phase": "proven",
                 "condition": {
-                    "type": "mfe_atr",
-                    "threshold": 1.0,
-                    "atr": {"timeframe": "base", "period": 14},
+                    "component_id": "mfe_atr",
+                    "params": {
+                        "threshold": 1.0,
+                        "atr": {"timeframe": "base", "period": 14},
+                    },
                 },
             },
             {
                 "rule_id": "to_runner_after_24_bars",
                 "to_phase": "runner",
-                "condition": {"type": "bars_in_trade", "threshold": 24},
+                "condition": {
+                    "component_id": "bars_in_trade",
+                    "params": {"threshold": 24},
+                },
             },
         ],
         "stop_management": [],
@@ -169,9 +174,14 @@ def test_diagnostic_only_exit_management_config_loads() -> None:
         "to_proven_at_1atr",
         "to_runner_after_24_bars",
     ]
-    assert exit_management.phase_rules[0].condition.type == "mfe_atr"
-    assert exit_management.phase_rules[0].condition.atr is not None
-    assert exit_management.phase_rules[0].condition.atr.period == 14
+    from research.strategies.ema_pullback.phase_rule_conditions.params import (
+        MfeAtrConditionParams,
+    )
+
+    assert exit_management.phase_rules[0].condition.component_id == "mfe_atr"
+    params = exit_management.phase_rules[0].condition.params
+    assert isinstance(params, MfeAtrConditionParams)
+    assert params.atr.period == 14
 
 
 def test_diagnostic_only_rejects_non_empty_stop_management() -> None:
@@ -218,12 +228,18 @@ def test_diagnostic_only_rejects_phase_rules_that_move_backwards() -> None:
         {
             "rule_id": "to_runner_at_2_5atr",
             "to_phase": "runner",
-            "condition": {"type": "mfe_pct", "threshold": 0.025},
+            "condition": {
+                "component_id": "mfe_pct",
+                "params": {"threshold": 0.025},
+            },
         },
         {
             "rule_id": "to_protected_at_1_5atr",
             "to_phase": "protected",
-            "condition": {"type": "mfe_pct", "threshold": 0.015},
+            "condition": {
+                "component_id": "mfe_pct",
+                "params": {"threshold": 0.015},
+            },
         },
     ]
     _trade_management(payload)["exit_management"] = exit_management
@@ -256,7 +272,7 @@ def test_diagnostic_only_wire_shape_keeps_phase_rules() -> None:
     exit_management = serialized["trade_management"]["exit_management"]
 
     assert exit_management["mode"] == "diagnostic_only"
-    assert exit_management["phase_rules"][0]["condition"]["type"] == "mfe_atr"
+    assert exit_management["phase_rules"][0]["condition"]["component_id"] == "mfe_atr"
 
 
 def test_managed_empty_arrays_fixture_loads() -> None:
@@ -267,9 +283,11 @@ def test_managed_empty_arrays_fixture_loads() -> None:
                 "rule_id": "to_proven_at_1atr",
                 "to_phase": "proven",
                 "condition": {
-                    "type": "mfe_atr",
-                    "threshold": 1.0,
-                    "atr": {"timeframe": "base", "period": 14},
+                    "component_id": "mfe_atr",
+                    "params": {
+                        "threshold": 1.0,
+                        "atr": {"timeframe": "base", "period": 14},
+                    },
                 },
             }
         ],

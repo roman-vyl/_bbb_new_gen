@@ -13,6 +13,9 @@ from research.strategies.ema_pullback.execution.managed_bar_open_candidates impo
 from research.strategies.ema_pullback.execution.managed_components.snapshot import (
     evaluate_management_layers,
 )
+from research.strategies.ema_pullback.phase_rule_conditions.registry import (
+    PhaseRuleEvaluationContext,
+)
 from research.strategies.ema_pullback.execution.trade_runtime import (
     ActiveManagementSnapshot,
     ExitCandidate,
@@ -44,7 +47,12 @@ class ManagedExitProvider:
     stop_management: tuple[StopManagementRuleSpec, ...]
     take_management: tuple[TakeManagementRuleSpec, ...]
     runtime_exits: tuple[RuntimeExitRuleSpec, ...]
-    atr_series_by_key: dict[tuple[str, int], pd.Series] = field(default_factory=dict)
+    phase_eval_context: PhaseRuleEvaluationContext = field(
+        default_factory=lambda: PhaseRuleEvaluationContext(
+            atr_series_by_key={},
+            adx_dmi_series_by_key={},
+        )
+    )
 
     def get_bar_open_candidates(
         self,
@@ -92,7 +100,7 @@ class ManagedExitProvider:
                 self.phase_rules,
                 bar_index=bar_idx,
                 time_ms=time_ms,
-                atr_series_by_key=self.atr_series_by_key,
+                eval_context=self.phase_eval_context,
             )
         )
         context = _build_managed_exit_context(
@@ -111,7 +119,7 @@ class ManagedExitProvider:
             take_management=self.take_management,
             runtime_exits=self.runtime_exits,
             previous=inherited,
-            atr_series_by_key=self.atr_series_by_key,
+            atr_series_by_key=self.phase_eval_context.atr_series_by_key,
         )
         events.extend(layer_result.events)
         return EndOfBarProviderUpdate(

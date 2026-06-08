@@ -105,34 +105,67 @@ def _di_minus_feature_id(timeframe: str, period: int) -> str:
     return f"di_minus_close_{timeframe}_{period}"
 
 
-def _add_adx_dmi_features(
+def _add_adx_dmi_features_for_tf_period(
     add: Callable[[PlannedFeature], None],
-    params: TrendStrengthEpisodeBlockerParams,
+    timeframe: str,
+    period: int,
     adx_dmi_columns: dict[tuple[str, int], dict[str, str]],
 ) -> None:
-    tf = params.timeframe
-    period = params.adx_period
+    key = (timeframe, period)
+    if key in adx_dmi_columns:
+        return
     for kind, feature_id in (
-        ("adx", _adx_feature_id(tf, period)),
-        ("di_plus", _di_plus_feature_id(tf, period)),
-        ("di_minus", _di_minus_feature_id(tf, period)),
+        ("adx", _adx_feature_id(timeframe, period)),
+        ("di_plus", _di_plus_feature_id(timeframe, period)),
+        ("di_minus", _di_minus_feature_id(timeframe, period)),
     ):
         add(
             PlannedFeature(
                 feature_id=feature_id,
                 kind=kind,
                 source="close",
-                timeframe=tf,
+                timeframe=timeframe,
                 period=period,
                 base_feature_id=None,
                 multiplier=None,
             )
         )
-    adx_dmi_columns[(tf, period)] = {
-        "adx": _adx_feature_id(tf, period),
-        "di_plus": _di_plus_feature_id(tf, period),
-        "di_minus": _di_minus_feature_id(tf, period),
+    adx_dmi_columns[key] = {
+        "adx": _adx_feature_id(timeframe, period),
+        "di_plus": _di_plus_feature_id(timeframe, period),
+        "di_minus": _di_minus_feature_id(timeframe, period),
     }
+
+
+def _add_adx_dmi_features(
+    add: Callable[[PlannedFeature], None],
+    params: TrendStrengthEpisodeBlockerParams,
+    adx_dmi_columns: dict[tuple[str, int], dict[str, str]],
+) -> None:
+    _add_adx_dmi_features_for_tf_period(
+        add,
+        params.timeframe,
+        params.adx_period,
+        adx_dmi_columns,
+    )
+
+
+def _add_atr_feature_for_tf_period(
+    add: Callable[[PlannedFeature], None],
+    timeframe: str,
+    period: int,
+) -> None:
+    add(
+        PlannedFeature(
+            feature_id=_atr_feature_id(timeframe, period),
+            kind="atr",
+            source="close",
+            timeframe=timeframe,
+            period=period,
+            base_feature_id=None,
+            multiplier=None,
+        )
+    )
 
 
 def _multiplier_token(multiplier: float) -> str:
@@ -329,6 +362,22 @@ def build_feature_plan_from_strategy_spec(spec: EmaPullbackStrategySpec) -> Feat
             )
         )
         rsi_columns[(rsi.timeframe, rsi.period)] = feature_id
+
+    from research.strategies.ema_pullback.phase_rule_conditions.registry import (
+        plan_phase_rule_condition_features,
+    )
+
+    for phase_rule in spec.trade_management.exit_management.phase_rules:
+        plan_phase_rule_condition_features(
+            phase_rule.condition,
+            add_atr=lambda tf, period: _add_atr_feature_for_tf_period(add, tf, period),
+            add_adx_dmi=lambda tf, period: _add_adx_dmi_features_for_tf_period(
+                add,
+                tf,
+                period,
+                adx_dmi_columns,
+            ),
+        )
 
     return FeaturePlan(
         features=tuple(features),

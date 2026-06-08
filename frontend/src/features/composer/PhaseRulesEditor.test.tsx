@@ -44,7 +44,10 @@ describe("PhaseRulesEditor", () => {
       {
         rule_id: "",
         to_phase: "runner",
-        condition: { type: "mfe_atr", threshold: -1 },
+        condition: {
+          component_id: "mfe_atr",
+          params: { threshold: -1, atr: { timeframe: "base", period: 14 } },
+        },
       },
     ];
     const errors = collectPhaseRulesValidationErrors(exitManagement, "instances[0].strategy");

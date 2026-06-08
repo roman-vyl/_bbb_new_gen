@@ -8,7 +8,7 @@ import {
   createBlankPhaseRule,
   defaultDiagnosticPhaseRules,
   ensureDiagnosticOnlyProductShape,
-  normalizeConditionForType,
+  normalizeConditionForComponent,
   readPhaseRules,
   replaceLegacyExitManagementWithDefaultDiagnosticPhases,
   replaceLegacyExitManagementWithProductShape,
@@ -24,6 +24,7 @@ describe("phaseRulesEditor helpers", () => {
     const rules = defaultDiagnosticPhaseRules();
     expect(rules).toHaveLength(3);
     expect(rules.map((r) => r.to_phase)).toEqual(["proven", "protected", "runner"]);
+    expect((rules[0]?.condition as JsonObject).component_id).toBe("mfe_atr");
   });
 
   it("writePhaseRules preserves mode and normalizes v2 shape", () => {
@@ -42,36 +43,54 @@ describe("phaseRulesEditor helpers", () => {
     expect(managed.stop_management).toHaveLength(1);
   });
 
-  it("changing condition type updates shape correctly", () => {
+  it("changing condition component updates shape correctly", () => {
     let rule = createBlankPhaseRule();
     rule = updatePhaseRuleField(rule, {
-      condition: normalizeConditionForType({}, "mfe_pct"),
+      condition: normalizeConditionForComponent({}, "mfe_pct"),
     });
-    expect((rule.condition as JsonObject).type).toBe("mfe_pct");
-    expect((rule.condition as JsonObject).atr).toBeUndefined();
+    expect((rule.condition as JsonObject).component_id).toBe("mfe_pct");
+    expect((rule.condition as JsonObject).params).toEqual({ threshold: 0.02 });
 
     rule = updatePhaseRuleField(rule, {
-      condition: normalizeConditionForType({}, "bars_in_trade"),
+      condition: normalizeConditionForComponent({}, "bars_in_trade"),
     });
-    expect((rule.condition as JsonObject).type).toBe("bars_in_trade");
-    expect((rule.condition as JsonObject).threshold).toBe(1);
+    expect((rule.condition as JsonObject).component_id).toBe("bars_in_trade");
+    expect(((rule.condition as JsonObject).params as JsonObject).threshold).toBe(1);
 
     rule = updatePhaseRuleField(rule, {
-      condition: normalizeConditionForType({}, "mfe_atr"),
+      condition: normalizeConditionForComponent({}, "mfe_atr"),
     });
-    expect((rule.condition as JsonObject).atr).toEqual({ timeframe: "base", period: 14 });
+    expect(((rule.condition as JsonObject).params as JsonObject).atr).toEqual({
+      timeframe: "base",
+      period: 14,
+    });
+
+    rule = updatePhaseRuleField(rule, {
+      condition: normalizeConditionForComponent({}, "adx_di_threshold"),
+    });
+    expect((rule.condition as JsonObject).component_id).toBe("adx_di_threshold");
+    expect(((rule.condition as JsonObject).params as JsonObject).require_di_alignment).toBe(
+      true,
+    );
   });
 
   it("edit threshold updates rule draft", () => {
     const rule = updatePhaseRuleField(createBlankPhaseRule(), {
-      condition: { threshold: 2.5 },
+      condition: { params: { threshold: 2.5 } },
     });
-    expect((rule.condition as JsonObject).threshold).toBe(2.5);
+    expect(((rule.condition as JsonObject).params as JsonObject).threshold).toBe(2.5);
   });
 
   it("flags invalid empty rule_id", () => {
     const em = writePhaseRules(createBlankExitManagement(), [
-      { rule_id: "  ", to_phase: "proven", condition: { type: "mfe_atr", threshold: 1, atr: { timeframe: "base", period: 14 } } },
+      {
+        rule_id: "  ",
+        to_phase: "proven",
+        condition: {
+          component_id: "mfe_atr",
+          params: { threshold: 1, atr: { timeframe: "base", period: 14 } },
+        },
+      },
     ]);
     const errors = collectPhaseRulesValidationErrors(em, PATH);
     expect(errors.some((e) => e.path.endsWith(".rule_id"))).toBe(true);
@@ -82,12 +101,12 @@ describe("phaseRulesEditor helpers", () => {
       {
         rule_id: "runner_first",
         to_phase: "runner",
-        condition: { type: "bars_in_trade", threshold: 5 },
+        condition: { component_id: "bars_in_trade", params: { threshold: 5 } },
       },
       {
         rule_id: "proven_second",
         to_phase: "proven",
-        condition: { type: "bars_in_trade", threshold: 3 },
+        condition: { component_id: "bars_in_trade", params: { threshold: 3 } },
       },
     ]);
     const errors = collectPhaseRulesValidationErrors(em, PATH);
@@ -99,11 +118,23 @@ describe("phaseRulesEditor helpers", () => {
       {
         rule_id: "bars",
         to_phase: "proven",
-        condition: { type: "bars_in_trade", threshold: 1.5 },
+        condition: { component_id: "bars_in_trade", params: { threshold: 1.5 } },
       },
     ]);
     const errors = collectPhaseRulesValidationErrors(em, PATH);
     expect(errors.some((e) => e.message.includes("integer"))).toBe(true);
+  });
+
+  it("rejects legacy condition.type", () => {
+    const em = writePhaseRules(createBlankExitManagement(), [
+      {
+        rule_id: "legacy",
+        to_phase: "proven",
+        condition: { type: "mfe_atr", threshold: 1.0 },
+      },
+    ]);
+    const errors = collectPhaseRulesValidationErrors(em, PATH);
+    expect(errors.some((e) => e.message.includes("legacy condition.type"))).toBe(true);
   });
 
   it("flags mfe_atr missing atr", () => {
@@ -111,7 +142,7 @@ describe("phaseRulesEditor helpers", () => {
       {
         rule_id: "no_atr",
         to_phase: "proven",
-        condition: { type: "mfe_atr", threshold: 1.0 },
+        condition: { component_id: "mfe_atr", params: { threshold: 1.0 } },
       },
     ]);
     const errors = collectPhaseRulesValidationErrors(em, PATH);
@@ -133,7 +164,13 @@ describe("phaseRulesEditor helpers", () => {
       always_on: { rules: [{ component_id: "break_even_stop" }] },
       profiles: { aligned: { rules: [] }, countertrend: { rules: [] }, neutral: { rules: [] } },
       mode: "diagnostic_only",
-      phase_rules: [{ rule_id: "x", to_phase: "proven", condition: { type: "bars_in_trade", threshold: 1 } }],
+      phase_rules: [
+        {
+          rule_id: "x",
+          to_phase: "proven",
+          condition: { component_id: "bars_in_trade", params: { threshold: 1 } },
+        },
+      ],
     };
     const next = ensureDiagnosticOnlyProductShape(legacy);
     expect(next.always_on).toBeUndefined();

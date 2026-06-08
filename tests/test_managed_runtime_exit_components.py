@@ -17,10 +17,9 @@ from research.strategies.ema_pullback.execution.trade_runtime import (
     empty_active_management_snapshot,
     run_managed_exit_runtime,
 )
+from tests.phase_rule_test_helpers import make_phase_rule
 from research.strategies.ema_pullback.spec import (
     ManagementActivateWhenSpec,
-    PhaseRuleConditionSpec,
-    PhaseRuleSpec,
     PhaseRuntimeExitParamsSpec,
     RuntimeExitRuleSpec,
 )
@@ -147,10 +146,11 @@ def test_no_managed_close_or_exit_rule_triggered_in_slice_3() -> None:
         low=low,
         close=close,
         phase_rules=(
-            PhaseRuleSpec(
-                rule_id="to_exhaustion",
-                to_phase="exhaustion",
-                condition=PhaseRuleConditionSpec(type="bars_in_trade", threshold=5),
+            make_phase_rule(
+                "to_exhaustion",
+                "exhaustion",
+                "bars_in_trade",
+                {"threshold": 5},
             ),
         ),
         runtime_exits=(_runtime_exit_rule(),),

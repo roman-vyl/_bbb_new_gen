@@ -21,10 +21,9 @@ from research.strategies.ema_pullback.execution.trade_runtime import (
     empty_active_management_snapshot,
     run_managed_exit_runtime,
 )
+from tests.phase_rule_test_helpers import make_phase_rule
 from research.strategies.ema_pullback.spec import (
     ManagementActivateWhenSpec,
-    PhaseRuleConditionSpec,
-    PhaseRuleSpec,
     TakeManagementRuleSpec,
     TakeProfileSwitchParamsSpec,
 )
@@ -200,10 +199,11 @@ def test_disable_initial_tp_via_managed_runtime_replay() -> None:
         low=low,
         close=close,
         phase_rules=(
-            PhaseRuleSpec(
-                rule_id="to_runner",
-                to_phase="runner",
-                condition=PhaseRuleConditionSpec(type="bars_in_trade", threshold=3),
+            make_phase_rule(
+                "to_runner",
+                "runner",
+                "bars_in_trade",
+                {"threshold": 3},
             ),
         ),
         take_management=(_take_rule("disable_initial_tp"),),

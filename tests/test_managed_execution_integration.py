@@ -32,14 +32,13 @@ from research.strategies.ema_pullback.spec import (
     BreakEvenStopParamsSpec,
     ExitManagementSpec,
     ManagementActivateWhenSpec,
-    PhaseRuleConditionSpec,
-    PhaseRuleSpec,
     StopManagementRuleSpec,
     TakeManagementRuleSpec,
     TakeProfileSwitchParamsSpec,
     empty_exit_management,
 )
 from research.strategies.ema_pullback.spec_instances import make_ema_pullback_strategy_spec
+from tests.phase_rule_test_helpers import make_phase_rule
 
 
 def _series(values: list[float]) -> pd.Series:
@@ -98,10 +97,11 @@ def _managed_be_spec() -> object:
     exit_management = ExitManagementSpec(
         mode="managed",
         phase_rules=(
-            PhaseRuleSpec(
-                rule_id="to_protected",
-                to_phase="protected",
-                condition=PhaseRuleConditionSpec(type="bars_in_trade", threshold=1),
+            make_phase_rule(
+                "to_protected",
+                "protected",
+                "bars_in_trade",
+                {"threshold": 1},
             ),
         ),
         stop_management=(
@@ -126,10 +126,11 @@ def _managed_empty_spec() -> object:
     exit_management = ExitManagementSpec(
         mode="managed",
         phase_rules=(
-            PhaseRuleSpec(
-                rule_id="to_proven",
-                to_phase="proven",
-                condition=PhaseRuleConditionSpec(type="bars_in_trade", threshold=2),
+            make_phase_rule(
+                "to_proven",
+                "proven",
+                "bars_in_trade",
+                {"threshold": 2},
             ),
         ),
         stop_management=(),
@@ -321,10 +322,11 @@ def test_no_same_bar_reentry_after_close() -> None:
     exit_management = replace(
         spec.trade_management.exit_management,
         phase_rules=(
-            PhaseRuleSpec(
-                rule_id="to_exhaustion",
-                to_phase="exhaustion",
-                condition=PhaseRuleConditionSpec(type="bars_in_trade", threshold=1),
+            make_phase_rule(
+                "to_exhaustion",
+                "exhaustion",
+                "bars_in_trade",
+                {"threshold": 1},
             ),
         ),
         stop_management=(),
@@ -390,10 +392,11 @@ def test_diagnostic_only_path_unchanged(monkeypatch: pytest.MonkeyPatch) -> None
                 empty,
                 mode="diagnostic_only",
                 phase_rules=(
-                    PhaseRuleSpec(
-                        rule_id="to_proven",
-                        to_phase="proven",
-                        condition=PhaseRuleConditionSpec(type="bars_in_trade", threshold=2),
+                    make_phase_rule(
+                        "to_proven",
+                        "proven",
+                        "bars_in_trade",
+                        {"threshold": 2},
                     ),
                 ),
             ),
