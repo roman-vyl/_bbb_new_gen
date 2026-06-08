@@ -270,7 +270,7 @@ ManagedExitContext
 | component_id | Назначение в v1 pack |
 |--------------|----------------------|
 | `break_even_stop` | BE после `phase_at_least: protected` |
-| `lock_profit_stop` | Контракт + реализация или stub с validation (lock +N ATR) |
+| `lock_profit_stop` | Minimal working: entry ± `lock_atr`×ATR, side-aware, tighten-only |
 
 Пример `break_even_stop`:
 
@@ -309,17 +309,14 @@ ManagedExitContext
 
 | component_id | Назначение в v1 pack |
 |--------------|----------------------|
-| `phase_runtime_exit` | Принудительный выход по phase/trigger (простейший trigger в v1) |
+| `phase_runtime_exit` | Phase-gated exit at bar close (`params.exit_price: "close"`); без pattern triggers в v2 |
 
 ```json
 {
   "rule_id": "exit_on_exhaustion",
   "component_id": "phase_runtime_exit",
-  "activate_when": { "phase_at_least": "runner" },
-  "trigger": {
-    "component_id": "exhaustion_pattern",
-    "params": {}
-  }
+  "activate_when": { "phase_at_least": "exhaustion" },
+  "params": { "exit_price": "close" }
 }
 ```
 
@@ -539,7 +536,7 @@ OpenSpec change: **`state-driven-exit-management-v1`**
 | Phase | Содержание | Критерий готовности |
 |-------|------------|---------------------|
 | **1 — Managed Runtime Core** | `mode: managed`, bar-by-bar loop, `ActiveManagementSnapshot`, `ExitCandidate`, `ExitArbitrator`, uniform events (все 6 типов) | Runtime проходит сделку bar-by-bar; все active layers существуют; **пустые management arrays = baseline** |
-| **2 — Component Pack v1** | `break_even_stop`, `lock_profit_stop` (или контракт); `take_profile_switch`; `phase_runtime_exit` | Каждый слой влияет на выход; unit tests per layer |
+| **2 — Component Pack v1** | `break_even_stop`, `lock_profit_stop` (working); `take_profile_switch`; `phase_runtime_exit` | Каждый слой влияет на выход; unit tests per layer |
 | **3 — Arbitration + output** | same-bar policy, `exit_layer` / `losing_candidates`, managed trade close | Несколько кандидатов на баре → стабильный победитель; объяснимый report |
 | **4 — Unified report/API/frontend** | generic per-trade + variant breakdowns по layer/component | Новый component виден без расширения schema |
 | **5 — Comparison tooling** | generic baseline vs managed, transition matrix | BE labels как производные |
@@ -620,15 +617,12 @@ OpenSpec change: **`state-driven-exit-management-v1`**
 {
   "rule_id": "exit_on_exhaustion",
   "component_id": "phase_runtime_exit",
-  "activate_when": { "phase_at_least": "runner" },
-  "trigger": {
-    "component_id": "exhaustion_pattern",
-    "params": { }
-  }
+  "activate_when": { "phase_at_least": "exhaustion" },
+  "params": { "exit_price": "close" }
 }
 ```
 
-Закрытие через `runtime_exits` участвует в exit arbitration с приоритетом ниже managed stop (v1 policy).
+v2: без `trigger` / `exhaustion_pattern` — pattern catalog future. Закрытие через `runtime_exits` участвует в exit arbitration с приоритетом ниже managed stop (v1 policy).
 
 ---
 
