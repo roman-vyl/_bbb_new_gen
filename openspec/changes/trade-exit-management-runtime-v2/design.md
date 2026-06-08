@@ -15,7 +15,7 @@
 - Arbitrate exits between `exit_policy` and `exit_management` with explicit v1 same-bar policy.
 - Emit generic managed report/API fields usable by any future component without schema churn.
 - Deliver generic baseline vs managed comparison tooling.
-- Deliver Workbench Composer authoring and visualization for v2 `exit_management` (Slice 10).
+- Deliver Workbench Composer authoring for v2 `exit_management` (Slice 10 v1).
 
 **Non-Goals:**
 
@@ -25,7 +25,7 @@
 - `data_engine/` changes; vectorbt callback redesign; legacy BE combiner runtime path; adapter-based execution combiner redesign; legacy JSON migration.
 - OHLC intrabar path modeling v2; partial take / scale-out.
 - Browser-side exit arbitration or PnL recomputation.
-- Causal claims in baseline-vs-managed UI copy.
+- Slice 10 v1: baseline-vs-managed comparison UX, compare runner from Composer, chart overlays (see Future work).
 
 ## Runtime modes and migration from v1 foundation
 
@@ -202,12 +202,12 @@ Implementation follows **vertical slices** with mandatory **STOP / review** gate
 | 7 | API / BFF read support |
 | 8 | Frontend read-support |
 | 9 | Comparison tooling |
-| 10 | Composer / managed exit management UX |
+| 10 | Composer authoring v1 (managed exit_management) |
 | 11 | Final smoke / archive readiness |
 
 **Principle:** build the **full pipe** (all layers + uniform events/report) with **minimal components** per layer — not all trading hypotheses at once.
 
-**Layer order:** prove backend end-to-end on JSON report (Slice 5–6) **before** `research_api` (Slice 7) and frontend read-support (Slice 8); comparison tooling (Slice 9) **before** Composer/visual UX (Slice 10); **archive readiness (Slice 11) only after Slice 10** — same discipline as v1.
+**Layer order:** prove backend end-to-end on JSON report (Slice 5–6) **before** `research_api` (Slice 7) and frontend read-support (Slice 8); comparison tooling (Slice 9) **before** Composer authoring (Slice 10); **archive readiness (Slice 11) only after Slice 10** — same discipline as v1.
 
 ## Managed exit provider core
 
@@ -344,9 +344,13 @@ Generic baseline vs managed analysis — not BE-specific schema:
 
 `be_helped` / `be_hurt` are **derived views** over `stop_management_breakdown` for `break_even_stop`, not separate report fields.
 
-Comparison requires paired runs (baseline config vs managed config); tooling lives in research layer (script or report post-processor). Workbench UX for comparison is **Slice 10** — not a post-archive follow-up.
+Comparison requires paired runs (baseline config vs managed config); tooling lives in research layer (Slice 9 — `comparison.md`). Workbench comparison UX is **future work**, not Slice 10 v1.
 
-## Composer and Workbench UX (Slice 10)
+## Composer authoring v1 (Slice 10)
+
+### Goal
+
+Users configure managed exit rules through Composer and save a correct v2 strategy spec. Composer-generated configs MUST run on the existing backend path without runtime changes.
 
 ### Authoring contract
 
@@ -365,23 +369,24 @@ Legacy keys (`always_on`, `profiles`, `trigger_r`, `offset_r`) MUST NOT appear i
 
 Editors follow existing Composer patterns: catalog-driven component pickers, validate-on-save, schema-aligned params forms. `exit_policy` section stays separate and unchanged.
 
-### Baseline-vs-managed UX
+### Save / load round-trip
 
-| Concern | Design |
-|---------|--------|
-| Single managed run | Show `baseline_vs_managed_summary` placeholder state — **“comparison not generated”** with link/hint to paired workflow (`comparison.md`). |
-| Paired compare | User runs baseline (`diagnostic_only` or managed-empty) + managed run, then compare step (`compare_baseline_managed` CLI or thin BFF wrapper). |
-| Populated summary | Display category counts, paired/unpaired trade counts, transition matrix; drill-down lists optional. |
-| Labeling | Categories are **paired diagnostic diffs** — e.g. “managed stop closed higher PnL than baseline pair” — not “managed stop caused improvement.” |
-| Derived BE labels | `be_helped`/`be_hurt` as UI filters over `break_even_stop` entries — no new report fields. |
+- Load saved managed config into Composer without losing `phase_rules`, `stop_management`, `take_management`, or `runtime_exits`.
+- Serialize back to the same v2 shape; reference fixture: `exit_management_managed_smoke.json`.
+- Non-managed configs (diagnostic_only, legacy-absent exit_management) continue to work unchanged.
 
-Full one-click compare in Workbench is preferred but MAY be staged; minimum bar is honest empty state + populated read view + documented manual compare path.
+### Read UI (unchanged)
 
-### Chart visualization
+Slice 8 report panels, managed breakdowns, and event markers remain as-is. Slice 10 v1 does **not** require new comparison UI or chart overlays.
 
-- Managed event markers (Slice 8) — refine in Slice 10.
-- **Active managed stop line overlay** — in scope: render from report/trace read fields; no frontend trading logic.
-- Phase band visualization (protected/runner/exhaustion) — optional/staged within Slice 10.
+### Future work (UX testing debt — not Slice 10 v1)
+
+| Topic | Notes |
+|-------|--------|
+| Baseline-vs-managed UX | Paired/unpaired counts, compare trigger, automatic baseline generation — revisit during Composer testing; CLI (`compare_baseline_managed`) stays Slice 9 |
+| Comparison wording | Any future UI MUST describe paired-run diagnostic diff, not causal truth (saved/hurt) |
+| Active managed stop line overlay | Deferred |
+| Phase / runner / exhaustion bands | Richer chart visualization deferred |
 
 ## Out of scope / future phases
 
@@ -393,7 +398,7 @@ Per `docs/research/21_state_driven_exit_management_v1.md`:
 | 7 | Runner management pack (ADX/DI, EMA trail, exhaustion) | Future change |
 | — | OHLC intrabar priority v2, partial take | Future change |
 
-Composer managed authoring moves from research phase 8 into **this change, Slice 10**.
+Composer managed **authoring** moves from research phase 8 into **this change, Slice 10 v1**. Comparison UX and chart overlays remain future work.
 
 ## Decisions
 
@@ -423,7 +428,7 @@ Composer managed authoring moves from research phase 8 into **this change, Slice
 
 ## Migration Plan
 
-1. Ship slices 1–11 behind feature-complete tests per checkpoint; Slice 4.5 before Slice 5; Slice 10 (Composer UX) before Slice 11 (archive readiness).
+1. Ship slices 1–11 behind feature-complete tests per checkpoint; Slice 4.5 before Slice 5; Slice 10 (Composer authoring v1) before Slice 11 (archive readiness).
 2. **Existing configs without legacy `exit_management` shape:** no change required (including `diagnostic_only`, absent `exit_management`, `managed` empty arrays).
 3. **Existing legacy BE configs** using `exit_management.always_on` / `profiles` / `trigger_r`: **breaking** — must be manually rewritten to `mode=managed` + `stop_management` / `take_management` / `runtime_exits`. No auto-migration.
 4. New managed configs: opt-in via `mode: managed` + management rules.

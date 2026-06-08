@@ -505,7 +505,7 @@ The runtime contract SHALL define explicit same-bar priority for behavior-changi
 - **THEN** the winner is selected using `same_bar_policy: "v1"`
 - **AND** the result is reflected in `exit_executed`
 
-### Requirement: Composer authors v2 exit_management wire shape only
+### Requirement: Composer authoring v1 for managed exit_management (Slice 10)
 The Workbench Composer SHALL provide authoring UI for `trade_management.exit_management` using the v2 contract:
 
 - `mode`: `diagnostic_only` or `managed`
@@ -516,6 +516,8 @@ The Workbench Composer SHALL provide authoring UI for `trade_management.exit_man
 
 Each management rule SHALL be authored with `rule_id`, `component_id`, `activate_when`, and `params` per the backend contract.
 
+The Composer SHALL save and load managed configs without losing `phase_rules`, `stop_management`, `take_management`, or `runtime_exits` fields.
+
 The Composer SHALL NOT expose or serialize legacy exit_management shapes:
 
 - `exit_management.always_on` or `exit_management.profiles`
@@ -523,6 +525,10 @@ The Composer SHALL NOT expose or serialize legacy exit_management shapes:
 - Legacy `break_even_stop_rule` terminology or fields
 
 The `exit_policy` Composer section SHALL remain unchanged and separate from exit_management authoring.
+
+A Composer-generated managed config SHALL validate and run on the existing backend path without runtime or execution changes.
+
+**Out of scope for this requirement (future work):** Workbench baseline-vs-managed comparison UX, compare runner from Composer, active managed stop line overlay, richer phase/runner chart visualization. Slice 8 read-support (report panels, existing event markers) remains sufficient; Slice 10 does not add comparison UI or new chart overlays.
 
 #### Scenario: Composer saves managed break-even under stop_management
 - **GIVEN** a user authors breakeven protection in Composer with `mode: "managed"`
@@ -538,54 +544,24 @@ The `exit_policy` Composer section SHALL remain unchanged and separate from exit
 
 #### Scenario: Composer round-trips managed smoke fixture shape
 - **GIVEN** the managed smoke config structure (`exit_management_managed_smoke.json`)
-- **WHEN** an equivalent config is authored in Composer and serialized
+- **WHEN** an equivalent config is authored in Composer, saved, and loaded back
 - **THEN** validation succeeds
 - **AND** serialized `exit_management` contains `mode`, `phase_rules`, `stop_management`, `take_management`, and `runtime_exits` only
+- **AND** loaded draft preserves all management arrays without field loss
 
-### Requirement: Workbench shows honest baseline-vs-managed comparison state
-The Workbench SHALL surface `metrics.baseline_vs_managed_summary` from managed run reports without implying causal attribution.
+#### Scenario: Composer loads saved managed config without field loss
+- **GIVEN** a saved managed config with non-empty `phase_rules`, `stop_management`, `take_management`, and `runtime_exits`
+- **WHEN** the Composer loads that config into the draft editor
+- **THEN** all four arrays are present in Composer state
+- **AND** re-serialized draft matches the v2 wire shape
 
-When the summary is a placeholder or empty (single run, no paired compare), the UI SHALL show an explicit **comparison not generated** state and SHALL NOT present empty category lists as meaningful results.
+#### Scenario: Composer-generated managed config runs on backend
+- **GIVEN** a managed config authored and saved through Composer
+- **WHEN** the config is run through the existing research backtest path
+- **THEN** the run completes without validation or routing errors attributable to Composer serialization
 
-When the summary is populated after a paired compare step, the UI SHALL display:
-
-- paired and unpaired trade counts where available
-- category list sizes or summaries for `saved_by_managed_stop`, `hurt_by_managed_stop`, `take_disabled_then_won`, `take_disabled_then_lost`, `runtime_exit_helped`, `runtime_exit_hurt`
-- `exit_layer_transition_matrix` summary
-
-UI copy SHALL describe categories as **paired-run diagnostic diffs** — not proof that managed rules caused improvement or harm.
-
-Derived break-even labels (`be_helped` / `be_hurt`) MAY be shown as filters over `break_even_stop` comparison entries or breakdown views and SHALL NOT be added as new report schema fields.
-
-#### Scenario: Single managed run shows comparison not generated
-- **GIVEN** a managed run report with placeholder `baseline_vs_managed_summary` (empty category lists)
-- **WHEN** the Workbench renders trade management diagnostics
-- **THEN** the UI shows a comparison-not-generated state
-- **AND** does not label empty lists as zero saved/hurt outcomes
-
-#### Scenario: Compared artifact shows populated summary with disclaimer
-- **GIVEN** a managed run report after `compare_baseline_managed` populated `baseline_vs_managed_summary`
-- **WHEN** the Workbench renders comparison diagnostics
-- **THEN** category counts and transition matrix are visible
-- **AND** explanatory copy states that results are paired observational diffs, not causal proof
-
-### Requirement: Chart visualizes managed exit read data without trading logic
-The Workbench chart SHALL visualize managed exit management read data from reports and/or signal trace — without implementing exit arbitration or PnL logic in the browser.
-
-The chart SHALL support managed trade-management event markers for managed event types already exposed by the API.
-
-The chart SHALL support an **active managed stop line overlay** derived from read-only report or trace fields for the focused trade or visible window.
-
-Phase band visualization (protected, runner, exhaustion) MAY be staged as optional within Slice 10 but SHALL NOT require new backend execution semantics.
-
-#### Scenario: Managed smoke report renders event markers
-- **GIVEN** a managed run report with `trade_management_events` including `active_stop_updated`
-- **WHEN** the user views the chart for that run
-- **THEN** managed event markers render without error
-- **AND** no exit decision is computed client-side
-
-#### Scenario: Active stop line uses report read fields
-- **GIVEN** a focused trade with managed stop updates in the loaded report window
-- **WHEN** the chart overlay is enabled
-- **THEN** the overlay reflects stop prices from API/report data
-- **AND** the overlay does not recompute managed stop rules in the browser
+#### Scenario: Non-managed configs still work in Composer
+- **GIVEN** a config with `mode: "diagnostic_only"` or without behavior-changing `exit_management`
+- **WHEN** the Composer loads, edits unrelated fields, and saves
+- **THEN** validation succeeds
+- **AND** `exit_management` shape remains valid for the selected mode
