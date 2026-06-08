@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { JsonObject } from "@/api/types";
 import { collectManagedRulesValidationErrors } from "@/features/composer/composerManagedExitManagement";
 import {
+  collectExitManagementProductValidationErrors,
   collectPhaseRulesValidationErrors,
   createBlankPhaseRule,
   defaultDiagnosticPhaseRules,
@@ -140,7 +141,25 @@ describe("phaseRulesEditor helpers", () => {
     expect(readPhaseRules(next)).toHaveLength(1);
   });
 
-  it("replaceLegacyExitManagementWithProductShape removes legacy rules from strategy draft", () => {
+  it("collectExitManagementProductValidationErrors blocks legacy always_on/profiles", () => {
+    const strategy = {
+      trade_management: {
+        exit_management: {
+          always_on: { rules: [{ component_id: "break_even_stop" }] },
+          profiles: {
+            aligned: { rules: [] },
+            countertrend: { rules: [] },
+            neutral: { rules: [] },
+          },
+        },
+      },
+    };
+    const errors = collectExitManagementProductValidationErrors(strategy, PATH);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]?.message).toContain("unsupported legacy");
+  });
+
+  it("replaceLegacyExitManagementWithProductShape resets to blank v2 on explicit user action", () => {
     const strategy = {
       trade_management: {
         exit_management: {
@@ -156,9 +175,10 @@ describe("phaseRulesEditor helpers", () => {
     const next = replaceLegacyExitManagementWithProductShape(strategy);
     const em = (next.trade_management as JsonObject).exit_management as JsonObject;
     expect(em).toEqual(createBlankExitManagement());
+    expect(collectExitManagementProductValidationErrors(next, PATH)).toEqual([]);
   });
 
-  it("replaceLegacyExitManagementWithDefaultDiagnosticPhases installs preset", () => {
+  it("replaceLegacyExitManagementWithDefaultDiagnosticPhases resets to v2 preset on explicit user action", () => {
     const strategy = {
       trade_management: {
         exit_management: {
@@ -175,5 +195,6 @@ describe("phaseRulesEditor helpers", () => {
     const em = (next.trade_management as JsonObject).exit_management as JsonObject;
     expect(readPhaseRules(em)).toEqual(defaultDiagnosticPhaseRules());
     expect(em.always_on).toBeUndefined();
+    expect(collectExitManagementProductValidationErrors(next, PATH)).toEqual([]);
   });
 });

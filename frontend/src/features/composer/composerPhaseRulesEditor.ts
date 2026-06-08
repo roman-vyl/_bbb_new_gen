@@ -2,8 +2,10 @@ import type { JsonObject, ValidationErrorItem } from "@/api/types";
 
 import {
   EXIT_MANAGEMENT_PRODUCT_CONTRACT,
+  collectLegacyExitManagementUnsupportedErrors,
   createBlankExitManagement,
   createProductExitManagement,
+  exitManagementHasLegacyKeys,
   hasLegacyExitManagementRules,
   normalizeExitManagementV2,
 } from "@/features/composer/composerExitManagementProduct";
@@ -98,8 +100,8 @@ export function replaceLegacyExitManagementWithDefaultDiagnosticPhases(
   return writeExitManagementOnStrategy(strategy, createProductExitManagement(defaultDiagnosticPhaseRules()));
 }
 
-export function exitManagementDraftIsLegacyQuarantined(exitManagement: JsonObject): boolean {
-  return hasLegacyExitManagementRules(exitManagement);
+export function exitManagementDraftIsUnsupportedLegacy(exitManagement: JsonObject): boolean {
+  return exitManagementHasLegacyKeys(exitManagement);
 }
 
 export function writePhaseRules(exitManagement: JsonObject, rules: PhaseRuleDraft[]): JsonObject {
@@ -325,8 +327,9 @@ export function collectExitManagementProductValidationErrors(
   const tradeManagement = (strategy.trade_management as JsonObject | undefined) ?? {};
   const exitManagement = (tradeManagement.exit_management as JsonObject | undefined) ?? {};
 
-  if (hasLegacyExitManagementRules(exitManagement)) {
-    return [];
+  const legacyErrors = collectLegacyExitManagementUnsupportedErrors(exitManagement, pathPrefix);
+  if (legacyErrors.length > 0) {
+    return legacyErrors;
   }
 
   const hasProductAuthoring =

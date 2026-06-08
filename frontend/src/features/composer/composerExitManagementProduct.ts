@@ -1,4 +1,4 @@
-import type { JsonObject } from "@/api/types";
+import type { JsonObject, ValidationErrorItem } from "@/api/types";
 
 /** Legacy managed-combiner components — compatibility-only; not Composer authoring targets. */
 export const DEPRECATED_EXIT_MANAGEMENT_AUTHORING_IDS = ["break_even_stop"] as const;
@@ -84,6 +84,24 @@ export function countLegacyExitManagementRules(exitManagement: JsonObject): numb
 
 export function hasLegacyExitManagementRules(exitManagement: JsonObject): boolean {
   return countLegacyExitManagementRules(exitManagement) > 0;
+}
+
+export const LEGACY_EXIT_MANAGEMENT_UNSUPPORTED_MESSAGE =
+  "exit_management uses unsupported legacy always_on/profiles shape. Reset exit_management to v2 (mode, phase_rules, stop_management, take_management, runtime_exits) before save.";
+
+export function collectLegacyExitManagementUnsupportedErrors(
+  exitManagement: JsonObject,
+  pathPrefix: string,
+): ValidationErrorItem[] {
+  if (!exitManagementHasLegacyKeys(exitManagement)) {
+    return [];
+  }
+  return [
+    {
+      path: `${pathPrefix}.trade_management.exit_management`,
+      message: LEGACY_EXIT_MANAGEMENT_UNSUPPORTED_MESSAGE,
+    },
+  ];
 }
 
 export function summarizeExitManagementProduct(exitManagement: JsonObject): {

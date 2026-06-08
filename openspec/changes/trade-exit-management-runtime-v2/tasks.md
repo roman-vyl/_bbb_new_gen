@@ -484,6 +484,13 @@ Each rule row: `rule_id`, `component_id`, `activate_when`, `params` per Slice 1 
 - Legacy `break_even_stop_rule` authoring or R-trigger terminology
 - Any UI path that reintroduces removed registry/catalog legacy BE surface
 
+**Legacy Composer draft policy (normative):**
+
+- Composer does **not** support old configs with legacy `exit_management.always_on` / `profiles`.
+- No migration, no preservation, no legacy editing UI.
+- Loaded legacy drafts: unsupported — save blocked with validation error; user must explicitly **Reset exit_management to v2**.
+- Reports / run artifacts remain readable independently (Workbench read path unchanged).
+
 **Out of scope (Slice 10 v1 — future work / UX testing debt):**
 
 - Full baseline-vs-managed comparison UX (paired/unpaired counts, category panels, transition matrix UI).

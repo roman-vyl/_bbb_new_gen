@@ -1,15 +1,14 @@
 import type { JsonObject, ValidationErrorItem } from "@/api/types";
 import {
+  LEGACY_EXIT_MANAGEMENT_UNSUPPORTED_MESSAGE,
   createBlankExitManagement,
-  createProductExitManagement,
-  hasLegacyExitManagementRules,
+  exitManagementHasLegacyKeys,
   summarizeExitManagementProduct,
 } from "@/features/composer/composerExitManagementProduct";
 import {
   EXIT_MANAGEMENT_MODES,
   writeExitManagementMode,
 } from "@/features/composer/composerManagedExitManagement";
-import { defaultDiagnosticPhaseRules } from "@/features/composer/composerPhaseRulesEditor";
 import {
   ManagementRulesEditor,
   RUNTIME_EXIT_COMPONENT_IDS,
@@ -32,8 +31,8 @@ export function ExitManagementProductPanel({
   onChange,
 }: Props) {
   const summary = summarizeExitManagementProduct(exitManagement);
-  const hasLegacy = hasLegacyExitManagementRules(exitManagement);
-  const authoringEnabled = Boolean(onChange) && !hasLegacy;
+  const isUnsupportedLegacy = exitManagementHasLegacyKeys(exitManagement);
+  const authoringEnabled = Boolean(onChange) && !isUnsupportedLegacy;
   const isManaged = exitManagement.mode === "managed";
 
   return (
@@ -44,43 +43,33 @@ export function ExitManagementProductPanel({
       <p className="banner banner--info" role="status">
         Product contract v2: <code>mode</code>, <code>phase_rules</code>,{" "}
         <code>stop_management</code>, <code>take_management</code>, <code>runtime_exits</code>.
-        Legacy <code>always_on</code> / <code>profiles</code> management rules are deprecated —
-        Composer does not emit them for new configs.
+        Legacy <code>always_on</code> / <code>profiles</code> exit_management is not supported in
+        Composer.
       </p>
-      {hasLegacy && (
+      {isUnsupportedLegacy && (
         <div
-          className="composer-exit-management-legacy-quarantine"
-          data-testid="exit-management-legacy-quarantine"
+          className="composer-exit-management-unsupported-legacy"
+          data-testid="exit-management-unsupported-legacy"
         >
           <p className="banner banner--warn" role="status">
-            This instance still loads deprecated legacy management rules (
-            {summary.legacyRulesCount}). Phase-rules authoring is disabled while the legacy shape
-            remains in this draft. To edit diagnostic phase rules, explicitly replace the deprecated
-            rules below — this does not change saved reports or backend compatibility for old
-            artifacts.
+            This draft uses an unsupported legacy exit_management shape (
+            {summary.legacyRulesCount > 0
+              ? `${summary.legacyRulesCount} legacy rule(s)`
+              : "always_on/profiles keys"}
+            ). Composer cannot edit or save it. Saved reports and run artifacts remain readable
+            independently.
           </p>
-          <p className="composer-exit-management-legacy-quarantine__notice" role="note">
-            Explicit replacement removes legacy <code>always_on</code>, <code>profiles</code>, and{" "}
-            <code>break_even_stop</code> rules from this draft only. Save the config to persist the
-            new product contract.
+          <p className="composer-exit-management-unsupported-legacy__notice" role="note">
+            {LEGACY_EXIT_MANAGEMENT_UNSUPPORTED_MESSAGE}
           </p>
           {onChange ? (
-            <div className="composer-exit-management-legacy-quarantine__actions">
+            <div className="composer-exit-management-unsupported-legacy__actions">
               <button
                 type="button"
-                data-testid="replace-legacy-empty-product"
+                data-testid="reset-exit-management-v2"
                 onClick={() => onChange(createBlankExitManagement())}
               >
-                Remove legacy rules and use diagnostic-only contract
-              </button>
-              <button
-                type="button"
-                data-testid="replace-legacy-default-phases"
-                onClick={() =>
-                  onChange(createProductExitManagement(defaultDiagnosticPhaseRules()))
-                }
-              >
-                Replace with default diagnostic phases
+                Reset exit_management to v2
               </button>
             </div>
           ) : null}
@@ -90,7 +79,7 @@ export function ExitManagementProductPanel({
         <div>
           <dt>mode</dt>
           <dd>
-            <code>{summary.mode}</code>
+            <code>{isUnsupportedLegacy ? "unsupported legacy" : summary.mode}</code>
           </dd>
         </div>
         <div>
@@ -109,12 +98,6 @@ export function ExitManagementProductPanel({
           <dt>runtime_exits</dt>
           <dd>{summary.runtimeExitsCount}</dd>
         </div>
-        {hasLegacy && (
-          <div>
-            <dt>legacy rules</dt>
-            <dd>{summary.legacyRulesCount} (deprecated)</dd>
-          </div>
-        )}
       </dl>
 
       {authoringEnabled ? (

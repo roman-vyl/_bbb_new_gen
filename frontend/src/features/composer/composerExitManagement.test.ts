@@ -12,6 +12,7 @@ import {
   EXIT_MANAGEMENT_PRODUCT_CONTRACT,
   countLegacyExitManagementRules,
   createBlankExitManagement,
+  exitManagementHasLegacyKeys,
 } from "@/features/composer/composerExitManagementProduct";
 
 const CATALOG_WITH_LEGACY_BE: ComponentCatalog = {
@@ -53,6 +54,15 @@ describe("composer exit_management product contract", () => {
   it("componentsForRole hides deprecated break_even_stop from authoring options", () => {
     expect(componentsForRole(CATALOG_WITH_LEGACY_BE, "exit_management")).toEqual([]);
     expect(componentsForRole(CATALOG_WITH_LEGACY_BE, "exits")).toHaveLength(1);
+  });
+
+  it("exitManagementHasLegacyKeys is true when always_on key is present even without rules", () => {
+    expect(
+      exitManagementHasLegacyKeys({
+        always_on: { rules: [] },
+        profiles: { aligned: { rules: [] }, countertrend: { rules: [] }, neutral: { rules: [] } },
+      }),
+    ).toBe(true);
   });
 
   it("counts legacy rules on loaded deprecated configs", () => {
