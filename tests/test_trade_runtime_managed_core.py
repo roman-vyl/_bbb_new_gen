@@ -48,10 +48,7 @@ def _ohlcv(periods: int = 120) -> pd.DataFrame:
 
 
 def _managed_empty_exit_management() -> ExitManagementSpec:
-    empty = empty_exit_management()
     return ExitManagementSpec(
-        always_on=empty.always_on,
-        profiles=empty.profiles,
         mode="managed",
         phase_rules=(),
         stop_management=(),
@@ -131,17 +128,8 @@ def test_managed_empty_arrays_emit_no_active_layer_events() -> None:
 
 
 @pytest.mark.optional_vectorbt
-def test_managed_empty_arrays_parity_vs_baseline(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_managed_empty_arrays_parity_vs_baseline() -> None:
     pytest.importorskip("vectorbt")
-
-    def _legacy_loop_must_not_run(*args: object, **kwargs: object) -> None:
-        raise AssertionError(
-            "legacy break_even run_managed_bar_loop must not run for managed v2 empty arrays"
-        )
-
-    monkeypatch.setattr(backtest, "run_managed_bar_loop", _legacy_loop_must_not_run)
 
     baseline = make_ema_pullback_strategy_spec()
     managed = replace(

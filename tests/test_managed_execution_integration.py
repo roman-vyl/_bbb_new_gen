@@ -95,10 +95,7 @@ def _minimal_exit_outputs(
 
 def _managed_be_spec() -> object:
     base = make_ema_pullback_strategy_spec(enabled_sides=("long",))
-    empty = empty_exit_management()
     exit_management = ExitManagementSpec(
-        always_on=empty.always_on,
-        profiles=empty.profiles,
         mode="managed",
         phase_rules=(
             PhaseRuleSpec(
@@ -126,10 +123,7 @@ def _managed_be_spec() -> object:
 
 def _managed_empty_spec() -> object:
     base = make_ema_pullback_strategy_spec(enabled_sides=("long",))
-    empty = empty_exit_management()
     exit_management = ExitManagementSpec(
-        always_on=empty.always_on,
-        profiles=empty.profiles,
         mode="managed",
         phase_rules=(
             PhaseRuleSpec(
@@ -185,8 +179,8 @@ def test_managed_be_closes_on_bar_n_plus_1_not_phase_bar() -> None:
         e for e in result.events if e.event_type == "active_stop_updated"
     ]
     assert len(stop_events) == 1
-    assert stop_events[0].bar_index == 0
-    assert stop_events[0].metadata.get("effective_from_bar") == 1
+    assert stop_events[0].bar_index == 1
+    assert stop_events[0].metadata.get("effective_from_bar") == 2
 
 
 def test_managed_be_differs_from_empty_managed_on_fixture() -> None:
@@ -374,7 +368,7 @@ def test_no_same_bar_reentry_after_close() -> None:
     closed = [item for item in result.closed if not item.get("open")]
     assert len(closed) == 1
     assert closed[0]["entry_idx"] == 0
-    assert closed[0]["exit_idx"] == 1
+    assert closed[0]["exit_idx"] == 2
 
 
 @pytest.mark.optional_vectorbt

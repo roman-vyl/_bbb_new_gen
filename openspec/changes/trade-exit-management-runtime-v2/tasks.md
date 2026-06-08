@@ -230,37 +230,37 @@ Research master-plan reference: `docs/research/21_state_driven_exit_management_v
 
 **Acceptance criteria:**
 
-- [ ] **Presence-based legacy rejection:** any config with `exit_management.always_on` or `exit_management.profiles` key fails validation (including `"rules": []`); documented error string.
-- [ ] **No production authoring surface for legacy exit_management:**
+- [x] **Presence-based legacy rejection:** any config with `exit_management.always_on` or `exit_management.profiles` key fails validation (including `"rules": []`); documented error string.
+- [x] **No production authoring surface for legacy exit_management:**
   - no `break_even_stop_rule(trigger_r, offset_r)` builder;
   - no `exit_management(always_on=…, profiles=…)` legacy BE builder;
   - no registry/catalog entry describing trigger_r-based `exit_management`;
   - no public `ExitManagementSpec.always_on` / `profiles` / `ExitManagementRuleSpec(trigger_r)` runtime contract in supported API.
   - `exit_policy.always_on` / `profiles` **unchanged** — do not touch exit_policy authoring.
-- [ ] **No `run_managed_bar_loop` production call-sites:** grep-clean for imports/calls from `backtest.py`, `signal_trace.py`, reports, diagnostics, API/BFF.
-- [ ] `mode=managed` + non-empty management rules routes only to `run_managed_execution_loop`.
-- [ ] No `has_exit_management_rules` execution-path routing in `backtest.py`; remove `_run_managed_strategy_spec`.
-- [ ] `diagnostic_only` / managed empty arrays / absent exit_management preserve default vectorbt path and baseline parity.
-- [ ] Entry bar does not call provider end-of-bar update; first update on N+1.
-- [ ] Delayed activation tests still pass (snapshot N → active N+1).
-- [ ] No `execution_combiner`, `execution_adapters`, or adapter-based combiner in codebase.
-- [ ] Existing Slice 4 tests (`test_exit_arbitration`, `test_managed_exit_provider`, `test_managed_execution_integration`) pass.
+- [x] **No `run_managed_bar_loop` production call-sites:** grep-clean for imports/calls from `backtest.py`, `signal_trace.py`, reports, diagnostics, API/BFF.
+- [x] `mode=managed` + non-empty management rules routes only to `run_managed_execution_loop`.
+- [x] No `has_exit_management_rules` execution-path routing in `backtest.py`; remove `_run_managed_strategy_spec`.
+- [x] `diagnostic_only` / managed empty arrays / absent exit_management preserve default vectorbt path and baseline parity.
+- [x] Entry bar does not call provider end-of-bar update; first update on N+1.
+- [x] Delayed activation tests still pass (snapshot N → active N+1).
+- [x] No `execution_combiner`, `execution_adapters`, or adapter-based combiner in codebase.
+- [x] Existing Slice 4 tests (`test_exit_arbitration`, `test_managed_exit_provider`, `test_managed_execution_integration`) pass.
 
 **Tests:**
 
-- [ ] 4.5.1 Presence-based legacy rejection — empty `always_on.rules: []` and non-empty legacy both fail (`tests/test_exit_management_contracts.py`).
-- [ ] 4.5.2 Routing matrix — v2 managed vs default path integration tests.
-- [ ] 4.5.3 Entry-bar no provider update — `tests/test_managed_execution_integration.py`.
-- [ ] 4.5.4 Legacy BE runtime tests removed or archived — must not import/call production legacy routing (`test_exit_management.py`, `test_exit_management_extended.py`).
-- [ ] 4.5.5 Static guards: no combiner/adapter modules; no `run_managed_bar_loop` in production modules; no legacy authoring builders in public API.
-- [ ] 4.5.6 Authoring/registry cleanup tests or static import guards.
+- [x] 4.5.1 Presence-based legacy rejection — empty `always_on.rules: []` and non-empty legacy both fail (`tests/test_exit_management_contracts.py`).
+- [x] 4.5.2 Routing matrix — v2 managed vs default path integration tests.
+- [x] 4.5.3 Entry-bar no provider update — `tests/test_managed_execution_integration.py`.
+- [x] 4.5.4 Legacy BE runtime tests removed or archived — must not import/call production legacy routing (`test_exit_management.py`, `test_exit_management_extended.py`).
+- [x] 4.5.5 Static guards: no combiner/adapter modules; no `run_managed_bar_loop` in production modules; no legacy authoring builders in public API.
+- [x] 4.5.6 Authoring/registry cleanup tests or static import guards.
 
-- [ ] 4.5.7 Implement presence-based validation rejection in `spec.py` / `instance_loader.py`.
-- [ ] 4.5.8 Remove legacy routing and `_run_managed_strategy_spec` from `backtest.py`.
-- [ ] 4.5.9 Remove `run_managed_bar_loop` from `signal_trace.py` and all other production call-sites; delete or archive loop module.
-- [ ] 4.5.10 Remove legacy authoring surface (`component_builders.py`, `components/registry.py`, legacy `ExitManagement*` spec types).
-- [ ] 4.5.11 Fix entry-bar lookahead in `run_managed_execution_loop`.
-- [ ] 4.5.12 Sync `docs/research/21_state_driven_exit_management_v1.md` §17–18.
+- [x] 4.5.7 Implement presence-based validation rejection in `spec.py` / `instance_loader.py`.
+- [x] 4.5.8 Remove legacy routing and `_run_managed_strategy_spec` from `backtest.py`.
+- [x] 4.5.9 Remove `run_managed_bar_loop` from `signal_trace.py` and all other production call-sites; delete or archive loop module.
+- [x] 4.5.10 Remove legacy authoring surface (`component_builders.py`, `components/registry.py`, legacy `ExitManagement*` spec types).
+- [x] 4.5.11 Fix entry-bar lookahead in `run_managed_execution_loop`.
+- [x] 4.5.12 Sync `docs/research/21_state_driven_exit_management_v1.md` §17–18.
 
 ### STOP — Checkpoint 4.5: Single managed path review
 

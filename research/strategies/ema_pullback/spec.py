@@ -25,6 +25,11 @@ ActivateWhenPhase = Literal[
 ]
 ExitManagementMode = Literal["diagnostic_only", "managed"]
 
+LEGACY_EXIT_MANAGEMENT_SHAPE_ERROR = (
+    "Legacy exit_management shape is no longer supported; "
+    "use mode=managed with stop_management/take_management/runtime_exits."
+)
+
 
 @dataclass(frozen=True)
 class EmaSpec:
@@ -548,51 +553,6 @@ class ExitPolicySpec:
 
 
 @dataclass(frozen=True)
-class ExitManagementRuleSpec:
-    instance_id: str
-    component_id: str
-    trigger_r: float
-    offset_r: float = 0.0
-    apply_once: bool = True
-
-    def __post_init__(self) -> None:
-        if not self.instance_id.strip():
-            raise ValueError("exit_management instance_id must be non-empty")
-        if not self.component_id.strip():
-            raise ValueError("exit_management component_id must be non-empty")
-        if self.component_id != BREAK_EVEN_STOP_COMPONENT:
-            raise ValueError(
-                f"exit_management v1 supports only {BREAK_EVEN_STOP_COMPONENT!r}; "
-                f"got {self.component_id!r}"
-            )
-        if self.trigger_r <= 0:
-            raise ValueError("break_even_stop trigger_r must be > 0")
-        if self.offset_r < 0:
-            raise ValueError("break_even_stop offset_r must be >= 0")
-        if not self.apply_once:
-            raise ValueError("break_even_stop apply_once must be true in v1")
-
-
-@dataclass(frozen=True)
-class ExitManagementGroupSpec:
-    rules: tuple[ExitManagementRuleSpec, ...] = ()
-
-    def __post_init__(self) -> None:
-        be_count = sum(1 for r in self.rules if r.component_id == BREAK_EVEN_STOP_COMPONENT)
-        if be_count > 1:
-            raise ValueError(
-                "exit_management group allows at most one break_even_stop rule"
-            )
-
-
-@dataclass(frozen=True)
-class ExitManagementProfilesSpec:
-    aligned: ExitManagementGroupSpec
-    countertrend: ExitManagementGroupSpec
-    neutral: ExitManagementGroupSpec
-
-
-@dataclass(frozen=True)
 class PhaseRuleAtrSpec:
     timeframe: str = "base"
     period: int = 14
@@ -767,26 +727,12 @@ class RuntimeExitRuleSpec:
             raise ValueError(f"runtime_exits component_id must be one of: {allowed}")
 
 
-def _empty_exit_management_profiles() -> ExitManagementProfilesSpec:
-    empty = ExitManagementGroupSpec(rules=())
-    return ExitManagementProfilesSpec(
-        aligned=empty,
-        countertrend=empty,
-        neutral=empty,
-    )
-
-
 def empty_exit_management() -> "ExitManagementSpec":
-    return ExitManagementSpec(
-        always_on=ExitManagementGroupSpec(rules=()),
-        profiles=_empty_exit_management_profiles(),
-    )
+    return ExitManagementSpec()
 
 
 @dataclass(frozen=True)
 class ExitManagementSpec:
-    always_on: ExitManagementGroupSpec
-    profiles: ExitManagementProfilesSpec
     mode: ExitManagementMode | None = None
     phase_rules: tuple[PhaseRuleSpec, ...] = ()
     stop_management: tuple[StopManagementRuleSpec, ...] = ()
@@ -794,36 +740,11 @@ class ExitManagementSpec:
     runtime_exits: tuple[RuntimeExitRuleSpec, ...] = ()
 
     def __post_init__(self) -> None:
-        scopes: list[tuple[str, tuple[ExitManagementRuleSpec, ...]]] = [
-            ("trade_management.exit_management.always_on.rules", self.always_on.rules),
-            (
-                "trade_management.exit_management.profiles.aligned.rules",
-                self.profiles.aligned.rules,
-            ),
-            (
-                "trade_management.exit_management.profiles.countertrend.rules",
-                self.profiles.countertrend.rules,
-            ),
-            (
-                "trade_management.exit_management.profiles.neutral.rules",
-                self.profiles.neutral.rules,
-            ),
-        ]
-        seen: set[str] = set()
-        for scope, rules in scopes:
-            for rule in rules:
-                if rule.instance_id in seen:
-                    raise ValueError(
-                        "trade_management.exit_management instance_id must be globally unique: "
-                        f"{rule.instance_id!r}"
-                    )
-                seen.add(rule.instance_id)
         if self.mode is not None and self.mode not in EXIT_MANAGEMENT_MODES:
             allowed = ", ".join(repr(item) for item in EXIT_MANAGEMENT_MODES)
             raise ValueError(
                 f"trade_management.exit_management.mode must be one of: {allowed}"
             )
-        has_legacy_rules = any(rules for _, rules in scopes)
         has_management_rules = bool(
             self.stop_management or self.take_management or self.runtime_exits
         )
@@ -833,11 +754,6 @@ class ExitManagementSpec:
                 "mode='diagnostic_only' or mode='managed'"
             )
         if self.mode == "diagnostic_only":
-            if has_legacy_rules:
-                raise ValueError(
-                    "trade_management.exit_management.mode='diagnostic_only' cannot include "
-                    "legacy always_on/profiles management rules"
-                )
             if self.stop_management:
                 raise ValueError(
                     "trade_management.exit_management.stop_management is not allowed in "
@@ -853,13 +769,7 @@ class ExitManagementSpec:
                     "trade_management.exit_management.runtime_exits is not allowed in "
                     "diagnostic-only mode"
                 )
-        elif self.mode == "managed":
-            if has_legacy_rules:
-                raise ValueError(
-                    "trade_management.exit_management.mode='managed' cannot include "
-                    "legacy always_on/profiles management rules"
-                )
-        elif has_management_rules:
+        elif self.mode != "managed" and has_management_rules:
             raise ValueError(
                 "trade_management.exit_management stop_management, take_management, and "
                 "runtime_exits require mode='managed'"
@@ -895,63 +805,6 @@ class ExitManagementSpec:
             seen_management_rule_ids.add(rule.rule_id)
 
 
-def _effective_exit_group_has_stop_loss(
-    exit_policy: ExitPolicySpec,
-    profile: str,
-) -> bool:
-    """True when always_on ∪ profile bucket has at least one stop_loss rule."""
-
-    groups = [exit_policy.always_on.exits]
-    if profile == "aligned":
-        groups.append(exit_policy.profiles.aligned.exits)
-    elif profile == "countertrend":
-        groups.append(exit_policy.profiles.countertrend.exits)
-    elif profile == "neutral":
-        groups.append(exit_policy.profiles.neutral.exits)
-    for exits in groups:
-        if any(r.exit_kind == "stop_loss" for r in exits):
-            return True
-    return False
-
-
-def _validate_exit_management_requires_initial_stop(
-    exit_policy: ExitPolicySpec,
-    exit_management: ExitManagementSpec,
-) -> None:
-    has_any_be = any(
-        r.component_id == BREAK_EVEN_STOP_COMPONENT
-        for rules in (
-            exit_management.always_on.rules,
-            exit_management.profiles.aligned.rules,
-            exit_management.profiles.countertrend.rules,
-            exit_management.profiles.neutral.rules,
-        )
-        for r in rules
-    )
-    if not has_any_be:
-        return
-    profile_checks: list[tuple[str, tuple[ExitManagementRuleSpec, ...]]] = [
-        ("always_on", exit_management.always_on.rules),
-        ("aligned", exit_management.profiles.aligned.rules),
-        ("countertrend", exit_management.profiles.countertrend.rules),
-        ("neutral", exit_management.profiles.neutral.rules),
-    ]
-    for bucket, rules in profile_checks:
-        if not any(r.component_id == BREAK_EVEN_STOP_COMPONENT for r in rules):
-            continue
-        if bucket == "always_on":
-            if not any(r.exit_kind == "stop_loss" for r in exit_policy.always_on.exits):
-                raise ValueError(
-                    "break_even_stop in exit_management.always_on requires stop_loss in "
-                    "exit_policy.always_on"
-                )
-        elif not _effective_exit_group_has_stop_loss(exit_policy, bucket):
-            raise ValueError(
-                f"break_even_stop in exit_management.profiles.{bucket} requires stop_loss in "
-                f"exit_policy always_on or profiles.{bucket}"
-            )
-
-
 @dataclass(frozen=True)
 class TradeManagementSpec:
     exit_policy: ExitPolicySpec
@@ -972,23 +825,6 @@ class TradeManagementSpec:
                         f"{rule.instance_id!r}"
                     )
                 exit_ids.add(rule.instance_id)
-        for rules in (
-            self.exit_management.always_on.rules,
-            self.exit_management.profiles.aligned.rules,
-            self.exit_management.profiles.countertrend.rules,
-            self.exit_management.profiles.neutral.rules,
-        ):
-            for rule in rules:
-                if rule.instance_id in exit_ids:
-                    raise ValueError(
-                        "instance_id must be unique across exit_policy and exit_management: "
-                        f"{rule.instance_id!r}"
-                    )
-                exit_ids.add(rule.instance_id)
-        _validate_exit_management_requires_initial_stop(
-            self.exit_policy,
-            self.exit_management,
-        )
 
 
 @dataclass(frozen=True)
@@ -1088,19 +924,6 @@ def strategy_spec_to_dict(spec: EmaPullbackStrategySpec) -> dict[str, Any]:
             _normalize_context_consumption_wire(exit_policy.get("context_consumption"))
         exit_management = trade_management.get("exit_management")
         if isinstance(exit_management, dict):
-
-            def _rules_to_list(group: Any) -> None:
-                if not isinstance(group, dict):
-                    return
-                rules = group.get("rules")
-                if isinstance(rules, tuple):
-                    group["rules"] = list(rules)
-
-            _rules_to_list(exit_management.get("always_on"))
-            profiles = exit_management.get("profiles")
-            if isinstance(profiles, dict):
-                for bucket in ("aligned", "countertrend", "neutral"):
-                    _rules_to_list(profiles.get(bucket))
             if exit_management.get("mode") is None:
                 exit_management.pop("mode", None)
             for key in ("phase_rules", "stop_management", "take_management", "runtime_exits"):

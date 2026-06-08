@@ -169,6 +169,7 @@ def run_managed_execution_loop(
         c = float(close.iloc[bar_idx])
         time_ms = _index_to_time_ms(index, bar_idx)
         position_was_open_at_bar_start = open_pos is not None
+        opened_on_this_bar = False
 
         if open_pos is not None:
             inherited = open_pos.inherited_snapshot
@@ -254,6 +255,7 @@ def run_managed_execution_loop(
                     runtime=runtime,
                     inherited_snapshot=empty_active_management_snapshot(),
                 )
+                opened_on_this_bar = True
             elif open_pos is None and bool(short_entries.iloc[bar_idx]) and spec.trade_sides.includes("short"):
                 prof = profile_at_bar(exit_outputs, bar_idx, "short")
                 runtime = _initial_state(
@@ -276,8 +278,9 @@ def run_managed_execution_loop(
                     runtime=runtime,
                     inherited_snapshot=empty_active_management_snapshot(),
                 )
+                opened_on_this_bar = True
 
-        if open_pos is not None:
+        if open_pos is not None and not opened_on_this_bar:
             update = provider.update_end_of_bar_snapshot(
                 open_pos.runtime,
                 inherited=open_pos.inherited_snapshot,

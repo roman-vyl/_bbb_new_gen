@@ -9,41 +9,17 @@ import pytest
 from research.experiments.config_loader import load_strategy_config
 from research.strategies.ema_pullback.spec import (
     BreakEvenStopParamsSpec,
+    LEGACY_EXIT_MANAGEMENT_SHAPE_ERROR,
     LockProfitStopParamsSpec,
     PhaseRuntimeExitParamsSpec,
     TakeProfileSwitchParamsSpec,
     strategy_spec_to_dict,
 )
-
-
-_BE_FIXTURE = (
-    Path(__file__).resolve().parents[1]
-    / "research"
-    / "experiments"
-    / "configs"
-    / "fixtures"
-    / "exit_management_be_profile_override.json"
-)
-_MANAGED_EMPTY_FIXTURE = (
-    Path(__file__).resolve().parents[1]
-    / "research"
-    / "experiments"
-    / "configs"
-    / "fixtures"
-    / "smoke_managed_empty_arrays_v2.json"
-)
-_MANAGED_PARSING_FIXTURE = (
-    Path(__file__).resolve().parents[1]
-    / "research"
-    / "experiments"
-    / "configs"
-    / "fixtures"
-    / "smoke_managed_parsing_v2.json"
-)
+from tests.test_external_config_loader import _bundle, _instance
 
 
 def _fixture_payload() -> dict[str, object]:
-    return json.loads(_BE_FIXTURE.read_text(encoding="utf-8"))
+    return _bundle([_instance()])
 
 
 def _strategy(payload: dict[str, object]) -> dict[str, object]:
@@ -130,10 +106,7 @@ def _managed_exit_management(**overrides: object) -> dict[str, object]:
 
 
 def test_old_config_without_exit_management_uses_empty_contract() -> None:
-    payload = _fixture_payload()
-    _trade_management(payload).pop("exit_management")
-
-    loaded = load_strategy_config(payload)
+    loaded = load_strategy_config(_fixture_payload())
     exit_management = loaded.specs[0].trade_management.exit_management
 
     assert exit_management.mode is None
@@ -141,17 +114,47 @@ def test_old_config_without_exit_management_uses_empty_contract() -> None:
     assert exit_management.stop_management == ()
     assert exit_management.take_management == ()
     assert exit_management.runtime_exits == ()
-    assert exit_management.always_on.rules == ()
 
 
-def test_archived_break_even_exit_management_shape_still_loads() -> None:
-    loaded = load_strategy_config(_fixture_payload())
-    exit_management = loaded.specs[0].trade_management.exit_management
+@pytest.mark.parametrize(
+    "legacy_block",
+    [
+        {"always_on": {"rules": []}},
+        {
+            "profiles": {
+                "aligned": {"rules": []},
+                "countertrend": {"rules": []},
+                "neutral": {"rules": []},
+            }
+        },
+        {
+            "always_on": {
+                "rules": [
+                    {
+                        "instance_id": "be_ao",
+                        "component_id": "break_even_stop",
+                        "trigger_r": 1.0,
+                    }
+                ]
+            },
+            "profiles": {
+                "aligned": {"rules": []},
+                "countertrend": {"rules": []},
+                "neutral": {"rules": []},
+            },
+        },
+    ],
+)
+def test_legacy_exit_management_shape_rejected_by_key_presence(
+    legacy_block: dict[str, object],
+) -> None:
+    payload = _fixture_payload()
+    exit_management = _managed_exit_management()
+    exit_management.update(legacy_block)
+    _trade_management(payload)["exit_management"] = exit_management
 
-    assert exit_management.mode is None
-    assert exit_management.phase_rules == ()
-    assert exit_management.profiles.aligned.rules[0].instance_id == "be_aligned_1r"
-    assert exit_management.always_on.rules[0].trigger_r == 2.0
+    with pytest.raises(ValueError, match=LEGACY_EXIT_MANAGEMENT_SHAPE_ERROR):
+        load_strategy_config(payload)
 
 
 def test_diagnostic_only_exit_management_config_loads() -> None:
@@ -169,8 +172,6 @@ def test_diagnostic_only_exit_management_config_loads() -> None:
     assert exit_management.phase_rules[0].condition.type == "mfe_atr"
     assert exit_management.phase_rules[0].condition.atr is not None
     assert exit_management.phase_rules[0].condition.atr.period == 14
-    assert exit_management.always_on.rules == ()
-    assert exit_management.profiles.aligned.rules == ()
 
 
 def test_diagnostic_only_rejects_non_empty_stop_management() -> None:
@@ -232,9 +233,7 @@ def test_diagnostic_only_rejects_phase_rules_that_move_backwards() -> None:
 
 
 def test_default_exit_management_wire_shape_omits_new_empty_fields() -> None:
-    payload = _fixture_payload()
-    _trade_management(payload).pop("exit_management")
-    loaded = load_strategy_config(payload)
+    loaded = load_strategy_config(_fixture_payload())
 
     serialized = strategy_spec_to_dict(loaded.specs[0])
     exit_management = serialized["trade_management"]["exit_management"]
@@ -261,7 +260,21 @@ def test_diagnostic_only_wire_shape_keeps_phase_rules() -> None:
 
 
 def test_managed_empty_arrays_fixture_loads() -> None:
-    loaded = load_strategy_config(json.loads(_MANAGED_EMPTY_FIXTURE.read_text(encoding="utf-8")))
+    payload = _fixture_payload()
+    _trade_management(payload)["exit_management"] = _managed_exit_management(
+        phase_rules=[
+            {
+                "rule_id": "to_proven_at_1atr",
+                "to_phase": "proven",
+                "condition": {
+                    "type": "mfe_atr",
+                    "threshold": 1.0,
+                    "atr": {"timeframe": "base", "period": 14},
+                },
+            }
+        ],
+    )
+    loaded = load_strategy_config(payload)
     exit_management = loaded.specs[0].trade_management.exit_management
 
     assert exit_management.mode == "managed"
@@ -269,11 +282,36 @@ def test_managed_empty_arrays_fixture_loads() -> None:
     assert exit_management.take_management == ()
     assert exit_management.runtime_exits == ()
     assert exit_management.phase_rules[0].rule_id == "to_proven_at_1atr"
-    assert exit_management.always_on.rules == ()
 
 
 def test_managed_component_pack_fixture_round_trips() -> None:
-    payload = json.loads(_MANAGED_PARSING_FIXTURE.read_text(encoding="utf-8"))
+    payload = _fixture_payload()
+    _trade_management(payload)["exit_management"] = _managed_exit_management(
+        phase_rules=[],
+        stop_management=[
+            {
+                "rule_id": "be_after_protected",
+                "component_id": "break_even_stop",
+                "activate_when": {"phase_at_least": "protected"},
+                "params": {"buffer_type": "atr", "buffer_atr": 0.1, "atr_period": 14},
+            },
+            {
+                "rule_id": "lock_profit_after_protected",
+                "component_id": "lock_profit_stop",
+                "activate_when": {"phase_at_least": "protected"},
+                "params": {"lock_atr": 0.5, "atr_period": 14},
+            },
+        ],
+        take_management=[
+            {
+                "rule_id": "tp_switch",
+                "component_id": "take_profile_switch",
+                "activate_when": {"phase_at_least": "runner"},
+                "params": {"action": "disable_initial_tp"},
+            }
+        ],
+        runtime_exits=[_managed_rule_payload("phase_runtime_exit")],
+    )
     loaded = load_strategy_config(payload)
     exit_management = loaded.specs[0].trade_management.exit_management
 
@@ -425,16 +463,9 @@ def test_managed_rejects_duplicate_rule_id_across_management_arrays() -> None:
         load_strategy_config(payload)
 
 
-def test_managed_rejects_legacy_shape_with_managed_mode() -> None:
+def test_legacy_shape_rejected_without_mode() -> None:
     payload = _fixture_payload()
-    exit_management = _managed_exit_management()
-    exit_management["always_on"] = {"rules": []}
-    exit_management["profiles"] = {
-        "aligned": {"rules": []},
-        "countertrend": {"rules": []},
-        "neutral": {"rules": []},
-    }
-    _trade_management(payload)["exit_management"] = exit_management
+    _trade_management(payload)["exit_management"] = {"always_on": {"rules": []}}
 
-    with pytest.raises(ValueError, match="mode='managed' cannot include legacy"):
+    with pytest.raises(ValueError, match=LEGACY_EXIT_MANAGEMENT_SHAPE_ERROR):
         load_strategy_config(payload)

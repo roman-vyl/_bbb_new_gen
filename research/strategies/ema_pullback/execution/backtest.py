@@ -27,10 +27,6 @@ from research.strategies.ema_pullback.execution.results import (
 )
 from research.strategies.ema_pullback.components.setup import ema_bounce_counter_setup_trace
 from research.strategies.ema_pullback.context.pipeline import build_context_bundle_for_spec
-from research.strategies.ema_pullback.execution.exit_management import (
-    has_exit_management_rules,
-    run_managed_bar_loop,
-)
 from research.strategies.ema_pullback.execution.exits import build_exit_outputs_from_spec
 from research.strategies.ema_pullback.execution.managed_execution_loop import (
     execution_result_to_managed_runtime_result,
@@ -39,7 +35,6 @@ from research.strategies.ema_pullback.execution.managed_execution_loop import (
 from research.strategies.ema_pullback.execution.managed_exit_provider import ManagedExitProvider
 from research.strategies.ema_pullback.execution.results import (
     build_execution_integrated_trade_records,
-    build_managed_trade_records,
 )
 from research.strategies.ema_pullback.execution.signals import build_signals_from_spec
 from research.strategies.ema_pullback.execution.trade_runtime import (
@@ -296,70 +291,6 @@ def _run_execution_integrated_strategy_spec(
     )
 
 
-def _run_managed_strategy_spec(
-    spec: EmaPullbackStrategySpec,
-    enriched: pd.DataFrame,
-    plan: Any,
-    *,
-    signals: Any,
-    exit_outputs: Any,
-    context_bundle: Any,
-    init_cash: float,
-    fees: float,
-    slippage: float,
-) -> VariantResult:
-    open_s, high_s, low_s = _open_high_low_for_vectorbt(enriched)
-    close = enriched["close"].astype(float)
-    entries_for_portfolio = signals.entries.fillna(False).astype(bool) & exit_outputs.stop_ready_long
-    short_entries_for_portfolio = (
-        signals.short_entries.fillna(False).astype(bool) & exit_outputs.stop_ready_short
-    )
-    closed, _traces = run_managed_bar_loop(
-        spec=spec,
-        close=close,
-        open_=open_s,
-        high=high_s,
-        low=low_s,
-        entries=entries_for_portfolio,
-        short_entries=short_entries_for_portfolio,
-        exit_outputs=exit_outputs,
-        component_map=build_exit_instance_component_map(spec),
-    )
-    trade_records = build_managed_trade_records(
-        closed,
-        index=close.index,
-        close=close,
-        high=high_s,
-        low=low_s,
-        open_=open_s,
-        attribution=exit_outputs.attribution,
-        fees_rate=float(fees),
-        base_timeframe=spec.base_timeframe,
-        profile_long=exit_outputs.profile_long,
-        profile_short=exit_outputs.profile_short,
-        context_state=exit_outputs.context_state,
-    )
-    sharpe, max_dd = _equity_metrics_from_trades(
-        trade_records, init_cash=float(init_cash), n_bars=len(close)
-    )
-    return VariantResult(
-        variant=spec.variant,
-        config_id=strategy_spec_config_id(spec),
-        symbol=spec.symbol.strip().upper(),
-        timeframe=spec.base_timeframe.strip(),
-        strategy_spec=strategy_spec_to_dict(spec),
-        metrics=build_trade_side_metrics(
-            trade_records,
-            float(init_cash),
-            sharpe=sharpe,
-            max_drawdown=max_dd,
-            fees_rate=float(fees),
-        ),
-        component_counters=list(signals.output_counters + exit_outputs.output_counters),
-        trade_records=trade_records,
-    )
-
-
 def run_strategy_spec(
     spec: EmaPullbackStrategySpec,
     ohlcv: Any,
@@ -391,19 +322,6 @@ def run_strategy_spec(
     # Future diagnostic_only trade-management must run after actual trade_records
     # are built from the chosen path. It must not feed phase state back into
     # vectorbt masks, stops, exits, or legacy BE managed decisions.
-    if has_exit_management_rules(spec):
-        return _run_managed_strategy_spec(
-            spec,
-            enriched,
-            plan,
-            signals=signals,
-            exit_outputs=exit_outputs,
-            context_bundle=context_bundle,
-            init_cash=init_cash,
-            fees=fees,
-            slippage=slippage,
-        )
-
     if _uses_managed_execution_integration(spec):
         return _run_execution_integrated_strategy_spec(
             spec,

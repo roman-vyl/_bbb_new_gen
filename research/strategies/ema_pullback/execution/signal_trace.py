@@ -44,10 +44,6 @@ from research.strategies.ema_pullback.context.evaluation import (
     SideAwareEvaluationContext,
     evaluate_context_consumption,
 )
-from research.strategies.ema_pullback.execution.exit_management import (
-    has_exit_management_rules,
-    run_managed_bar_loop,
-)
 from research.strategies.ema_pullback.execution.exits import build_exit_outputs_from_spec
 from research.strategies.ema_pullback.execution.signals import (
     build_signals_from_spec,
@@ -1139,34 +1135,6 @@ def build_component_events(
     return events
 
 
-def _attach_exit_management_internals(
-    side_trace: SideSignalTrace,
-    *,
-    traces: list[Any],
-    side: Literal["long", "short"],
-) -> SideSignalTrace:
-    from research.strategies.ema_pullback.execution.exit_management import (
-        management_traces_to_internals,
-    )
-
-    em = management_traces_to_internals(traces, side=side)
-    if not any(v is not None and v is not False for row in em.values() for v in row):
-        return side_trace
-    internals = dict(side_trace.internals)
-    internals["exit_management"] = em
-    return SideSignalTrace(
-        direction_ok=side_trace.direction_ok,
-        blockers_ok=side_trace.blockers_ok,
-        setup_ok=side_trace.setup_ok,
-        trigger_ok=side_trace.trigger_ok,
-        risk_ok=side_trace.risk_ok,
-        signal_entry=side_trace.signal_entry,
-        stop_ready=side_trace.stop_ready,
-        portfolio_entry=side_trace.portfolio_entry,
-        internals=internals,
-    )
-
-
 def build_signal_trace_from_spec(
     df: pd.DataFrame,
     spec: EmaPullbackStrategySpec,
@@ -1184,28 +1152,6 @@ def build_signal_trace_from_spec(
     exit_outputs = build_exit_outputs_from_spec(
         df, spec, plan, context_bundle=context_bundle
     )
-
-    management_traces: list[Any] | None = None
-    if has_exit_management_rules(spec):
-        signals = build_signals_from_spec(df, spec, plan, context_bundle=context_bundle)
-        close = df["close"].astype(float)
-        open_s = df["open"].astype(float)
-        high_s = df["high"].astype(float)
-        low_s = df["low"].astype(float)
-        entries = signals.entries.fillna(False).astype(bool) & exit_outputs.stop_ready_long
-        short_entries = (
-            signals.short_entries.fillna(False).astype(bool) & exit_outputs.stop_ready_short
-        )
-        _, management_traces = run_managed_bar_loop(
-            spec=spec,
-            close=close,
-            open_=open_s,
-            high=high_s,
-            low=low_s,
-            entries=entries,
-            short_entries=short_entries,
-            exit_outputs=exit_outputs,
-        )
 
     long_trace = _build_side_trace(
         df=df,
@@ -1229,14 +1175,6 @@ def build_signal_trace_from_spec(
         stop_ready=exit_outputs.stop_ready_short,
         context_bundle=context_bundle,
     )
-    if management_traces is not None:
-        long_trace = _attach_exit_management_internals(
-            long_trace, traces=management_traces, side="long"
-        )
-        short_trace = _attach_exit_management_internals(
-            short_trace, traces=management_traces, side="short"
-        )
-
     trigger_rule = spec.components.trigger
     overlay_ref = context_overlay_ref
     if overlay_ref is not None and overlay_ref not in spec.contexts_by_ref():
