@@ -1,5 +1,7 @@
 import type { JsonObject, ValidationErrorItem } from "@/api/types";
 
+import { normalizeRuntimeExitRule } from "@/features/composer/composerRuntimeExitAuthoring";
+
 /** Legacy managed-combiner components — compatibility-only; not Composer authoring targets. */
 export const DEPRECATED_EXIT_MANAGEMENT_AUTHORING_IDS = ["break_even_stop"] as const;
 
@@ -51,7 +53,9 @@ export function normalizeExitManagementV2(exitManagement: JsonObject): JsonObjec
       ? structuredClone(exitManagement.take_management as JsonObject[])
       : [],
     runtime_exits: Array.isArray(exitManagement.runtime_exits)
-      ? structuredClone(exitManagement.runtime_exits as JsonObject[])
+      ? (exitManagement.runtime_exits as JsonObject[]).map((rule) =>
+          normalizeRuntimeExitRule(rule),
+        )
       : [],
   };
 }

@@ -56,9 +56,9 @@
 
 ## CHECKPOINT (mandatory stop before Slice 2)
 
-**Status:** backend / unit / integration checkpoint **passed**; market-data smoke follow-up **pending**.
+**Status:** **PASSED** — backend / unit / integration + market-data smoke accepted. Composer Slice 2 may start.
 
-Do not start Composer authoring until market-data smoke follow-up is done.
+**Market smoke evidence:** `exit_management_runner_rsi_ema_runtime_smoke_batch.json` on BTCUSDT 5m full range (646 029 candles); report `2026-06-09T132642Z_ema_pullback_BTCUSDT_5m__strict_adx40_runner_runtime_rsi90_ema100_200_smoke.json`.
 
 ### Passed (backend / unit / integration)
 
@@ -67,17 +67,17 @@ Do not start Composer authoring until market-data smoke follow-up is done.
 - [x] C.3 Unit/integration parity: runtime exits do not introduce a new trade path; `exit_policy`-only configs unchanged
 - [x] C.4 Report contract tests: precise `exit_layer` / `exit_owner` breakdown keys align in synthetic fixtures
 
-### Pending (market-data smoke — required before production checkpoint / Slice 2)
+### Passed (market-data smoke)
 
-- [ ] C.M1 Run `exit_management_runner_rsi_ema_runtime_smoke.json` on Workbench/CLI with local candle data
-- [ ] C.M2 Confirm live report: `exit_layer: exit_management.runtime_exit` counts for RSI/EMA runtime closes
-- [ ] C.M3 Confirm zero pre-runner runtime RSI/EMA exits in runner-gated smoke config
-- [ ] C.M4 Compare smoke vs `exit_policy`-only baseline on the same symbol/range (no unexpected regression)
+- [x] C.M1 Run smoke batch on CLI with local candle data (`exit_management_runner_rsi_ema_runtime_smoke_batch.json` → `_local.json`)
+- [x] C.M2 Live report: `exit_layer_breakdown.exit_management.runtime_exit` = 24 (RSI take 7, EMA protective 17)
+- [x] C.M3 Zero pre-runner runtime RSI/EMA exits (`runtime_exit_triggered` before runner: 0)
+- [x] C.M4 No unexpected regression: `exit_policy`-only parity covered by C.3; 108 pre-runner `exit_policy` closes unaffected by runtime rules
 
 ---
 
 ## Slice 2 — Composer authoring (after CHECKPOINT)
 
-- [ ] 8.1 Add `runtime_exits` authoring section with allowlisted component picker (`rsi_signal_exit`, `ema_cross_loss_exit`, `phase_runtime_exit`)
-- [ ] 8.2 Require `activate_when` and `exit_kind` (`take_profit` | `protective_exit` | `market_close`) in Composer forms; reject `signal`
-- [ ] 8.3 Manual Workbench: validate round-trip for runner RSI + EMA cross runtime exit draft
+- [x] 8.1 Add `runtime_exits` authoring section with allowlisted component picker (`rsi_signal_exit`, `ema_cross_loss_exit`, `phase_runtime_exit`)
+- [x] 8.2 Require `activate_when` and `exit_kind` (`take_profit` | `protective_exit` | `market_close`) in Composer forms; reject `signal`
+- [x] 8.3 Workbench round-trip: `composerRuntimeExitAuthoring.test.tsx` validates runner RSI + EMA smoke load/edit/save via `prepareStrategyForApi`

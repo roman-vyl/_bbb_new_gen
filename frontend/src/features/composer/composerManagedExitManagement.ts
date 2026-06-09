@@ -1,6 +1,16 @@
 import type { JsonObject, ValidationErrorItem } from "@/api/types";
 
 import { normalizeExitManagementV2 } from "@/features/composer/composerExitManagementProduct";
+import {
+  RUNTIME_EXIT_COMPONENT_IDS,
+  RUNTIME_EXIT_KINDS,
+  RUNTIME_EXIT_ROLE,
+  defaultEmaCrossRuntimeExitParams,
+  defaultPhaseRuntimeExitParams,
+  defaultRsiRuntimeExitParams,
+  normalizeRuntimeExitRule,
+  normalizeRuntimeExitRules,
+} from "@/features/composer/composerRuntimeExitAuthoring";
 
 export const EXIT_MANAGEMENT_MODES = ["diagnostic_only", "managed"] as const;
 export type ExitManagementMode = (typeof EXIT_MANAGEMENT_MODES)[number];
@@ -15,9 +25,13 @@ export const ACTIVATE_WHEN_PHASES = [
 
 export const STOP_MANAGEMENT_COMPONENT_IDS = ["break_even_stop", "lock_profit_stop"] as const;
 export const TAKE_MANAGEMENT_COMPONENT_IDS = ["take_profile_switch"] as const;
-export const RUNTIME_EXIT_COMPONENT_IDS = ["phase_runtime_exit"] as const;
-
 export const TAKE_PROFILE_SWITCH_ACTIONS = ["keep_initial", "disable_initial_tp"] as const;
+
+export {
+  RUNTIME_EXIT_COMPONENT_IDS,
+  RUNTIME_EXIT_KINDS,
+  RUNTIME_EXIT_ROLE,
+} from "@/features/composer/composerRuntimeExitAuthoring";
 
 export type ManagementRuleLayer =
   | "stop_management"
@@ -39,9 +53,11 @@ export function writeManagementRules(
   layer: ManagementRuleLayer,
   rules: ManagementRuleDraft[],
 ): JsonObject {
+  const normalizedRules =
+    layer === "runtime_exits" ? normalizeRuntimeExitRules(rules) : rules;
   return normalizeExitManagementV2({
     ...exitManagement,
-    [layer]: rules,
+    [layer]: normalizedRules,
   });
 }
 
@@ -80,10 +96,6 @@ export function defaultTakeProfileSwitchParams(): JsonObject {
   return { action: "disable_initial_tp" };
 }
 
-export function defaultPhaseRuntimeExitParams(): JsonObject {
-  return { exit_price: "close" };
-}
-
 export function defaultActivateWhen(phase: string = "protected"): JsonObject {
   return { phase_at_least: phase };
 }
@@ -111,12 +123,21 @@ export function createBlankManagementRule(
       params: defaultTakeProfileSwitchParams(),
     };
   }
-  return {
-    rule_id: `phase_runtime_exit_${slot}`,
-    component_id: "phase_runtime_exit",
-    activate_when: defaultActivateWhen("exhaustion"),
-    params: defaultPhaseRuntimeExitParams(),
-  };
+  const runtimeComponentId = componentId ?? "rsi_signal_exit";
+  const params =
+    runtimeComponentId === "rsi_signal_exit"
+      ? defaultRsiRuntimeExitParams()
+      : runtimeComponentId === "ema_cross_loss_exit"
+        ? defaultEmaCrossRuntimeExitParams()
+        : defaultPhaseRuntimeExitParams();
+  const activatePhase =
+    runtimeComponentId === "phase_runtime_exit" ? "exhaustion" : "runner";
+  return normalizeRuntimeExitRule({
+    rule_id: `${runtimeComponentId}_${slot}`,
+    component_id: runtimeComponentId,
+    activate_when: defaultActivateWhen(activatePhase),
+    params,
+  });
 }
 
 export function updateManagementRule(
@@ -141,11 +162,38 @@ export function updateManagementRule(
       next.params = defaultLockProfitStopParams();
     } else if (componentId === "take_profile_switch") {
       next.params = defaultTakeProfileSwitchParams();
+    } else if (componentId === "rsi_signal_exit") {
+      next.params = defaultRsiRuntimeExitParams();
+      next.exit_kind = "take_profit";
+      next.activate_when = defaultActivateWhen("runner");
+    } else if (componentId === "ema_cross_loss_exit") {
+      next.params = defaultEmaCrossRuntimeExitParams();
+      next.exit_kind = "protective_exit";
+      next.activate_when = defaultActivateWhen("runner");
     } else if (componentId === "phase_runtime_exit") {
       next.params = defaultPhaseRuntimeExitParams();
+      next.exit_kind = "market_close";
+      next.activate_when = defaultActivateWhen("exhaustion");
     }
   }
+  if (layerFromRule(next) === "runtime_exits") {
+    return normalizeRuntimeExitRule(next);
+  }
   return next;
+}
+
+function layerFromRule(rule: ManagementRuleDraft): ManagementRuleLayer | null {
+  const componentId = typeof rule.component_id === "string" ? rule.component_id : "";
+  if (RUNTIME_EXIT_COMPONENT_IDS.includes(componentId as (typeof RUNTIME_EXIT_COMPONENT_IDS)[number])) {
+    return "runtime_exits";
+  }
+  if (STOP_MANAGEMENT_COMPONENT_IDS.includes(componentId as (typeof STOP_MANAGEMENT_COMPONENT_IDS)[number])) {
+    return "stop_management";
+  }
+  if (TAKE_MANAGEMENT_COMPONENT_IDS.includes(componentId as (typeof TAKE_MANAGEMENT_COMPONENT_IDS)[number])) {
+    return "take_management";
+  }
+  return null;
 }
 
 function isPositiveFinite(value: unknown): value is number {
@@ -250,12 +298,103 @@ export function collectManagedRulesValidationErrors(
           });
         }
       }
-      if (componentId === "phase_runtime_exit") {
-        if (params.exit_price !== "close") {
+      if (layer === "runtime_exits") {
+        const role = typeof rule.role === "string" ? rule.role : "";
+        if (role !== RUNTIME_EXIT_ROLE) {
           errors.push({
-            path: `${rulePath}.params.exit_price`,
-            message: 'exit_price must be "close"',
+            path: `${rulePath}.role`,
+            message: `role must be ${RUNTIME_EXIT_ROLE}`,
           });
+        }
+
+        const exitKind = typeof rule.exit_kind === "string" ? rule.exit_kind : "";
+        if (exitKind === "signal") {
+          errors.push({
+            path: `${rulePath}.exit_kind`,
+            message: `exit_kind "signal" is not allowed; use ${RUNTIME_EXIT_KINDS.join(", ")}`,
+          });
+        } else if (componentId === "phase_runtime_exit") {
+          if (exitKind !== "market_close") {
+            errors.push({
+              path: `${rulePath}.exit_kind`,
+              message: "phase_runtime_exit requires exit_kind market_close",
+            });
+          }
+        } else if (!RUNTIME_EXIT_KINDS.includes(exitKind as (typeof RUNTIME_EXIT_KINDS)[number])) {
+          errors.push({
+            path: `${rulePath}.exit_kind`,
+            message: `exit_kind is required and must be one of: ${RUNTIME_EXIT_KINDS.join(", ")}`,
+          });
+        }
+
+        if (componentId === "phase_runtime_exit") {
+          if (params.exit_price !== "close") {
+            errors.push({
+              path: `${rulePath}.params.exit_price`,
+              message: 'exit_price must be "close"',
+            });
+          }
+        }
+        if (componentId === "rsi_signal_exit") {
+          const rsi = params.rsi;
+          if (!rsi || typeof rsi !== "object" || Array.isArray(rsi)) {
+            errors.push({
+              path: `${rulePath}.params.rsi`,
+              message: "rsi_signal_exit requires params.rsi.timeframe and params.rsi.period",
+            });
+          } else {
+            const rsiObj = rsi as JsonObject;
+            if (!isPositiveFinite(rsiObj.period)) {
+              errors.push({
+                path: `${rulePath}.params.rsi.period`,
+                message: "rsi.period must be > 0",
+              });
+            }
+          }
+          if (params.confirm_bars !== undefined && !isPositiveFinite(params.confirm_bars)) {
+            errors.push({
+              path: `${rulePath}.params.confirm_bars`,
+              message: "confirm_bars must be >= 1",
+            });
+          }
+          for (const field of ["long_exit_above", "short_exit_below"] as const) {
+            const value = params[field];
+            if (value !== undefined && value !== null) {
+              if (typeof value !== "number" || !Number.isFinite(value) || value < 0 || value > 100) {
+                errors.push({
+                  path: `${rulePath}.params.${field}`,
+                  message: `${field} must be between 0 and 100`,
+                });
+              }
+            }
+          }
+        }
+        if (componentId === "ema_cross_loss_exit") {
+          for (const emaKey of ["fast_ema", "slow_ema"] as const) {
+            const ema = params[emaKey];
+            if (!ema || typeof ema !== "object" || Array.isArray(ema)) {
+              errors.push({
+                path: `${rulePath}.params.${emaKey}`,
+                message: `${emaKey} requires timeframe, source, and period`,
+              });
+            }
+          }
+          const fast = params.fast_ema as JsonObject | undefined;
+          const slow = params.slow_ema as JsonObject | undefined;
+          if (fast && slow && isPositiveFinite(fast.period) && isPositiveFinite(slow.period)) {
+            if (fast.period >= slow.period) {
+              errors.push({
+                path: `${rulePath}.params.slow_ema.period`,
+                message: "slow_ema.period must be greater than fast_ema.period",
+              });
+            }
+          }
+          if (params.confirm_bars !== undefined && !isPositiveFinite(params.confirm_bars)) {
+            errors.push({
+              path: `${rulePath}.params.confirm_bars`,
+              message: "confirm_bars must be >= 1",
+            });
+          }
         }
       }
     });

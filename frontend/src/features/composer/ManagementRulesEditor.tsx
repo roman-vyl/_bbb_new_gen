@@ -5,6 +5,8 @@ import type { JsonObject, ValidationErrorItem } from "@/api/types";
 import {
   ACTIVATE_WHEN_PHASES,
   RUNTIME_EXIT_COMPONENT_IDS,
+  RUNTIME_EXIT_KINDS,
+  RUNTIME_EXIT_ROLE,
   STOP_MANAGEMENT_COMPONENT_IDS,
   TAKE_MANAGEMENT_COMPONENT_IDS,
   TAKE_PROFILE_SWITCH_ACTIONS,
@@ -181,6 +183,164 @@ function ParamsEditor({
     );
   }
 
+  if (layer === "runtime_exits" && componentId === "rsi_signal_exit") {
+    const rsi = (params.rsi as JsonObject | undefined) ?? {};
+    return (
+      <>
+        <div className="composer-phase-rules__atr">
+          <label className="field">
+            <span>params.rsi.timeframe</span>
+            <input
+              type="text"
+              value={String(rsi.timeframe ?? "base")}
+              disabled={disabled}
+              onChange={(e) =>
+                onParamsChange({ rsi: { ...rsi, timeframe: e.target.value } })
+              }
+            />
+          </label>
+          <label className="field">
+            <span>params.rsi.period</span>
+            <input
+              type="number"
+              step={1}
+              min={1}
+              value={typeof rsi.period === "number" ? rsi.period : ""}
+              disabled={disabled}
+              onChange={(e) => {
+                const parsed = parseInt(e.target.value, 10);
+                onParamsChange({
+                  rsi: { ...rsi, period: Number.isFinite(parsed) ? parsed : e.target.value },
+                });
+              }}
+            />
+          </label>
+        </div>
+        <label className="field">
+          <span>params.long_exit_above</span>
+          <input
+            type="number"
+            step={0.1}
+            min={0}
+            max={100}
+            value={typeof params.long_exit_above === "number" ? params.long_exit_above : ""}
+            disabled={disabled}
+            onChange={(e) => {
+              const parsed = parseFloat(e.target.value);
+              onParamsChange({
+                long_exit_above: Number.isFinite(parsed) ? parsed : e.target.value,
+              });
+            }}
+          />
+        </label>
+        <label className="field">
+          <span>params.short_exit_below</span>
+          <input
+            type="number"
+            step={0.1}
+            min={0}
+            max={100}
+            value={typeof params.short_exit_below === "number" ? params.short_exit_below : ""}
+            disabled={disabled}
+            onChange={(e) => {
+              const parsed = parseFloat(e.target.value);
+              onParamsChange({
+                short_exit_below: Number.isFinite(parsed) ? parsed : e.target.value,
+              });
+            }}
+          />
+        </label>
+        <label className="field">
+          <span>params.confirm_bars</span>
+          <input
+            type="number"
+            step={1}
+            min={1}
+            value={typeof params.confirm_bars === "number" ? params.confirm_bars : ""}
+            disabled={disabled}
+            onChange={(e) => {
+              const parsed = parseInt(e.target.value, 10);
+              onParamsChange({
+                confirm_bars: Number.isFinite(parsed) ? parsed : e.target.value,
+              });
+            }}
+          />
+        </label>
+        <FieldErrors errors={ruleErrors.filter((e) => e.path.startsWith(`${rulePath}.params`))} />
+      </>
+    );
+  }
+
+  if (layer === "runtime_exits" && componentId === "ema_cross_loss_exit") {
+    const renderEmaFields = (emaKey: "fast_ema" | "slow_ema") => {
+      const ema = (params[emaKey] as JsonObject | undefined) ?? {};
+      return (
+        <div className="composer-phase-rules__atr" key={emaKey}>
+          <p className="composer-management-rules__param-group-label">{emaKey}</p>
+          <label className="field">
+            <span>timeframe</span>
+            <input
+              type="text"
+              value={String(ema.timeframe ?? "base")}
+              disabled={disabled}
+              onChange={(e) =>
+                onParamsChange({ [emaKey]: { ...ema, timeframe: e.target.value } })
+              }
+            />
+          </label>
+          <label className="field">
+            <span>source</span>
+            <input
+              type="text"
+              value={String(ema.source ?? "close")}
+              disabled={disabled}
+              onChange={(e) => onParamsChange({ [emaKey]: { ...ema, source: e.target.value } })}
+            />
+          </label>
+          <label className="field">
+            <span>period</span>
+            <input
+              type="number"
+              step={1}
+              min={1}
+              value={typeof ema.period === "number" ? ema.period : ""}
+              disabled={disabled}
+              onChange={(e) => {
+                const parsed = parseInt(e.target.value, 10);
+                onParamsChange({
+                  [emaKey]: { ...ema, period: Number.isFinite(parsed) ? parsed : e.target.value },
+                });
+              }}
+            />
+          </label>
+        </div>
+      );
+    };
+    return (
+      <>
+        {renderEmaFields("fast_ema")}
+        {renderEmaFields("slow_ema")}
+        <label className="field">
+          <span>params.confirm_bars</span>
+          <input
+            type="number"
+            step={1}
+            min={1}
+            value={typeof params.confirm_bars === "number" ? params.confirm_bars : ""}
+            disabled={disabled}
+            onChange={(e) => {
+              const parsed = parseInt(e.target.value, 10);
+              onParamsChange({
+                confirm_bars: Number.isFinite(parsed) ? parsed : e.target.value,
+              });
+            }}
+          />
+        </label>
+        <FieldErrors errors={ruleErrors.filter((e) => e.path.startsWith(`${rulePath}.params`))} />
+      </>
+    );
+  }
+
   return null;
 }
 
@@ -310,6 +470,37 @@ export function ManagementRulesEditor({
               <FieldErrors
                 errors={ruleErrors.filter((e) => e.path === `${rulePath}.activate_when.phase_at_least`)}
               />
+
+              {layer === "runtime_exits" ? (
+                <>
+                  <label className="field">
+                    <span>role</span>
+                    <input type="text" value={RUNTIME_EXIT_ROLE} disabled readOnly />
+                  </label>
+                  <FieldErrors errors={ruleErrors.filter((e) => e.path === `${rulePath}.role`)} />
+
+                  <label className="field">
+                    <span>exit_kind</span>
+                    <select
+                      value={String(rule.exit_kind ?? "")}
+                      disabled={disabled || componentId === "phase_runtime_exit"}
+                      onChange={(e) => updateRule(index, { exit_kind: e.target.value })}
+                    >
+                      {(componentId === "phase_runtime_exit"
+                        ? ["market_close"]
+                        : RUNTIME_EXIT_KINDS
+                      ).map((kind) => (
+                        <option key={kind} value={kind}>
+                          {kind}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <FieldErrors
+                    errors={ruleErrors.filter((e) => e.path === `${rulePath}.exit_kind`)}
+                  />
+                </>
+              ) : null}
 
               <ParamsEditor
                 layer={layer}
