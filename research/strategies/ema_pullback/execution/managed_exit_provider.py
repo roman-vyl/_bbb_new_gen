@@ -53,6 +53,9 @@ class ManagedExitProvider:
             adx_dmi_series_by_key={},
         )
     )
+    runtime_exit_signals_by_side: dict[str, dict[str, pd.Series]] = field(
+        default_factory=dict
+    )
 
     def get_bar_open_candidates(
         self,
@@ -120,6 +123,9 @@ class ManagedExitProvider:
             runtime_exits=self.runtime_exits,
             previous=inherited,
             atr_series_by_key=self.phase_eval_context.atr_series_by_key,
+            runtime_exit_signals_by_rule_id=self.runtime_exit_signals_by_side.get(
+                context.side, {}
+            ),
         )
         events.extend(layer_result.events)
         return EndOfBarProviderUpdate(

@@ -54,6 +54,7 @@ class ComponentSchema(BaseModel):
     role: Literal[
         "direction", "setup", "trigger", "blockers", "exits", "risk", "exit_management"
     ]
+    allowed_roles: list[str] = Field(default_factory=list)
     label: str
     description: str | None = None
     params_schema: dict[str, ParamFieldSchema] = Field(default_factory=dict)

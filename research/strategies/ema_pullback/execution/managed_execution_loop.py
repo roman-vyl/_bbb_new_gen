@@ -18,6 +18,14 @@ from research.strategies.ema_pullback.execution.exit_policy_candidates import (
 )
 from research.strategies.ema_pullback.execution.exits import PortfolioExitOutputs
 from research.strategies.ema_pullback.execution.managed_exit_provider import ManagedExitProvider
+from research.strategies.ema_pullback.consumer_roles import (
+    EXIT_LAYER_EXIT_POLICY,
+    EXIT_LAYER_RUNTIME_EXIT,
+    EXIT_LAYER_STOP_RULE,
+    EXIT_OWNER_EXIT_MANAGEMENT,
+    EXIT_OWNER_EXIT_POLICY,
+    ROLE_EXIT_MANAGEMENT_RUNTIME_EXIT,
+)
 from research.strategies.ema_pullback.execution.trade_runtime import (
     ActiveManagementSnapshot,
     ExitCandidate,
@@ -86,6 +94,24 @@ def _exit_attribution_from_candidate(winner: ExitCandidate) -> ExitAttributionRe
     )
 
 
+def _precise_exit_layer(winner: ExitCandidate) -> str:
+    if winner.attribution_layer:
+        return winner.attribution_layer
+    if winner.layer == "exit_policy":
+        return EXIT_LAYER_EXIT_POLICY
+    if winner.reason.startswith("active_stop:"):
+        return EXIT_LAYER_STOP_RULE
+    if winner.reason.startswith("runtime_exit:"):
+        return EXIT_LAYER_RUNTIME_EXIT
+    return winner.layer
+
+
+def _exit_owner_for_layer(exit_layer: str) -> str:
+    if exit_layer == EXIT_LAYER_EXIT_POLICY:
+        return EXIT_OWNER_EXIT_POLICY
+    return EXIT_OWNER_EXIT_MANAGEMENT
+
+
 def _close_events(
     pos: _OpenPosition,
     *,
@@ -95,7 +121,18 @@ def _close_events(
     arbitration: object,
 ) -> list[TradeManagementEvent]:
     meta = arbitration_metadata(arbitration)  # type: ignore[arg-type]
-    exit_layer = winner.layer
+    exit_layer = _precise_exit_layer(winner)
+    exit_owner = winner.exit_owner or _exit_owner_for_layer(exit_layer)
+    role = winner.role
+    if role is None and exit_layer == EXIT_LAYER_RUNTIME_EXIT:
+        role = ROLE_EXIT_MANAGEMENT_RUNTIME_EXIT
+    close_meta = {
+        "exit_layer": exit_layer,
+        "exit_owner": exit_owner,
+        "exit_kind": winner.exit_kind,
+        "role": role,
+        **meta,
+    }
     return [
         TradeManagementEvent(
             trade_id=pos.trade_id,
@@ -112,7 +149,7 @@ def _close_events(
             mfe_pct=pos.runtime.mfe_pct,
             mae_pct=pos.runtime.mae_pct,
             bars_in_trade=pos.runtime.bars_in_trade,
-            metadata={"exit_layer": exit_layer, **meta},
+            metadata=close_meta,
         ),
         TradeManagementEvent(
             trade_id=pos.trade_id,
@@ -130,13 +167,12 @@ def _close_events(
             mae_pct=pos.runtime.mae_pct,
             bars_in_trade=pos.runtime.bars_in_trade,
             metadata={
-                "exit_layer": exit_layer,
+                **close_meta,
                 "exit_reason": (
                     f"exit_management:{winner.rule_id}"
                     if winner.layer == "exit_management"
                     else winner.reason
                 ),
-                **meta,
             },
         ),
     ]
@@ -212,6 +248,7 @@ def run_managed_execution_loop(
                     )
                 )
                 exit_attr = _exit_attribution_from_candidate(winner)
+                precise_layer = _precise_exit_layer(winner)
                 closed.append(
                     {
                         "trade_id": open_pos.trade_id,
@@ -222,7 +259,9 @@ def run_managed_execution_loop(
                         "exit_price": winner.price,
                         "locked_profile": open_pos.locked_profile,
                         "exit_attribution": exit_attr,
-                        "exit_layer": winner.layer,
+                        "exit_layer": precise_layer,
+                        "exit_owner": winner.exit_owner
+                        or _exit_owner_for_layer(precise_layer),
                         "winner": winner,
                     }
                 )

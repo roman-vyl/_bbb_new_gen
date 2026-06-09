@@ -24,6 +24,8 @@ def test_ema_pullback_python_has_no_registry_pattern() -> None:
         allowed = (
             {"COMPONENT_REGISTRY"}
             if rel.parts in (("components", "registry.py"), ("components", "__init__.py"))
+            else {"CONSUMER_ROLE_REGISTRY"}
+            if rel.parts == ("consumer_roles.py",)
             else set()
         )
         unexpected = sorted(matches - allowed)

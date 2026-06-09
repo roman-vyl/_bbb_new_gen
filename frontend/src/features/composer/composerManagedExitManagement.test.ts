@@ -17,6 +17,7 @@ import {
   writeExitManagementOnStrategy,
 } from "@/features/composer/composerPhaseRulesEditor";
 import { prepareStrategyForApi } from "@/features/composer/composerStrategyContexts";
+import { RUNTIME_EXIT_CATALOG_STUB } from "@/features/composer/testFixtures/runtimeExitCatalogStub";
 
 const PATH = "instances[0].strategy";
 
@@ -69,7 +70,11 @@ describe("composer managed exit_management (Slice 10)", () => {
 
   it("managed smoke validates with zero product errors", () => {
     const strategy = (managedSmoke.instances[0] as JsonObject).strategy as JsonObject;
-    const errors = collectExitManagementProductValidationErrors(strategy, PATH);
+    const errors = collectExitManagementProductValidationErrors(
+      strategy,
+      PATH,
+      RUNTIME_EXIT_CATALOG_STUB,
+    );
     expect(errors).toEqual([]);
   });
 

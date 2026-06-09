@@ -13,8 +13,11 @@ _CANDIDATE_PRIORITY: dict[str, int] = {
     "stop_loss": 1,
     "managed_stop": 2,
     "take_profit": 3,
-    "runtime_exit": 4,
-    "signal": 5,
+    "runtime_protective": 4,
+    "runtime_take": 5,
+    "runtime_close": 6,
+    "runtime_exit": 6,
+    "signal": 7,
 }
 
 

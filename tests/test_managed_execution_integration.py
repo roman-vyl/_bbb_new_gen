@@ -174,7 +174,7 @@ def test_managed_be_closes_on_bar_n_plus_1_not_phase_bar() -> None:
     closed = [item for item in result.closed if not item.get("open")]
     assert len(closed) == 1
     assert closed[0]["exit_idx"] == 2
-    assert closed[0]["exit_layer"] == "exit_management"
+    assert closed[0]["exit_layer"] == "exit_management.stop_rule"
     assert closed[0]["winner"].candidate_type == "managed_stop"
     stop_events = [
         e for e in result.events if e.event_type == "active_stop_updated"
@@ -334,7 +334,9 @@ def test_no_same_bar_reentry_after_close() -> None:
             RuntimeExitRuleSpec(
                 rule_id="exit_ex",
                 component_id="phase_runtime_exit",
+                role="exit_management.runtime_exit",
                 activate_when=ManagementActivateWhenSpec(phase_at_least="exhaustion"),
+                exit_kind="market_close",
                 params=PhaseRuntimeExitParamsSpec(exit_price="close"),
             ),
         ),

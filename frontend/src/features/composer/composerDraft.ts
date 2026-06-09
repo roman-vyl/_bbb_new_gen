@@ -115,6 +115,19 @@ export function componentsForRole(
   );
 }
 
+/** Components catalogued for a specific consumer role (e.g. exit_management.runtime_exit). */
+export function componentsForAllowedRole(
+  catalog: ComponentCatalog,
+  allowedRole: string,
+): ComponentSchema[] {
+  return catalog.components
+    .filter(
+      (c) =>
+        Array.isArray(c.allowed_roles) && c.allowed_roles.includes(allowedRole),
+    )
+    .sort((a, b) => a.component_id.localeCompare(b.component_id));
+}
+
 export function findComponentSchema(
   catalog: ComponentCatalog,
   componentId: string,

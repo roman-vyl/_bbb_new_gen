@@ -5,8 +5,15 @@ from dataclasses import dataclass, field
 
 import pandas as pd
 
+from research.strategies.ema_pullback.consumer_roles import (
+    EXIT_LAYER_RUNTIME_EXIT,
+    EXIT_LAYER_STOP_RULE,
+    EXIT_OWNER_EXIT_MANAGEMENT,
+    ROLE_EXIT_MANAGEMENT_RUNTIME_EXIT,
+)
 from research.strategies.ema_pullback.execution.managed_components.runtime_exit import (
     evaluate_runtime_exits,
+    runtime_exit_candidate_type,
 )
 from research.strategies.ema_pullback.execution.managed_components.stop import (
     apply_tighten_only_stop,
@@ -83,6 +90,7 @@ def evaluate_management_layers(
     runtime_exits: tuple[RuntimeExitRuleSpec, ...],
     previous: ActiveManagementSnapshot,
     atr_series_by_key: dict[tuple[str, int], pd.Series],
+    runtime_exit_signals_by_rule_id: dict[str, pd.Series] | None = None,
 ) -> ManagementEvaluationResult:
     if not stop_management and not take_management and not runtime_exits:
         return ManagementEvaluationResult(
@@ -142,6 +150,9 @@ def evaluate_management_layers(
                 price=tightened,
                 bar=context.bar_index,
                 reason=f"active_stop:{merged_stop.component_id}",
+                candidate_type="managed_stop",
+                attribution_layer=EXIT_LAYER_STOP_RULE,
+                exit_owner=EXIT_OWNER_EXIT_MANAGEMENT,
             )
         )
 
@@ -176,7 +187,11 @@ def evaluate_management_layers(
             )
         )
 
-    runtime_triggers = evaluate_runtime_exits(runtime_exits, context=context)
+    runtime_triggers = evaluate_runtime_exits(
+        runtime_exits,
+        context=context,
+        signal_series_by_rule_id=runtime_exit_signals_by_rule_id,
+    )
     armed_rule_ids = tuple(trigger.rule_id for trigger in runtime_triggers)
     if armed_rule_ids != previous.active_runtime_exit_rules:
         snapshot = ActiveManagementSnapshot(
@@ -190,6 +205,7 @@ def evaluate_management_layers(
         )
 
     for trigger in runtime_triggers:
+        candidate_type = runtime_exit_candidate_type(trigger.exit_kind)
         events.append(
             _management_event(
                 state,
@@ -202,6 +218,11 @@ def evaluate_management_layers(
                 metadata={
                     "exit_price": "close",
                     "effective_from_bar": context.bar_index + 1,
+                    "exit_kind": trigger.exit_kind,
+                    "role": trigger.role,
+                    "attribution_layer": EXIT_LAYER_RUNTIME_EXIT,
+                    "exit_owner": EXIT_OWNER_EXIT_MANAGEMENT,
+                    "phase": context.phase,
                 },
             )
         )
@@ -212,7 +233,12 @@ def evaluate_management_layers(
                 component_id=trigger.component_id,
                 price=trigger.exit_price,
                 bar=context.bar_index,
-                reason="runtime_exit:close",
+                reason=f"runtime_exit:{trigger.exit_kind}",
+                candidate_type=candidate_type,
+                attribution_layer=EXIT_LAYER_RUNTIME_EXIT,
+                exit_owner=EXIT_OWNER_EXIT_MANAGEMENT,
+                exit_kind=trigger.exit_kind,
+                role=trigger.role,
             )
         )
 

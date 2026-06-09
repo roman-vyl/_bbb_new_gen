@@ -56,7 +56,12 @@ from research.strategies.ema_pullback.spec import (
     PhaseRuleConditionSpec,
     PhaseRuleSpec,
     PHASE_RUNTIME_EXIT_PRICES,
+    EmaCrossRuntimeExitParamsSpec,
     PhaseRuntimeExitParamsSpec,
+    RsiRuntimeExitParamsSpec,
+    RUNTIME_EXIT_COMPONENT_IDS,
+    RUNTIME_EXIT_KINDS,
+    RUNTIME_EXIT_ROLE,
     RuntimeExitRuleSpec,
     STOP_MANAGEMENT_COMPONENT_IDS,
     TRADE_MANAGEMENT_PHASES,
@@ -586,28 +591,96 @@ def _parse_runtime_exit_rule(value: Any, *, path: str) -> RuntimeExitRuleSpec:
     payload = _require_mapping(path, value)
     if "trigger" in payload:
         raise EmaPullbackInstanceValidationError(
-            f"{path} must not include trigger in v2 phase_runtime_exit"
+            f"{path} must not include trigger in v2 runtime_exits"
         )
-    _reject_unknown_fields(path, payload, {"rule_id", "component_id", "activate_when", "params"})
+    _reject_unknown_fields(
+        path,
+        payload,
+        {"rule_id", "component_id", "role", "activate_when", "exit_kind", "params"},
+    )
     component_id = _require_non_empty_str(payload, "component_id")
-    if component_id != "phase_runtime_exit":
+    if component_id not in RUNTIME_EXIT_COMPONENT_IDS:
+        allowed = ", ".join(repr(item) for item in RUNTIME_EXIT_COMPONENT_IDS)
         raise EmaPullbackInstanceValidationError(
-            f"{path}.component_id must be 'phase_runtime_exit'; got {component_id!r}"
+            f"{path}.component_id must be one of: {allowed}; got {component_id!r}"
         )
+    role = payload.get("role", RUNTIME_EXIT_ROLE)
+    if not isinstance(role, str) or not role.strip():
+        raise EmaPullbackInstanceValidationError(f"{path}.role must be a non-empty string")
+    if role != RUNTIME_EXIT_ROLE:
+        raise EmaPullbackInstanceValidationError(
+            f"{path}.role must be {RUNTIME_EXIT_ROLE!r}; got {role!r}"
+        )
+    exit_kind_raw = payload.get("exit_kind")
+    if component_id == "phase_runtime_exit":
+        exit_kind = "market_close" if exit_kind_raw is None else str(exit_kind_raw)
+    elif exit_kind_raw is None:
+        raise EmaPullbackInstanceValidationError(f"{path}.exit_kind is required")
+    else:
+        exit_kind = str(exit_kind_raw)
+    if exit_kind not in RUNTIME_EXIT_KINDS:
+        allowed = ", ".join(repr(item) for item in RUNTIME_EXIT_KINDS)
+        raise EmaPullbackInstanceValidationError(
+            f"{path}.exit_kind must be one of: {allowed}; got {exit_kind!r}"
+        )
+    params_payload = _require_present(payload, "params")
+    if component_id == "phase_runtime_exit":
+        params = _parse_phase_runtime_exit_params(params_payload, path=f"{path}.params")
+    elif component_id == "rsi_signal_exit":
+        params = _parse_rsi_runtime_exit_params(params_payload, path=f"{path}.params")
+    else:
+        params = _parse_ema_cross_runtime_exit_params(params_payload, path=f"{path}.params")
     try:
         return RuntimeExitRuleSpec(
             rule_id=_require_non_empty_str(payload, "rule_id"),
-            component_id="phase_runtime_exit",
+            component_id=component_id,
+            role=RUNTIME_EXIT_ROLE,
             activate_when=_parse_management_activate_when(
                 _require_present(payload, "activate_when"),
                 path=f"{path}.activate_when",
             ),
-            params=_parse_phase_runtime_exit_params(
-                _require_present(payload, "params"),
-                path=f"{path}.params",
-            ),
+            exit_kind=exit_kind,  # type: ignore[arg-type]
+            params=params,
         )
     except ValueError as exc:
+        raise EmaPullbackInstanceValidationError(str(exc)) from exc
+
+
+def _parse_rsi_runtime_exit_params(value: Any, *, path: str) -> RsiRuntimeExitParamsSpec:
+    from research.strategies.ema_pullback.spec import RsiFeatureSpec
+
+    payload = _require_mapping(path, value)
+    rsi_raw = payload.get("rsi")
+    if rsi_raw is None:
+        raise EmaPullbackInstanceValidationError(f"{path} requires nested rsi object")
+    rsi_map = _parse_rsi_payload(_require_mapping(f"{path}.rsi", rsi_raw))
+    try:
+        return RsiRuntimeExitParamsSpec(
+            rsi=RsiFeatureSpec(
+                timeframe=str(rsi_map["timeframe"]),
+                period=int(rsi_map["period"]),
+            ),
+            long_exit_above=payload.get("long_exit_above"),
+            short_exit_below=payload.get("short_exit_below"),
+            confirm_bars=int(payload.get("confirm_bars", 1)),
+        )
+    except (TypeError, ValueError, KeyError) as exc:
+        raise EmaPullbackInstanceValidationError(str(exc)) from exc
+
+
+def _parse_ema_cross_runtime_exit_params(
+    value: Any,
+    *,
+    path: str,
+) -> EmaCrossRuntimeExitParamsSpec:
+    payload = _require_mapping(path, value)
+    try:
+        return EmaCrossRuntimeExitParamsSpec(
+            fast_ema=_parse_ema_block(payload, key="fast_ema", path=path),
+            slow_ema=_parse_ema_block(payload, key="slow_ema", path=path),
+            confirm_bars=int(payload.get("confirm_bars", 1)),
+        )
+    except (TypeError, ValueError) as exc:
         raise EmaPullbackInstanceValidationError(str(exc)) from exc
 
 

@@ -46,7 +46,9 @@ def _runtime_exit_rule(*, phase_at_least: str = "exhaustion") -> RuntimeExitRule
     return RuntimeExitRuleSpec(
         rule_id="exit_on_exhaustion",
         component_id="phase_runtime_exit",
+        role="exit_management.runtime_exit",
         activate_when=ManagementActivateWhenSpec(phase_at_least=phase_at_least),  # type: ignore[arg-type]
+        exit_kind="market_close",
         params=PhaseRuntimeExitParamsSpec(exit_price="close"),
     )
 
@@ -119,7 +121,7 @@ def test_runtime_exit_candidate_price_is_bar_close() -> None:
     assert runtime_events[0].price == pytest.approx(close_price)
     assert len(result.candidates) == 1
     assert result.candidates[0].price == pytest.approx(close_price)
-    assert result.candidates[0].reason == "runtime_exit:close"
+    assert result.candidates[0].reason == "runtime_exit:market_close"
 
 
 def test_no_managed_close_or_exit_rule_triggered_in_slice_3() -> None:

@@ -732,7 +732,13 @@ def build_managed_layer_breakdowns(
         candidate_type = tm.get("exit_candidate_type") or record.get(
             "managed_exit_candidate_type"
         )
-        if layer == "exit_management" and isinstance(component_id, str) and component_id:
+        if layer == "exit_management.stop_rule" and isinstance(component_id, str) and component_id:
+            _accumulate_managed_breakdown(stop_breakdown, component_id, record)
+        elif layer == "exit_management.runtime_exit" and isinstance(
+            component_id, str
+        ) and component_id:
+            _accumulate_managed_breakdown(runtime_breakdown, component_id, record)
+        elif layer == "exit_management" and isinstance(component_id, str) and component_id:
             breakdown_key = _MANAGED_EXIT_CANDIDATE_BREAKDOWN.get(str(candidate_type or ""))
             if breakdown_key == "stop_management_breakdown":
                 _accumulate_managed_breakdown(stop_breakdown, component_id, record)
