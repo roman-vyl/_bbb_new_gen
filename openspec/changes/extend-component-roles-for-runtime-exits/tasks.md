@@ -2,7 +2,7 @@
 
 ### 1. Consumer registry contract
 
-- [x] 1.1 Extend `ComponentDefinition` (or sibling metadata) with `allowed_roles`, `input_contract`, `output_contract`, `side_aware`, `feature_requirements`, `params_schema`, `diagnostics_contract`
+- [x] 1.1 Extend consumer metadata with `allowed_roles`, `input_contract`, `output_contract`, `side_aware`, `feature_requirements`, `params_schema_ref`, `diagnostics_contract`
 - [x] 1.2 Populate `allowed_roles` for v1 components: `rsi_signal_exit`, `ema_cross_loss_exit`, `atr_stop_loss`, `atr_take_profit`, `adx_di_threshold`, `phase_runtime_exit`, management components
 - [x] 1.3 Add validate-time role resolution: JSON path + explicit `role` on `runtime_exits` rules → registry lookup → hard reject if disallowed
 - [x] 1.4 Test: registry rejects component used in disallowed role (`atr_stop_loss` in `runtime_exits`)
@@ -50,20 +50,29 @@
 ### 7. Smoke fixtures (Slice 1)
 
 - [x] 7.1 Add smoke spec under `research/experiments/specs/smoke/` for runner ADX + `disable_initial_tp` + RSI/EMA runtime exits
-- [x] 7.2 Run smoke configs end-to-end; verify reports show `exit_layer: exit_management.runtime_exit`
+- [x] 7.2 Smoke JSON authored and validates (live backtest → C.M1–C.M4)
 
 ---
 
 ## CHECKPOINT (mandatory stop before Slice 2)
 
-Do not start Composer authoring until all items below pass:
+**Status:** backend / unit / integration checkpoint **passed**; market-data smoke follow-up **pending**.
 
-- [x] C.1 Hand-authored JSON configs validate and backtest (runner phase + RSI take + EMA protective runtime exits)
-- [x] C.2 All Slice 1 pytest targets green
-- [x] C.3 Smoke runner RSI/EMA configs run without regression vs `exit_policy`-only baseline on same fixture
-- [x] C.4 Reports: `exit_layer_breakdown` keys match per-trade `exit_layer`; `exit_owner` rollup correct; zero pre-runner runtime RSI/EMA exits in runner-gated config
+Do not start Composer authoring until market-data smoke follow-up is done.
 
-**Checkpoint notes (manual follow-up):** Full-market backtest of smoke JSON requires local candle data; config load + unit/integration tests pass (`674` pytest). Re-run smoke backtest on Workbench/CLI when candles are available to confirm live `exit_layer: exit_management.runtime_exit` counts.
+### Passed (backend / unit / integration)
+
+- [x] C.1 Hand-authored JSON configs validate (runner phase + RSI take + EMA protective runtime exits)
+- [x] C.2 All Slice 1 pytest targets green (`674` passed)
+- [x] C.3 Unit/integration parity: runtime exits do not introduce a new trade path; `exit_policy`-only configs unchanged
+- [x] C.4 Report contract tests: precise `exit_layer` / `exit_owner` breakdown keys align in synthetic fixtures
+
+### Pending (market-data smoke — required before production checkpoint / Slice 2)
+
+- [ ] C.M1 Run `exit_management_runner_rsi_ema_runtime_smoke.json` on Workbench/CLI with local candle data
+- [ ] C.M2 Confirm live report: `exit_layer: exit_management.runtime_exit` counts for RSI/EMA runtime closes
+- [ ] C.M3 Confirm zero pre-runner runtime RSI/EMA exits in runner-gated smoke config
+- [ ] C.M4 Compare smoke vs `exit_policy`-only baseline on the same symbol/range (no unexpected regression)
 
 ---
 

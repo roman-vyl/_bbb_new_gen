@@ -72,7 +72,7 @@ input_contract: str          # e.g. "exit_rule_params"
 output_contract: str         # e.g. "signal_mask" | "phase_condition_bool"
 side_aware: bool
 feature_requirements: ...  # hook into feature plan
-params_schema: ...         # shared with catalog generation
+params_schema_ref: str     # catalog/loader schema key; v1 defaults to component_id
 diagnostics_contract: ...  # event metadata keys
 ```
 

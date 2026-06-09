@@ -38,6 +38,11 @@ def test_rsi_allowed_in_exit_policy_and_runtime_roles() -> None:
     )
 
 
+def test_registry_params_schema_ref_matches_component_id() -> None:
+    for component_id, meta in CONSUMER_ROLE_REGISTRY.items():
+        assert meta.params_schema_ref == component_id
+
+
 def test_catalog_parity_for_allowed_roles() -> None:
     catalog = get_component_catalog(family="ema_pullback")
     by_id = {item.component_id: item for item in catalog.components}

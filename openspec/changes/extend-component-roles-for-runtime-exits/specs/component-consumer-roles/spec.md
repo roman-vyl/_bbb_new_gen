@@ -9,7 +9,7 @@ The research layer SHALL maintain consumer-role metadata for each registered `co
 - `output_contract` — name of the result shape (`signal_mask`, `phase_condition_bool`, `managed_stop_price`, …)
 - `side_aware` — boolean
 - `feature_requirements` — declarative feature keys or planning hook id
-- `params_schema` — validation schema reference
+- `params_schema_ref` — string reference to the params schema (BFF catalog / loader); v1 uses `component_id` as the ref key (e.g. `"rsi_signal_exit"`)
 - `diagnostics_contract` — keys emitted in managed events / trade records
 
 The registry MUST NOT load arbitrary external plugins. Unknown `component_id` values MUST be rejected at validation time.

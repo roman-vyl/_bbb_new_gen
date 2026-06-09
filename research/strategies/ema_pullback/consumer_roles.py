@@ -28,6 +28,7 @@ class ConsumerRoleMetadata:
     input_contract: str
     output_contract: str
     side_aware: bool
+    params_schema_ref: str
     feature_requirements: tuple[str, ...] = ()
     diagnostics_contract: tuple[str, ...] = ()
 
@@ -61,6 +62,7 @@ CONSUMER_ROLE_REGISTRY: dict[str, ConsumerRoleMetadata] = {
         input_contract="exit_rule_params",
         output_contract="signal_mask",
         side_aware=True,
+        params_schema_ref="rsi_signal_exit",
         feature_requirements=("rsi",),
         diagnostics_contract=("rsi", "threshold", "condition"),
     ),
@@ -72,6 +74,7 @@ CONSUMER_ROLE_REGISTRY: dict[str, ConsumerRoleMetadata] = {
         input_contract="exit_rule_params",
         output_contract="signal_mask",
         side_aware=True,
+        params_schema_ref="ema_cross_loss_exit",
         feature_requirements=("fast_ema", "slow_ema"),
         diagnostics_contract=("fast_ema", "slow_ema", "confirm_bars"),
     ),
@@ -81,6 +84,7 @@ CONSUMER_ROLE_REGISTRY: dict[str, ConsumerRoleMetadata] = {
         input_contract="exit_rule_params",
         output_contract="distance_level",
         side_aware=True,
+        params_schema_ref="atr_stop_loss",
         feature_requirements=("atr_distance",),
         diagnostics_contract=(),
     ),
@@ -90,6 +94,7 @@ CONSUMER_ROLE_REGISTRY: dict[str, ConsumerRoleMetadata] = {
         input_contract="exit_rule_params",
         output_contract="distance_level",
         side_aware=True,
+        params_schema_ref="atr_take_profit",
         feature_requirements=("atr_distance",),
         diagnostics_contract=(),
     ),
@@ -99,6 +104,7 @@ CONSUMER_ROLE_REGISTRY: dict[str, ConsumerRoleMetadata] = {
         input_contract="phase_condition_params",
         output_contract="phase_condition_bool",
         side_aware=True,
+        params_schema_ref="adx_di_threshold",
         feature_requirements=("adx", "di_plus", "di_minus"),
         diagnostics_contract=("adx", "di_plus", "di_minus"),
     ),
@@ -108,6 +114,7 @@ CONSUMER_ROLE_REGISTRY: dict[str, ConsumerRoleMetadata] = {
         input_contract="phase_runtime_exit_params",
         output_contract="market_close_trigger",
         side_aware=False,
+        params_schema_ref="phase_runtime_exit",
         diagnostics_contract=("exit_price",),
     ),
     "break_even_stop": ConsumerRoleMetadata(
@@ -116,6 +123,7 @@ CONSUMER_ROLE_REGISTRY: dict[str, ConsumerRoleMetadata] = {
         input_contract="stop_management_params",
         output_contract="managed_stop_price",
         side_aware=True,
+        params_schema_ref="break_even_stop",
         diagnostics_contract=(),
     ),
     "lock_profit_stop": ConsumerRoleMetadata(
@@ -124,6 +132,7 @@ CONSUMER_ROLE_REGISTRY: dict[str, ConsumerRoleMetadata] = {
         input_contract="stop_management_params",
         output_contract="managed_stop_price",
         side_aware=True,
+        params_schema_ref="lock_profit_stop",
         diagnostics_contract=(),
     ),
     "take_profile_switch": ConsumerRoleMetadata(
@@ -132,6 +141,7 @@ CONSUMER_ROLE_REGISTRY: dict[str, ConsumerRoleMetadata] = {
         input_contract="take_management_params",
         output_contract="take_profile_state",
         side_aware=False,
+        params_schema_ref="take_profile_switch",
         diagnostics_contract=("take_profile",),
     ),
 }
