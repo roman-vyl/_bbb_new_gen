@@ -93,7 +93,9 @@ def _managed_rule_payload(component_id: str) -> dict[str, object]:
     return {
         "rule_id": "exit_on_exhaustion",
         "component_id": "phase_runtime_exit",
+        "role": "exit_management.runtime_exit",
         "activate_when": {"phase_at_least": "exhaustion"},
+        "exit_kind": "market_close",
         "params": {"exit_price": "close"},
     }
 

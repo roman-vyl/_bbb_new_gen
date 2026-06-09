@@ -19,7 +19,14 @@ TRADE_MANAGEMENT_PHASES = ("initial_risk", "proven", "protected", "runner", "exh
 EXIT_MANAGEMENT_MODES = ("diagnostic_only", "managed")
 STOP_MANAGEMENT_COMPONENT_IDS = ("break_even_stop", "lock_profit_stop")
 TAKE_MANAGEMENT_COMPONENT_IDS = ("take_profile_switch",)
-RUNTIME_EXIT_COMPONENT_IDS = ("phase_runtime_exit",)
+RUNTIME_EXIT_COMPONENT_IDS = (
+    "phase_runtime_exit",
+    "rsi_signal_exit",
+    "ema_cross_loss_exit",
+)
+RUNTIME_EXIT_ROLE = "exit_management.runtime_exit"
+RUNTIME_EXIT_KINDS = ("take_profit", "protective_exit", "market_close")
+RuntimeExitKind = Literal["take_profit", "protective_exit", "market_close"]
 TAKE_PROFILE_SWITCH_ACTIONS = ("keep_initial", "disable_initial_tp")
 TAKE_PROFILE_SWITCH_DEPRECATED_ACTION_ALIASES = ("disable_fixed_tp",)
 PHASE_RUNTIME_EXIT_PRICES = ("close",)
@@ -701,11 +708,51 @@ class PhaseRuntimeExitParamsSpec:
 
 
 @dataclass(frozen=True)
+class RsiRuntimeExitParamsSpec:
+    rsi: RsiFeatureSpec
+    long_exit_above: float | None = None
+    short_exit_below: float | None = None
+    confirm_bars: int = 1
+
+    def __post_init__(self) -> None:
+        if self.confirm_bars < 1:
+            raise ValueError("runtime rsi_signal_exit params.confirm_bars must be >= 1")
+        for field_name in ("long_exit_above", "short_exit_below"):
+            value = getattr(self, field_name)
+            if value is not None and not (0 <= value <= 100):
+                raise ValueError(f"runtime rsi_signal_exit {field_name} must be between 0 and 100")
+
+
+@dataclass(frozen=True)
+class EmaCrossRuntimeExitParamsSpec:
+    fast_ema: EmaSpec
+    slow_ema: EmaSpec
+    confirm_bars: int = 1
+
+    def __post_init__(self) -> None:
+        if self.fast_ema.timeframe != self.slow_ema.timeframe:
+            raise ValueError("runtime ema_cross_loss_exit fast_ema and slow_ema must share timeframe")
+        if self.fast_ema.period >= self.slow_ema.period:
+            raise ValueError("runtime ema_cross_loss_exit requires fast_ema.period < slow_ema.period")
+        if self.confirm_bars < 1:
+            raise ValueError("runtime ema_cross_loss_exit params.confirm_bars must be >= 1")
+
+
+RuntimeExitParamsSpec = (
+    PhaseRuntimeExitParamsSpec
+    | RsiRuntimeExitParamsSpec
+    | EmaCrossRuntimeExitParamsSpec
+)
+
+
+@dataclass(frozen=True)
 class RuntimeExitRuleSpec:
     rule_id: str
-    component_id: Literal["phase_runtime_exit"]
+    component_id: str
+    role: str
     activate_when: ManagementActivateWhenSpec
-    params: PhaseRuntimeExitParamsSpec
+    exit_kind: RuntimeExitKind
+    params: RuntimeExitParamsSpec
 
     def __post_init__(self) -> None:
         if not self.rule_id.strip():
@@ -713,6 +760,32 @@ class RuntimeExitRuleSpec:
         if self.component_id not in RUNTIME_EXIT_COMPONENT_IDS:
             allowed = ", ".join(repr(item) for item in RUNTIME_EXIT_COMPONENT_IDS)
             raise ValueError(f"runtime_exits component_id must be one of: {allowed}")
+        if self.role != RUNTIME_EXIT_ROLE:
+            raise ValueError(
+                f"runtime_exits role must be {RUNTIME_EXIT_ROLE!r}; got {self.role!r}"
+            )
+        if self.exit_kind not in RUNTIME_EXIT_KINDS:
+            allowed = ", ".join(repr(item) for item in RUNTIME_EXIT_KINDS)
+            raise ValueError(f"runtime_exits exit_kind must be one of: {allowed}")
+        if self.exit_kind == "signal":
+            raise ValueError(
+                "runtime_exits exit_kind 'signal' is not allowed; "
+                "use take_profit, protective_exit, or market_close"
+            )
+        from research.strategies.ema_pullback.consumer_roles import validate_consumer_role
+
+        validate_consumer_role(component_id=self.component_id, role=self.role)
+        if self.component_id == "phase_runtime_exit":
+            if not isinstance(self.params, PhaseRuntimeExitParamsSpec):
+                raise ValueError("phase_runtime_exit requires params.exit_price")
+            if self.exit_kind != "market_close":
+                raise ValueError("phase_runtime_exit requires exit_kind market_close")
+        elif self.component_id == "rsi_signal_exit":
+            if not isinstance(self.params, RsiRuntimeExitParamsSpec):
+                raise ValueError("rsi_signal_exit runtime rule requires rsi params")
+        elif self.component_id == "ema_cross_loss_exit":
+            if not isinstance(self.params, EmaCrossRuntimeExitParamsSpec):
+                raise ValueError("ema_cross_loss_exit runtime rule requires fast_ema/slow_ema params")
 
 
 def empty_exit_management() -> "ExitManagementSpec":

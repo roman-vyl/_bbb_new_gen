@@ -154,7 +154,9 @@ def test_runtime_exit_armed_end_of_bar_n_not_bar_open_on_n() -> None:
             RuntimeExitRuleSpec(
                 rule_id="exit_ex",
                 component_id="phase_runtime_exit",
+                role="exit_management.runtime_exit",
                 activate_when=ManagementActivateWhenSpec(phase_at_least="exhaustion"),
+                exit_kind="market_close",
                 params=PhaseRuntimeExitParamsSpec(exit_price="close"),
             ),
         ),
@@ -193,7 +195,7 @@ def test_runtime_exit_armed_end_of_bar_n_not_bar_open_on_n() -> None:
         close=100.5,
     )
     assert len(bar_open_next) == 1
-    assert bar_open_next[0].candidate_type == "runtime_exit"
+    assert bar_open_next[0].candidate_type == "runtime_close"
 
 
 def test_inherited_disable_initial_tp_profile_state() -> None:

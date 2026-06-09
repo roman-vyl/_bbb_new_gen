@@ -339,6 +339,10 @@ def get_component_catalog(*, family: str = "ema_pullback") -> ComponentCatalog:
         ComponentSchema(
             component_id="rsi_signal_exit",
             role="exits",
+            allowed_roles=[
+                "exit_policy.signal_exit",
+                "exit_management.runtime_exit",
+            ],
             label="RSI signal exit",
             list_slot=True,
             params_schema={
@@ -362,6 +366,10 @@ def get_component_catalog(*, family: str = "ema_pullback") -> ComponentCatalog:
         ComponentSchema(
             component_id="ema_cross_loss_exit",
             role="exits",
+            allowed_roles=[
+                "exit_policy.signal_exit",
+                "exit_management.runtime_exit",
+            ],
             label="EMA cross loss (trend)",
             list_slot=True,
             params_schema={
@@ -375,6 +383,7 @@ def get_component_catalog(*, family: str = "ema_pullback") -> ComponentCatalog:
         ComponentSchema(
             component_id="atr_stop_loss",
             role="exits",
+            allowed_roles=["exit_policy.stop_loss"],
             label="ATR stop loss",
             list_slot=True,
             params_schema={
@@ -386,6 +395,7 @@ def get_component_catalog(*, family: str = "ema_pullback") -> ComponentCatalog:
         ComponentSchema(
             component_id="atr_take_profit",
             role="exits",
+            allowed_roles=["exit_policy.take_profit"],
             label="ATR take profit",
             list_slot=True,
             params_schema={

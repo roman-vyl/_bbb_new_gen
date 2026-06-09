@@ -113,6 +113,36 @@ def _phase_rule_eval_context(
     )
 
 
+def _runtime_exit_signals_by_side(
+    enriched: pd.DataFrame,
+    spec: EmaPullbackStrategySpec,
+    plan: Any,
+) -> dict[str, dict[str, pd.Series]]:
+    from research.strategies.ema_pullback.execution.managed_components.runtime_exit import (
+        compile_runtime_exit_signal_series,
+    )
+
+    rules = spec.trade_management.exit_management.runtime_exits
+    if not rules:
+        return {}
+    out: dict[str, dict[str, pd.Series]] = {}
+    for side in ("long", "short"):
+        if not spec.trade_sides.includes(side):
+            continue
+        by_rule: dict[str, pd.Series] = {}
+        for rule in rules:
+            series = compile_runtime_exit_signal_series(
+                rule,
+                df=enriched,
+                plan=plan,
+                side=side,  # type: ignore[arg-type]
+            )
+            if series is not None:
+                by_rule[rule.rule_id] = series
+        out[side] = by_rule
+    return out
+
+
 def _build_side_metrics(records: list[dict[str, Any]], init_cash: float) -> SideMetrics:
     trades = len(records)
     pnl_values = [float(record.get("pnl") or 0.0) for record in records]
@@ -245,6 +275,7 @@ def _run_execution_integrated_strategy_spec(
         take_management=em.take_management,
         runtime_exits=em.runtime_exits,
         phase_eval_context=_phase_rule_eval_context(enriched, spec),
+        runtime_exit_signals_by_side=_runtime_exit_signals_by_side(enriched, spec, plan),
     )
     loop_result = run_managed_execution_loop(
         spec=spec,

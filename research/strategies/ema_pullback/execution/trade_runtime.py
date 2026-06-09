@@ -36,6 +36,7 @@ TradeRuntimeEventType = Literal[
     "active_stop_updated",
     "active_take_updated",
     "runtime_exit_triggered",
+    "runtime_exit_executed",
     "exit_rule_triggered",
     "exit_executed",
 ]
@@ -45,6 +46,7 @@ MANAGED_RUNTIME_EVENT_TYPES: tuple[TradeRuntimeEventType, ...] = (
     "active_stop_updated",
     "active_take_updated",
     "runtime_exit_triggered",
+    "runtime_exit_executed",
     "exit_rule_triggered",
     "exit_executed",
 )
@@ -131,6 +133,10 @@ class ExitCandidate:
     bar: int
     reason: str
     candidate_type: str | None = None
+    attribution_layer: str | None = None
+    exit_owner: str | None = None
+    exit_kind: str | None = None
+    role: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
@@ -546,6 +552,9 @@ def managed_trade_management_block_for_trade(
     exit_layer = record.get("exit_layer")
     if isinstance(exit_layer, str) and exit_layer:
         block["exit_layer"] = exit_layer
+    exit_owner = record.get("exit_owner")
+    if isinstance(exit_owner, str) and exit_owner:
+        block["exit_owner"] = exit_owner
 
     exit_executed = next(
         (event for event in reversed(events) if event.event_type == "exit_executed"),
@@ -555,6 +564,9 @@ def managed_trade_management_block_for_trade(
         meta_layer = exit_executed.metadata.get("exit_layer")
         if isinstance(meta_layer, str) and meta_layer:
             block["exit_layer"] = meta_layer
+        meta_owner = exit_executed.metadata.get("exit_owner")
+        if isinstance(meta_owner, str) and meta_owner:
+            block["exit_owner"] = meta_owner
         if exit_executed.rule_id:
             block["exit_rule_id"] = exit_executed.rule_id
         if exit_executed.component_id:
@@ -717,12 +729,27 @@ def trade_management_block_for_trade(
     events: list[TradeManagementEvent],
 ) -> dict[str, Any]:
     capture_ratio, giveback_pct = _capture_fields(record, state)
+    from research.strategies.ema_pullback.consumer_roles import exit_owner_for_layer
+
+    raw_layer = record.get("exit_layer")
+    if isinstance(raw_layer, str) and raw_layer.startswith("exit_management."):
+        exit_layer_value = raw_layer
+    else:
+        exit_layer_value = _exit_layer(record)
+    exit_owner_value = record.get("exit_owner")
+    if not isinstance(exit_owner_value, str) or not exit_owner_value:
+        exit_owner_value = (
+            exit_owner_for_layer(exit_layer_value)
+            if isinstance(exit_layer_value, str)
+            else None
+        )
     block: dict[str, Any] = {
         "phase_at_exit": state.phase,
         "max_phase_reached": state.max_phase_reached,
         "active_stop_source_at_exit": state.active_stop_source,
         "active_stop_price_at_exit": state.active_stop_price,
-        "exit_layer": _exit_layer(record),
+        "exit_layer": exit_layer_value,
+        "exit_owner": exit_owner_value,
         "exit_rule_id": record.get("exit_rule_id") or record.get("exit_instance_id"),
         "exit_component_id": record.get("exit_component_id"),
         "best_price_before_exit": state.best_price,

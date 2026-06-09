@@ -439,7 +439,6 @@ def test_parse_managed_smoke_artifact_from_slice_6() -> None:
         trade
         for trade in variant.trade_records
         if trade.trade_management is not None
-        and trade.trade_management.exit_layer == "exit_management"
     ]
 
     assert variant.trade_management_events

@@ -379,6 +379,31 @@ def build_feature_plan_from_strategy_spec(spec: EmaPullbackStrategySpec) -> Feat
             ),
         )
 
+    from research.strategies.ema_pullback.spec import (
+        EmaCrossRuntimeExitParamsSpec,
+        RsiRuntimeExitParamsSpec,
+    )
+
+    for runtime_rule in spec.trade_management.exit_management.runtime_exits:
+        if isinstance(runtime_rule.params, RsiRuntimeExitParamsSpec):
+            rsi = runtime_rule.params.rsi
+            feature_id = _rsi_feature_id(rsi.timeframe, rsi.period)
+            add(
+                PlannedFeature(
+                    feature_id=feature_id,
+                    kind="rsi",
+                    source="close",
+                    timeframe=rsi.timeframe,
+                    period=rsi.period,
+                    base_feature_id=None,
+                    multiplier=None,
+                )
+            )
+            rsi_columns[(rsi.timeframe, rsi.period)] = feature_id
+        elif isinstance(runtime_rule.params, EmaCrossRuntimeExitParamsSpec):
+            for ema in (runtime_rule.params.fast_ema, runtime_rule.params.slow_ema):
+                _add_ema_feature(add, ema, ema_columns)
+
     return FeaturePlan(
         features=tuple(features),
         anchor_columns={
