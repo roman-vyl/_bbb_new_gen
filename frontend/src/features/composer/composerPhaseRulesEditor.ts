@@ -1,4 +1,4 @@
-import type { JsonObject, ValidationErrorItem } from "@/api/types";
+import type { ComponentCatalog, JsonObject, ValidationErrorItem } from "@/api/types";
 
 import {
   EXIT_MANAGEMENT_PRODUCT_CONTRACT,
@@ -422,6 +422,7 @@ export function collectPhaseRulesValidationErrors(
 export function collectExitManagementProductValidationErrors(
   strategy: JsonObject,
   pathPrefix: string,
+  catalog: ComponentCatalog | null = null,
 ): ValidationErrorItem[] {
   const tradeManagement = (strategy.trade_management as JsonObject | undefined) ?? {};
   const exitManagement = (tradeManagement.exit_management as JsonObject | undefined) ?? {};
@@ -443,7 +444,7 @@ export function collectExitManagementProductValidationErrors(
   const normalized = normalizeExitManagementV2(exitManagement);
   return [
     ...collectPhaseRulesValidationErrors(normalized, pathPrefix),
-    ...collectManagedRulesValidationErrors(normalized, pathPrefix),
+    ...collectManagedRulesValidationErrors(normalized, pathPrefix, catalog),
   ];
 }
 

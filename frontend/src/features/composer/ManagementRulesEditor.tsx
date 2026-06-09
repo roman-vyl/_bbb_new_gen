@@ -4,7 +4,6 @@ import type { JsonObject, ValidationErrorItem } from "@/api/types";
 
 import {
   ACTIVATE_WHEN_PHASES,
-  RUNTIME_EXIT_COMPONENT_IDS,
   RUNTIME_EXIT_KINDS,
   RUNTIME_EXIT_ROLE,
   STOP_MANAGEMENT_COMPONENT_IDS,
@@ -23,7 +22,7 @@ type Props = {
   pathPrefix: string;
   layer: ManagementRuleLayer;
   title: string;
-  componentIds: readonly string[];
+  componentIds?: readonly string[];
   errors: ValidationErrorItem[];
   onChange: (nextExitManagement: JsonObject) => void;
   disabled?: boolean;
@@ -366,20 +365,24 @@ export function ManagementRulesEditor({
 
   const updateRule = (index: number, patch: JsonObject) => {
     const next = rules.map((rule, i) =>
-      i === index ? updateManagementRule(rule, patch) : rule,
+      i === index ? updateManagementRule(rule, patch, { layer }) : rule,
     );
     patchRules(next);
   };
 
   const addRule = () => {
-    patchRules([...rules, createBlankManagementRule(layer, rules.length)]);
+    patchRules([
+      ...rules,
+      createBlankManagementRule(layer, rules.length, ids[0]),
+    ]);
   };
 
   const removeRule = (index: number) => {
     patchRules(rules.filter((_, i) => i !== index));
   };
 
-  const defaultComponentId = componentIds[0] ?? "";
+  const ids = componentIds ?? [];
+  const defaultComponentId = ids[0] ?? "";
 
   return (
     <div
@@ -440,7 +443,7 @@ export function ManagementRulesEditor({
                   disabled={disabled}
                   onChange={(e) => updateRule(index, { component_id: e.target.value })}
                 >
-                  {componentIds.map((id) => (
+                  {ids.map((id) => (
                     <option key={id} value={id}>
                       {id}
                     </option>
@@ -519,8 +522,4 @@ export function ManagementRulesEditor({
   );
 }
 
-export {
-  STOP_MANAGEMENT_COMPONENT_IDS,
-  TAKE_MANAGEMENT_COMPONENT_IDS,
-  RUNTIME_EXIT_COMPONENT_IDS,
-};
+export { STOP_MANAGEMENT_COMPONENT_IDS, TAKE_MANAGEMENT_COMPONENT_IDS };

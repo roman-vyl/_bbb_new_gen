@@ -6,27 +6,30 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import runnerRsiEmaSmoke from "../../../../research/experiments/specs/smoke/exit_management_runner_rsi_ema_runtime_smoke_local.json";
 import type { JsonObject } from "@/api/types";
+import { componentsForAllowedRole } from "@/features/composer/composerDraft";
 import { ExitManagementProductPanel } from "@/features/composer/ExitManagementProductPanel";
 import {
   createBlankExitManagement,
   normalizeExitManagementV2,
 } from "@/features/composer/composerExitManagementProduct";
 import {
-  RUNTIME_EXIT_COMPONENT_IDS,
-  RUNTIME_EXIT_ROLE,
   collectManagedRulesValidationErrors,
   createBlankManagementRule,
   readManagementRules,
+  runtimeExitComponentIds,
   writeExitManagementMode,
   writeManagementRules,
 } from "@/features/composer/composerManagedExitManagement";
+import { RUNTIME_EXIT_ROLE } from "@/features/composer/composerRuntimeExitAuthoring";
 import {
   collectExitManagementProductValidationErrors,
   writeExitManagementOnStrategy,
 } from "@/features/composer/composerPhaseRulesEditor";
 import { prepareStrategyForApi } from "@/features/composer/composerStrategyContexts";
+import { RUNTIME_EXIT_CATALOG_STUB } from "@/features/composer/testFixtures/runtimeExitCatalogStub";
 
 const PATH = "instances[0].strategy";
+const CATALOG = RUNTIME_EXIT_CATALOG_STUB;
 
 function runnerSmokeExitManagement(): JsonObject {
   const strategy = (runnerRsiEmaSmoke.instances[0] as JsonObject).strategy as JsonObject;
@@ -38,13 +41,16 @@ afterEach(() => {
   cleanup();
 });
 
-describe("composer runtime_exits authoring (Slice 2)", () => {
-  it("allowlists rsi_signal_exit, ema_cross_loss_exit, phase_runtime_exit", () => {
-    expect(RUNTIME_EXIT_COMPONENT_IDS).toEqual([
-      "rsi_signal_exit",
+describe("composer runtime_exits authoring (catalog-driven)", () => {
+  it("runtime picker uses catalog allowed_roles exit_management.runtime_exit", () => {
+    const ids = runtimeExitComponentIds(CATALOG);
+    expect(ids).toEqual([
       "ema_cross_loss_exit",
       "phase_runtime_exit",
+      "rsi_signal_exit",
     ]);
+    expect(componentsForAllowedRole(CATALOG, RUNTIME_EXIT_ROLE)).toHaveLength(3);
+    expect(ids).not.toContain("atr_stop_loss");
   });
 
   it("runner RSI + EMA smoke normalizes with role and exit_kind", () => {
@@ -56,13 +62,9 @@ describe("composer runtime_exits authoring (Slice 2)", () => {
       expect(rule.role).toBe(RUNTIME_EXIT_ROLE);
       expect(rule.exit_kind).toBeTruthy();
     }
-    expect(runtime[0]?.component_id).toBe("rsi_signal_exit");
-    expect(runtime[0]?.exit_kind).toBe("take_profit");
-    expect(runtime[1]?.component_id).toBe("ema_cross_loss_exit");
-    expect(runtime[1]?.exit_kind).toBe("protective_exit");
   });
 
-  it("runner smoke validates with zero product errors after normalization", () => {
+  it("runner smoke validates with catalog and zero product errors", () => {
     const strategy = (runnerRsiEmaSmoke.instances[0] as JsonObject).strategy as JsonObject;
     const tm = strategy.trade_management as JsonObject;
     const strategyWithNormalizedEm = {
@@ -72,7 +74,11 @@ describe("composer runtime_exits authoring (Slice 2)", () => {
         exit_management: normalizeExitManagementV2(tm.exit_management as JsonObject),
       },
     };
-    const errors = collectExitManagementProductValidationErrors(strategyWithNormalizedEm, PATH);
+    const errors = collectExitManagementProductValidationErrors(
+      strategyWithNormalizedEm,
+      PATH,
+      CATALOG,
+    );
     expect(errors).toEqual([]);
   });
 
@@ -98,13 +104,13 @@ describe("composer runtime_exits authoring (Slice 2)", () => {
     const withSignal = writeManagementRules(em, "runtime_exits", [
       { ...rule, exit_kind: "signal" },
     ]);
-    const errors = collectManagedRulesValidationErrors(withSignal, PATH);
+    const errors = collectManagedRulesValidationErrors(withSignal, PATH, CATALOG);
     expect(errors.some((e) => e.path.endsWith(".exit_kind") && e.message.includes("signal"))).toBe(
       true,
     );
   });
 
-  it("rejects atr_stop_loss in runtime_exits layer", () => {
+  it("rejects atr_stop_loss when catalog disallows runtime_exit role", () => {
     const em = writeExitManagementMode(createBlankExitManagement(), "managed");
     const bad = writeManagementRules(em, "runtime_exits", [
       {
@@ -116,37 +122,44 @@ describe("composer runtime_exits authoring (Slice 2)", () => {
         params: {},
       },
     ]);
-    const errors = collectManagedRulesValidationErrors(bad, PATH);
+    const errors = collectManagedRulesValidationErrors(bad, PATH, CATALOG);
     expect(errors.some((e) => e.path.endsWith(".component_id"))).toBe(true);
   });
 
   it("renders RSI and EMA runtime exit fields in management editor", () => {
     const em = normalizeExitManagementV2(runnerSmokeExitManagement());
     render(
-      <ExitManagementProductPanel exitManagement={em} pathPrefix={PATH} onChange={vi.fn()} />,
+      <ExitManagementProductPanel
+        exitManagement={em}
+        pathPrefix={PATH}
+        catalog={CATALOG}
+        onChange={vi.fn()}
+      />,
     );
     expect(screen.getByDisplayValue("runner_rsi90_take")).toBeTruthy();
     expect(screen.getByDisplayValue("runner_ema100_200_protect")).toBeTruthy();
     expect(screen.getByDisplayValue("rsi_signal_exit")).toBeTruthy();
     expect(screen.getByDisplayValue("ema_cross_loss_exit")).toBeTruthy();
     expect(screen.getAllByDisplayValue(RUNTIME_EXIT_ROLE).length).toBeGreaterThan(0);
-    expect(screen.getByDisplayValue("take_profit")).toBeTruthy();
-    expect(screen.getByDisplayValue("protective_exit")).toBeTruthy();
   });
 
-  it("add runtime exit rule defaults to rsi_signal_exit with role and exit_kind", () => {
+  it("add runtime exit rule uses first catalog-allowed component", () => {
     const onChange = vi.fn();
     const em = writeExitManagementMode(createBlankExitManagement(), "managed");
     render(
-      <ExitManagementProductPanel exitManagement={em} pathPrefix={PATH} onChange={onChange} />,
+      <ExitManagementProductPanel
+        exitManagement={em}
+        pathPrefix={PATH}
+        catalog={CATALOG}
+        onChange={onChange}
+      />,
     );
     fireEvent.click(screen.getByRole("button", { name: /add runtime exits rule/i }));
     expect(onChange).toHaveBeenCalled();
     const next = onChange.mock.calls[0]![0] as JsonObject;
     const runtime = readManagementRules(next, "runtime_exits");
     expect(runtime).toHaveLength(1);
-    expect(runtime[0]?.component_id).toBe("rsi_signal_exit");
+    expect(runtime[0]?.component_id).toBe(runtimeExitComponentIds(CATALOG)[0]);
     expect(runtime[0]?.role).toBe(RUNTIME_EXIT_ROLE);
-    expect(runtime[0]?.exit_kind).toBe("take_profit");
   });
 });

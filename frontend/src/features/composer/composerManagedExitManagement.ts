@@ -1,8 +1,7 @@
-import type { JsonObject, ValidationErrorItem } from "@/api/types";
+import type { ComponentCatalog, JsonObject, ValidationErrorItem } from "@/api/types";
 
 import { normalizeExitManagementV2 } from "@/features/composer/composerExitManagementProduct";
 import {
-  RUNTIME_EXIT_COMPONENT_IDS,
   RUNTIME_EXIT_KINDS,
   RUNTIME_EXIT_ROLE,
   defaultEmaCrossRuntimeExitParams,
@@ -10,6 +9,7 @@ import {
   defaultRsiRuntimeExitParams,
   normalizeRuntimeExitRule,
   normalizeRuntimeExitRules,
+  runtimeExitComponentIds,
 } from "@/features/composer/composerRuntimeExitAuthoring";
 
 export const EXIT_MANAGEMENT_MODES = ["diagnostic_only", "managed"] as const;
@@ -28,9 +28,10 @@ export const TAKE_MANAGEMENT_COMPONENT_IDS = ["take_profile_switch"] as const;
 export const TAKE_PROFILE_SWITCH_ACTIONS = ["keep_initial", "disable_initial_tp"] as const;
 
 export {
-  RUNTIME_EXIT_COMPONENT_IDS,
   RUNTIME_EXIT_KINDS,
   RUNTIME_EXIT_ROLE,
+  runtimeExitComponentIds,
+  runtimeExitComponents,
 } from "@/features/composer/composerRuntimeExitAuthoring";
 
 export type ManagementRuleLayer =
@@ -123,7 +124,7 @@ export function createBlankManagementRule(
       params: defaultTakeProfileSwitchParams(),
     };
   }
-  const runtimeComponentId = componentId ?? "rsi_signal_exit";
+  const runtimeComponentId = componentId ?? "phase_runtime_exit";
   const params =
     runtimeComponentId === "rsi_signal_exit"
       ? defaultRsiRuntimeExitParams()
@@ -146,6 +147,7 @@ export function updateManagementRule(
     activate_when?: JsonObject;
     params?: JsonObject;
   },
+  options?: { layer?: ManagementRuleLayer },
 ): ManagementRuleDraft {
   const next: ManagementRuleDraft = { ...rule, ...patch };
   if (patch.activate_when) {
@@ -166,25 +168,35 @@ export function updateManagementRule(
       next.params = defaultRsiRuntimeExitParams();
       next.exit_kind = "take_profit";
       next.activate_when = defaultActivateWhen("runner");
+      next.role = RUNTIME_EXIT_ROLE;
     } else if (componentId === "ema_cross_loss_exit") {
       next.params = defaultEmaCrossRuntimeExitParams();
       next.exit_kind = "protective_exit";
       next.activate_when = defaultActivateWhen("runner");
+      next.role = RUNTIME_EXIT_ROLE;
     } else if (componentId === "phase_runtime_exit") {
       next.params = defaultPhaseRuntimeExitParams();
       next.exit_kind = "market_close";
       next.activate_when = defaultActivateWhen("exhaustion");
+      next.role = RUNTIME_EXIT_ROLE;
     }
   }
-  if (layerFromRule(next) === "runtime_exits") {
+  if (options?.layer === "runtime_exits" || layerFromRule(next) === "runtime_exits") {
     return normalizeRuntimeExitRule(next);
   }
   return next;
 }
 
 function layerFromRule(rule: ManagementRuleDraft): ManagementRuleLayer | null {
+  if (rule.role === RUNTIME_EXIT_ROLE) {
+    return "runtime_exits";
+  }
   const componentId = typeof rule.component_id === "string" ? rule.component_id : "";
-  if (RUNTIME_EXIT_COMPONENT_IDS.includes(componentId as (typeof RUNTIME_EXIT_COMPONENT_IDS)[number])) {
+  if (
+    componentId === "rsi_signal_exit" ||
+    componentId === "ema_cross_loss_exit" ||
+    componentId === "phase_runtime_exit"
+  ) {
     return "runtime_exits";
   }
   if (STOP_MANAGEMENT_COMPONENT_IDS.includes(componentId as (typeof STOP_MANAGEMENT_COMPONENT_IDS)[number])) {
@@ -207,6 +219,7 @@ function isNonNegativeFinite(value: unknown): value is number {
 export function collectManagedRulesValidationErrors(
   exitManagement: JsonObject,
   pathPrefix: string,
+  catalog: ComponentCatalog | null = null,
 ): ValidationErrorItem[] {
   const errors: ValidationErrorItem[] = [];
   const emPath = `${pathPrefix}.trade_management.exit_management`;
@@ -402,7 +415,19 @@ export function collectManagedRulesValidationErrors(
 
   validateLayer("stop_management", STOP_MANAGEMENT_COMPONENT_IDS);
   validateLayer("take_management", TAKE_MANAGEMENT_COMPONENT_IDS);
-  validateLayer("runtime_exits", RUNTIME_EXIT_COMPONENT_IDS);
+  const runtimeAllowedIds =
+    catalog != null ? runtimeExitComponentIds(catalog) : null;
+  if (runtimeAllowedIds != null) {
+    validateLayer("runtime_exits", runtimeAllowedIds);
+  } else {
+    const rules = readManagementRules(exitManagement, "runtime_exits");
+    if (rules.length > 0) {
+      errors.push({
+        path: `${emPath}.runtime_exits`,
+        message: "runtime_exits validation requires component catalog",
+      });
+    }
+  }
 
   return errors;
 }

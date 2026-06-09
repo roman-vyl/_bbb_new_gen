@@ -1,4 +1,4 @@
-import type { JsonObject, ValidationErrorItem } from "@/api/types";
+import type { ComponentCatalog, JsonObject, ValidationErrorItem } from "@/api/types";
 import {
   LEGACY_EXIT_MANAGEMENT_UNSUPPORTED_MESSAGE,
   createBlankExitManagement,
@@ -9,17 +9,18 @@ import {
   EXIT_MANAGEMENT_MODES,
   writeExitManagementMode,
 } from "@/features/composer/composerManagedExitManagement";
+import { runtimeExitComponentIds } from "@/features/composer/composerRuntimeExitAuthoring";
 import {
-  ManagementRulesEditor,
-  RUNTIME_EXIT_COMPONENT_IDS,
   STOP_MANAGEMENT_COMPONENT_IDS,
   TAKE_MANAGEMENT_COMPONENT_IDS,
-} from "@/features/composer/ManagementRulesEditor";
+} from "@/features/composer/composerManagedExitManagement";
+import { ManagementRulesEditor } from "@/features/composer/ManagementRulesEditor";
 import { PhaseRulesEditor } from "@/features/composer/PhaseRulesEditor";
 
 type Props = {
   exitManagement: JsonObject;
   pathPrefix: string;
+  catalog: ComponentCatalog;
   errors?: ValidationErrorItem[];
   onChange?: (nextExitManagement: JsonObject) => void;
 };
@@ -27,9 +28,11 @@ type Props = {
 export function ExitManagementProductPanel({
   exitManagement,
   pathPrefix,
+  catalog,
   errors = [],
   onChange,
 }: Props) {
+  const runtimeExitIds = runtimeExitComponentIds(catalog);
   const summary = summarizeExitManagementProduct(exitManagement);
   const isUnsupportedLegacy = exitManagementHasLegacyKeys(exitManagement);
   const authoringEnabled = Boolean(onChange) && !isUnsupportedLegacy;
@@ -151,7 +154,7 @@ export function ExitManagementProductPanel({
                 pathPrefix={pathPrefix}
                 layer="runtime_exits"
                 title="Runtime exits"
-                componentIds={RUNTIME_EXIT_COMPONENT_IDS}
+                componentIds={runtimeExitIds}
                 errors={errors}
                 onChange={onChange!}
               />

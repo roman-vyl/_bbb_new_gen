@@ -22,6 +22,9 @@ import {
   collectComposerDraftErrors,
   prepareStrategyForApi,
 } from "@/features/composer/composerStrategyContexts";
+import { RUNTIME_EXIT_CATALOG_STUB } from "@/features/composer/testFixtures/runtimeExitCatalogStub";
+
+const PANEL_CATALOG = RUNTIME_EXIT_CATALOG_STUB;
 
 const LEGACY_EXIT_MANAGEMENT = {
   always_on: {
@@ -53,6 +56,7 @@ describe("ExitManagementProductPanel", () => {
   it("shows product contract summary for new diagnostic_only shape", () => {
     render(
       <ExitManagementProductPanel
+        catalog={PANEL_CATALOG}
         exitManagement={{
           mode: "diagnostic_only",
           phase_rules: [{ rule_id: "to_proven" }],
@@ -72,6 +76,7 @@ describe("ExitManagementProductPanel", () => {
   it("shows unsupported legacy banner when always_on/profiles are present", () => {
     render(
       <ExitManagementProductPanel
+        catalog={PANEL_CATALOG}
         exitManagement={LEGACY_EXIT_MANAGEMENT}
         pathPrefix={PATH}
       />,
@@ -85,6 +90,7 @@ describe("ExitManagementProductPanel", () => {
   it("legacy config shows reset button when onChange is wired", () => {
     render(
       <ExitManagementProductPanel
+        catalog={PANEL_CATALOG}
         exitManagement={LEGACY_EXIT_MANAGEMENT}
         pathPrefix={PATH}
         onChange={vi.fn()}
@@ -99,6 +105,7 @@ describe("ExitManagementProductPanel", () => {
     const onChange = vi.fn();
     const { rerender } = render(
       <ExitManagementProductPanel
+        catalog={PANEL_CATALOG}
         exitManagement={LEGACY_EXIT_MANAGEMENT}
         pathPrefix={PATH}
         onChange={onChange}
@@ -109,6 +116,7 @@ describe("ExitManagementProductPanel", () => {
 
     rerender(
       <ExitManagementProductPanel
+        catalog={PANEL_CATALOG}
         exitManagement={onChange.mock.calls[0]![0] as Record<string, unknown>}
         pathPrefix={PATH}
         onChange={onChange}
@@ -121,6 +129,7 @@ describe("ExitManagementProductPanel", () => {
   it("does not auto-reset legacy shape on render", () => {
     render(
       <ExitManagementProductPanel
+        catalog={PANEL_CATALOG}
         exitManagement={LEGACY_EXIT_MANAGEMENT}
         pathPrefix={PATH}
         onChange={vi.fn()}
@@ -131,7 +140,7 @@ describe("ExitManagementProductPanel", () => {
   });
 
   it("blocks save validation for legacy exit_management", () => {
-    const errors = collectExitManagementProductValidationErrors(LEGACY_STRATEGY, PATH);
+    const errors = collectExitManagementProductValidationErrors(LEGACY_STRATEGY, PATH, PANEL_CATALOG);
     expect(errors).toHaveLength(1);
     expect(errors[0]?.message).toBe(LEGACY_EXIT_MANAGEMENT_UNSUPPORTED_MESSAGE);
 
@@ -150,13 +159,14 @@ describe("ExitManagementProductPanel", () => {
     expect(em).toEqual(createBlankExitManagement());
     expect(em.always_on).toBeUndefined();
     expect(em.profiles).toBeUndefined();
-    expect(collectExitManagementProductValidationErrors(reset, PATH)).toEqual([]);
+    expect(collectExitManagementProductValidationErrors(reset, PATH, PANEL_CATALOG)).toEqual([]);
     expect(JSON.stringify(prepareStrategyForApi(reset))).not.toContain("break_even_stop");
   });
 
   it("renders phase rules editor when onChange is provided and config is v2", () => {
     render(
       <ExitManagementProductPanel
+        catalog={PANEL_CATALOG}
         exitManagement={createBlankExitManagement()}
         pathPrefix={PATH}
         onChange={vi.fn()}
@@ -170,6 +180,7 @@ describe("ExitManagementProductPanel", () => {
     const onChange = vi.fn();
     render(
       <ExitManagementProductPanel
+        catalog={PANEL_CATALOG}
         exitManagement={createBlankExitManagement()}
         pathPrefix={PATH}
         onChange={onChange}
@@ -191,6 +202,7 @@ describe("ExitManagementProductPanel", () => {
     };
     render(
       <ExitManagementProductPanel
+        catalog={PANEL_CATALOG}
         exitManagement={saved}
         pathPrefix={PATH}
         onChange={vi.fn()}
@@ -237,6 +249,7 @@ describe("ExitManagementProductPanel", () => {
     const em = normalizeExitManagementV2(tm.exit_management as Record<string, unknown>);
     render(
       <ExitManagementProductPanel
+        catalog={PANEL_CATALOG}
         exitManagement={em}
         pathPrefix={PATH}
         onChange={vi.fn()}
@@ -254,6 +267,7 @@ describe("ExitManagementProductPanel", () => {
     const onChange = vi.fn();
     render(
       <ExitManagementProductPanel
+        catalog={PANEL_CATALOG}
         exitManagement={createBlankExitManagement()}
         pathPrefix={PATH}
         onChange={onChange}

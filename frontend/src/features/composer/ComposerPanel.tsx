@@ -1636,6 +1636,7 @@ export function ComposerPanel() {
                       <ExitManagementProductPanel
                         exitManagement={readExitManagement(strategy)}
                         pathPrefix={pathPrefix}
+                        catalog={catalog}
                         errors={validationErrors}
                         onChange={(nextExitManagement) => {
                           patchInstance(index, {

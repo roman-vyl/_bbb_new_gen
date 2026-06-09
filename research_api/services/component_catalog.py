@@ -422,6 +422,20 @@ def get_component_catalog(*, family: str = "ema_pullback") -> ComponentCatalog:
                 "usd_distance": _num_param("USD distance", default=200.0),
             },
         ),
+        ComponentSchema(
+            component_id="phase_runtime_exit",
+            role="exit_management",
+            allowed_roles=["exit_management.runtime_exit"],
+            label="Phase runtime exit (market close)",
+            params_schema={
+                "exit_price": ParamFieldSchema(
+                    type="string",
+                    label="exit_price",
+                    enum=["close"],
+                    default="close",
+                ),
+            },
+        ),
         # break_even_stop removed from authoring catalog (Slice 9): legacy managed combiner only.
         # Runtime/parser compatibility remains in research layer for existing artifacts.
     ]

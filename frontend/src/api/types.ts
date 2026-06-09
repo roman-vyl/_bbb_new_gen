@@ -568,6 +568,8 @@ export type ComponentSchema = {
     | "exit_management";
   label: string;
   description?: string | null;
+  /** Consumer roles this component may be authored under (e.g. exit_management.runtime_exit). */
+  allowed_roles?: string[];
   params_schema?: Record<string, ParamFieldSchema>;
   /** When "nested", Composer nests params_schema keys under setup.params on save. */
   params_storage?: "flat" | "nested";

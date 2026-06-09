@@ -573,7 +573,7 @@ export function collectComposerStrategyErrors(
       });
     }
   }
-  errors.push(...collectExitManagementProductValidationErrors(strategy, pathPrefix));
+  errors.push(...collectExitManagementProductValidationErrors(strategy, pathPrefix, catalog));
   if (!exitPolicyRequiresContextConsumption(strategy)) {
     return errors;
   }
