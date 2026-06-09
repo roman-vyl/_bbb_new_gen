@@ -191,6 +191,7 @@ def _trade_management_block(**overrides: object) -> dict[str, object]:
         "active_stop_source_at_exit": None,
         "active_stop_price_at_exit": None,
         "exit_layer": "stop_loss",
+        "exit_owner": "exit_policy",
         "exit_rule_id": "atr_sl",
         "exit_component_id": "atr_stop_loss",
         "best_price_before_exit": 106.0,
@@ -533,3 +534,37 @@ def test_parse_run_summary_report_preserves_managed_metrics_without_events() -> 
     ] == 1
     assert compact_variant.metrics.baseline_vs_managed_summary is not None
     assert compact_variant.metrics.baseline_vs_managed_summary["runtime_exit_helped"] == []
+
+
+def test_parse_run_report_accepts_exit_owner_on_trade_management() -> None:
+    payload = _minimal_report_payload(
+        trade_records=[
+            _minimal_trade(
+                trade_management=_trade_management_block(
+                    exit_layer="exit_management.runtime_exit",
+                    exit_owner="exit_management",
+                ),
+            ),
+        ],
+    )
+    report = parse_run_report(payload)
+    tm = report.variants[0].trade_records[0].trade_management
+    assert tm is not None
+    assert tm.exit_owner == "exit_management"
+    assert tm.exit_layer == "exit_management.runtime_exit"
+
+
+@pytest.mark.parametrize(
+    "run_id",
+    [
+        "2026-06-09T132642Z_ema_pullback_BTCUSDT_5m__strict_adx40_runner_runtime_rsi90_ema100_200_smoke",
+        "2026-06-09T133027Z_ema_pullback_BTCUSDT_5m__baseline_no_runtime",
+    ],
+)
+def test_load_recent_managed_smoke_runs_from_disk(run_id: str) -> None:
+    path = Path("research/results/runs") / f"{run_id}.json"
+    if not path.is_file():
+        pytest.skip(f"missing artifact {path}")
+    report = parse_run_report(json.loads(path.read_text(encoding="utf-8")))
+    assert report.run_id == run_id
+    assert report.variants[0].trade_records

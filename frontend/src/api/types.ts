@@ -126,6 +126,7 @@ export type TradeManagementDiagnostics = {
   active_stop_source_at_exit?: string | null;
   active_stop_price_at_exit?: number | null;
   exit_layer?: string | null;
+  exit_owner?: string | null;
   exit_rule_id?: string | null;
   exit_component_id?: string | null;
   best_price_before_exit?: number | null;

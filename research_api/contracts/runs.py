@@ -83,6 +83,7 @@ class TradeManagementDiagnostics(BaseModel):
     active_stop_source_at_exit: str | None = None
     active_stop_price_at_exit: float | None = None
     exit_layer: str | None = None
+    exit_owner: str | None = None
     exit_rule_id: str | None = None
     exit_component_id: str | None = None
     best_price_before_exit: float | None = None
