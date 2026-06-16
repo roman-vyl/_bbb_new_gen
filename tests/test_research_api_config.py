@@ -112,6 +112,10 @@ def test_component_catalog_returns_ema_pullback_components(client: TestClient) -
     assert bounce_params["raw_touch_mode"]["enum"] == ["range_cross"]
     assert setup_components[1].get("params_storage") == "nested"
     assert all(component.get("supports_context_consumption") is True for component in setup_components)
+    width_setup = next(
+        c for c in setup_components if c["component_id"] == "anchor_stack_width_setup"
+    )
+    assert "1h" in width_setup["params_schema"]["atr_timeframe"]["enum"]
     for component in setup_components:
         setup_policy_ids = [
             p["policy_id"] for p in component.get("context_consumption_policies") or []

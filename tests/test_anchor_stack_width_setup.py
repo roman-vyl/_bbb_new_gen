@@ -250,6 +250,117 @@ def test_load_anchor_stack_width_config() -> None:
     assert rule.params.min_recent_width_atr == 4.0
 
 
+def test_load_anchor_stack_width_config_with_htf_atr() -> None:
+    instance = _instance("width_setup_htf")
+    strategy = instance["strategy"]
+    assert isinstance(strategy, dict)
+    strategy["setups"] = [
+        {
+            "instance_id": "anchor_stack_width",
+            "component_id": "anchor_stack_width_setup",
+            "params": {
+                "atr_timeframe": "1h",
+                "atr_period": 14,
+                "min_current_width_atr": 2.0,
+                "min_recent_width_atr": 4.0,
+                "width_lookback_bars": 80,
+            },
+        },
+    ]
+    loaded = load_strategy_config(_bundle([instance]))
+    rule = loaded.specs[0].setups[0]
+    assert rule.params.atr_timeframe == "1h"
+
+
+def test_feature_plan_uses_configured_atr_timeframe() -> None:
+    spec = make_ema_pullback_strategy_spec(
+        setups=(
+            setup_rule(
+                instance_id="anchor_stack_width",
+                component_id=setup_anchor_stack_width(),
+                params=anchor_stack_width_setup_spec(atr_timeframe="1h", atr_period=14),
+            ),
+        ),
+    )
+    plan = build_feature_plan_from_strategy_spec(spec)
+    cols = plan.setup_columns_for("anchor_stack_width")
+    assert cols["atr"] == "atr_close_1h_14"
+    assert any(
+        f.kind == "atr" and f.timeframe == "1h" and f.period == 14 for f in plan.features
+    )
+
+
+def test_htf_atr_column_used_in_width_setup_trace() -> None:
+    from dataclasses import replace
+
+    spec = replace(
+        make_ema_pullback_strategy_spec(),
+        setups=(
+            setup_rule(
+                instance_id="anchor_stack_width",
+                component_id=setup_anchor_stack_width(),
+                params=anchor_stack_width_setup_spec(
+                    atr_timeframe="4h",
+                    atr_period=3,
+                    min_current_width_atr=0.01,
+                    min_recent_width_atr=0.01,
+                    width_lookback_bars=3,
+                ),
+            ),
+        ),
+    )
+    idx = pd.date_range("2024-01-01", periods=24, freq="h", tz="UTC")
+    close = pd.Series([100.0 + float(i) * 0.5 for i in range(24)], index=idx)
+    df = pd.DataFrame(
+        {
+            "open": close,
+            "high": close + 0.2,
+            "low": close - 0.2,
+            "close": close,
+            "volume": 1.0,
+        },
+        index=idx,
+    )
+    plan = build_feature_plan_from_strategy_spec(spec)
+    prepared = add_feature_columns_from_plan(df, plan)
+    cols = plan.setup_columns_for("anchor_stack_width")
+    assert cols["atr"] == "atr_close_4h_3"
+    prepared[cols["fast"]] = close + 5.0
+    prepared[cols["slow"]] = close - 5.0
+
+    trace = anchor_stack_width_setup_trace(
+        prepared,
+        cols["fast"],
+        cols["anchor"],
+        cols["slow"],
+        cols["atr"],
+        min_current_width_atr=0.01,
+        min_recent_width_atr=0.01,
+        width_lookback_bars=3,
+    )
+    valid = prepared[cols["atr"]].notna()
+    assert valid.any()
+    pd.testing.assert_series_equal(
+        trace["atr_value"].where(valid),
+        prepared[cols["atr"]].where(valid),
+        check_names=False,
+    )
+    base_atr_col = next(
+        f.feature_id for f in plan.features if f.kind == "atr" and f.timeframe == "base"
+    )
+    both_valid = valid & prepared[base_atr_col].notna()
+    assert not trace["atr_value"].where(both_valid).equals(
+        prepared[base_atr_col].where(both_valid)
+    )
+
+
+def test_invalid_atr_timeframe_rejected() -> None:
+    from research.strategies.ema_pullback.spec import AnchorStackWidthSetupSpec
+
+    with pytest.raises(ValueError, match="unsupported timeframe"):
+        AnchorStackWidthSetupSpec(atr_timeframe="2h")
+
+
 def test_min_recent_below_min_current_config_accepted() -> None:
     from research.strategies.ema_pullback.spec import AnchorStackWidthSetupSpec
 
