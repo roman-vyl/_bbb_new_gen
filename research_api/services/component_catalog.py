@@ -213,12 +213,7 @@ def get_component_catalog(*, family: str = "ema_pullback") -> ComponentCatalog:
             ),
             params_storage="nested",
             params_schema={
-                "atr_timeframe": ParamFieldSchema(
-                    type="string",
-                    label="ATR timeframe",
-                    enum=["base"],
-                    default="base",
-                ),
+                "atr_timeframe": _tf_param("ATR timeframe"),
                 "atr_period": _int_param("ATR period", default=14),
                 "min_current_width_atr": _num_param(
                     "Min current width (ATR)", default=2.0

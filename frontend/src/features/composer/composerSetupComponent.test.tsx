@@ -71,7 +71,7 @@ const SETUP_CATALOG: ComponentCatalog = {
         atr_timeframe: {
           type: "string",
           label: "ATR timeframe",
-          enum: ["base"],
+          enum: ["base", "5m", "15m", "1h", "4h"],
           default: "base",
         },
         atr_period: { type: "integer", label: "ATR period", default: 14 },

@@ -27,11 +27,11 @@ The `ema_pullback` strategy family SHALL expose `anchor_stack_width_setup` as a 
 
 ### Requirement: Configuration and validation
 
-The component SHALL accept params `atr_timeframe`, `atr_period`, `min_current_width_atr`, `min_recent_width_atr`, and `width_lookback_bars` on its `strategy.setups[]` entry (nested under `params` when using nested storage). For MVP, `atr_timeframe` MUST be `base`. `atr_period`, `min_current_width_atr`, `min_recent_width_atr`, and `width_lookback_bars` MUST be positive numbers/integers as applicable. Config identity generation MUST include these params.
+The component SHALL accept params `atr_timeframe`, `atr_period`, `min_current_width_atr`, `min_recent_width_atr`, and `width_lookback_bars` on its `strategy.setups[]` entry (nested under `params` when using nested storage). `atr_timeframe` MUST be `base` or a supported candle timeframe (`5m`, `15m`, `1h`, `4h`, `1d`). `atr_period`, `min_current_width_atr`, `min_recent_width_atr`, and `width_lookback_bars` MUST be positive numbers/integers as applicable. Config identity generation MUST include these params.
 
 Validation MUST NOT compare `min_recent_width_atr` to `min_current_width_atr` (no warning, hard reject, or special rule). Any positive pair is valid.
 
-#### Scenario: Valid MVP config accepted
+#### Scenario: Valid base config accepted
 
 - **GIVEN** a setup entry with `component_id: anchor_stack_width_setup` and `instance_id: anchor_stack_width`
 - **AND** params `atr_timeframe: base`, `atr_period: 14`, `min_current_width_atr: 2.0`, `min_recent_width_atr: 4.0`, `width_lookback_bars: 80`
@@ -39,10 +39,18 @@ Validation MUST NOT compare `min_recent_width_atr` to `min_current_width_atr` (n
 - **THEN** the setup config is accepted
 - **AND** params participate in strategy/config identity
 
-#### Scenario: Non-base ATR timeframe rejected in MVP
+#### Scenario: Valid HTF ATR timeframe accepted
 
 - **GIVEN** a setup entry with `component_id: anchor_stack_width_setup`
-- **AND** `atr_timeframe` is not `base`
+- **AND** `atr_timeframe: 1h`
+- **WHEN** the strategy spec is validated
+- **THEN** the setup config is accepted
+- **AND** the feature plan maps ATR to `atr_close_1h_{atr_period}`
+
+#### Scenario: Unsupported ATR timeframe rejected
+
+- **GIVEN** a setup entry with `component_id: anchor_stack_width_setup`
+- **AND** `atr_timeframe` is not `base` and not a supported candle timeframe
 - **WHEN** the strategy spec is validated
 - **THEN** validation rejects the config
 

@@ -8,6 +8,8 @@ import json
 import math
 from typing import Any, Literal
 
+from data_engine.contracts import validate_timeframe
+
 from research.strategies.ema_pullback.phase_rule_conditions.params import (
     PHASE_RULE_CONDITION_COMPONENT_IDS,
     PhaseRuleConditionParams,
@@ -280,8 +282,11 @@ class AnchorStackWidthSetupSpec:
     width_lookback_bars: int = 80
 
     def __post_init__(self) -> None:
-        if self.atr_timeframe.strip() != "base":
-            raise ValueError("anchor_stack_width_setup MVP requires atr_timeframe='base'")
+        tf = self.atr_timeframe.strip()
+        if not tf:
+            raise ValueError("atr_timeframe must be non-empty")
+        if tf != "base":
+            validate_timeframe(tf)
         if self.atr_period <= 0:
             raise ValueError("atr_period must be > 0")
         if self.min_current_width_atr <= 0:
