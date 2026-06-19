@@ -64,9 +64,12 @@ import {
   planMissingTraceDisplayChunkFetch,
 } from "@/features/chart/runtime/traceDisplayChunkScheduling";
 import {
+  applyLanesFromSessionBundle,
+  decideDenseLanesNetworkLoad,
   flushLanesLoadDebug,
   loadDenseLanesTrace,
   loadDisplayTraceChunk,
+  mapDisplayLoadOutcome,
   mergeDisplayFromDenseFallback,
 } from "@/features/chart/runtime/workbenchTraceNetworkLoad";
 import { canEmitTradeFocus } from "@/features/chart/runtime/viewportController";
@@ -431,6 +434,7 @@ export function WorkbenchProvider({
   const [contextOverlayRef, setContextOverlayRef] = useState<string | null>(null);
   const signalTraceRequestCoordinatorRef = useRef(createSignalTraceRequestCoordinator());
   const signalTraceStatusRef = useRef<SignalTraceLoadStatus>("idle");
+  const signalTraceRef = useRef<SignalTraceBundle | null>(null);
   const loadedSignalTraceWindowKeyRef = useRef<string | null>(null);
   const previousChartWindowKeyRef = useRef<string | null>(null);
   /** Last HTF aux overlays for current trace coverage; re-sliced when render window moves before trace key catches up. */
@@ -1369,6 +1373,10 @@ export function WorkbenchProvider({
   }, [signalTraceStatus]);
 
   useEffect(() => {
+    signalTraceRef.current = signalTrace;
+  }, [signalTrace]);
+
+  useEffect(() => {
     loadedSignalTraceWindowKeyRef.current = loadedSignalTraceWindowKey;
   }, [loadedSignalTraceWindowKey]);
 
@@ -1941,6 +1949,44 @@ export function WorkbenchProvider({
       if (sessionBundle === null) {
         return;
       }
+      const lanesRequestKeyForRestore = buildTraceRequestKey({
+        runId: request.runId,
+        variant: request.variant,
+        fromMs: request.fromMs,
+        toOpenTimeMs: request.toOpenTimeMs,
+        contextOverlayRef: effectiveContextOverlayRef,
+      });
+      const chartEventsEnabledForRestore = isChartEventsApiEnabled();
+      const lanesOnlySessionRestore = chartEventsEnabledForRestore && displayCacheCoversWindow;
+
+      if (lanesOnlySessionRestore) {
+        applyLanesFromSessionBundle({
+          sessionBundle,
+          windowKey: committedWindowKey,
+          lanesRequestKey: lanesRequestKeyForRestore,
+          coordinator,
+          applyLanesState: (bundle) => {
+            setSignalTrace(bundle);
+            setLoadedSignalTraceWindowKey(committedWindowKey);
+            loadedSignalTraceWindowKeyRef.current = committedWindowKey;
+            setSignalTraceStatus("ready");
+            signalTraceStatusRef.current = "ready";
+            setSignalTraceError(null);
+          },
+        });
+        logCoordinatorDecision(
+          coordinator.evaluate({
+            key: lanesRequestKeyForRestore,
+            generation: traceLoadGenerationRef.current,
+            displayCacheCoversWindow,
+          }),
+          lanesRequestKeyForRestore,
+          { afterSessionRestore: true, lanesOnly: true },
+        );
+        finalizeTraceDisplayUpdate();
+        return;
+      }
+
       coordinator.markMerged(windowTraceRequestKey, "session_restore");
       dbgMark(DBG.signalTrace.fetchStart, {
         source: "session_restore",
@@ -2108,9 +2154,20 @@ export function WorkbenchProvider({
     const variantKey = request.variant;
     const { fromMs, toOpenTimeMs } = chunkPlan;
 
+    const lanesPolicySnapshot = {
+      committedWindowKey: windowKey,
+      loadedSignalTraceWindowKey: loadedSignalTraceWindowKeyRef.current,
+      signalTraceStatus: signalTraceStatusRef.current,
+      loadedSignalTrace: signalTraceRef.current,
+      lanesReadyAtFetchStart: lanesReadyForWindow,
+    };
+
     coordinator.markInFlight(networkCoordinatorKey, fetchGeneration);
     if (chartEventsEnabled && !lanesOnlyFetch) {
       coordinator.markInFlight(displayRequestKey, fetchGeneration);
+    }
+    if (chartEventsEnabled) {
+      coordinator.markInFlight(lanesRequestKey, fetchGeneration);
     }
     setSignalTraceStatus("loading");
     signalTraceStatusRef.current = "loading";
@@ -2135,6 +2192,8 @@ export function WorkbenchProvider({
         finalizeTraceDisplayUpdate();
       };
 
+      const denseCoordinatorKey = chartEventsEnabled ? lanesRequestKey : networkCoordinatorKey;
+
       const networkCtx = {
         params: {
           runId,
@@ -2144,7 +2203,7 @@ export function WorkbenchProvider({
           contextOverlayRef: effectiveContextOverlayRef,
           windowKey,
           displayRequestKey,
-          networkCoordinatorKey,
+          networkCoordinatorKey: denseCoordinatorKey,
           fetchGeneration,
           signal: abortController.signal,
           lanesOnlyFetch,
@@ -2155,21 +2214,118 @@ export function WorkbenchProvider({
         onCommitDisplay: commitDisplayAfterMerge,
       };
 
-      const displayResult = await loadDisplayTraceChunk(networkCtx);
-      if (displayResult.outcome === "aborted" || displayResult.outcome === "stale") {
+      const displayResult = lanesOnlyFetch
+        ? null
+        : await loadDisplayTraceChunk(networkCtx);
+      if (
+        displayResult !== null &&
+        (displayResult.outcome === "aborted" || displayResult.outcome === "stale")
+      ) {
+        return;
+      }
+
+      const displayLoadOutcome = mapDisplayLoadOutcome(
+        lanesOnlyFetch,
+        chartEventsEnabled,
+        displayResult,
+      );
+      if (displayLoadOutcome === null) {
         return;
       }
 
       let displayMerged =
-        displayResult.outcome === "committed"
+        displayResult !== null && displayResult.outcome === "committed"
           ? true
-          : displayResult.displayMerged;
+          : (displayResult?.displayMerged ?? lanesOnlyFetch);
       let mergeSource =
-        displayResult.outcome === "committed"
+        displayResult !== null && displayResult.outcome === "committed"
           ? displayResult.mergeSource
-          : displayResult.mergeSource;
+          : (displayResult?.mergeSource ?? "signal-trace-fallback");
+
+      const lanesDecision = decideDenseLanesNetworkLoad({
+        chartEventsEnabled,
+        committedWindowKey: windowKey,
+        loadedSignalTraceWindowKey: lanesPolicySnapshot.loadedSignalTraceWindowKey,
+        signalTraceStatus: lanesPolicySnapshot.signalTraceStatus,
+        loadedSignalTrace: lanesPolicySnapshot.loadedSignalTrace,
+        sessionCacheHasWindow,
+        displayCacheCoversWindow,
+        displayLoadOutcome,
+        lanesRequestKey,
+        fromMs,
+        toOpenTimeMs,
+      });
+
+      const restoreLanesReadyAfterSkip = () => {
+        if (lanesPolicySnapshot.lanesReadyAtFetchStart) {
+          setSignalTraceStatus("ready");
+          signalTraceStatusRef.current = "ready";
+        }
+      };
+
+      const markDensePathComplete = () => {
+        coordinator.markMerged(denseCoordinatorKey, "network");
+      };
 
       try {
+        if (lanesDecision.action === "skip") {
+          dbgMark(DBG.lanesTrace.skip, {
+            windowKey,
+            reason: lanesDecision.reason,
+            displayLoadOutcome,
+          });
+          restoreLanesReadyAfterSkip();
+          if (chartEventsEnabled) {
+            markDensePathComplete();
+          }
+          return;
+        }
+
+        if (lanesDecision.action === "use_loaded_bundle") {
+          const bundle = lanesPolicySnapshot.loadedSignalTrace;
+          if (bundle !== null) {
+            mergeDisplayFromDenseFallback({
+              ...networkCtx,
+              bundle,
+              mergeSource: "signal-trace-fallback",
+            });
+            displayMerged = true;
+          }
+          dbgMark(DBG.lanesTrace.useLoaded, {
+            windowKey,
+            reason: lanesDecision.reason,
+            displayLoadOutcome,
+          });
+          restoreLanesReadyAfterSkip();
+          markDensePathComplete();
+          return;
+        }
+
+        if (lanesDecision.action === "restore_session") {
+          const sessionBundle = signalTraceBundleSessionCacheRef.current.get(
+            lanesDecision.windowKey,
+          );
+          if (sessionBundle === null) {
+            return;
+          }
+          applyLanesFromSessionBundle({
+            sessionBundle,
+            windowKey: lanesDecision.windowKey,
+            lanesRequestKey,
+            coordinator,
+            applyLanesState: (bundle) => {
+              setSignalTrace(bundle);
+              setLoadedSignalTraceWindowKey(windowKey);
+              loadedSignalTraceWindowKeyRef.current = windowKey;
+              setSignalTraceStatus("ready");
+              signalTraceStatusRef.current = "ready";
+              setSignalTraceError(null);
+            },
+          });
+          flushLanesLoadDebug();
+          return;
+        }
+
         const lanesResult = await loadDenseLanesTrace(networkCtx);
         if (lanesResult.outcome === "aborted" || lanesResult.outcome === "stale") {
           return;
@@ -2194,7 +2350,7 @@ export function WorkbenchProvider({
             return;
           }
 
-          coordinator.markFailed(networkCoordinatorKey);
+          coordinator.markFailed(denseCoordinatorKey);
           setSignalTrace(null);
           setLoadedSignalTraceWindowKey(windowKey);
           loadedSignalTraceWindowKeyRef.current = windowKey;
@@ -2211,7 +2367,10 @@ export function WorkbenchProvider({
         }
 
         const bundle = lanesResult.bundle;
-        if (!displayMerged) {
+        const needsDisplayMergeFromDense =
+          lanesDecision.reason === "flag_off_combined" ||
+          lanesDecision.reason === "display_fallback_needed";
+        if (!displayMerged && needsDisplayMergeFromDense) {
           mergeDisplayFromDenseFallback({
             ...networkCtx,
             bundle,
@@ -2220,7 +2379,7 @@ export function WorkbenchProvider({
           displayMerged = true;
         }
 
-        coordinator.markMerged(networkCoordinatorKey, "network");
+        markDensePathComplete();
         setSignalTrace(bundle);
         setLoadedSignalTraceWindowKey(windowKey);
         loadedSignalTraceWindowKeyRef.current = windowKey;
@@ -2230,6 +2389,9 @@ export function WorkbenchProvider({
         flushLanesLoadDebug();
       } finally {
         coordinator.clearInFlight(networkCoordinatorKey, fetchGeneration);
+        if (chartEventsEnabled) {
+          coordinator.clearInFlight(lanesRequestKey, fetchGeneration);
+        }
         if (chartEventsEnabled && !lanesOnlyFetch) {
           coordinator.clearInFlight(displayRequestKey, fetchGeneration);
         }
@@ -2240,6 +2402,9 @@ export function WorkbenchProvider({
     return () => {
       abortController.abort();
       coordinator.clearInFlight(networkCoordinatorKey, fetchGeneration);
+      if (chartEventsEnabled) {
+        coordinator.clearInFlight(lanesRequestKey, fetchGeneration);
+      }
       if (chartEventsEnabled && !lanesOnlyFetch) {
         coordinator.clearInFlight(displayRequestKey, fetchGeneration);
       }

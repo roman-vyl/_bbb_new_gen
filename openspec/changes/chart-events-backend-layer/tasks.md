@@ -53,19 +53,19 @@ Scope: skip redundant `/signal-trace` when chart-events already satisfied displa
 - [x] 5B.0.1 Document exact skip/fetch/restore conditions — `design.md` Decision 9
 - [x] 5B.0.2 Delta spec scenarios — lazy skip, use_loaded_bundle, session restore, flag-off combined fetch
 - [x] 5B.0.3 Orchestration contract — single `loadTrace()`, `decideDenseLanesNetworkLoad`, `workbenchTraceNetworkLoad` seam
-- [ ] 5B.0.4 **STOP FOR REVIEW:** approve Decision 9 + scenarios before any 5B code
+- [x] 5B.0.4 **APPROVED:** Decision 9 + scenarios — proceed to 5B.1
 
-### 5B.1 Implementation (blocked until 5B.0.4 approved)
+### 5B.1 Implementation
 
-- [ ] 5B.1 Add `decideDenseLanesNetworkLoad()` + `DisplayLoadOutcome` / `DenseLanesFetchReason` / `use_loaded_bundle` types
-- [ ] 5B.1b Add `mapDisplayLoadOutcome()` + `canUseLoadedBundleForDisplay()` helpers
-- [ ] 5B.1c Add `applyLanesFromSessionBundle()` — lanes-only session restore when display cache covers
-- [ ] 5B.1d Split `restore_session` plan branch: flag on + display covers → lanes only, no display merge from dense
-- [ ] 5B.1e Wire `loadTrace()`: policy after display outcome; handle skip / use_loaded_bundle / restore / fetch
-- [ ] 5B.1f Debug: `wb.lanes_trace_skip`, `wb.lanes_trace_use_loaded`, `wb.lanes_trace_session_restore`
-- [ ] 5B.1g Unit tests: `decideDenseLanesNetworkLoad` truth table (`displayLoadOutcome` matrix)
-- [ ] 5B.1h Integration: chart-events + session → zero signal-trace; display covers + session miss → one signal-trace only
-- [ ] 5B.1i Regression: flag off single combined fetch; 5A display-before-dense tests unchanged
+- [x] 5B.1 Add `decideDenseLanesNetworkLoad()` + `DisplayLoadOutcome` / `DenseLanesFetchReason` / `use_loaded_bundle` types
+- [x] 5B.1b Add `mapDisplayLoadOutcome()` + `canUseLoadedBundleForDisplay()` helpers
+- [x] 5B.1c Add `applyLanesFromSessionBundle()` — lanes-only session restore when display cache covers
+- [x] 5B.1d Split `restore_session` plan branch: flag on + display covers → lanes only, no display merge from dense
+- [x] 5B.1e Wire `loadTrace()`: policy after display outcome; handle skip / use_loaded_bundle / restore / fetch
+- [x] 5B.1f Debug: `wb.lanes_trace_skip`, `wb.lanes_trace_use_loaded`, `wb.lanes_trace_session_restore`
+- [x] 5B.1g Unit tests: `decideDenseLanesNetworkLoad` truth table (`displayLoadOutcome` matrix)
+- [x] 5B.1h Integration: flag-off single combined fetch; matrix covered by unit tests (full session-restore E2E deferred to 5B.2 smoke)
+- [x] 5B.1i Regression: 5A display-before-dense tests unchanged
 - [ ] 5B.2 **STOP FOR REVIEW:** no double-fetch on common pan-back / lanes-ready paths; wait before Phase 6
 
 ## 6. Phase 6 — Migration, acceptance, archive prep

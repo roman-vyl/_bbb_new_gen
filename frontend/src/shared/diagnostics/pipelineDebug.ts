@@ -75,6 +75,11 @@ export const PIPELINE_DEBUG_STEPS = {
     fallback: "wb.chart_events_fallback",
     merge: "wb.chart_events_merge",
   },
+  lanesTrace: {
+    skip: "wb.lanes_trace_skip",
+    useLoaded: "wb.lanes_trace_use_loaded",
+    sessionRestore: "wb.lanes_trace_session_restore",
+  },
   chart: {
     setDataCandles: "chart.setData.candles",
     setDataAnchorEma: "chart.setData.anchor_ema",

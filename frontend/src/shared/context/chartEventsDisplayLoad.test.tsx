@@ -316,3 +316,78 @@ describe("chart-events display load (5A)", () => {
     expect(chartSliceRef?.displayApplyRevision).toBeGreaterThanOrEqual(revisionBeforeDenseResolve);
   });
 });
+
+describe("lazy dense lanes (5B)", () => {
+  afterEach(() => {
+    cleanup();
+    chartSliceRef = null;
+    vi.unstubAllEnvs();
+    resetChartEventsFlagDisabledNoteForTests();
+  });
+
+  beforeEach(() => {
+    chartSliceRef = null;
+    vi.clearAllMocks();
+    clearMarketCache();
+    dbgReset();
+    fetchRunSummaries.mockResolvedValue(RUNS);
+    fetchConfigState.mockResolvedValue({
+      family: "ema_pullback",
+      selected_experiment_id: null,
+      configs: [],
+      selected_path: null,
+      draft: null,
+    });
+    fetchRunReport.mockImplementation(async (runId: string) => makeReport(runId));
+    fetchChartMarketBundle.mockResolvedValue({
+      candles: [{ time: 1000, open: 1, high: 2, low: 0.5, close: 1.5 }],
+      ema_overlays: [],
+    });
+    fetchChartOverlayEma.mockResolvedValue([]);
+  });
+
+  it("flag off performs single combined signal-trace fetch (no chart-events)", async () => {
+    vi.stubEnv("VITE_CHART_EVENTS_API", "0");
+    fetchSignalTrace.mockResolvedValue({
+      times: [1000],
+      meta: TRACE_META,
+      long: {
+        direction_ok: [false],
+        blockers_ok: [false],
+        setup_ok: [false],
+        trigger_ok: [false],
+        risk_ok: [false],
+        signal_entry: [false],
+        stop_ready: [false],
+        portfolio_entry: [false],
+        internals: {},
+      },
+      short: {
+        direction_ok: [false],
+        blockers_ok: [false],
+        setup_ok: [false],
+        trigger_ok: [false],
+        risk_ok: [false],
+        signal_entry: [false],
+        stop_ready: [false],
+        portfolio_entry: [false],
+        internals: {},
+      },
+      component_events: [CHART_EVENTS_MARKER],
+    });
+
+    render(
+      <Host>
+        <ChartSliceCapture />
+      </Host>,
+    );
+
+    await waitFor(() => {
+      expect(fetchSignalTrace).toHaveBeenCalledTimes(1);
+    });
+    expect(fetchChartEvents).not.toHaveBeenCalled();
+    await waitFor(() => {
+      expect(chartSliceRef?.lanesSignalTraceStatus).toBe("ready");
+    });
+  });
+});

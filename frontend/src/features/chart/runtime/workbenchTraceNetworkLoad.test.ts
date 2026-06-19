@@ -4,8 +4,12 @@ import type { ChartEventsBundle, SignalTraceBundle } from "@/api/types";
 import { createSignalTraceDisplayCache } from "@/features/chart/signalTraceDisplayCache";
 import { createSignalTraceRequestCoordinator } from "@/features/chart/runtime/signalTraceRequestCoordinator";
 import {
+  canUseLoadedBundleForDisplay,
+  decideDenseLanesNetworkLoad,
+  lanesReadyForWindow,
   loadDenseLanesTrace,
   loadDisplayTraceChunk,
+  mapDisplayLoadOutcome,
   mergeDisplayFromDenseFallback,
   type WorkbenchTraceNetworkLoadContext,
 } from "@/features/chart/runtime/workbenchTraceNetworkLoad";
@@ -185,5 +189,169 @@ describe("mergeDisplayFromDenseFallback", () => {
     });
     expect(ctx.onCommitDisplay).toHaveBeenCalledOnce();
     expect(ctx.cache.sliceEventsForWindow(1000, 1000)).toHaveLength(0);
+  });
+});
+
+const POLICY_BASE = {
+  chartEventsEnabled: true,
+  committedWindowKey: "wk",
+  loadedSignalTraceWindowKey: "wk",
+  signalTraceStatus: "ready" as const,
+  loadedSignalTrace: DENSE_BUNDLE,
+  sessionCacheHasWindow: true,
+  displayCacheCoversWindow: true,
+  lanesRequestKey: "lanes-key",
+  fromMs: 1_000_000,
+  toOpenTimeMs: 2_000_000,
+};
+
+describe("lanesReadyForWindow", () => {
+  it("is true when window matches and status is ready", () => {
+    expect(
+      lanesReadyForWindow({
+        committedWindowKey: "wk",
+        loadedSignalTraceWindowKey: "wk",
+        signalTraceStatus: "ready",
+      }),
+    ).toBe(true);
+  });
+
+  it("is false when window keys differ", () => {
+    expect(
+      lanesReadyForWindow({
+        committedWindowKey: "wk",
+        loadedSignalTraceWindowKey: "other",
+        signalTraceStatus: "ready",
+      }),
+    ).toBe(false);
+  });
+});
+
+describe("canUseLoadedBundleForDisplay", () => {
+  it("requires ready status and non-null bundle", () => {
+    expect(canUseLoadedBundleForDisplay(POLICY_BASE)).toBe(true);
+    expect(
+      canUseLoadedBundleForDisplay({ ...POLICY_BASE, signalTraceStatus: "error" }),
+    ).toBe(false);
+    expect(
+      canUseLoadedBundleForDisplay({ ...POLICY_BASE, loadedSignalTrace: null }),
+    ).toBe(false);
+  });
+});
+
+describe("mapDisplayLoadOutcome", () => {
+  it("maps lanes-only fetch to skipped_lanes_only", () => {
+    expect(mapDisplayLoadOutcome(true, true, null)).toBe("skipped_lanes_only");
+  });
+
+  it("maps flag off to skipped_flag_off", () => {
+    expect(
+      mapDisplayLoadOutcome(false, false, { outcome: "continue", displayMerged: false, mergeSource: "signal-trace-fallback" }),
+    ).toBe("skipped_flag_off");
+  });
+
+  it("maps chart-events committed and fallback", () => {
+    expect(
+      mapDisplayLoadOutcome(false, true, {
+        outcome: "committed",
+        displayMerged: true,
+        mergeSource: "chart-events",
+      }),
+    ).toBe("committed");
+    expect(
+      mapDisplayLoadOutcome(false, true, {
+        outcome: "continue",
+        displayMerged: false,
+        mergeSource: "signal-trace-fallback",
+      }),
+    ).toBe("fallback_needed");
+  });
+});
+
+describe("decideDenseLanesNetworkLoad", () => {
+  it("fallback_needed + lanes ready + bundle → use_loaded_bundle", () => {
+    expect(
+      decideDenseLanesNetworkLoad({
+        ...POLICY_BASE,
+        displayLoadOutcome: "fallback_needed",
+      }),
+    ).toEqual({ action: "use_loaded_bundle", reason: "display_fallback_needed" });
+  });
+
+  it("fallback_needed + lanes not ready → fetch display_fallback_needed", () => {
+    expect(
+      decideDenseLanesNetworkLoad({
+        ...POLICY_BASE,
+        loadedSignalTraceWindowKey: "other",
+        signalTraceStatus: "idle",
+        loadedSignalTrace: null,
+        displayLoadOutcome: "fallback_needed",
+      }),
+    ).toEqual({
+      action: "fetch",
+      lanesRequestKey: "lanes-key",
+      fromMs: 1_000_000,
+      toOpenTimeMs: 2_000_000,
+      reason: "display_fallback_needed",
+    });
+  });
+
+  it("committed + lanes ready → skip lanes_ready", () => {
+    expect(
+      decideDenseLanesNetworkLoad({
+        ...POLICY_BASE,
+        displayLoadOutcome: "committed",
+      }),
+    ).toEqual({ action: "skip", reason: "lanes_ready" });
+  });
+
+  it("committed + lanes pending + session → restore_session", () => {
+    expect(
+      decideDenseLanesNetworkLoad({
+        ...POLICY_BASE,
+        loadedSignalTraceWindowKey: "other",
+        signalTraceStatus: "idle",
+        loadedSignalTrace: null,
+        displayLoadOutcome: "committed",
+      }),
+    ).toEqual({ action: "restore_session", windowKey: "wk" });
+  });
+
+  it("committed + lanes pending + no session → fetch lanes_pending", () => {
+    expect(
+      decideDenseLanesNetworkLoad({
+        ...POLICY_BASE,
+        loadedSignalTraceWindowKey: "other",
+        signalTraceStatus: "idle",
+        loadedSignalTrace: null,
+        sessionCacheHasWindow: false,
+        displayLoadOutcome: "committed",
+      }),
+    ).toEqual({
+      action: "fetch",
+      lanesRequestKey: "lanes-key",
+      fromMs: 1_000_000,
+      toOpenTimeMs: 2_000_000,
+      reason: "lanes_pending",
+    });
+  });
+
+  it("skipped_flag_off + lanes ready → use_loaded_bundle flag_off_combined", () => {
+    expect(
+      decideDenseLanesNetworkLoad({
+        ...POLICY_BASE,
+        chartEventsEnabled: false,
+        displayLoadOutcome: "skipped_flag_off",
+      }),
+    ).toEqual({ action: "use_loaded_bundle", reason: "flag_off_combined" });
+  });
+
+  it("skipped_lanes_only + lanes ready → skip", () => {
+    expect(
+      decideDenseLanesNetworkLoad({
+        ...POLICY_BASE,
+        displayLoadOutcome: "skipped_lanes_only",
+      }),
+    ).toEqual({ action: "skip", reason: "lanes_ready" });
   });
 });

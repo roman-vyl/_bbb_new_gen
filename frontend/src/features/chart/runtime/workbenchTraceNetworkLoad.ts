@@ -16,7 +16,177 @@ import {
   type SignalTraceDisplayCache,
   type TimeBounds,
 } from "@/features/chart/signalTraceDisplayCache";
+import {
+  signalTraceMatchesChartWindow,
+  type SignalTraceLoadStatus,
+} from "@/shared/context/signalTraceLoadPolicy";
 import { dbgFlush, dbgMark, dbgTimedSync, PIPELINE_DEBUG_STEPS as DBG } from "@/shared/diagnostics/pipelineDebug";
+
+export type DisplayLoadOutcome =
+  | "committed"
+  | "fallback_needed"
+  | "skipped_flag_off"
+  | "skipped_lanes_only";
+
+export type DenseLanesFetchReason =
+  | "flag_off_combined"
+  | "lanes_pending"
+  | "display_fallback_needed";
+
+export type DenseLanesUseLoadedReason = "flag_off_combined" | "display_fallback_needed";
+
+export type DenseLanesNetworkDecision =
+  | { action: "skip"; reason: "lanes_ready" | "chart_heavy_io_off" }
+  | { action: "use_loaded_bundle"; reason: DenseLanesUseLoadedReason }
+  | { action: "restore_session"; windowKey: string }
+  | {
+      action: "fetch";
+      lanesRequestKey: string;
+      fromMs: number;
+      toOpenTimeMs: number;
+      reason: DenseLanesFetchReason;
+    };
+
+export type DecideDenseLanesNetworkLoadInput = {
+  chartEventsEnabled: boolean;
+  committedWindowKey: string;
+  loadedSignalTraceWindowKey: string | null;
+  signalTraceStatus: SignalTraceLoadStatus;
+  loadedSignalTrace: SignalTraceBundle | null;
+  sessionCacheHasWindow: boolean;
+  displayCacheCoversWindow: boolean;
+  displayLoadOutcome: DisplayLoadOutcome;
+  lanesRequestKey: string;
+  fromMs: number;
+  toOpenTimeMs: number;
+};
+
+export function lanesReadyForWindow(input: {
+  committedWindowKey: string;
+  loadedSignalTraceWindowKey: string | null;
+  signalTraceStatus: SignalTraceLoadStatus;
+}): boolean {
+  return (
+    signalTraceMatchesChartWindow(input.committedWindowKey, input.loadedSignalTraceWindowKey) &&
+    (input.signalTraceStatus === "ready" || input.signalTraceStatus === "error")
+  );
+}
+
+export function canUseLoadedBundleForDisplay(input: {
+  committedWindowKey: string;
+  loadedSignalTraceWindowKey: string | null;
+  signalTraceStatus: SignalTraceLoadStatus;
+  loadedSignalTrace: SignalTraceBundle | null;
+}): boolean {
+  return (
+    lanesReadyForWindow(input) &&
+    input.signalTraceStatus === "ready" &&
+    input.loadedSignalTrace !== null
+  );
+}
+
+export function mapDisplayLoadOutcome(
+  lanesOnlyFetch: boolean,
+  chartEventsEnabled: boolean,
+  displayResult: DisplayTraceChunkLoadResult | null,
+): DisplayLoadOutcome | null {
+  if (lanesOnlyFetch) {
+    return "skipped_lanes_only";
+  }
+  if (displayResult === null) {
+    return null;
+  }
+  if (displayResult.outcome === "aborted" || displayResult.outcome === "stale") {
+    return null;
+  }
+  if (!chartEventsEnabled) {
+    return "skipped_flag_off";
+  }
+  if (displayResult.outcome === "committed") {
+    return "committed";
+  }
+  return "fallback_needed";
+}
+
+function sessionRestoreEligible(input: DecideDenseLanesNetworkLoadInput): boolean {
+  return (
+    input.chartEventsEnabled &&
+    input.displayCacheCoversWindow &&
+    input.sessionCacheHasWindow
+  );
+}
+
+export function decideDenseLanesNetworkLoad(
+  input: DecideDenseLanesNetworkLoadInput,
+): DenseLanesNetworkDecision {
+  const lanesReady = lanesReadyForWindow(input);
+  const canUseLoaded = canUseLoadedBundleForDisplay(input);
+
+  if (input.displayLoadOutcome === "fallback_needed") {
+    if (canUseLoaded) {
+      return { action: "use_loaded_bundle", reason: "display_fallback_needed" };
+    }
+    return {
+      action: "fetch",
+      lanesRequestKey: input.lanesRequestKey,
+      fromMs: input.fromMs,
+      toOpenTimeMs: input.toOpenTimeMs,
+      reason: "display_fallback_needed",
+    };
+  }
+
+  if (input.displayLoadOutcome === "skipped_flag_off") {
+    if (canUseLoaded) {
+      return { action: "use_loaded_bundle", reason: "flag_off_combined" };
+    }
+    return {
+      action: "fetch",
+      lanesRequestKey: input.lanesRequestKey,
+      fromMs: input.fromMs,
+      toOpenTimeMs: input.toOpenTimeMs,
+      reason: "flag_off_combined",
+    };
+  }
+
+  if (
+    input.displayLoadOutcome === "committed" ||
+    input.displayLoadOutcome === "skipped_lanes_only"
+  ) {
+    if (lanesReady) {
+      return { action: "skip", reason: "lanes_ready" };
+    }
+    if (sessionRestoreEligible(input)) {
+      return { action: "restore_session", windowKey: input.committedWindowKey };
+    }
+    return {
+      action: "fetch",
+      lanesRequestKey: input.lanesRequestKey,
+      fromMs: input.fromMs,
+      toOpenTimeMs: input.toOpenTimeMs,
+      reason: "lanes_pending",
+    };
+  }
+
+  return { action: "skip", reason: "lanes_ready" };
+}
+
+export type ApplyLanesFromSessionBundleContext = {
+  sessionBundle: SignalTraceBundle;
+  windowKey: string;
+  lanesRequestKey: string;
+  coordinator: SignalTraceRequestCoordinator;
+  applyLanesState: (bundle: SignalTraceBundle) => void;
+};
+
+/** Lanes-only session restore — no display cache merge (display already satisfied). */
+export function applyLanesFromSessionBundle(ctx: ApplyLanesFromSessionBundleContext): void {
+  ctx.coordinator.markMerged(ctx.lanesRequestKey, "session_restore");
+  dbgMark(DBG.lanesTrace.sessionRestore, {
+    windowKey: ctx.windowKey,
+    traceRequestKey: ctx.lanesRequestKey,
+  });
+  ctx.applyLanesState(ctx.sessionBundle);
+}
 
 export type TraceChunkNetworkParams = {
   runId: string;
