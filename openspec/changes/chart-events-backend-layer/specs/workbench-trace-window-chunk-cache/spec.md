@@ -56,6 +56,35 @@ Lanes/diagnostics MUST NOT show `ready` or error state from a prior window after
 - **AND** Workbench requests `/signal-trace` for `[Ta, Tb]` for lanes/diagnostics only
 - **AND** lanes do not display stale trace from another window as ready
 
+#### Scenario: Chart-events display chunk does not force redundant dense fetch when lanes ready
+
+- **GIVEN** `VITE_CHART_EVENTS_API=1`
+- **AND** display cache does not cover a missing chunk
+- **AND** `lanesReadyForWindow` is true for the current `chartWindowKey`
+- **WHEN** Workbench schedules network load for the missing display chunk
+- **THEN** Workbench calls `/chart-events` for display
+- **AND** Workbench does NOT call `/signal-trace` for the same chunk
+- **AND** pipeline debug emits `wb.lanes_trace_skip` with reason `lanes_ready`
+
+#### Scenario: Chart-events satisfied display skips dense when session restores lanes
+
+- **GIVEN** `VITE_CHART_EVENTS_API=1`
+- **AND** display cache covers render window `[Ta, Tb]`
+- **AND** session cache holds dense bundle for `chartWindowKey` of `[Ta, Tb]`
+- **AND** in-memory `signalTrace` is for a different window
+- **WHEN** trace scheduling runs for `[Ta, Tb]`
+- **THEN** Workbench does NOT request `/chart-events` or `/signal-trace`
+- **AND** Workbench restores lanes from session cache without merging display from the session dense bundle
+- **AND** pipeline debug emits `wb.lanes_trace_session_restore`
+
+#### Scenario: Flag off keeps single combined dense fetch
+
+- **GIVEN** `VITE_CHART_EVENTS_API` is unset or not `1`
+- **AND** display cache does not cover the committed window
+- **WHEN** Workbench schedules network load
+- **THEN** Workbench performs exactly one `/signal-trace` request for the chunk
+- **AND** display and lanes both update from that response
+
 ### Requirement: Missing-range scheduling uses normalized trace display chunks
 
 When trace display cache does not cover the committed render window, Workbench SHALL compute the missing range and plan one or more normalized trace display chunks. The planning/debug chunk identity (`traceDisplayChunkKey`) MUST include run, variant, context overlay ref, and normalized range bounds. Display cache storage and coverage remain interval-based.

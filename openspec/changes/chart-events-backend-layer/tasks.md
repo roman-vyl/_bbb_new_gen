@@ -41,17 +41,31 @@ Scope: change **display fetch source only**. Do not refactor lanes, bar inspecto
 - [x] 5A.7 **Keep lanes path unchanged:** existing `fetchSignalTrace` + `setSignalTrace` + session cache behavior stays as today (interim double-fetch when flag on is OK)
 - [x] 5A.7b **Display commit decoupled:** after chart-events merge → `markMerged` + `displayApplyRevision` + `finalizeTraceDisplayUpdate` before dense trace; lanes failure must not rollback display
 - [x] 5A.7c **Minimal seam extract:** `workbenchTraceNetworkLoad.ts` (`loadDisplayTraceChunk`, `loadDenseLanesTrace`, `mergeDisplayFromDenseFallback`); single orchestration flow in `WorkbenchContext`
-- [ ] 5A.8 **Verify HTF context EMA overlays** on variant with `strategy.contexts` (manual + distant trade navigation)
-- [ ] 5A.9 **STOP FOR REVIEW:** markers + HTF from chart-events; lanes/inspector still work via unchanged dense path; fallback debug visible; seam extract reviewed; wait for approval before 5B
+- [x] 5A.8 **Verify HTF context EMA overlays** on variant with `strategy.contexts` (manual + distant trade navigation) — pipeline smoke pass
+- [x] 5A.9 **APPROVED:** markers + HTF from chart-events; lanes/inspector via unchanged dense path; fallback debug visible; seam extract reviewed — proceed to 5B when ready
 
-## 5B. Phase 5B — Lazy dense trace for lanes (only after 5A approved)
+## 5B. Phase 5B — Lazy dense trace for lanes (5A approved)
 
-Scope: separate dense `/signal-trace` lifecycle from display fetch. **Do not start until 5A review passes.**
+Scope: skip redundant `/signal-trace` when chart-events already satisfied display and lanes are satisfied via in-memory state or session cache. **Single effect, single coordinator, display path unchanged.**
 
-- [ ] 5B.1 Lazy `fetchSignalTrace` for lanes/diagnostics when window key requires dense bundle (not on every display chunk fetch)
-- [ ] 5B.2 Remove redundant signal-trace fetch when chart-events already satisfied display and lanes restored from session cache
-- [ ] 5B.3 Verify lanes, bar inspector, `ChartTradeDiagnostics` unchanged; bar inspector regime from dense `htf_context.state`
-- [ ] 5B.4 **STOP FOR REVIEW:** no double-fetch on common display-only path; wait for approval before Phase 6
+### 5B.0 Planning (STOP FOR REVIEW — no implementation yet)
+
+- [x] 5B.0.1 Document exact skip/fetch/restore conditions — `design.md` Decision 9
+- [x] 5B.0.2 Delta spec scenarios — lazy skip, session restore without display merge, flag-off combined fetch
+- [x] 5B.0.3 Orchestration contract — single `loadTrace()`, `decideDenseLanesNetworkLoad`, `workbenchTraceNetworkLoad` seam
+- [ ] 5B.0.4 **STOP FOR REVIEW:** approve Decision 9 + scenarios before any 5B code
+
+### 5B.1 Implementation (blocked until 5B.0.4 approved)
+
+- [ ] 5B.1 Add `decideDenseLanesNetworkLoad()` (+ types) — `workbenchTraceNetworkLoad.ts` or `signalTraceLoadPolicy.ts`
+- [ ] 5B.1b Add `applyLanesFromSessionBundle()` — lanes-only session restore when display cache covers
+- [ ] 5B.1c Split `restore_session` plan branch: flag on + display covers → lanes only, no display merge from dense
+- [ ] 5B.1d Wire `loadTrace()`: call policy before `loadDenseLanesTrace`; skip dense when decision says skip/restore
+- [ ] 5B.1e Debug: `wb.lanes_trace_skip`, `wb.lanes_trace_session_restore`
+- [ ] 5B.1f Unit tests: `decideDenseLanesNetworkLoad` truth table
+- [ ] 5B.1g Integration: chart-events + session → zero signal-trace; display covers + session miss → one signal-trace only
+- [ ] 5B.1h Regression: flag off single combined fetch; 5A display-before-dense tests unchanged
+- [ ] 5B.2 **STOP FOR REVIEW:** no double-fetch on common pan-back / lanes-ready paths; wait before Phase 6
 
 ## 6. Phase 6 — Migration, acceptance, archive prep
 

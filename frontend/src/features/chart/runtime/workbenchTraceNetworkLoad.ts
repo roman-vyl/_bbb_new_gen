@@ -251,7 +251,7 @@ export async function loadDenseLanesTrace(ctx: WorkbenchTraceNetworkLoadContext)
     if (isAbortError(err)) {
       dbgMark(DBG.signalTrace.fetchAbort, {
         windowKey,
-        traceRequestKey: params.displayRequestKey,
+        traceRequestKey: networkCoordinatorKey,
         note: "frontend abort/stale-response protection; backend CPU work may continue",
       });
       return { outcome: "aborted" };

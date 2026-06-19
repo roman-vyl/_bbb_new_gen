@@ -174,11 +174,152 @@ HTF dashed-line verification applies to **EMA point values**, not `state`.
 - **Lanes/diagnostics:** keep **existing** `fetchSignalTrace` + `setSignalTrace` lifecycle unchanged — do not refactor lazy lanes, session restore, or `loadedSignalTraceWindowKey` wiring in 5A
 - When flag enabled, Workbench MAY issue **both** chart-events (display) and signal-trace (lanes) for the same chunk window — interim double-fetch is acceptable to isolate display regressions from lanes/inspector regressions
 
-**Phase 5B (only after 5A review):**
+**Phase 5B (5A approved — planning 2026-06-19):**
 
-- **Lanes/diagnostics:** lazy dense `/signal-trace` fetch separate from display path; remove redundant signal-trace fetch when display already satisfied by chart-events
+- **Display:** unchanged — `loadDisplayTraceChunk` → display cache commit (5A)
+- **Lanes/diagnostics:** lazy dense `/signal-trace` — skip when in-memory or session cache satisfies current window; no second effect, no second coordinator
+- **Seam:** `workbenchTraceNetworkLoad.ts` — add policy helper + optional `applyLanesFromSessionBundle`; orchestration stays in single `loadTrace()` inside existing signal-trace effect
 
-Session bundle cache for lanes continues to use full `SignalTraceBundle`.
+Session bundle cache for lanes continues to use full `SignalTraceBundle` keyed by `committedWindowKey` (`chartWindowKey`).
+
+### Decision 9: Phase 5B lazy dense lanes — exact fetch/skip conditions (planning)
+
+**Scope guardrails (non-negotiable):**
+
+| Keep | Do not |
+|------|--------|
+| Single signal-trace `useEffect` + one `loadTrace()` orchestration | Second effect for lanes |
+| `loadDisplayTraceChunk` / display scheduling unchanged | Change chunk planner, pan defer, coordinator instance count |
+| One `SignalTraceRequestCoordinator` | Second coordinator |
+| `buildTraceRequestKey` for dense in-flight/merged when flag on | Merge display/dense coordinator keys when flag on |
+
+**Consumers that require dense `SignalTraceBundle` (lanes path):**
+
+| Consumer | Dense fields |
+|----------|----------------|
+| Signal timeline lanes | `long` / `short` bool arrays, `times` |
+| Bar inspector | `htf_context.state`, `internals`, bar-index alignment via `times` |
+| `ChartTradeDiagnostics` | `context_consumption_trace`, trade causal helpers |
+| Session restore target | Full bundle stored under `committedWindowKey` |
+
+Chart markers + HTF EMA lines remain on **display cache only** when chart-events enabled; dense bundle MUST NOT be required for display apply when display cache covers the render window.
+
+**Identity (unchanged from 5A):**
+
+```text
+committedWindowKey = chartWindowKey
+                   = `${runId}:${variant}:${firstCandleSec}:${lastCandleSec}:${contextOverlayRef}`
+
+displayRequestKey  = buildDisplayTraceRequestKey(chunkParams)   // chart-events prefix when flag on
+lanesRequestKey    = buildTraceRequestKey(chunkParams)          // always dense-shaped
+```
+
+Session cache: `signalTraceBundleSessionCache.has/get(committedWindowKey)` — LRU max 10 per session identity; cleared on variant/overlay/market identity change.
+
+**Pure policy (new — `decideDenseLanesNetworkLoad` in `workbenchTraceNetworkLoad.ts` or `signalTraceLoadPolicy.ts`):**
+
+Inputs: `chartEventsEnabled`, `committedWindowKey`, `loadedSignalTraceWindowKey`, `signalTraceStatus`, `sessionCacheHasWindow`, `displayCacheCoversWindow`, `displayNetworkScheduled` (whether this effect invocation will/would call `loadDisplayTraceChunk` for a cache miss).
+
+Outputs:
+
+```typescript
+type DenseLanesNetworkDecision =
+  | { action: "skip"; reason: "flag_off_combined" | "lanes_ready" | "chart_heavy_io_off" }
+  | { action: "restore_session"; windowKey: string }
+  | { action: "fetch"; lanesRequestKey: string; fromMs: number; toOpenTimeMs: number };
+```
+
+**`lanesReadyForWindow` (in-memory sufficient — skip dense network):**
+
+```text
+signalTraceMatchesChartWindow(committedWindowKey, loadedSignalTraceWindowKey)
+AND signalTraceStatus ∈ {"ready", "error"}
+```
+
+Lanes UI may show error for current window; no refetch until window/variant/session identity changes or coordinator retry policy allows.
+
+**Session cache sufficient — skip dense network (restore only):**
+
+All of:
+
+1. `chartEventsEnabled === true`
+2. `displayCacheCoversWindow === true` (display does not need dense fallback this tick)
+3. `sessionCacheHasWindow(committedWindowKey) === true`
+4. NOT `lanesReadyForWindow` (otherwise already skipped)
+5. Existing bootstrap policy would return `restore_session_cache` — i.e. `decideSignalTraceLoad` path **or** equivalent check inlined before network
+
+Action: `setSignalTrace(sessionBundle)`, update `loadedSignalTraceWindowKey`, status `ready`, **`coordinator.markMerged(lanesRequestKey, "session_restore")`** — **do not** call `loadDenseLanesTrace`, **do not** merge display from session dense when display cache already covers (5A/5B fix to `restore_session` block).
+
+**Dense `/signal-trace` network REQUIRED when:**
+
+1. `chartHeavyIoEnabled === true`, AND
+2. NOT `lanesReadyForWindow`, AND
+3. NOT session-restore branch above, AND
+4. Any of:
+   - **(A) Flag off:** display path will use single dense fetch (`loadDisplayTraceChunk` → continue → `loadDenseLanesTrace` once) — `reason: flag_off_combined`
+   - **(B) Flag on + display needs network** and chart-events did not commit and fallback needs dense — combined single `loadDenseLanesTrace` + `mergeDisplayFromDenseFallback` (same HTTP request as today)
+   - **(C) Flag on + display satisfied** (`displayCacheCoversWindow` OR chart-events just committed) but lanes pending — **`lanesOnlyFetch`** path: `loadDenseLanesTrace` only, no `loadDisplayTraceChunk`
+   - **(D) Flag on + chart-events failed** on this chunk — dense fetch serves lanes + display fallback merge
+
+**Dense network SKIPPED when:**
+
+| Condition | Reason |
+|-----------|--------|
+| `!chartHeavyIoEnabled` | Effect idle (existing gate) |
+| `lanesReadyForWindow` | In-memory bundle matches window |
+| Flag on + display covers + session restore applies | Session hit (pan-back) |
+| Flag on + display covers + lanes ready | Early return (existing `display_cache_covers_window`) |
+| Flag on + display-only tick with no lane consumer pending | N/A — lanes always required when chart heavy IO on and chart tab uses lanes/diagnostics; **do not** defer until inspector expand (out of 5B scope) |
+
+**NOT skipped (explicit anti-patterns):**
+
+- Display cache covers window but lanes stale from **another** window → MUST restore session or fetch dense (existing spec scenarios)
+- Chart-events committed for **chunk** but session holds bundle from **different chunk** on same window key → still fetch dense if `!lanesReadyForWindow` (session bundle is last dense for that window key; if never fetched dense for this window, fetch)
+
+**Orchestration flow (single `loadTrace`, flag on):**
+
+```text
+1. [scheduling unchanged] bootstrap → plan → chunkPlan / lanesOnlyFetch / early cache hit
+2. displayResult = lanesOnlyFetch ? skip : await loadDisplayTraceChunk(ctx)
+3. decision = decideDenseLanesNetworkLoad(...)
+4. if decision.action === "skip" → apply lanes state only if needed; return (no loadDenseLanesTrace)
+5. if decision.action === "restore_session" → applyLanesFromSessionBundle(...); return
+6. lanesResult = await loadDenseLanesTrace(ctx)   // uses lanesRequestKey on coordinator
+7. if !displayMerged && lanesResult.ok → mergeDisplayFromDenseFallback(...)
+8. apply lanes React state / errors (unchanged 5A rules: display error decoupling)
+```
+
+**Session restore split (5B code change):**
+
+When `chartEventsEnabled && displayCacheCoversWindow`:
+
+- Restore lanes from session only (`applyLanesFromSessionBundle`)
+- Skip `mergeDisplayChunkFromResponse` from session bundle (display already from chart-events cache)
+
+When flag off or display not covered: keep today's combined session restore (display merge + lanes).
+
+**Coordinator (same instance):**
+
+- Display commits: `markMerged(displayRequestKey)`
+- Dense fetch: `markInFlight` / `markMerged` / `markFailed` on **`lanesRequestKey`** when `chartEventsEnabled`
+- When flag off, `displayRequestKey === lanesRequestKey` (unchanged)
+
+**Debug (additive):**
+
+| Step | When |
+|------|------|
+| `wb.lanes_trace_skip` | `decideDenseLanesNetworkLoad` → skip (reason) |
+| `wb.lanes_trace_session_restore` | session restore without dense network |
+| Existing `wb.signal_trace.fetch_*` | dense network only |
+
+**Tests (implementation slice):**
+
+- Unit: `decideDenseLanesNetworkLoad` truth table (flag on/off × display covers × session × lanes ready)
+- Integration: chart-events display hit + session restore → zero `/signal-trace` (extend `chartEventsDisplayLoad.test.tsx`)
+- Integration: display covers + session miss → one `/signal-trace`, zero `/chart-events`
+- Regression: flag off → single `/signal-trace` (existing workbench tests)
+
+**Out of 5B scope:** inspector-tab-only lazy fetch, second effect, prefetch, backend cancellation, skipping dense when lanes panel collapsed.
 
 ---
 
@@ -244,9 +385,10 @@ Mirror [`test_signal_trace_cache_key_includes_context_overlay_ref`](../../../tes
 2. **Phase 2** — Contracts/types + delta specs. STOP.
 3. **Phase 3** — `chart_events_service` + projection + cache. STOP.
 4. **Phase 4** — Router endpoint + pytest. Deploy backend only (no frontend change). STOP.
-5. **Phase 5A** — Frontend display swap (`fetchChartEvents`, flag, fallback debug). Lanes lifecycle unchanged. STOP.
-6. **Phase 5B** — Lazy dense `/signal-trace` for lanes/inspector (only after 5A approved). STOP.
-7. **Phase 6** — Acceptance checklist, perf doc, archive.
+5. **Phase 5A** — Frontend display swap (`fetchChartEvents`, flag, fallback debug). Lanes lifecycle unchanged. **APPROVED.**
+6. **Phase 5B planning** — Decision 9 lazy dense lanes policy. **STOP FOR REVIEW (5B.0.4).**
+7. **Phase 5B implementation** — Policy + session split + orchestration wire. STOP after 5B.2.
+8. **Phase 6** — Acceptance checklist, perf doc, archive.
 
 **Rollback:** Per phase revert; flag off returns display to signal-trace; `/signal-trace` untouched throughout.
 
