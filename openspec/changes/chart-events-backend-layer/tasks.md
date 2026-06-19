@@ -13,12 +13,12 @@
 
 ## 3. Phase 3 — Backend cache-on-demand service
 
-- [ ] 3.1 Add `research_api/services/chart_events_service.py` with `CHART_EVENTS_BUNDLE_SCHEMA_VERSION = 1`
-- [ ] 3.2 Implement `_cached_chart_events_key()` and `_CHART_EVENTS_CACHE` (FIFO max 32, separate from `_TRACE_CACHE`)
-- [ ] 3.3 Implement `_project_display_bundle()` — strip lanes, consumption trace, internals; map HTF to `ChartEventsHtfContext`
-- [ ] 3.4 Implement `fetch_chart_events_bundle()` — reuse trace compute on miss; `resolve_exclusive_to_ms` for window
-- [ ] 3.5 Unit tests: projection field exclusion; cache key composition; duplicate fetch spy (compute once, not timing)
-- [ ] 3.6 **STOP FOR REVIEW:** service + unit tests; wait for approval before Phase 4
+- [x] 3.1 Add `research_api/services/chart_events_service.py` (import `CHART_EVENTS_BUNDLE_SCHEMA_VERSION`, `MAX_CHART_EVENTS_BARS` from contract)
+- [x] 3.2 Implement `_CHART_EVENTS_CACHE` + `cached_chart_events_key` from contract (FIFO max 32, separate from `_TRACE_CACHE`)
+- [x] 3.3 Implement `_project_display_bundle()` — strip lanes, consumption trace, internals; map HTF to `ChartEventsHtfContext`
+- [x] 3.4 Implement `fetch_chart_events_bundle()` — reuse `fetch_signal_trace_bundle` on miss; `resolve_exclusive_to_ms` for cache key
+- [x] 3.5 Unit tests: projection field exclusion; cache key composition; duplicate fetch spy (compute once, not timing)
+- [x] 3.6 **STOP FOR REVIEW:** service + unit tests; wait for approval before Phase 4
 
 ## 4. Phase 4 — API endpoint + pytest
 
