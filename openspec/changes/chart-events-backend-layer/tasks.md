@@ -6,10 +6,10 @@
 
 ## 2. Phase 2 — Sparse response model (contracts + types)
 
-- [ ] 2.1 Add `research_api/contracts/chart_events.py` — `ChartEventsBundle`, `ChartEventsCoverage`, `ChartEventsHtfContext` (no `state`)
-- [ ] 2.2 Add `ChartEventsBundle` TypeScript type in `frontend/src/api/types.ts`
-- [ ] 2.3 Unit test cache key helper shape includes `schema_version`, `exclusive_end_ms`, `context_overlay_ref`
-- [ ] 2.4 **STOP FOR REVIEW:** contracts reviewed; wait for approval before Phase 3
+- [x] 2.1 Add `research_api/contracts/chart_events.py` — `ChartEventsBundle`, `ChartEventsCoverage`, `ChartEventsHtfContext` (no `state`)
+- [x] 2.2 Add `ChartEventsBundle` TypeScript type in `frontend/src/api/types.ts`
+- [x] 2.3 Unit test cache key helper shape includes `schema_version`, `exclusive_end_ms`, `context_overlay_ref`
+- [x] 2.4 **STOP FOR REVIEW:** contracts reviewed; wait for approval before Phase 3
 
 ## 3. Phase 3 — Backend cache-on-demand service
 

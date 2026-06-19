@@ -693,6 +693,34 @@ export type HtfContextTrace = {
   meta: Record<string, unknown>;
 };
 
+/** HTF EMA overlay series for chart-events — no regime `state` (diagnostics use signal-trace). */
+export type ChartEventsHtfContext = {
+  fast: Array<number | null>;
+  anchor: Array<number | null>;
+  slow: Array<number | null>;
+  meta: Record<string, unknown>;
+};
+
+export type ChartEventsCoverage = {
+  schema_version: number;
+  from_sec: number;
+  to_sec: number;
+  bar_count: number;
+  requested_from_sec: number;
+  requested_to_sec: number;
+  truncated: boolean;
+  max_bars: number;
+};
+
+/** Sparse chart display payload — no dense lanes or diagnostics trace. */
+export type ChartEventsBundle = {
+  times: number[];
+  component_events: ComponentEvent[];
+  htf_context: ChartEventsHtfContext;
+  meta: SignalTraceMeta;
+  coverage: ChartEventsCoverage;
+};
+
 export type ContextConsumptionTraceRecord = {
   role: string;
   component_id: string;

@@ -64,6 +64,25 @@ Window resolution MUST use `resolve_exclusive_to_ms` and `parse_time_range_ms` â
 - **WHEN** the BFF handles the request
 - **THEN** HTTP 400 is returned
 
+### Requirement: Chart-events HTTP errors mirror signal-trace
+
+For the same `run_id`, `variant`, and window query parameters, chart-events MUST return the **same HTTP status code** and semantically equivalent error `detail` as signal-trace. Invalid or conflicting window params, unsupported family, missing run/variant, and market-not-found cases MUST NOT diverge between the two endpoints.
+
+Implementation note (Phase 4): reuse the same router exception mapping as `get_signal_trace`; do not introduce chart-events-specific status codes for equivalent failures.
+
+#### Scenario: Invalid window params match signal-trace status
+
+- **GIVEN** a request with both `to` and `to_open_time_ms` set
+- **WHEN** chart-events and signal-trace are called with identical query params
+- **THEN** both endpoints return the same HTTP status code
+- **AND** both return detail indicating mutual exclusion of `to` and `to_open_time_ms`
+
+#### Scenario: Missing run matches signal-trace 404
+
+- **GIVEN** an unknown `run_id`
+- **WHEN** chart-events and signal-trace are called with otherwise valid params
+- **THEN** both endpoints return HTTP 404
+
 ### Requirement: Chart-events coverage metadata describes actual returned span
 
 `coverage` MUST include:
