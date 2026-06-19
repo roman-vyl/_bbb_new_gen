@@ -57,14 +57,15 @@ Scope: skip redundant `/signal-trace` when chart-events already satisfied displa
 
 ### 5B.1 Implementation (blocked until 5B.0.4 approved)
 
-- [ ] 5B.1 Add `decideDenseLanesNetworkLoad()` (+ types) — `workbenchTraceNetworkLoad.ts` or `signalTraceLoadPolicy.ts`
-- [ ] 5B.1b Add `applyLanesFromSessionBundle()` — lanes-only session restore when display cache covers
-- [ ] 5B.1c Split `restore_session` plan branch: flag on + display covers → lanes only, no display merge from dense
-- [ ] 5B.1d Wire `loadTrace()`: call policy before `loadDenseLanesTrace`; skip dense when decision says skip/restore
-- [ ] 5B.1e Debug: `wb.lanes_trace_skip`, `wb.lanes_trace_session_restore`
-- [ ] 5B.1f Unit tests: `decideDenseLanesNetworkLoad` truth table
-- [ ] 5B.1g Integration: chart-events + session → zero signal-trace; display covers + session miss → one signal-trace only
-- [ ] 5B.1h Regression: flag off single combined fetch; 5A display-before-dense tests unchanged
+- [ ] 5B.1 Add `decideDenseLanesNetworkLoad()` + `DisplayLoadOutcome` / `DenseLanesFetchReason` types — `workbenchTraceNetworkLoad.ts`
+- [ ] 5B.1b Add `mapDisplayLoadOutcome()` from orchestrator + `DisplayTraceChunkLoadResult`
+- [ ] 5B.1c Add `applyLanesFromSessionBundle()` — lanes-only session restore when display cache covers
+- [ ] 5B.1d Split `restore_session` plan branch: flag on + display covers → lanes only, no display merge from dense
+- [ ] 5B.1e Wire `loadTrace()`: policy after display outcome; skip dense when decision says skip/restore
+- [ ] 5B.1f Debug: `wb.lanes_trace_skip`, `wb.lanes_trace_session_restore`
+- [ ] 5B.1g Unit tests: `decideDenseLanesNetworkLoad` truth table (`displayLoadOutcome` matrix)
+- [ ] 5B.1h Integration: chart-events + session → zero signal-trace; display covers + session miss → one signal-trace only
+- [ ] 5B.1i Regression: flag off single combined fetch; 5A display-before-dense tests unchanged
 - [ ] 5B.2 **STOP FOR REVIEW:** no double-fetch on common pan-back / lanes-ready paths; wait before Phase 6
 
 ## 6. Phase 6 — Migration, acceptance, archive prep
