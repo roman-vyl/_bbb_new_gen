@@ -17,16 +17,25 @@ Abort handling MUST be treated as frontend/network cancellation and stale-respon
 - **THEN** the output identifies it as frontend stale-response protection
 - **AND** it does not claim that `signal_trace_service.py` stopped CPU work
 
-### Requirement: Coordinator tracks normalized range identity
-The signal trace request coordinator SHALL track request identity using run id, variant, context overlay ref, and normalized range bounds for trace display chunks.
+### Requirement: Coordinator distinguishes request and display chunk identity
+The signal trace request coordinator SHALL distinguish `traceRequestKey` from `traceDisplayChunkKey`.
 
-In-flight, merged, failed, and superseded ledgers MUST use the normalized request key for missing-range scheduling.
+`traceRequestKey` MUST identify the real `/signal-trace` network request parameters. `traceDisplayChunkKey` MUST identify frontend display/cache chunk coverage and MUST NOT replace `traceRequestKey` unless the same normalized bounds are actually sent in the network request.
 
-#### Scenario: Duplicate normalized chunk is skipped
-- **GIVEN** a normalized trace chunk request is already in flight
-- **WHEN** another scheduling pass requests the same run, variant, context ref, and normalized range
-- **THEN** the coordinator skips the duplicate request
+In-flight, merged, failed, and superseded ledgers for network fetches MUST use `traceRequestKey`. Display coverage ledgers MAY use `traceDisplayChunkKey`.
+
+#### Scenario: Duplicate network request is skipped
+- **GIVEN** a `/signal-trace` request with a specific `traceRequestKey` is already in flight
+- **WHEN** another scheduling pass requests the same real network parameters
+- **THEN** the coordinator skips the duplicate network request
 - **AND** debug output records the duplicate or in-flight decision
+
+#### Scenario: Display chunk key does not suppress different network request
+- **GIVEN** two display chunks share the same normalized `traceDisplayChunkKey`
+- **AND** Workbench chooses different exact `/signal-trace` network ranges for them
+- **WHEN** the second network request is scheduled
+- **THEN** the coordinator evaluates it using its own `traceRequestKey`
+- **AND** the shared display chunk key alone does not suppress the different network request
 
 #### Scenario: Different context ref is a distinct request
 - **GIVEN** a trace chunk is cached or in flight for `context_overlay_ref=htf_1`

@@ -4,13 +4,15 @@
 - [ ] 1.2 Add debug scenario coverage for cold chart open, tab switch to Chart, long pan across a render-window boundary, and distant trade navigation.
 - [ ] 1.3 Add chart activation state so run list and report load eagerly, but `chart-bundle`, initial `signal-trace`, and chart-only auxiliary overlay IO wait for Chart activation unless explicit background prefetch is enabled.
 - [ ] 1.4 Ensure Composer and Reports do not trigger chart-heavy IO before Chart activation.
-- [ ] 1.5 Add `AbortSignal` plumbing to `requestJson`, `fetchChartMarketBundle`, and `fetchSignalTrace`.
-- [ ] 1.6 Abort or supersede old frontend market/trace requests on run, variant, context, or committed window identity changes, and ignore stale responses.
-- [ ] 1.7 Document in debug/review output that AbortController is frontend stale-response protection, not guaranteed backend CPU cancellation.
-- [ ] 1.8 Add or update focused frontend tests for lazy chart activation and stale response suppression.
-- [ ] 1.9 Verify HTF context EMA overlays (`workbench-chart-htf-context-overlays`) on a variant with `strategy.contexts`.
-- [ ] 1.10 Run frontend verification (`cd frontend; npm run build` and relevant tests).
-- [ ] 1.11 STOP FOR REVIEW: report PR 1 debug measurements and wait for user approval before starting PR 2.
+- [ ] 1.5 Ensure selecting a trade in Reports before Chart activation stores `selectedTradeId` without starting `chart-bundle` or `signal-trace`, and first Chart open can focus that trade.
+- [ ] 1.6 Add `AbortSignal` plumbing to `requestJson`, `fetchChartMarketBundle`, and `fetchSignalTrace`.
+- [ ] 1.7 Abort or supersede old frontend market/trace requests on run, variant, context, or committed window identity changes, and ignore stale responses.
+- [ ] 1.8 Keep PR 1 request identity scoped to real network parameters (`traceRequestKey`); do not introduce normalized display chunk identity in PR 1.
+- [ ] 1.9 Document in debug/review output that AbortController is frontend stale-response protection, not guaranteed backend CPU cancellation.
+- [ ] 1.10 Add or update focused frontend tests for lazy chart activation, Reports trade selection before Chart activation, and stale response suppression.
+- [ ] 1.11 Verify HTF context EMA overlays (`workbench-chart-htf-context-overlays`) on a variant with `strategy.contexts`.
+- [ ] 1.12 Run frontend verification (`cd frontend; npm run build` and relevant tests).
+- [ ] 1.13 STOP FOR REVIEW: report PR 1 debug measurements and wait for user approval before starting PR 2.
 
 ## 2. PR 2 — WorkbenchContext Split Without Behavior Changes
 
@@ -41,17 +43,19 @@
 
 ## 4. PR 4 — MissingRange Scheduling Without Active-Pan Prefetch
 
-- [ ] 4.1 Add normalized trace display chunk identity using run id, variant, context overlay ref, timeframe or candle grid, and normalized range bounds.
+- [ ] 4.1 Add normalized trace display chunk identity (`traceDisplayChunkKey`) using run id, variant, context overlay ref, timeframe or candle grid, and normalized range bounds.
 - [ ] 4.2 Choose and document the temporary normalized chunk size while `/signal-trace` remains dense, preferring coarse chunks such as 25k or 50k bars.
 - [ ] 4.3 Use `displayCache.missingRange(from, to)` to plan missing trace display chunks for committed render windows.
-- [ ] 4.4 Route normalized chunk requests through the trace request coordinator with in-flight, merged, failed, superseded, and aborted ledgers.
-- [ ] 4.5 Preserve the rule that active-pan pending shifts do not start trace prefetch.
-- [ ] 4.6 Add post-commit idle prefetch for at most one neighboring normalized trace chunk after foreground scheduling settles.
-- [ ] 4.7 Ensure trace merges update display state only and do not issue viewport commands or render-window shifts.
-- [ ] 4.8 Add or update tests for normalized range identity, missing-range scheduling, duplicate dedupe, no active-pan prefetch, and post-commit idle prefetch.
-- [ ] 4.9 Verify HTF context EMA overlays (`workbench-chart-htf-context-overlays`) on a variant with `strategy.contexts`.
-- [ ] 4.10 Run frontend verification (`cd frontend; npm run build` and relevant tests).
-- [ ] 4.11 STOP FOR REVIEW: report missing-range behavior and wait for user approval before starting PR 5.
+- [ ] 4.4 Keep `traceRequestKey` as the identity of the actual `/signal-trace` network request; use normalized bounds in `traceRequestKey` only when those bounds are actually sent to the backend.
+- [ ] 4.5 Track display/cache coverage with `traceDisplayChunkKey` and network fetch ledgers with `traceRequestKey`.
+- [ ] 4.6 Route network requests through the trace request coordinator with in-flight, merged, failed, superseded, and aborted ledgers.
+- [ ] 4.7 Preserve the rule that active-pan pending shifts do not start trace prefetch.
+- [ ] 4.8 Add post-commit idle prefetch for at most one neighboring normalized trace chunk after foreground scheduling settles.
+- [ ] 4.9 Ensure trace merges update display state only and do not issue viewport commands or render-window shifts.
+- [ ] 4.10 Add or update tests for request key versus display chunk key separation, missing-range scheduling, duplicate dedupe, no active-pan prefetch, and post-commit idle prefetch.
+- [ ] 4.11 Verify HTF context EMA overlays (`workbench-chart-htf-context-overlays`) on a variant with `strategy.contexts`.
+- [ ] 4.12 Run frontend verification (`cd frontend; npm run build` and relevant tests).
+- [ ] 4.13 STOP FOR REVIEW: report missing-range behavior and wait for user approval before starting PR 5.
 
 ## 5. PR 5 — Split Market Resource Cache
 
@@ -64,17 +68,8 @@
 - [ ] 5.7 Add or update tests for variant switch candle reuse and overlay cache refresh.
 - [ ] 5.8 Verify HTF context EMA overlays (`workbench-chart-htf-context-overlays`) on a variant with `strategy.contexts`.
 - [ ] 5.9 Run frontend verification (`cd frontend; npm run build` and relevant tests).
-- [ ] 5.10 STOP FOR REVIEW: report variant-switch behavior and wait for user approval before starting PR 6.
+- [ ] 5.10 STOP FOR REVIEW: report variant-switch behavior and wait for user approval before archive or before creating a separate OpenSpec for sparse/materialized chart events.
 
-## 6. PR 6 — Sparse / Materialized Chart Events
+## 6. Future Work — Sparse / Materialized Chart Events
 
-- [ ] 6.1 Create a separate OpenSpec or extend this change before implementing backend sparse/materialized chart events.
-- [ ] 6.2 Design `GET /api/research/runs/{run_id}/chart-events` request and response contracts for run, variant, range, context overlay ref, sparse component events, HTF display/context data, and coverage metadata.
-- [ ] 6.3 Ensure chart-events responses exclude dense `long`/`short` arrays, per-bar internals, and full context consumption traces.
-- [ ] 6.4 Implement or prototype a backend chart-events service that derives sparse display data from the same research signal/event generation path as dense trace.
-- [ ] 6.5 Add optional materialized chart event chunks beside run artifacts or document why an in-memory/server cache is used first.
-- [ ] 6.6 Migrate chart marker and HTF display loading to sparse chart events while keeping `/signal-trace` available for lanes, bar inspector, and diagnostics.
-- [ ] 6.7 Add backend and frontend tests for chart-events range coverage, context ref identity, sparse payload shape, and dense `/signal-trace` compatibility.
-- [ ] 6.8 Verify HTF context EMA overlays (`workbench-chart-htf-context-overlays`) on a variant with `strategy.contexts`.
-- [ ] 6.9 Run backend and frontend verification (`python -m pytest` for affected API tests; `cd frontend; npm run build` and relevant tests).
-- [ ] 6.10 STOP FOR REVIEW: report sparse chart-events behavior and wait for user approval before any archive step.
+Sparse/materialized chart events are intentionally not active tasks in this change. Create a separate OpenSpec before any backend `chart-events` API, materialized chart event chunks, or dense `/signal-trace` migration work begins.

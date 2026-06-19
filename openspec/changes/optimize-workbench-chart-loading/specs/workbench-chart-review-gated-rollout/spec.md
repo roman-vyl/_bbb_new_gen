@@ -10,7 +10,8 @@ The required order is:
 3. Anti-flicker partial event display state.
 4. Missing-range scheduling without active-pan prefetch.
 5. Split market resource cache.
-6. Sparse/materialized chart events.
+
+Sparse/materialized chart events are future work and MUST require a separate review/OpenSpec before backend implementation.
 
 #### Scenario: PR slice stops for review
 - **GIVEN** an implementation slice is completed
@@ -23,6 +24,12 @@ The required order is:
 - **WHEN** implementation work continues
 - **THEN** the agent does not start PR 2 context splitting
 - **AND** the agent limits follow-up changes to PR 1 review fixes
+
+#### Scenario: Future chart events require separate OpenSpec
+- **GIVEN** PR 5 is complete and reviewed
+- **WHEN** the team wants to implement sparse or materialized chart events
+- **THEN** the agent creates or updates a separate OpenSpec for that backend/API work
+- **AND** the agent does not implement chart-events API as part of this active change
 
 ### Requirement: Each slice preserves rollback boundaries
 Each PR slice SHALL be independently reviewable and revertible. A slice MUST NOT include behavior changes reserved for a later slice.

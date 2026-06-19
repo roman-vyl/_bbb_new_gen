@@ -22,8 +22,10 @@ Workbench MUST display cached events for covered portions when available and mar
 - **THEN** Workbench keeps displayable events from covered ranges
 - **AND** Workbench does not call the display pipeline with an unconditional empty event list solely due to the cache miss
 
-### Requirement: Missing-range scheduling uses normalized trace chunks
-When trace display cache does not cover the committed render window, Workbench SHALL compute the missing range and plan one or more normalized trace display chunks. Chunk request identity MUST include run, variant, context overlay ref, and normalized range bounds.
+### Requirement: Missing-range scheduling uses normalized trace display chunks
+When trace display cache does not cover the committed render window, Workbench SHALL compute the missing range and plan one or more normalized trace display chunks. The display/cache chunk identity (`traceDisplayChunkKey`) MUST include run, variant, context overlay ref, and normalized range bounds.
+
+The network request identity (`traceRequestKey`) MUST remain the identity of the real `/signal-trace` request. If normalized bounds are actually sent to `/signal-trace`, then `traceRequestKey` MAY include those normalized bounds. If normalized chunks are only a frontend planning concept, `traceDisplayChunkKey` MUST NOT replace `traceRequestKey`.
 
 While dense `/signal-trace` remains the source, normalized chunks MUST be coarse enough to avoid many small recomputations. Active-pan prefetch MUST NOT be introduced in the first missing-range scheduling slice.
 
@@ -32,7 +34,15 @@ While dense `/signal-trace` remains the source, normalized chunks MUST be coarse
 - **WHEN** trace scheduling evaluates the window
 - **THEN** Workbench computes missing coverage
 - **AND** Workbench maps the missing coverage to normalized chunk bounds
-- **AND** the request key uses normalized bounds rather than transient visible-range micro-bounds
+- **AND** Workbench records those bounds in `traceDisplayChunkKey`
+- **AND** `traceRequestKey` continues to match the actual network request parameters
+
+#### Scenario: Frontend-only normalized chunk does not replace network key
+- **GIVEN** Workbench plans a normalized display chunk for cache coverage
+- **AND** Workbench chooses to send a different exact range to `/signal-trace`
+- **WHEN** the network request is scheduled
+- **THEN** `traceDisplayChunkKey` uses the normalized display chunk bounds
+- **AND** `traceRequestKey` uses the exact range sent over the network
 
 #### Scenario: Active pan does not prefetch missing trace
 - **GIVEN** the user is actively panning near a safe-zone boundary

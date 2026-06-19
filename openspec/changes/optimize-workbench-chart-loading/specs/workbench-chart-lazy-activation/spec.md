@@ -19,6 +19,17 @@ Composer and Reports navigation MUST NOT accidentally trigger chart-heavy IO bef
 - **THEN** Workbench requests the market bundle needed for chart display
 - **AND** Workbench may request the initial signal trace after market data establishes a render window
 
+#### Scenario: Reports trade selection waits for chart activation
+- **GIVEN** a run report is loaded
+- **AND** the active tab is `reports`
+- **AND** Chart has not been activated
+- **WHEN** the user selects a trade row in Reports
+- **THEN** Workbench stores the selected trade id
+- **AND** Workbench does not request `/api/market/chart-bundle`
+- **AND** Workbench does not request `/api/research/runs/{run_id}/signal-trace`
+- **WHEN** the user opens the Chart tab
+- **THEN** initial chart focus may center around the selected trade
+
 ### Requirement: Chart activation state preserves mounted Chart behavior
 Workbench SHALL allow Chart to remain mounted after first activation when switching between Chart and Reports, but the first chart-heavy fetch MUST be gated by chart activation or explicit background prefetch policy.
 

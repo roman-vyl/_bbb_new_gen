@@ -13,7 +13,7 @@ This change follows `docs/research/24_workbench_chart_loading_roadmap.md` and de
 - Introduce partial/stale trace display state so component events and HTF overlays do not fully disappear when a new committed render window is not yet fully covered.
 - Make `missingRange()` part of trace scheduling using normalized trace display chunks, without active-pan prefetch in the first pass.
 - Split frontend market caching into candle and overlay resource layers so variant switches do not refetch candles when symbol/timeframe/range are unchanged.
-- Propose a later sparse/materialized `chart-events` backend product so chart markers and HTF display no longer depend on dense `/signal-trace`.
+- Document sparse/materialized `chart-events` as a future backend direction, not an implementation requirement for this active change.
 - Require a review stop after each PR slice before starting the next slice.
 
 No breaking change is intended for existing report artifacts, current `/signal-trace` consumers, or Data Engine candle storage.
@@ -24,7 +24,6 @@ No breaking change is intended for existing report artifacts, current `/signal-t
 
 - `workbench-chart-lazy-activation`: Chart-heavy market and trace IO starts only after chart activation or an explicit background prefetch policy.
 - `workbench-chart-market-resource-cache`: Candles and overlays are cached as separate frontend resources so variant switches can reuse candles.
-- `workbench-chart-events-api`: Sparse/materialized chart event data can serve chart markers and HTF display independently from dense signal trace diagnostics.
 - `workbench-chart-review-gated-rollout`: Implementation is sliced into PR-sized phases with a mandatory review stop after each phase.
 
 ### Modified Capabilities
@@ -38,8 +37,8 @@ No breaking change is intended for existing report artifacts, current `/signal-t
 
 ## Impact
 
-- Affected layers: `frontend` first; `research_api` only for the later sparse/materialized chart events phase.
+- Affected layers: `frontend` for this active change. `research_api` sparse/materialized chart events are future work requiring a separate review/OpenSpec before coding.
 - Likely frontend modules: `frontend/src/shared/context/WorkbenchContext.tsx`, `frontend/src/api/client.ts`, `frontend/src/features/chart/runtime/*`, `frontend/src/features/chart/signalTraceDisplayCache.ts`, `frontend/src/features/chart/signalTraceBundleSessionCache.ts`, `frontend/src/features/chart/marketDataCache.ts`, `frontend/src/features/chart/ChartPanel.tsx`.
-- Likely backend modules for the later phase: `research_api/routers/research_runs.py`, `research_api/services/signal_trace_service.py`, new chart-events service/contracts, and related tests.
+- Future backend modules, out of active scope until a separate OpenSpec: `research_api/routers/research_runs.py`, `research_api/services/signal_trace_service.py`, new chart-events service/contracts, and related tests.
 - Existing contracts to preserve until explicitly changed: `/api/research/runs`, `/api/research/runs/{run_id}`, `/api/market/chart-bundle`, `/api/market/candles`, `/api/market/indicators/ema`, `/api/research/runs/{run_id}/signal-trace`.
 - Relevant docs/specs: `docs/research/24_workbench_chart_loading_roadmap.md`, `openspec/specs/workbench-chart-sliding-window/spec.md`, `openspec/specs/workbench-trace-window-chunk-cache/spec.md`, `openspec/specs/workbench-chart-controller-orchestration/spec.md`, `openspec/specs/workbench-chart-htf-context-overlays/spec.md`.
