@@ -1,18 +1,18 @@
 ## 1. PR 1 — Instrumentation, Lazy Chart Activation, Abortable Client Foundation
 
-- [ ] 1.1 Extend chart pipeline diagnostics for market fetch start/end/cache hit, trace fetch start/end/cache hit/cache miss, display cache `coversRange`/`missingRange`, candle/EMA `setData`, marker `setMarkers`, and duplicate/superseded trace decisions.
-- [ ] 1.2 Add debug scenario coverage for cold chart open, tab switch to Chart, long pan across a render-window boundary, and distant trade navigation.
-- [ ] 1.3 Add chart activation state so run list and report load eagerly, but `chart-bundle`, initial `signal-trace`, and chart-only auxiliary overlay IO wait for Chart activation unless explicit background prefetch is enabled.
-- [ ] 1.4 Ensure Composer and Reports do not trigger chart-heavy IO before Chart activation.
-- [ ] 1.5 Ensure selecting a trade in Reports before Chart activation stores `selectedTradeId` without starting `chart-bundle` or `signal-trace`, and first Chart open can focus that trade.
-- [ ] 1.6 Add `AbortSignal` plumbing to `requestJson`, `fetchChartMarketBundle`, and `fetchSignalTrace`.
-- [ ] 1.7 Abort or supersede old frontend market/trace requests on run, variant, context, or committed window identity changes, and ignore stale responses.
-- [ ] 1.8 Keep PR 1 request identity scoped to real network parameters (`traceRequestKey`); do not introduce normalized display chunk identity in PR 1.
-- [ ] 1.9 Document in debug/review output that AbortController is frontend stale-response protection, not guaranteed backend CPU cancellation.
-- [ ] 1.10 Add or update focused frontend tests for lazy chart activation, Reports trade selection before Chart activation, and stale response suppression.
-- [ ] 1.11 Verify HTF context EMA overlays (`workbench-chart-htf-context-overlays`) on a variant with `strategy.contexts`.
-- [ ] 1.12 Run frontend verification (`cd frontend; npm run build` and relevant tests).
-- [ ] 1.13 STOP FOR REVIEW: report PR 1 debug measurements and wait for user approval before starting PR 2.
+- [x] 1.1 Extend chart pipeline diagnostics for market fetch start/end/cache hit, trace fetch start/end/cache hit/cache miss, display cache `coversRange`/`missingRange`, candle/EMA `setData`, marker `setMarkers`, and duplicate/superseded trace decisions.
+- [x] 1.2 Add debug scenario coverage for cold chart open, tab switch to Chart, long pan across a render-window boundary, and distant trade navigation.
+- [x] 1.3 Add chart activation state so run list and report load eagerly, but `chart-bundle`, initial `signal-trace`, and chart-only auxiliary overlay IO wait for Chart activation unless explicit background prefetch is enabled.
+- [x] 1.4 Ensure Composer and Reports do not trigger chart-heavy IO before Chart activation.
+- [x] 1.5 Ensure selecting a trade in Reports before Chart activation stores `selectedTradeId` without starting `chart-bundle` or `signal-trace`, and first Chart open can focus that trade.
+- [x] 1.6 Add `AbortSignal` plumbing to `requestJson`, `fetchChartMarketBundle`, and `fetchSignalTrace`.
+- [x] 1.7 Abort or supersede old frontend market/trace requests on run, variant, context, or committed window identity changes, and ignore stale responses.
+- [x] 1.8 Keep PR 1 request identity scoped to real network parameters (`traceRequestKey`); do not introduce normalized display chunk identity in PR 1.
+- [x] 1.9 Document in debug/review output that AbortController is frontend stale-response protection, not guaranteed backend CPU cancellation.
+- [x] 1.10 Add or update focused frontend tests for lazy chart activation, Reports trade selection before Chart activation, and stale response suppression.
+- [x] 1.11 Verify HTF context EMA overlays (`workbench-chart-htf-context-overlays`) on a variant with `strategy.contexts`.
+- [x] 1.12 Run frontend verification (`cd frontend; npm run build` and relevant tests).
+- [x] 1.13 STOP FOR REVIEW: report PR 1 debug measurements and wait for user approval before starting PR 2.
 
 ## 2. PR 2 — WorkbenchContext Split Without Behavior Changes
 

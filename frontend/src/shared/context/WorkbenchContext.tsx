@@ -243,8 +243,19 @@ function marketErrorMessage(err: unknown): string {
   return "Failed to load market data.";
 }
 
-export function WorkbenchProvider({ children }: { children: ReactNode }) {
-  const [activeTab, setActiveTab] = useState<WorkbenchTab>("chart");
+function isAbortError(err: unknown): boolean {
+  return err instanceof Error && err.name === "AbortError";
+}
+
+export function WorkbenchProvider({
+  children,
+  initialActiveTab = "chart",
+}: {
+  children: ReactNode;
+  initialActiveTab?: WorkbenchTab;
+}) {
+  const [activeTab, setActiveTab] = useState<WorkbenchTab>(initialActiveTab);
+  const [hasChartEverActivated, setHasChartEverActivated] = useState(false);
   const [configDraft, setConfigDraft] = useState<StrategyConfigDraft | null>(null);
   const [configLoadStatus, setConfigLoadStatus] = useState<ConfigLoadStatus>("loading");
   const [configLoadError, setConfigLoadError] = useState<string | null>(null);
@@ -320,6 +331,14 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
   const skipTradeWindowRebuildRef = useRef(false);
   const renderWindowShiftSeqRef = useRef(0);
   const chartViewCandlesRef = useRef<ChartBar[]>([]);
+
+  useEffect(() => {
+    if (activeTab === "chart") {
+      setHasChartEverActivated(true);
+    }
+  }, [activeTab]);
+
+  const chartHeavyIoEnabled = activeTab === "chart" || hasChartEverActivated;
 
   useEffect(() => {
     selectedVariantKeyRef.current = selectedVariantKey;
@@ -544,8 +563,15 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     if (report === null || reportLoadStatus !== "ready" || selectedVariant === null) {
       return;
     }
+    if (!chartHeavyIoEnabled) {
+      dbgMark(DBG.load.chartHeavyIoBlocked, {
+        source: "market",
+      });
+      return;
+    }
     const snapshot: RunReport = report;
     const variant = selectedVariant;
+    const abortController = new AbortController();
 
     let periods: AnchorStackPeriods;
     try {
@@ -576,8 +602,9 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       setMarketError(null);
 
       if (hasMarketCache(key)) {
-        dbgMark("wb.market_cache_hit", { key });
+        dbgMark(DBG.load.marketFetchCacheHit, { key });
         if (marketLoadGenRef.current !== loadGen && intendedMarketCacheKeyRef.current !== key) {
+          dbgMark(DBG.load.marketFetchStaleResponse, { key, phase: "cache_hit" });
           return;
         }
         setMarketCacheKey(key);
@@ -586,10 +613,10 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       }
 
       if (marketFetchInFlightKeyRef.current === key) {
-        dbgMark("wb.market_fetch_skip_in_flight", { key });
+        dbgMark(DBG.load.marketFetchSkipInFlight, { key });
         return;
       }
-      dbgMark("wb.market_fetch_start", { key });
+      dbgMark(DBG.load.marketFetchStart, { key });
       marketFetchInFlightKeyRef.current = key;
 
       setMarketLoadStatus("loading");
@@ -605,14 +632,21 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
           emaFast: periods.fast,
           emaAnchor: periods.anchor,
           emaSlow: periods.slow,
+          signal: abortController.signal,
         });
         setMarketCacheIfAbsent(key, bundle);
+        dbgMark(DBG.load.marketFetchEnd, {
+          key,
+          barCount: bundle.candles.length,
+          overlayCount: bundle.ema_overlays.length,
+        });
         if (marketFetchInFlightKeyRef.current === key) {
           marketFetchInFlightKeyRef.current = null;
         }
         const applyToUi =
           marketLoadGenRef.current === loadGen || intendedMarketCacheKeyRef.current === key;
         if (!applyToUi) {
+          dbgMark(DBG.load.marketFetchStaleResponse, { key, phase: "network" });
           return;
         }
         setMarketCacheKey(key);
@@ -621,7 +655,15 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
         if (marketFetchInFlightKeyRef.current === key) {
           marketFetchInFlightKeyRef.current = null;
         }
+        if (isAbortError(err)) {
+          dbgMark(DBG.load.marketFetchAbort, {
+            key,
+            note: "frontend abort/stale-response protection; backend CPU work may continue",
+          });
+          return;
+        }
         if (marketLoadGenRef.current !== loadGen && intendedMarketCacheKeyRef.current !== key) {
+          dbgMark(DBG.load.marketFetchStaleResponse, { key, phase: "error" });
           return;
         }
         setMarketError(marketErrorMessage(err));
@@ -632,9 +674,17 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
 
     void loadMarket();
     return () => {
+      abortController.abort();
       marketLoadGenRef.current += 1;
     };
-  }, [report, reportLoadStatus, chartTimeframe, reloadToken, selectedVariantKey]);
+  }, [
+    report,
+    reportLoadStatus,
+    chartTimeframe,
+    reloadToken,
+    selectedVariantKey,
+    chartHeavyIoEnabled,
+  ]);
 
   const setSelectedRunId = useCallback((runId: string) => {
     setSelectedRunIdState(runId);
@@ -1105,6 +1155,12 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
   }, [loadedSignalTraceWindowKey]);
 
   useEffect(() => {
+    if (!chartHeavyIoEnabled) {
+      dbgMark(DBG.load.chartHeavyIoBlocked, {
+        source: "aux_ema",
+      });
+      return;
+    }
     if (marketLoadStatus !== "ready" || report === null || auxEmaSpecs.length === 0) {
       setAuxEmaOverlays([]);
       return;
@@ -1117,6 +1173,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     }
 
     let cancelled = false;
+    const abortController = new AbortController();
     const snapshot = report;
     const fromMs = snapshot.data_range.from_open_time_ms;
     const toOpenTimeMs = snapshot.data_range.to_open_time_ms;
@@ -1131,6 +1188,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
               period: spec.period,
               fromMs,
               toOpenTimeMs,
+              signal: abortController.signal,
             });
             return {
               id: spec.id,
@@ -1147,7 +1205,14 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
           const htfOnly = prev.filter((overlay) => overlay.id.startsWith("htf_"));
           return mergeAuxOverlayPoints(htfOnly, loaded);
         });
-      } catch {
+      } catch (err) {
+        if (isAbortError(err)) {
+          dbgMark(DBG.load.marketFetchAbort, {
+            source: "aux_ema",
+            note: "frontend abort/stale-response protection; backend CPU work may continue",
+          });
+          return;
+        }
         if (!cancelled) {
           setAuxEmaOverlays((prev) => prev.filter((overlay) => overlay.id.startsWith("htf_")));
         }
@@ -1157,8 +1222,15 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     void loadBffAuxEma();
     return () => {
       cancelled = true;
+      abortController.abort();
     };
-  }, [marketLoadStatus, report, chartTimeframe, auxEmaSpecs]);
+  }, [
+    marketLoadStatus,
+    report,
+    chartTimeframe,
+    auxEmaSpecs,
+    chartHeavyIoEnabled,
+  ]);
 
   useEffect(() => {
     const htfSpecCount = auxEmaSpecs.filter((spec) => spec.source === "htf_trace").length;
@@ -1481,10 +1553,12 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       }
       if (tradeId !== null && entryTimeSec !== null) {
         setSelectedBarTimeSec(entryTimeSec);
-        setActiveTab("chart");
+        if (hasChartEverActivated) {
+          setActiveTab("chart");
+        }
       }
     },
-    [selectedVariant, emitChartViewportCommand],
+    [selectedVariant, emitChartViewportCommand, hasChartEverActivated],
   );
 
   const selectBar = useCallback((timeSec: number | null) => {
@@ -1492,12 +1566,40 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
+    if (!chartHeavyIoEnabled) {
+      dbgMark(DBG.load.chartHeavyIoBlocked, {
+        source: "signal_trace",
+      });
+      setSignalTrace(null);
+      setSignalTraceStatus("idle");
+      setLoadedSignalTraceWindowKey(null);
+      setSignalTraceError(null);
+      previousChartWindowKeyRef.current = null;
+      return;
+    }
+
     const displayCacheCoversWindow =
       renderWindowBounds !== null &&
       signalTraceDisplayCacheRef.current.coversRange(
         renderWindowBounds.fromSec,
         renderWindowBounds.toSec,
       );
+    const displayCacheMissingRange =
+      renderWindowBounds !== null
+        ? signalTraceDisplayCacheRef.current.missingRange(
+            renderWindowBounds.fromSec,
+            renderWindowBounds.toSec,
+          )
+        : null;
+
+    if (renderWindowBounds !== null) {
+      dbgMark(DBG.traceDisplay.coverage, {
+        fromSec: renderWindowBounds.fromSec,
+        toSec: renderWindowBounds.toSec,
+        coversWindow: displayCacheCoversWindow,
+        missingRange: displayCacheMissingRange,
+      });
+    }
 
     const bootstrap = evaluateSignalTraceBootstrap({
       report: reportLoadStatus === "ready" ? report : null,
@@ -1575,6 +1677,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
         plan: plan.action,
         policyAction: loadDecision.action,
         cacheCoverage: displayCacheCoversWindow ? "hit" : "miss",
+        missingRange: displayCacheMissingRange,
         requestedFrom: request.fromMs,
         requestedTo: request.toOpenTimeMs,
         coverageFrom: renderWindowBounds?.fromSec,
@@ -1703,6 +1806,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     }
 
     const fetchGeneration = ++traceLoadGenerationRef.current;
+    const abortController = new AbortController();
     const runId = request.runId;
     const variantKey = request.variant;
     const { fromMs, toOpenTimeMs } = request;
@@ -1725,10 +1829,22 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
           fromMs,
           toOpenTimeMs,
           contextOverlayRef: effectiveContextOverlayRef,
+          signal: abortController.signal,
         });
         if (!coordinator.isResponseCurrent(traceRequestKey, fetchGeneration)) {
+          dbgMark(DBG.signalTrace.fetchStaleResponse, {
+            windowKey,
+            traceRequestKey,
+            phase: "response",
+          });
           return;
         }
+        dbgMark(DBG.signalTrace.fetchEnd, {
+          windowKey,
+          traceRequestKey,
+          timeCount: bundle.times.length,
+          eventCount: bundle.component_events?.length ?? 0,
+        });
         const requestedBounds = {
           fromSec: Math.floor(fromMs / 1000),
           toSec: Math.floor(toOpenTimeMs / 1000),
@@ -1763,7 +1879,20 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
         signalTraceBundleSessionCacheRef.current.set(windowKey, bundle);
         dbgFlush("workbench-after-signal-trace");
       } catch (err) {
+        if (isAbortError(err)) {
+          dbgMark(DBG.signalTrace.fetchAbort, {
+            windowKey,
+            traceRequestKey,
+            note: "frontend abort/stale-response protection; backend CPU work may continue",
+          });
+          return;
+        }
         if (!coordinator.isResponseCurrent(traceRequestKey, fetchGeneration)) {
+          dbgMark(DBG.signalTrace.fetchStaleResponse, {
+            windowKey,
+            traceRequestKey,
+            phase: "error",
+          });
           return;
         }
         coordinator.markFailed(traceRequestKey);
@@ -1785,6 +1914,9 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     }
 
     void loadTrace();
+    return () => {
+      abortController.abort();
+    };
   }, [
     reportLoadStatus,
     selectedRunId,
@@ -1795,6 +1927,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     marketLoadStatus,
     effectiveContextOverlayRef,
     finalizeTraceDisplayUpdate,
+    chartHeavyIoEnabled,
   ]);
 
   const symbol = report?.symbol ?? "—";

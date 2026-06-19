@@ -97,6 +97,7 @@ export async function fetchSignalTrace(params: {
   fromMs: number;
   toOpenTimeMs: number;
   contextOverlayRef?: string | null;
+  signal?: AbortSignal;
 }): Promise<SignalTraceBundle> {
   const qs = new URLSearchParams({
     variant: params.variant,
@@ -109,6 +110,7 @@ export async function fetchSignalTrace(params: {
   return dbgTimed("api.fetchSignalTrace", () =>
     requestJson<SignalTraceBundle>(
       `/api/research/runs/${encodeURIComponent(params.runId)}/signal-trace?${qs.toString()}`,
+      { signal: params.signal },
     ),
   );
 }
@@ -140,6 +142,7 @@ export async function fetchChartMarketBundle(params: {
   emaFast: number;
   emaAnchor: number;
   emaSlow: number;
+  signal?: AbortSignal;
 }): Promise<ChartMarketBundle> {
   const base = chartMarketQuery(params);
   const bundleQs = new URLSearchParams(base);
@@ -147,7 +150,9 @@ export async function fetchChartMarketBundle(params: {
   bundleQs.set("ema_anchor", String(params.emaAnchor));
   bundleQs.set("ema_slow", String(params.emaSlow));
   return dbgTimed("api.fetchChartMarketBundle", () =>
-    requestJson<ChartMarketBundle>(`/api/market/chart-bundle?${bundleQs.toString()}`),
+    requestJson<ChartMarketBundle>(`/api/market/chart-bundle?${bundleQs.toString()}`, {
+      signal: params.signal,
+    }),
   );
 }
 
@@ -174,6 +179,7 @@ export async function fetchChartOverlayEma(params: {
   period: number;
   fromMs: number;
   toOpenTimeMs: number;
+  signal?: AbortSignal;
 }): Promise<IndicatorPoint[]> {
   const qs = new URLSearchParams({
     symbol: params.symbol,
@@ -182,7 +188,9 @@ export async function fetchChartOverlayEma(params: {
     from: String(params.fromMs),
     to_open_time_ms: String(params.toOpenTimeMs),
   });
-  return requestJson<IndicatorPoint[]>(`/api/market/indicators/ema?${qs.toString()}`);
+  return requestJson<IndicatorPoint[]>(`/api/market/indicators/ema?${qs.toString()}`, {
+    signal: params.signal,
+  });
 }
 
 export async function fetchComponentCatalog(

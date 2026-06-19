@@ -11,6 +11,7 @@ import type {
   SideMetrics,
   SignalTraceBundle,
   VariantMetrics,
+  WorkbenchTab,
 } from "@/api/types";
 import { clearMarketCache } from "@/features/chart/marketDataCache";
 import { WorkbenchProvider, useWorkbench } from "@/shared/context/WorkbenchContext";
@@ -140,7 +141,11 @@ function makeReport(runId: string): RunReport {
         symbol: "BTCUSDT",
         timeframe: "5m",
         strategy_spec: {
-          anchor_stack: { fast: 200, anchor: 500, slow: 1000 },
+          anchor_stack: {
+            fast: { period: 200 },
+            anchor: { period: 500 },
+            slow: { period: 1000 },
+          },
         },
         metrics: EMPTY_METRICS,
         component_counters: [],
@@ -179,7 +184,11 @@ function makeReport(runId: string): RunReport {
         symbol: "BTCUSDT",
         timeframe: "5m",
         strategy_spec: {
-          anchor_stack: { fast: 200, anchor: 500, slow: 1000 },
+          anchor_stack: {
+            fast: { period: 200 },
+            anchor: { period: 500 },
+            slow: { period: 1000 },
+          },
         },
         metrics: EMPTY_METRICS,
         component_counters: [],
@@ -211,12 +220,19 @@ function WorkbenchCapture() {
     <div
       data-report-status={workbenchRef.reportLoadStatus}
       data-variant-key={workbenchRef.selectedVariantKey}
+      data-active-tab={workbenchRef.activeTab}
     />
   );
 }
 
-function Host({ children }: { children?: ReactNode }) {
-  return <WorkbenchProvider>{children}</WorkbenchProvider>;
+function Host({
+  children,
+  initialActiveTab,
+}: {
+  children?: ReactNode;
+  initialActiveTab?: WorkbenchTab;
+}) {
+  return <WorkbenchProvider initialActiveTab={initialActiveTab}>{children}</WorkbenchProvider>;
 }
 
 describe("Workbench report-load invariant", () => {
@@ -326,6 +342,48 @@ describe("Workbench report-load invariant", () => {
       expect(fetchRunReport).toHaveBeenCalledTimes(2);
     });
     expect(fetchRunReport).toHaveBeenLastCalledWith("run-b");
+  });
+
+  it("defers chart-heavy IO until Chart activation and preserves Reports trade selection", async () => {
+    render(
+      <Host initialActiveTab="reports">
+        <WorkbenchCapture />
+      </Host>,
+    );
+
+    await waitFor(() => {
+      expect(workbenchRef?.reportLoadStatus).toBe("ready");
+    });
+    await waitFor(() => {
+      expect(workbenchRef?.selectedTradeId).toBe(2);
+    });
+    expect(fetchChartMarketBundle).not.toHaveBeenCalled();
+    expect(fetchSignalTrace).not.toHaveBeenCalled();
+
+    act(() => {
+      workbenchRef!.selectTrade(1);
+    });
+
+    await waitFor(() => {
+      expect(workbenchRef?.selectedTradeId).toBe(1);
+    });
+    expect(fetchChartMarketBundle).not.toHaveBeenCalled();
+    expect(fetchSignalTrace).not.toHaveBeenCalled();
+
+    act(() => {
+      workbenchRef!.setActiveTab("chart");
+    });
+
+    await waitFor(() => {
+      expect(workbenchRef?.activeTab).toBe("chart");
+    });
+    await waitFor(() => {
+      expect(fetchChartMarketBundle).toHaveBeenCalledTimes(1);
+    });
+    await waitFor(() => {
+      expect(fetchSignalTrace).toHaveBeenCalledTimes(1);
+    });
+    expect(workbenchRef?.selectedTradeId).toBe(1);
   });
 });
 
