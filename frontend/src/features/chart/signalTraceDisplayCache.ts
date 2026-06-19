@@ -121,7 +121,7 @@ export function extractDisplayChunkFromResponse(
   };
 }
 
-/** Chunk bounds from chart-events response (times + coverage; no HTF-only inference). */
+/** Chunk bounds from chart-events response (times + events; coverage preferred in a follow-up). */
 export function computeChunkBoundsFromChartEvents(
   bundle: ChartEventsBundle,
 ): TimeBounds | null {

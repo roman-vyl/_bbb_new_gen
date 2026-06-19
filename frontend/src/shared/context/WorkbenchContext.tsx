@@ -61,9 +61,13 @@ import {
   type ChartEventsMergeSource,
 } from "@/features/chart/runtime/chartEventsLoad";
 import {
+  buildTraceRequestKey,
   createSignalTraceRequestCoordinator,
 } from "@/features/chart/runtime/signalTraceRequestCoordinator";
-import { planMissingTraceDisplayChunkFetch } from "@/features/chart/runtime/traceDisplayChunkScheduling";
+import {
+  buildTraceDisplayChunkKey,
+  planMissingTraceDisplayChunkFetch,
+} from "@/features/chart/runtime/traceDisplayChunkScheduling";
 import { canEmitTradeFocus } from "@/features/chart/runtime/viewportController";
 import type { ChartInteractionEvent, ViewportCommand } from "@/features/chart/runtime/types";
 import {
@@ -1995,7 +1999,13 @@ export function WorkbenchProvider({
       return;
     }
 
-    if (displayCacheCoversWindow) {
+    const lanesReadyForWindow =
+      signalTraceMatchesChartWindow(committedWindowKey, loadedSignalTraceWindowKeyRef.current) &&
+      (signalTraceStatusRef.current === "ready" || signalTraceStatusRef.current === "error");
+    const chartEventsEnabled = isChartEventsApiEnabled();
+    const lanesOnlyFetch = chartEventsEnabled && displayCacheCoversWindow && !lanesReadyForWindow;
+
+    if (displayCacheCoversWindow && !lanesOnlyFetch) {
       dbgMark(DBG.traceDisplay.cacheHit, {
         windowKey: committedWindowKey,
         source: "display_cache_covers_window",
@@ -2004,7 +2014,15 @@ export function WorkbenchProvider({
       return;
     }
 
-    const chunkPlan = planMissingTraceDisplayChunkFetch({
+    if (displayCacheCoversWindow && lanesOnlyFetch) {
+      dbgMark(DBG.traceDisplay.cacheHit, {
+        windowKey: committedWindowKey,
+        source: "display_cache_covers_window_lanes_pending",
+      });
+      finalizeTraceDisplayUpdate();
+    }
+
+    let chunkPlan = planMissingTraceDisplayChunkFetch({
       cache: signalTraceDisplayCacheRef.current,
       candles: chartView.candles,
       runId: request.runId,
@@ -2012,6 +2030,31 @@ export function WorkbenchProvider({
       contextOverlayRef: effectiveContextOverlayRef,
       chartTimeframe,
     });
+
+    if (
+      chunkPlan === null &&
+      lanesOnlyFetch &&
+      renderWindowBounds !== null
+    ) {
+      chunkPlan = {
+        traceDisplayChunkKey: buildTraceDisplayChunkKey({
+          runId: request.runId,
+          variant: request.variant,
+          contextOverlayRef: effectiveContextOverlayRef,
+          chartTimeframe,
+          fromSec: renderWindowBounds.fromSec,
+          toSec: renderWindowBounds.toSec,
+        }),
+        fromSec: renderWindowBounds.fromSec,
+        toSec: renderWindowBounds.toSec,
+        fromMs: request.fromMs,
+        toOpenTimeMs: request.toOpenTimeMs,
+        missingRange: {
+          fromSec: renderWindowBounds.fromSec,
+          toSec: renderWindowBounds.toSec,
+        },
+      };
+    }
 
     if (chunkPlan === null) {
       finalizeTraceDisplayUpdate();
@@ -2027,13 +2070,15 @@ export function WorkbenchProvider({
       contextOverlayRef: effectiveContextOverlayRef,
     };
     const displayRequestKey = buildDisplayTraceRequestKey(fetchParams);
+    const lanesRequestKey = buildTraceRequestKey(fetchParams);
+    const networkCoordinatorKey = lanesOnlyFetch ? lanesRequestKey : displayRequestKey;
 
     const coordDecision = coordinator.evaluate({
-      key: displayRequestKey,
+      key: networkCoordinatorKey,
       generation: traceLoadGenerationRef.current,
-      displayCacheCoversWindow: false,
+      displayCacheCoversWindow: lanesOnlyFetch,
     });
-    logCoordinatorDecision(coordDecision, displayRequestKey, { traceDisplayChunkKey, chunkPlan });
+    logCoordinatorDecision(coordDecision, networkCoordinatorKey, { traceDisplayChunkKey, chunkPlan });
 
     if (coordDecision.action !== "fetch") {
       if (
@@ -2066,9 +2111,11 @@ export function WorkbenchProvider({
     const runId = request.runId;
     const variantKey = request.variant;
     const { fromMs, toOpenTimeMs } = chunkPlan;
-    const chartEventsEnabled = isChartEventsApiEnabled();
 
-    coordinator.markInFlight(displayRequestKey, fetchGeneration);
+    coordinator.markInFlight(networkCoordinatorKey, fetchGeneration);
+    if (chartEventsEnabled && !lanesOnlyFetch) {
+      coordinator.markInFlight(displayRequestKey, fetchGeneration);
+    }
     setSignalTraceStatus("loading");
     signalTraceStatusRef.current = "loading";
     setSignalTraceError(null);
@@ -2085,83 +2132,95 @@ export function WorkbenchProvider({
         fromSec: Math.floor(fromMs / 1000),
         toSec: Math.floor(toOpenTimeMs / 1000),
       };
-      let displayMerged = false;
-      let mergeSource: ChartEventsMergeSource = "signal-trace-fallback";
+      let displayMerged = lanesOnlyFetch;
+      let mergeSource: ChartEventsMergeSource = lanesOnlyFetch
+        ? "chart-events"
+        : "signal-trace-fallback";
+
+      const commitDisplayAfterMerge = () => {
+        coordinator.markMerged(displayRequestKey, "network");
+        setDisplayCacheVersion((version) => version + 1);
+        finalizeTraceDisplayUpdate();
+      };
+
+      const denseResponseCurrent = () =>
+        coordinator.isResponseCurrent(networkCoordinatorKey, fetchGeneration);
 
       if (!chartEventsEnabled) {
         noteChartEventsFlagDisabledOnce();
       }
 
-      try {
-        if (chartEventsEnabled) {
-          try {
-            const chartBundle = await fetchChartEvents({
-              runId,
-              variant: variantKey,
-              fromMs,
-              toOpenTimeMs,
-              contextOverlayRef: effectiveContextOverlayRef,
-              signal: abortController.signal,
-            });
-            if (!coordinator.isResponseCurrent(displayRequestKey, fetchGeneration)) {
-              dbgMark(DBG.signalTrace.fetchStaleResponse, {
-                windowKey,
-                traceRequestKey: displayRequestKey,
-                phase: "chart_events_response",
-              });
-              return;
-            }
-            const actualBounds = computeChunkBoundsFromChartEvents(chartBundle);
-            const truncated =
-              chartBundle.coverage.truncated ||
-              isTraceResponseTruncated(requestedBounds, actualBounds);
-            dbgTimedSync(
-              DBG.traceDisplay.mergeChunk,
-              () => {
-                mergeDisplayChunkFromChartEvents(signalTraceDisplayCacheRef.current, chartBundle);
-              },
-              () => ({
-                eventCount: chartBundle.component_events?.length ?? 0,
-                timeCount: chartBundle.times.length,
-                source: "chart-events",
-              }),
-            );
-            displayMerged = true;
-            mergeSource = "chart-events";
-            dbgMark(DBG.chartEvents.merge, {
+      if (chartEventsEnabled && !lanesOnlyFetch) {
+        try {
+          const chartBundle = await fetchChartEvents({
+            runId,
+            variant: variantKey,
+            fromMs,
+            toOpenTimeMs,
+            contextOverlayRef: effectiveContextOverlayRef,
+            signal: abortController.signal,
+          });
+          if (!coordinator.isResponseCurrent(displayRequestKey, fetchGeneration)) {
+            dbgMark(DBG.signalTrace.fetchStaleResponse, {
               windowKey,
               traceRequestKey: displayRequestKey,
-              source: mergeSource,
-              truncated,
-              requested: requestedBounds,
-              actual: actualBounds,
+              phase: "chart_events_response",
             });
-          } catch (chartErr) {
-            if (isAbortError(chartErr)) {
-              dbgMark(DBG.signalTrace.fetchAbort, {
-                windowKey,
-                traceRequestKey: displayRequestKey,
-                note: "chart-events fetch aborted",
-              });
-              return;
-            }
-            dbgMark(DBG.chartEvents.fetchFail, {
-              windowKey,
-              traceRequestKey: displayRequestKey,
-              status: chartErr instanceof ApiError ? chartErr.status : undefined,
-              detail:
-                chartErr instanceof ApiError
-                  ? chartErr.detail
-                  : chartErr instanceof Error
-                    ? chartErr.message
-                    : String(chartErr),
-            });
-            dbgMark(DBG.chartEvents.fallback, {
-              reason: chartEventsFallbackReasonFromError(chartErr),
-            });
+            return;
           }
+          const actualBounds = computeChunkBoundsFromChartEvents(chartBundle);
+          const truncated =
+            chartBundle.coverage.truncated ||
+            isTraceResponseTruncated(requestedBounds, actualBounds);
+          dbgTimedSync(
+            DBG.traceDisplay.mergeChunk,
+            () => {
+              mergeDisplayChunkFromChartEvents(signalTraceDisplayCacheRef.current, chartBundle);
+            },
+            () => ({
+              eventCount: chartBundle.component_events?.length ?? 0,
+              timeCount: chartBundle.times.length,
+              source: "chart-events",
+            }),
+          );
+          displayMerged = true;
+          mergeSource = "chart-events";
+          dbgMark(DBG.chartEvents.merge, {
+            windowKey,
+            traceRequestKey: displayRequestKey,
+            source: mergeSource,
+            truncated,
+            requested: requestedBounds,
+            actual: actualBounds,
+          });
+          commitDisplayAfterMerge();
+        } catch (chartErr) {
+          if (isAbortError(chartErr)) {
+            dbgMark(DBG.signalTrace.fetchAbort, {
+              windowKey,
+              traceRequestKey: displayRequestKey,
+              note: "chart-events fetch aborted",
+            });
+            return;
+          }
+          dbgMark(DBG.chartEvents.fetchFail, {
+            windowKey,
+            traceRequestKey: displayRequestKey,
+            status: chartErr instanceof ApiError ? chartErr.status : undefined,
+            detail:
+              chartErr instanceof ApiError
+                ? chartErr.detail
+                : chartErr instanceof Error
+                  ? chartErr.message
+                  : String(chartErr),
+          });
+          dbgMark(DBG.chartEvents.fallback, {
+            reason: chartEventsFallbackReasonFromError(chartErr),
+          });
         }
+      }
 
+      try {
         const bundle = await fetchSignalTrace({
           runId,
           variant: variantKey,
@@ -2170,17 +2229,17 @@ export function WorkbenchProvider({
           contextOverlayRef: effectiveContextOverlayRef,
           signal: abortController.signal,
         });
-        if (!coordinator.isResponseCurrent(displayRequestKey, fetchGeneration)) {
+        if (!denseResponseCurrent()) {
           dbgMark(DBG.signalTrace.fetchStaleResponse, {
             windowKey,
-            traceRequestKey: displayRequestKey,
+            traceRequestKey: networkCoordinatorKey,
             phase: "response",
           });
           return;
         }
         dbgMark(DBG.signalTrace.fetchEnd, {
           windowKey,
-          traceRequestKey: displayRequestKey,
+          traceRequestKey: networkCoordinatorKey,
           timeCount: bundle.times.length,
           eventCount: bundle.component_events?.length ?? 0,
           lanesFetch: chartEventsEnabled,
@@ -2218,11 +2277,10 @@ export function WorkbenchProvider({
               actual: actualBounds,
             });
           }
+          commitDisplayAfterMerge();
         }
 
-        coordinator.markMerged(displayRequestKey, "network");
-        setDisplayCacheVersion((version) => version + 1);
-        finalizeTraceDisplayUpdate();
+        coordinator.markMerged(networkCoordinatorKey, "network");
         setSignalTrace(bundle);
         setLoadedSignalTraceWindowKey(windowKey);
         loadedSignalTraceWindowKeyRef.current = windowKey;
@@ -2239,15 +2297,33 @@ export function WorkbenchProvider({
           });
           return;
         }
-        if (!coordinator.isResponseCurrent(displayRequestKey, fetchGeneration)) {
+        if (!denseResponseCurrent()) {
           dbgMark(DBG.signalTrace.fetchStaleResponse, {
             windowKey,
-            traceRequestKey: displayRequestKey,
+            traceRequestKey: networkCoordinatorKey,
             phase: "error",
           });
           return;
         }
-        coordinator.markFailed(displayRequestKey);
+
+        if (displayMerged) {
+          setSignalTrace(null);
+          setLoadedSignalTraceWindowKey(windowKey);
+          loadedSignalTraceWindowKeyRef.current = windowKey;
+          setSignalTraceStatus("error");
+          signalTraceStatusRef.current = "error";
+          setSignalTraceError(
+            err instanceof ApiError
+              ? err.detail
+              : err instanceof Error
+                ? err.message
+                : "Failed to load signal trace.",
+          );
+          finalizeTraceDisplayUpdate();
+          return;
+        }
+
+        coordinator.markFailed(networkCoordinatorKey);
         setSignalTrace(null);
         setLoadedSignalTraceWindowKey(windowKey);
         loadedSignalTraceWindowKeyRef.current = windowKey;
@@ -2261,14 +2337,20 @@ export function WorkbenchProvider({
               : "Failed to load signal trace.",
         );
       } finally {
-        coordinator.clearInFlight(displayRequestKey, fetchGeneration);
+        coordinator.clearInFlight(networkCoordinatorKey, fetchGeneration);
+        if (chartEventsEnabled && !lanesOnlyFetch) {
+          coordinator.clearInFlight(displayRequestKey, fetchGeneration);
+        }
       }
     }
 
     void loadTrace();
     return () => {
       abortController.abort();
-      coordinator.clearInFlight(displayRequestKey, fetchGeneration);
+      coordinator.clearInFlight(networkCoordinatorKey, fetchGeneration);
+      if (chartEventsEnabled && !lanesOnlyFetch) {
+        coordinator.clearInFlight(displayRequestKey, fetchGeneration);
+      }
       traceLoadGenerationRef.current += 1;
     };
   }, [
@@ -2282,7 +2364,6 @@ export function WorkbenchProvider({
     effectiveContextOverlayRef,
     finalizeTraceDisplayUpdate,
     chartHeavyIoEnabled,
-    displayCacheVersion,
     chartTimeframe,
   ]);
 

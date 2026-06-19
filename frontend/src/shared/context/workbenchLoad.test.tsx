@@ -794,6 +794,7 @@ describe("Workbench split market resource cache", () => {
 
     await waitFor(() => {
       expect(workbenchRef?.marketLoadStatus).toBe("ready");
+      expect(chartSliceRef?.chartEmaOverlays).toHaveLength(3);
     });
 
     const initialEma = chartSliceRef?.chartEmaOverlays;
