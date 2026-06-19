@@ -94,7 +94,11 @@ import {
   isTraceResponseTruncated,
   mergeDisplayChunkFromResponse,
 } from "@/features/chart/signalTraceDisplayCache";
-import { sliceTraceDisplayForCandles } from "@/features/chart/traceDisplayApply";
+import {
+  deriveTraceDisplayStateForCandles,
+  shouldRetainPreviousTraceDisplay,
+  type TraceDisplayState,
+} from "@/features/chart/traceDisplayApply";
 import {
   defaultClosedTradeSelection,
   deriveSelectedVariant,
@@ -322,6 +326,16 @@ const WorkbenchReportContext = createContext<WorkbenchReportState | null>(null);
 const WorkbenchComposerContext = createContext<WorkbenchComposerState | null>(null);
 const WorkbenchChartContext = createContext<WorkbenchChartState | null>(null);
 
+const EMPTY_TRACE_DISPLAY_STATE: TraceDisplayState = {
+  status: "empty",
+  fromSec: 0,
+  toSec: 0,
+  events: [],
+  htfSlice: { times: [], htf_context: undefined },
+  coveredRanges: [],
+  missingRange: null,
+};
+
 const EMPTY_RUNS_HINT =
   "No research runs found. Run a backtest from Strategy Composer or locally, e.g. " +
   "python -m research.strategies.ema_pullback.run --config <path>, " +
@@ -376,6 +390,10 @@ export function WorkbenchProvider({
   const [displayApplyRevision, setDisplayApplyRevision] = useState(0);
   const [renderWindowShiftSeq, setRenderWindowShiftSeq] = useState(0);
   const [chartDisplayComponentEvents, setChartDisplayComponentEvents] = useState<ComponentEvent[]>([]);
+  const chartDisplayComponentEventsRef = useRef<ComponentEvent[]>([]);
+  const [traceDisplayState, setTraceDisplayState] = useState<TraceDisplayState>(
+    EMPTY_TRACE_DISPLAY_STATE,
+  );
   const [chartShowEntryBlockMarkers, setChartShowEntryBlockMarkers] = useState(true);
   const [chartShowExitSignalMarkers, setChartShowExitSignalMarkers] = useState(true);
   const [chartShowSetupMarkers, setChartShowSetupMarkers] = useState(true);
@@ -1221,35 +1239,67 @@ export function WorkbenchProvider({
 
   const applyTraceDisplayForCurrentWindow = useCallback(() => {
     const candles = chartViewCandlesRef.current;
-    const slice = sliceTraceDisplayForCandles(signalTraceDisplayCacheRef.current, candles);
-    if (slice === null) {
+    const nextDisplayState = deriveTraceDisplayStateForCandles(
+      signalTraceDisplayCacheRef.current,
+      candles,
+      signalTraceStatusRef.current,
+    );
+    const shouldRetainPreviousDisplay = shouldRetainPreviousTraceDisplay(nextDisplayState, {
+      eventCount: chartDisplayComponentEventsRef.current.length,
+      htfOverlayPointCount: lastSlicedHtfOverlaysRef.current.reduce(
+        (total, overlay) => total + overlay.points.length,
+        0,
+      ),
+    });
+    const retainedDisplayStatus =
+      signalTraceStatusRef.current === "loading" ? "loading_missing" : nextDisplayState.status;
+
+    setTraceDisplayState(
+      shouldRetainPreviousDisplay
+        ? {
+            ...nextDisplayState,
+            status: retainedDisplayStatus,
+            events: chartDisplayComponentEventsRef.current,
+          }
+        : nextDisplayState,
+    );
+
+    if (nextDisplayState.status === "empty") {
+      chartDisplayComponentEventsRef.current = [];
       setChartDisplayComponentEvents([]);
-      const bounds = candleTimeBounds(candles);
-      if (bounds !== null) {
-        applyHtfOverlaysFromDisplaySlice(
-          signalTraceDisplayCacheRef.current.sliceHtfContextForWindow(
-            bounds.fromSec,
-            bounds.toSec,
-          ),
-        );
-      }
+      setDisplayApplyRevision((revision) => revision + 1);
       return;
     }
 
-    setChartDisplayComponentEvents(slice.events);
+    if (!shouldRetainPreviousDisplay) {
+      chartDisplayComponentEventsRef.current = nextDisplayState.events;
+      setChartDisplayComponentEvents(nextDisplayState.events);
+    }
     setDisplayApplyRevision((revision) => revision + 1);
 
     dbgMark(DBG.traceDisplay.applyCurrentWindow, {
-      fromSec: slice.fromSec,
-      toSec: slice.toSec,
-      eventCount: slice.events.length,
-      htfTimeCount: slice.htfSlice.times.length,
+      fromSec: nextDisplayState.fromSec,
+      toSec: nextDisplayState.toSec,
+      status: shouldRetainPreviousDisplay ? retainedDisplayStatus : nextDisplayState.status,
+      eventCount: shouldRetainPreviousDisplay
+        ? chartDisplayComponentEventsRef.current.length
+        : nextDisplayState.events.length,
+      htfTimeCount: nextDisplayState.htfSlice.times.length,
+      coveredRanges: nextDisplayState.coveredRanges,
+      missingRange: nextDisplayState.missingRange,
+      retainedPreviousDisplay: shouldRetainPreviousDisplay,
     });
 
-    applyHtfOverlaysFromDisplaySlice(slice.htfSlice);
+    if (!shouldRetainPreviousDisplay || nextDisplayState.htfSlice.times.length > 0) {
+      applyHtfOverlaysFromDisplaySlice(nextDisplayState.htfSlice);
+    }
   }, [applyHtfOverlaysFromDisplaySlice]);
 
   applyTraceDisplayRef.current = applyTraceDisplayForCurrentWindow;
+
+  useEffect(() => {
+    chartDisplayComponentEventsRef.current = chartDisplayComponentEvents;
+  }, [chartDisplayComponentEvents]);
 
   useEffect(() => {
     signalTraceStatusRef.current = signalTraceStatus;
@@ -1406,6 +1456,9 @@ export function WorkbenchProvider({
     signalTraceRequestCoordinatorRef.current.reset();
     traceLoadGenerationRef.current += 1;
     lastSlicedHtfOverlaysRef.current = [];
+    chartDisplayComponentEventsRef.current = [];
+    setChartDisplayComponentEvents([]);
+    setTraceDisplayState(EMPTY_TRACE_DISPLAY_STATE);
     setDisplayCacheVersion((version) => version + 1);
   }, [traceDisplayCacheKey, reloadToken]);
 
@@ -1571,24 +1624,15 @@ export function WorkbenchProvider({
   }, [renderWindowBounds, displayCacheVersion, applyTraceDisplayForCurrentWindow]);
 
   const componentEventsStale = useMemo(() => {
-    if (renderWindowBounds === null) {
+    if (
+      traceDisplayState.status === "current" ||
+      traceDisplayState.status === "empty" ||
+      chartDisplayComponentEvents.length === 0
+    ) {
       return false;
     }
-    if (displayCacheCoversWindow) {
-      return false;
-    }
-    if (chartDisplayComponentEvents.length > 0 || (signalTrace?.component_events?.length ?? 0) > 0) {
-      return signalTraceStatus === "loading" || !displayCacheCoversWindow;
-    }
-    return false;
-  }, [
-    renderWindowBounds,
-    displayCacheCoversWindow,
-    displayCacheVersion,
-    chartDisplayComponentEvents.length,
-    signalTrace?.component_events,
-    signalTraceStatus,
-  ]);
+    return true;
+  }, [chartDisplayComponentEvents.length, traceDisplayState.status]);
 
   const chartViewModel = useMemo(
     () =>
@@ -1600,6 +1644,8 @@ export function WorkbenchProvider({
         componentEvents: chartDisplayComponentEvents,
         htfOverlayStale: htfAuxEmaOverlayStale,
         componentEventsStale,
+        traceDisplayStatus: traceDisplayState.status,
+        traceDisplayMissingRange: traceDisplayState.missingRange,
         viewMode: chartView.mode,
         centerTimeSec: chartView.centerTimeSec,
         firstTimeSec: chartView.firstTimeSec,
@@ -1612,6 +1658,8 @@ export function WorkbenchProvider({
       chartDisplayComponentEvents,
       htfAuxEmaOverlayStale,
       componentEventsStale,
+      traceDisplayState.status,
+      traceDisplayState.missingRange,
     ],
   );
 

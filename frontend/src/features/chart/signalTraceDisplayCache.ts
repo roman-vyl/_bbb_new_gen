@@ -31,6 +31,7 @@ export type SignalTraceDisplayCache = {
   setTraceMeta(meta: SignalTraceMeta): void;
   coversRange(fromSec: number, toSec: number): boolean;
   missingRange(fromSec: number, toSec: number): TimeBounds | null;
+  coveredRanges(fromSec: number, toSec: number): TimeBounds[];
   sliceEventsForWindow(fromSec: number, toSec: number): ComponentEvent[];
   sliceHtfContextForWindow(fromSec: number, toSec: number): HtfContextTraceSlice;
   getTraceMeta(): SignalTraceMeta | null;
@@ -193,6 +194,22 @@ export function missingTimeRange(
   return null;
 }
 
+export function intersectTimeRanges(
+  intervals: readonly TimeBounds[],
+  fromSec: number,
+  toSec: number,
+): TimeBounds[] {
+  if (fromSec > toSec) {
+    return [];
+  }
+  return mergeCoverageIntervals([...intervals])
+    .map((interval) => ({
+      fromSec: Math.max(interval.fromSec, fromSec),
+      toSec: Math.min(interval.toSec, toSec),
+    }))
+    .filter((interval) => interval.fromSec <= interval.toSec);
+}
+
 function dedupeComponentEvents(events: readonly ComponentEvent[]): ComponentEvent[] {
   const seen = new Set<string>();
   const out: ComponentEvent[] = [];
@@ -324,6 +341,10 @@ export function createSignalTraceDisplayCache(): SignalTraceDisplayCache {
 
     missingRange(fromSec: number, toSec: number) {
       return missingTimeRange(merged.coverage, fromSec, toSec);
+    },
+
+    coveredRanges(fromSec: number, toSec: number) {
+      return intersectTimeRanges(merged.coverage, fromSec, toSec);
     },
 
     sliceEventsForWindow(fromSec: number, toSec: number) {

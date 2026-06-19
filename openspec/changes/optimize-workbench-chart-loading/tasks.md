@@ -28,21 +28,23 @@
 - [x] 2.8 Add or update tests proving the refactor does not change pan, trade navigation, trace, and marker behavior.
 - [x] 2.9 Verify HTF context EMA overlays (`workbench-chart-htf-context-overlays`) on a variant with `strategy.contexts`.
 - [x] 2.10 Run frontend verification (`cd frontend; npm run build` and relevant tests).
-- [ ] 2.11 STOP FOR REVIEW: summarize the refactor and wait for user approval before starting PR 3.
-  - PR 2 implementation complete; review gate pending user approval before PR 3.
+- [x] 2.11 STOP FOR REVIEW: summarize the refactor and wait for user approval before starting PR 3.
+  - PR 2 accepted; PR 3 started only after user approval.
 
 ## 3. PR 3 — Anti-Flicker Events With Partial Display State
 
-- [ ] 3.1 Introduce `TraceDisplayState` with `current`, `partial`, `stale`, `loading_missing`, and `empty` statuses plus covered ranges, missing range, events for covered ranges, and HTF data for covered ranges.
-- [ ] 3.2 Change trace display apply logic so a partial or uncovered exact window does not unconditionally call `setChartDisplayComponentEvents([])`.
-- [ ] 3.3 Keep cached component events visible for covered portions of the committed render window while missing data loads.
-- [ ] 3.4 Keep cached HTF overlay points visible for covered portions of the committed render window while missing data loads.
+- [x] 3.1 Introduce `TraceDisplayState` with `current`, `partial`, `stale`, `loading_missing`, and `empty` statuses plus covered ranges, missing range, events for covered ranges, and HTF data for covered ranges.
+- [x] 3.2 Change trace display apply logic so a partial or uncovered exact window does not unconditionally call `setChartDisplayComponentEvents([])`.
+- [x] 3.3 Keep cached component events visible for covered portions of the committed render window while missing data loads.
+- [x] 3.4 Keep cached HTF overlay points visible for covered portions of the committed render window while missing data loads.
 - [ ] 3.5 Add marker fingerprinting so `markersPlugin.setMarkers(...)` runs only when the final marker fingerprint changes.
-- [ ] 3.6 Represent stale/partial state in chart hints or debug output without forcing a visual marker reset.
-- [ ] 3.7 Add or update tests for partial coverage, no full marker clear on cache miss, and marker fingerprint stability.
-- [ ] 3.8 Verify HTF context EMA overlays (`workbench-chart-htf-context-overlays`) on a variant with `strategy.contexts`.
-- [ ] 3.9 Run frontend verification (`cd frontend; npm run build` and relevant tests).
+- [x] 3.6 Represent stale/partial state in chart hints or debug output without forcing a visual marker reset.
+- [x] 3.7 Add or update tests for partial coverage and no full marker clear on cache miss; marker fingerprint stability remains deferred with 3.5.
+- [x] 3.8 Verify HTF context EMA overlays (`workbench-chart-htf-context-overlays`) on a variant with `strategy.contexts`.
+- [x] 3.9 Run frontend verification (`cd frontend; npm run build` and relevant tests).
 - [ ] 3.10 STOP FOR REVIEW: demonstrate pan-boundary event behavior and wait for user approval before starting PR 4.
+  - PR 3 implemented under narrowed user scope: anti-flicker display state only.
+  - 3.5 is intentionally not implemented in this PR because it changes marker update logic outside the accepted PR 3 scope.
 
 ## 4. PR 4 — MissingRange Scheduling Without Active-Pan Prefetch
 

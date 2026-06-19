@@ -2,6 +2,7 @@ import type { ChartBar, ChartEmaOverlay, ChartAuxEmaOverlay, ComponentEvent } fr
 import type { ChartLogicalRange } from "@/features/chart/chartViewport";
 import type { WindowBounds } from "@/features/chart/chartDataWindowManager";
 import type { ChartViewMode } from "@/features/chart/chartViewWindow";
+import type { TraceDisplayStatus } from "@/features/chart/traceDisplayApply";
 
 export type RenderWindowInteractionState =
   | "idle_user_view"
@@ -86,6 +87,8 @@ export type ChartViewModelInput = {
   componentEvents: ComponentEvent[];
   htfOverlayStale: boolean;
   componentEventsStale: boolean;
+  traceDisplayStatus: TraceDisplayStatus;
+  traceDisplayMissingRange: { fromSec: number; toSec: number } | null;
   viewMode: ChartViewMode;
   centerTimeSec: number | null;
   firstTimeSec: number | null;
