@@ -2,6 +2,8 @@
 
 ### Current state (audit)
 
+**Phase 1 verified:** 2026-06-19 against repo snapshot (post `optimize-workbench-chart-loading` PR1–PR5). No code changes in this phase.
+
 After [`optimize-workbench-chart-loading`](../../archive/2026-06-19-optimize-workbench-chart-loading/) (PR1–PR5), Workbench Chart has a mature **frontend** display pipeline but still uses the wrong **backend product** for markers and HTF overlays.
 
 **Dense endpoint (today):**
@@ -9,25 +11,55 @@ After [`optimize-workbench-chart-loading`](../../archive/2026-06-19-optimize-wor
 | Item | Detail |
 |------|--------|
 | Route | `GET /api/research/runs/{run_id}/signal-trace` |
-| Router | [`research_api/routers/research_runs.py`](../../../research_api/routers/research_runs.py) |
-| Service | [`fetch_signal_trace_bundle`](../../../research_api/services/signal_trace_service.py) |
-| Cap | `MAX_SIGNAL_TRACE_BARS = 50_000` |
-| BFF cache | `_TRACE_CACHE` — 32 entries, key `run_id:variant:from_ms:to_ms:context_overlay_ref` |
-| Compute | Load OHLCV + warmup → features → [`build_signal_trace_from_spec`](../../../research/strategies/ema_pullback/execution/signal_trace.py) → [`slice_signal_trace`](../../../research/strategies/ema_pullback/execution/signal_trace.py) |
+| Router | [`research_api/routers/research_runs.py`](../../../research_api/routers/research_runs.py) L75–112 |
+| Handler params | `variant`, `from` (ms), `to` **xor** `to_open_time_ms`, optional `context_overlay_ref` |
+| Service | [`fetch_signal_trace_bundle`](../../../research_api/services/signal_trace_service.py) L167–242 |
+| Family gate | `ema_pullback` only (`UnsupportedSignalTraceFamilyError` → 422) |
+| Cap | `MAX_SIGNAL_TRACE_BARS = 50_000` (L47) |
+| BFF cache | `_TRACE_CACHE` — FIFO max 32 (L240–241); key via `_cached_full_trace_key` (L152–160) |
+| Cache key shape | `{run_id}:{variant}:{start_ms}:{end_ms}:{context_overlay_ref\|""}` — **parsed** window bounds from `parse_time_range_ms`, not raw query params |
+| Cached value | Post-`slice_signal_trace` `SignalTraceBundle` (despite L163 comment saying "before slice") |
+| Window end | `resolve_exclusive_to_ms` → `MarketParamError` if both `to` and `to_open_time_ms` (subclass of `ValueError` → HTTP 422) |
+| Compute | `load_run_report` → warmup OHLCV load → `build_feature_plan` → `add_feature_columns_from_plan` → `build_signal_trace_from_spec` → `slice_signal_trace` → `_to_contract` |
 
-**Response (`SignalTraceBundle`):** `times`, `meta`, `htf_context` (incl. `state`), `context_consumption_trace`, `component_events`, `long`/`short` dense bool lanes + `internals`.
+**Response (`SignalTraceBundle`):** [`research_api/contracts/signal_trace.py`](../../../research_api/contracts/signal_trace.py)
+
+- `times`, `meta`, `component_events`
+- `htf_context`: `state`, `fast`, `anchor`, `slow`, `meta`
+- `context_consumption_trace[]`
+- `long` / `short`: each [`SideSignalTrace`](../../../research_api/contracts/signal_trace.py) with **9** bool lanes (`direction_ok` … `portfolio_entry`) + `internals` dict
+
+**Frontend API client (today):**
+
+- [`fetchSignalTrace`](../../../frontend/src/api/client.ts) L94–116 — always sends `to_open_time_ms` (never legacy `to`)
+- URL: `/api/research/runs/{runId}/signal-trace`
 
 **Frontend display path (today):**
 
 ```text
-planMissingTraceDisplayChunkFetch
-  → fetchSignalTrace (/signal-trace)
-  → mergeDisplayChunkFromResponse (extractDisplayChunkFromResponse)
-  → SignalTraceDisplayCache
-  → deriveTraceDisplayStateForCandles / ChartPanel
+chartHeavyIoEnabled gate (WorkbenchContext ~1775)
+  → evaluateSignalTraceBootstrap / planTraceDisplayLoad
+  → planMissingTraceDisplayChunkFetch (max 50_000 bars — traceDisplayChunkScheduling.ts)
+  → SignalTraceRequestCoordinator.evaluate (traceRequestKey dedupe)
+  → fetchSignalTrace (/signal-trace) — WorkbenchContext ~2073
+  → mergeDisplayChunkFromResponse → SignalTraceDisplayCache
+  → setSignalTrace(bundle) + session cache — same response feeds lanes today
+  → finalizeTraceDisplayUpdate → deriveTraceDisplayStateForCandles / ChartPanel
 ```
 
-Display cache v1 stores only: `component_events`, `times`, `htf_context` ([`signalTraceDisplayCache.ts`](../../../frontend/src/features/chart/signalTraceDisplayCache.ts)). Lanes/diagnostics use full `signalTrace` bundle ([`signalTraceLoadPolicy.ts`](../../../frontend/src/shared/context/signalTraceLoadPolicy.ts)).
+**Frontend display cache ([`signalTraceDisplayCache.ts`](../../../frontend/src/features/chart/signalTraceDisplayCache.ts)):**
+
+| Item | Value |
+|------|--------|
+| Key | `runId:variant:contextOverlayRef` (`buildTraceDisplayCacheKey`) |
+| Stored per chunk | `component_events`, `times`, `htf_context` (full incl. `state` in memory, unused for chart draw) |
+| Max chunks | `MAX_CHUNKS_PER_KEY = 10` |
+| Coverage | From actual response bounds (`computeChunkBoundsFromResponse`), not requested window |
+| Extract | `extractDisplayChunkFromResponse` L107–120 — drops lanes/consumption before merge |
+
+**Lanes/diagnostics (today):** Same network response as display — `setSignalTrace(bundle)` L2121 sets full bundle; [`signalTraceLoadPolicy.ts`](../../../frontend/src/shared/context/signalTraceLoadPolicy.ts) gates lanes by `loadedSignalTraceWindowKey === chartWindowKey`. Session restore via `signalTraceBundleSessionCache`.
+
+**Chart marker fields used:** `time`, `role`, `event_type`, `side`, `label` (+ formatters); not `metadata`/`component_id` for draw ([`chartComponentEvents.ts`](../../../frontend/src/features/chart/chartComponentEvents.ts)).
 
 **Payload audit — chart display vs diagnostics:**
 

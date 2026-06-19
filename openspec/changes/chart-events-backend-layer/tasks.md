@@ -1,8 +1,8 @@
 ## 1. Phase 1 — Audit / current contract
 
-- [ ] 1.1 Confirm audit table in `design.md` §Current State matches live code (`signal_trace_service.py`, `WorkbenchContext.tsx`, `signalTraceDisplayCache.ts`)
-- [ ] 1.2 Add chart-events column placeholder to `debug/signal-trace-window-perf.md`
-- [ ] 1.3 **STOP FOR REVIEW:** report audit complete; wait for approval before Phase 2
+- [x] 1.1 Confirm audit table in `design.md` §Current State matches live code (`signal_trace_service.py`, `WorkbenchContext.tsx`, `signalTraceDisplayCache.ts`)
+- [x] 1.2 Add chart-events column placeholder to `debug/signal-trace-window-perf.md`
+- [x] 1.3 **STOP FOR REVIEW:** report audit complete; wait for approval before Phase 2
 
 ## 2. Phase 2 — Sparse response model (contracts + types)
 

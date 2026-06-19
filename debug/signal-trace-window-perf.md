@@ -14,11 +14,14 @@ Acceptance gate for `MAX_SIGNAL_TRACE_BARS = 50_000` on the windowed signal-trac
 
 ## Budget (set after first measure)
 
-| Metric | Measured | Budget | Pass |
-|--------|----------|--------|------|
-| Fetch duration (ms) | | TBD | |
-| Payload size (KB) | | TBD | |
-| Response span vs request | | full window | |
+| Metric | signal-trace (dense) | chart-events (sparse) | Budget | Pass |
+|--------|----------------------|------------------------|--------|------|
+| Fetch duration (ms) | | | TBD | |
+| Payload size (KB) | | | TBD | |
+| Response span vs request | | | full window | |
+| Payload ratio (dense / sparse) | — | — | TBD | |
+
+Fill **chart-events** columns after Phase 4 backend deploy or Phase 6 acceptance (`openspec/changes/chart-events-backend-layer`).
 
 If duration or payload is unacceptable, rollback BFF limit and implement frontend sub-chunk orchestration (see `openspec/changes/trace-window-chunk-cache/tasks.md` §4.3).
 
