@@ -11,6 +11,10 @@ This active change spans `frontend`. Sparse/materialized chart events remain a f
 - `research_api/` remains the BFF boundary.
 - `frontend/` does not compute strategy signals or EMA semantics beyond display plumbing already owned by the chart.
 
+## Completion note
+
+PR1–PR5 completed as frontend foundation. PR6 sparse/materialized chart-events is deferred to a separate OpenSpec. Intentionally not delivered in this change: marker fingerprinting (tasks 3.5) and post-commit idle trace prefetch (tasks 4.8).
+
 ## Goals / Non-Goals
 
 **Goals:**

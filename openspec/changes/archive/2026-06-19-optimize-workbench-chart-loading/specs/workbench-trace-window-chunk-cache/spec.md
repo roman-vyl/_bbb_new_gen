@@ -52,7 +52,7 @@ While dense `/signal-trace` remains the source, normalized chunks MUST be coarse
 - **AND** trace loading waits for committed window evaluation or post-commit idle prefetch
 
 ### Requirement: Post-commit idle prefetch is allowed after stable ledgers
-After request identity, supersede, abort/stale-response handling, and in-flight range ledgers are implemented, Workbench MAY prefetch a neighboring normalized trace chunk after a committed window shift becomes idle.
+After request identity, supersede, abort/stale-response handling, and in-flight range ledgers are implemented, Workbench SHALL support optional post-commit idle prefetch of a neighboring normalized trace chunk after a committed window shift becomes idle.
 
 #### Scenario: Neighbor prefetch waits until commit idle
 - **GIVEN** a render-window shift has committed

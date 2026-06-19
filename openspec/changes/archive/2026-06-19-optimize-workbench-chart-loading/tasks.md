@@ -1,3 +1,7 @@
+## Completion note
+
+PR1–PR5 completed as frontend foundation for Workbench Chart loading (instrumentation, lazy activation, context split, partial display state, missing-range scheduling, split market resource cache). Intentionally deferred within this change: task 3.5 marker fingerprinting, task 4.8 post-commit idle prefetch. PR6 sparse/materialized chart-events is deferred to a separate OpenSpec.
+
 ## 1. PR 1 — Instrumentation, Lazy Chart Activation, Abortable Client Foundation
 
 - [x] 1.1 Extend chart pipeline diagnostics for market fetch start/end/cache hit, trace fetch start/end/cache hit/cache miss, display cache `coversRange`/`missingRange`, candle/EMA `setData`, marker `setMarkers`, and duplicate/superseded trace decisions.
@@ -88,9 +92,9 @@
 - [x] 5.8 Verify HTF context EMA overlays (`workbench-chart-htf-context-overlays`) on a variant with `strategy.contexts`.
   - Existing HTF workbench test still passes; aux overlay path unchanged.
 - [x] 5.9 Run frontend verification (`cd frontend; npm run build` and relevant tests).
-- [ ] 5.10 STOP FOR REVIEW: report variant-switch behavior and wait for user approval before archive or before creating a separate OpenSpec for sparse/materialized chart events.
-  - PR5 reuses cached candles in frontend and avoids candle identity coupling. It does not yet avoid full chart-bundle transfer when missing overlays require backend fetch.
+- [x] 5.10 STOP FOR REVIEW: report variant-switch behavior and wait for user approval before archive or before creating a separate OpenSpec for sparse/materialized chart events.
+  - PR5 accepted. Reuses cached candles in frontend; full `/chart-bundle` transfer remains when missing overlays require backend fetch. `marketResourceRevision` stabilizes `cachedBundle` and partial → full overlay transition.
 
 ## 6. Future Work — Sparse / Materialized Chart Events
 
-Sparse/materialized chart events are intentionally not active tasks in this change. Create a separate OpenSpec before any backend `chart-events` API, materialized chart event chunks, or dense `/signal-trace` migration work begins.
+Sparse/materialized chart events are intentionally not active tasks in this change. Create a separate OpenSpec (PR6) before any backend `chart-events` API, materialized chart event chunks, or dense `/signal-trace` migration work begins.
