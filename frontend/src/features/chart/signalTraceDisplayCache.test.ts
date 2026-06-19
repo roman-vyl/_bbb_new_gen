@@ -1,14 +1,17 @@
 import { describe, expect, it } from "vitest";
 
-import type { ComponentEvent, HtfContextTrace, SignalTraceBundle } from "@/api/types";
+import type { ChartEventsBundle, ComponentEvent, HtfContextTrace, SignalTraceBundle } from "@/api/types";
 import {
   buildTraceDisplayCacheKey,
   componentEventDedupeKey,
+  computeChunkBoundsFromChartEvents,
   computeChunkBoundsFromResponse,
   coversTimeRange,
   createSignalTraceDisplayCache,
+  extractDisplayChunkFromChartEvents,
   extractDisplayChunkFromResponse,
   isTraceResponseTruncated,
+  mergeDisplayChunkFromChartEvents,
   mergeDisplayChunkFromResponse,
   missingTimeRange,
 } from "@/features/chart/signalTraceDisplayCache";
@@ -122,6 +125,77 @@ describe("computeChunkBoundsFromResponse", () => {
     const actual = computeChunkBoundsFromResponse(makeBundle({ times: [100, 200, 300] }));
     expect(isTraceResponseTruncated({ fromSec: 100, toSec: 5000 }, actual)).toBe(true);
     expect(isTraceResponseTruncated({ fromSec: 100, toSec: 300 }, actual)).toBe(false);
+  });
+});
+
+function makeChartEventsBundle(
+  partial: Partial<ChartEventsBundle> & Pick<ChartEventsBundle, "times">,
+): ChartEventsBundle {
+  const times = partial.times;
+  return {
+    meta: {
+      variant: "v1",
+      component_ids: {
+        direction: "dir",
+        setups: [],
+        trigger: "tr",
+        risk: "risk",
+      },
+      setup_params: [],
+      blocker_instances: [],
+    },
+    component_events: [],
+    htf_context: {
+      fast: times.map((_, i) => 100 + i),
+      anchor: times.map((_, i) => 90 + i),
+      slow: times.map((_, i) => 80 + i),
+      meta: { startTime: times[0] ?? 0 },
+    },
+    coverage: {
+      schema_version: 1,
+      from_sec: times[0] ?? 0,
+      to_sec: times[times.length - 1] ?? 0,
+      bar_count: times.length,
+      requested_from_sec: times[0] ?? 0,
+      requested_to_sec: times[times.length - 1] ?? 0,
+      truncated: false,
+      max_bars: 50_000,
+    },
+    ...partial,
+  };
+}
+
+describe("computeChunkBoundsFromChartEvents", () => {
+  it("uses times grid endpoints when component_events are empty", () => {
+    const bundle = makeChartEventsBundle({ times: [100, 200, 300], component_events: [] });
+    expect(computeChunkBoundsFromChartEvents(bundle)).toEqual({ fromSec: 100, toSec: 300 });
+  });
+
+  it("returns null when times grid is empty", () => {
+    const bundle = makeChartEventsBundle({ times: [], component_events: [] });
+    expect(computeChunkBoundsFromChartEvents(bundle)).toBeNull();
+    expect(extractDisplayChunkFromChartEvents(bundle)).toBeNull();
+  });
+});
+
+describe("mergeDisplayChunkFromChartEvents", () => {
+  it("maps HTF EMA series with empty state for display cache", () => {
+    const cache = createSignalTraceDisplayCache();
+    cache.reset("run:v1:");
+
+    mergeDisplayChunkFromChartEvents(
+      cache,
+      makeChartEventsBundle({
+        times: [100, 200],
+        component_events: [makeEvent({ time: 150, label: "marker" })],
+      }),
+    );
+
+    const htfSlice = cache.sliceHtfContextForWindow(100, 200);
+    expect(htfSlice.times).toEqual([100, 200]);
+    expect(htfSlice.htf_context?.state).toEqual(["neutral", "neutral"]);
+    expect(htfSlice.htf_context?.fast).toEqual([100, 101]);
+    expect(cache.sliceEventsForWindow(100, 200)).toHaveLength(1);
   });
 });
 

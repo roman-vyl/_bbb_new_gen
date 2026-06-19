@@ -70,6 +70,11 @@ export const PIPELINE_DEBUG_STEPS = {
     fetchSuperseded: "wb.trace_display.fetch_superseded",
     coverage: "wb.trace_display.coverage",
   },
+  chartEvents: {
+    fetchFail: "wb.chart_events_fetch_fail",
+    fallback: "wb.chart_events_fallback",
+    merge: "wb.chart_events_merge",
+  },
   chart: {
     setDataCandles: "chart.setData.candles",
     setDataAnchorEma: "chart.setData.anchor_ema",

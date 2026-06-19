@@ -17,6 +17,7 @@ import {
   fetchConfigState,
   fetchRunReport,
   fetchRunSummaries,
+  fetchChartEvents,
   fetchSignalTrace,
   selectSavedConfig,
 } from "@/api/client";
@@ -53,7 +54,13 @@ import {
   takeCommittedTraceFetchIntent,
 } from "@/features/chart/runtime/traceDisplayOrchestrator";
 import {
-  buildTraceRequestKey,
+  buildDisplayTraceRequestKey,
+  chartEventsFallbackReasonFromError,
+  isChartEventsApiEnabled,
+  noteChartEventsFlagDisabledOnce,
+  type ChartEventsMergeSource,
+} from "@/features/chart/runtime/chartEventsLoad";
+import {
   createSignalTraceRequestCoordinator,
 } from "@/features/chart/runtime/signalTraceRequestCoordinator";
 import { planMissingTraceDisplayChunkFetch } from "@/features/chart/runtime/traceDisplayChunkScheduling";
@@ -92,8 +99,10 @@ import {
   buildTraceDisplayCacheKey,
   createSignalTraceDisplayCache,
   computeChunkBoundsFromResponse,
+  computeChunkBoundsFromChartEvents,
   isTraceResponseTruncated,
   mergeDisplayChunkFromResponse,
+  mergeDisplayChunkFromChartEvents,
 } from "@/features/chart/signalTraceDisplayCache";
 import {
   deriveTraceDisplayStateForCandles,
@@ -1831,7 +1840,7 @@ export function WorkbenchProvider({
 
     const { windowKey, request, fetchSource } = bootstrap;
     const committedWindowKey = windowKey;
-    const windowTraceRequestKey = buildTraceRequestKey({
+    const windowTraceRequestKey = buildDisplayTraceRequestKey({
       runId: request.runId,
       variant: request.variant,
       fromMs: request.fromMs,
@@ -2010,20 +2019,21 @@ export function WorkbenchProvider({
     }
 
     const traceDisplayChunkKey = chunkPlan.traceDisplayChunkKey;
-    const traceRequestKey = buildTraceRequestKey({
+    const fetchParams = {
       runId: request.runId,
       variant: request.variant,
       fromMs: chunkPlan.fromMs,
       toOpenTimeMs: chunkPlan.toOpenTimeMs,
       contextOverlayRef: effectiveContextOverlayRef,
-    });
+    };
+    const displayRequestKey = buildDisplayTraceRequestKey(fetchParams);
 
     const coordDecision = coordinator.evaluate({
-      key: traceRequestKey,
+      key: displayRequestKey,
       generation: traceLoadGenerationRef.current,
       displayCacheCoversWindow: false,
     });
-    logCoordinatorDecision(coordDecision, traceRequestKey, { traceDisplayChunkKey, chunkPlan });
+    logCoordinatorDecision(coordDecision, displayRequestKey, { traceDisplayChunkKey, chunkPlan });
 
     if (coordDecision.action !== "fetch") {
       if (
@@ -2032,7 +2042,7 @@ export function WorkbenchProvider({
       ) {
         dbgMark(DBG.traceDisplay.cacheHit, {
           windowKey: committedWindowKey,
-          traceRequestKey,
+          traceRequestKey: displayRequestKey,
           traceDisplayChunkKey,
           source: "coordinator_skip",
           reason: coordDecision.reason,
@@ -2044,7 +2054,7 @@ export function WorkbenchProvider({
 
     dbgMark(DBG.traceDisplay.cacheMiss, {
       windowKey: committedWindowKey,
-      traceRequestKey,
+      traceRequestKey: displayRequestKey,
       traceDisplayChunkKey,
       missingRange: chunkPlan.missingRange,
       chunkFromSec: chunkPlan.fromSec,
@@ -2056,20 +2066,102 @@ export function WorkbenchProvider({
     const runId = request.runId;
     const variantKey = request.variant;
     const { fromMs, toOpenTimeMs } = chunkPlan;
+    const chartEventsEnabled = isChartEventsApiEnabled();
 
-    coordinator.markInFlight(traceRequestKey, fetchGeneration);
+    coordinator.markInFlight(displayRequestKey, fetchGeneration);
     setSignalTraceStatus("loading");
     signalTraceStatusRef.current = "loading";
     setSignalTraceError(null);
     dbgMark(DBG.signalTrace.fetchStart, {
       source: fetchSource,
       windowKey,
-      traceRequestKey,
+      traceRequestKey: displayRequestKey,
       traceDisplayChunkKey,
+      chartEventsEnabled,
     });
 
     async function loadTrace() {
+      const requestedBounds = {
+        fromSec: Math.floor(fromMs / 1000),
+        toSec: Math.floor(toOpenTimeMs / 1000),
+      };
+      let displayMerged = false;
+      let mergeSource: ChartEventsMergeSource = "signal-trace-fallback";
+
+      if (!chartEventsEnabled) {
+        noteChartEventsFlagDisabledOnce();
+      }
+
       try {
+        if (chartEventsEnabled) {
+          try {
+            const chartBundle = await fetchChartEvents({
+              runId,
+              variant: variantKey,
+              fromMs,
+              toOpenTimeMs,
+              contextOverlayRef: effectiveContextOverlayRef,
+              signal: abortController.signal,
+            });
+            if (!coordinator.isResponseCurrent(displayRequestKey, fetchGeneration)) {
+              dbgMark(DBG.signalTrace.fetchStaleResponse, {
+                windowKey,
+                traceRequestKey: displayRequestKey,
+                phase: "chart_events_response",
+              });
+              return;
+            }
+            const actualBounds = computeChunkBoundsFromChartEvents(chartBundle);
+            const truncated =
+              chartBundle.coverage.truncated ||
+              isTraceResponseTruncated(requestedBounds, actualBounds);
+            dbgTimedSync(
+              DBG.traceDisplay.mergeChunk,
+              () => {
+                mergeDisplayChunkFromChartEvents(signalTraceDisplayCacheRef.current, chartBundle);
+              },
+              () => ({
+                eventCount: chartBundle.component_events?.length ?? 0,
+                timeCount: chartBundle.times.length,
+                source: "chart-events",
+              }),
+            );
+            displayMerged = true;
+            mergeSource = "chart-events";
+            dbgMark(DBG.chartEvents.merge, {
+              windowKey,
+              traceRequestKey: displayRequestKey,
+              source: mergeSource,
+              truncated,
+              requested: requestedBounds,
+              actual: actualBounds,
+            });
+          } catch (chartErr) {
+            if (isAbortError(chartErr)) {
+              dbgMark(DBG.signalTrace.fetchAbort, {
+                windowKey,
+                traceRequestKey: displayRequestKey,
+                note: "chart-events fetch aborted",
+              });
+              return;
+            }
+            dbgMark(DBG.chartEvents.fetchFail, {
+              windowKey,
+              traceRequestKey: displayRequestKey,
+              status: chartErr instanceof ApiError ? chartErr.status : undefined,
+              detail:
+                chartErr instanceof ApiError
+                  ? chartErr.detail
+                  : chartErr instanceof Error
+                    ? chartErr.message
+                    : String(chartErr),
+            });
+            dbgMark(DBG.chartEvents.fallback, {
+              reason: chartEventsFallbackReasonFromError(chartErr),
+            });
+          }
+        }
+
         const bundle = await fetchSignalTrace({
           runId,
           variant: variantKey,
@@ -2078,46 +2170,59 @@ export function WorkbenchProvider({
           contextOverlayRef: effectiveContextOverlayRef,
           signal: abortController.signal,
         });
-        if (!coordinator.isResponseCurrent(traceRequestKey, fetchGeneration)) {
+        if (!coordinator.isResponseCurrent(displayRequestKey, fetchGeneration)) {
           dbgMark(DBG.signalTrace.fetchStaleResponse, {
             windowKey,
-            traceRequestKey,
+            traceRequestKey: displayRequestKey,
             phase: "response",
           });
           return;
         }
         dbgMark(DBG.signalTrace.fetchEnd, {
           windowKey,
-          traceRequestKey,
+          traceRequestKey: displayRequestKey,
           timeCount: bundle.times.length,
           eventCount: bundle.component_events?.length ?? 0,
+          lanesFetch: chartEventsEnabled,
         });
-        const requestedBounds = {
-          fromSec: Math.floor(fromMs / 1000),
-          toSec: Math.floor(toOpenTimeMs / 1000),
-        };
-        const actualBounds = computeChunkBoundsFromResponse(bundle);
-        const truncated = isTraceResponseTruncated(requestedBounds, actualBounds);
-        dbgTimedSync(
-          DBG.traceDisplay.mergeChunk,
-          () => {
-            mergeDisplayChunkFromResponse(signalTraceDisplayCacheRef.current, bundle);
-          },
-          () => ({
-            eventCount: bundle.component_events?.length ?? 0,
-            timeCount: bundle.times.length,
-          }),
-        );
-        coordinator.markMerged(traceRequestKey, "network");
+
+        if (!displayMerged) {
+          const actualBounds = computeChunkBoundsFromResponse(bundle);
+          const truncated = isTraceResponseTruncated(requestedBounds, actualBounds);
+          dbgTimedSync(
+            DBG.traceDisplay.mergeChunk,
+            () => {
+              mergeDisplayChunkFromResponse(signalTraceDisplayCacheRef.current, bundle);
+            },
+            () => ({
+              eventCount: bundle.component_events?.length ?? 0,
+              timeCount: bundle.times.length,
+              source: mergeSource,
+            }),
+          );
+          if (chartEventsEnabled) {
+            dbgMark(DBG.chartEvents.merge, {
+              windowKey,
+              traceRequestKey: displayRequestKey,
+              source: mergeSource,
+              truncated,
+              requested: requestedBounds,
+              actual: actualBounds,
+            });
+          } else {
+            dbgMark("wb.signal_trace_merge", {
+              windowKey,
+              traceRequestKey: displayRequestKey,
+              truncated,
+              requested: requestedBounds,
+              actual: actualBounds,
+            });
+          }
+        }
+
+        coordinator.markMerged(displayRequestKey, "network");
         setDisplayCacheVersion((version) => version + 1);
         finalizeTraceDisplayUpdate();
-        dbgMark("wb.signal_trace_merge", {
-          windowKey,
-          traceRequestKey,
-          truncated,
-          requested: requestedBounds,
-          actual: actualBounds,
-        });
         setSignalTrace(bundle);
         setLoadedSignalTraceWindowKey(windowKey);
         loadedSignalTraceWindowKeyRef.current = windowKey;
@@ -2129,20 +2234,20 @@ export function WorkbenchProvider({
         if (isAbortError(err)) {
           dbgMark(DBG.signalTrace.fetchAbort, {
             windowKey,
-            traceRequestKey,
+            traceRequestKey: displayRequestKey,
             note: "frontend abort/stale-response protection; backend CPU work may continue",
           });
           return;
         }
-        if (!coordinator.isResponseCurrent(traceRequestKey, fetchGeneration)) {
+        if (!coordinator.isResponseCurrent(displayRequestKey, fetchGeneration)) {
           dbgMark(DBG.signalTrace.fetchStaleResponse, {
             windowKey,
-            traceRequestKey,
+            traceRequestKey: displayRequestKey,
             phase: "error",
           });
           return;
         }
-        coordinator.markFailed(traceRequestKey);
+        coordinator.markFailed(displayRequestKey);
         setSignalTrace(null);
         setLoadedSignalTraceWindowKey(windowKey);
         loadedSignalTraceWindowKeyRef.current = windowKey;
@@ -2156,14 +2261,14 @@ export function WorkbenchProvider({
               : "Failed to load signal trace.",
         );
       } finally {
-        coordinator.clearInFlight(traceRequestKey, fetchGeneration);
+        coordinator.clearInFlight(displayRequestKey, fetchGeneration);
       }
     }
 
     void loadTrace();
     return () => {
       abortController.abort();
-      coordinator.clearInFlight(traceRequestKey, fetchGeneration);
+      coordinator.clearInFlight(displayRequestKey, fetchGeneration);
       traceLoadGenerationRef.current += 1;
     };
   }, [

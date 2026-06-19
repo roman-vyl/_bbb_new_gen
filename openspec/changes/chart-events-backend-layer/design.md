@@ -166,12 +166,17 @@ HTF dashed-line verification applies to **EMA point values**, not `state`.
 - On chart-events error (404/5xx/network) with flag on → explicit fallback to signal-trace projection; MUST emit debug events (see Clarifications §5 below)
 - Fallback MUST NOT be silent catch-all hiding broken deploys
 
-### Decision 8: Dual fetch model for display vs lanes
+### Decision 8: Dual fetch model for display vs lanes (phased: 5A then 5B)
 
-When chart-events enabled:
+**Phase 5A (display swap only):**
 
-- **Display:** `fetchChartEvents` → display cache merge
-- **Lanes/diagnostics:** `fetchSignalTrace` on demand when lanes/inspector need current-window dense bundle (lazy path; may defer if user never opens lanes)
+- **Display:** `fetchChartEvents` → `mergeDisplayChunkFromChartEvents` → display cache
+- **Lanes/diagnostics:** keep **existing** `fetchSignalTrace` + `setSignalTrace` lifecycle unchanged — do not refactor lazy lanes, session restore, or `loadedSignalTraceWindowKey` wiring in 5A
+- When flag enabled, Workbench MAY issue **both** chart-events (display) and signal-trace (lanes) for the same chunk window — interim double-fetch is acceptable to isolate display regressions from lanes/inspector regressions
+
+**Phase 5B (only after 5A review):**
+
+- **Lanes/diagnostics:** lazy dense `/signal-trace` fetch separate from display path; remove redundant signal-trace fetch when display already satisfied by chart-events
 
 Session bundle cache for lanes continues to use full `SignalTraceBundle`.
 
@@ -239,8 +244,9 @@ Mirror [`test_signal_trace_cache_key_includes_context_overlay_ref`](../../../tes
 2. **Phase 2** — Contracts/types + delta specs. STOP.
 3. **Phase 3** — `chart_events_service` + projection + cache. STOP.
 4. **Phase 4** — Router endpoint + pytest. Deploy backend only (no frontend change). STOP.
-5. **Phase 5** — Frontend `fetchChartEvents` behind flag + observable fallback. STOP.
-6. **Phase 6** — Acceptance checklist, perf doc update, archive when done.
+5. **Phase 5A** — Frontend display swap (`fetchChartEvents`, flag, fallback debug). Lanes lifecycle unchanged. STOP.
+6. **Phase 5B** — Lazy dense `/signal-trace` for lanes/inspector (only after 5A approved). STOP.
+7. **Phase 6** — Acceptance checklist, perf doc, archive.
 
 **Rollback:** Per phase revert; flag off returns display to signal-trace; `/signal-trace` untouched throughout.
 

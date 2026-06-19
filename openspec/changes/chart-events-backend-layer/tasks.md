@@ -28,24 +28,35 @@
 - [x] 4.4 Verify existing `tests/test_research_api_signal_trace.py` passes unchanged
 - [x] 4.5 **STOP FOR REVIEW:** endpoint + pytest green; deploy backend-only smoke; wait for approval before Phase 5
 
-## 5. Phase 5 — Frontend integration (minimal swap)
+## 5A. Phase 5A — Frontend display swap (lanes lifecycle unchanged)
 
-- [ ] 5.1 Add `fetchChartEvents()` in `frontend/src/api/client.ts`
-- [ ] 5.2 Add `buildChartEventsRequestKey` / `buildChartEventsUrlPath` in `signalTraceRequestCoordinator.ts`
-- [ ] 5.3 Add `mergeDisplayChunkFromChartEvents()` (or adapter) in `signalTraceDisplayCache.ts`
-- [ ] 5.4 Wire display fetch in `WorkbenchContext.tsx` behind `VITE_CHART_EVENTS_API=1`
-- [ ] 5.5 Implement observable fallback: `wb.chart_events_fetch_fail`, `wb.chart_events_fallback`, `wb.chart_events_merge` with `source`
-- [ ] 5.6 Lazy dense `/signal-trace` fetch for lanes/diagnostics (separate from display path)
-- [ ] 5.7 Add client tests for chart-events query params and request key parity
-- [ ] 5.8 **Verify HTF context EMA overlays** on variant with `strategy.contexts` (manual + distant trade navigation)
-- [ ] 5.9 **STOP FOR REVIEW:** chart markers + HTF from chart-events; fallback debug visible; wait for approval before Phase 6
+Scope: change **display fetch source only**. Do not refactor lanes, bar inspector, or dense trace lifecycle.
+
+- [x] 5A.1 Add `fetchChartEvents()` in `frontend/src/api/client.ts`
+- [x] 5A.2 Add `buildChartEventsRequestKey` / `buildChartEventsUrlPath` in `signalTraceRequestCoordinator.ts`
+- [x] 5A.3 Add `mergeDisplayChunkFromChartEvents()` in `signalTraceDisplayCache.ts`
+- [x] 5A.4 Wire **display** fetch in `WorkbenchContext.tsx` behind `VITE_CHART_EVENTS_API=1` (chart-events → display cache merge)
+- [x] 5A.5 Observable fallback/debug: `wb.chart_events_fetch_fail`, `wb.chart_events_fallback`, `wb.chart_events_merge` with `source`
+- [x] 5A.6 Add client tests for chart-events query params and request key parity
+- [x] 5A.7 **Keep lanes path unchanged:** existing `fetchSignalTrace` + `setSignalTrace` + session cache behavior stays as today (interim double-fetch when flag on is OK)
+- [ ] 5A.8 **Verify HTF context EMA overlays** on variant with `strategy.contexts` (manual + distant trade navigation)
+- [ ] 5A.9 **STOP FOR REVIEW:** markers + HTF from chart-events; lanes/inspector still work via unchanged dense path; fallback debug visible; wait for approval before 5B
+
+## 5B. Phase 5B — Lazy dense trace for lanes (only after 5A approved)
+
+Scope: separate dense `/signal-trace` lifecycle from display fetch. **Do not start until 5A review passes.**
+
+- [ ] 5B.1 Lazy `fetchSignalTrace` for lanes/diagnostics when window key requires dense bundle (not on every display chunk fetch)
+- [ ] 5B.2 Remove redundant signal-trace fetch when chart-events already satisfied display and lanes restored from session cache
+- [ ] 5B.3 Verify lanes, bar inspector, `ChartTradeDiagnostics` unchanged; bar inspector regime from dense `htf_context.state`
+- [ ] 5B.4 **STOP FOR REVIEW:** no double-fetch on common display-only path; wait for approval before Phase 6
 
 ## 6. Phase 6 — Migration, acceptance, archive prep
 
 - [ ] 6.1 Record chart-events vs signal-trace payload ratio in `debug/signal-trace-window-perf.md`
 - [ ] 6.2 Acceptance: pan within cached range — zero chart-events network
 - [ ] 6.3 Acceptance: pan to missing range — chart-events chunk fetch (not dense trace for display)
-- [ ] 6.4 Acceptance: lanes / bar inspector / ChartTradeDiagnostics via signal-trace unchanged; bar inspector regime from dense `htf_context.state`
+- [ ] 6.4 Acceptance: lanes / bar inspector / ChartTradeDiagnostics via signal-trace (after 5B); bar inspector regime from dense `htf_context.state`
 - [ ] 6.5 Acceptance: backend cache tests use call-count/key assertions only (no timing)
 - [ ] 6.6 Acceptance: fallback scenario emits debug marks (not silent)
 - [ ] 6.7 **STOP FOR REVIEW:** acceptance checklist complete; user approval to archive change

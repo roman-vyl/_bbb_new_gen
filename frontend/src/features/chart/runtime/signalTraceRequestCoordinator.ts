@@ -49,6 +49,34 @@ export function buildSignalTraceUrlPath(params: TraceFetchParams): string {
   return `/api/research/runs/${encodeURIComponent(params.runId)}/signal-trace?${qs.toString()}`;
 }
 
+const CHART_EVENTS_KEY_PREFIX = "chart-events";
+
+/** Display fetch key when chart-events API is enabled (distinct from dense trace key). */
+export function buildChartEventsRequestKey(params: TraceFetchParams): TraceRequestKey {
+  const overlayRef = params.contextOverlayRef ?? "";
+  return [
+    CHART_EVENTS_KEY_PREFIX,
+    params.runId,
+    params.variant,
+    String(params.fromMs),
+    String(params.toOpenTimeMs),
+    overlayRef,
+  ].join(KEY_SEP);
+}
+
+/** Same query string shape as `fetchChartEvents` in api/client.ts (for tests). */
+export function buildChartEventsUrlPath(params: TraceFetchParams): string {
+  const qs = new URLSearchParams({
+    variant: params.variant,
+    from: String(params.fromMs),
+    to_open_time_ms: String(params.toOpenTimeMs),
+  });
+  if (params.contextOverlayRef) {
+    qs.set("context_overlay_ref", params.contextOverlayRef);
+  }
+  return `/api/research/runs/${encodeURIComponent(params.runId)}/chart-events?${qs.toString()}`;
+}
+
 export type SignalTraceRequestCoordinator = {
   evaluate(input: {
     key: TraceRequestKey;
