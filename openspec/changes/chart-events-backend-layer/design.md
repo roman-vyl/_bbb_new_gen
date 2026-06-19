@@ -220,7 +220,7 @@ Session cache: `signalTraceBundleSessionCache.has/get(committedWindowKey)` — L
 
 Called **after** `loadDisplayTraceChunk` (or after orchestrator skips it). Inputs include **display load outcome**, not scheduling intent.
 
-Inputs: `chartEventsEnabled`, `committedWindowKey`, `loadedSignalTraceWindowKey`, `signalTraceStatus`, `sessionCacheHasWindow`, `displayCacheCoversWindow`, `displayLoadOutcome`, chunk `fromMs` / `toOpenTimeMs`, `lanesRequestKey`.
+Inputs: `chartEventsEnabled`, `committedWindowKey`, `loadedSignalTraceWindowKey`, `signalTraceStatus`, `loadedSignalTrace` (in-memory bundle for current window, if any), `sessionCacheHasWindow`, `displayCacheCoversWindow`, `displayLoadOutcome`, chunk `fromMs` / `toOpenTimeMs`, `lanesRequestKey`.
 
 `displayLoadOutcome` — what actually happened to display **this** `loadTrace()` invocation (derived from orchestrator + `DisplayTraceChunkLoadResult`):
 
@@ -246,12 +246,17 @@ Outputs:
 
 ```typescript
 type DenseLanesFetchReason =
-  | "flag_off_combined"       // single /signal-trace feeds display + lanes
-  | "lanes_pending"           // display satisfied; dense for lanes only
-  | "display_fallback_needed" // chart-events failed; dense for fallback + lanes
+  | "flag_off_combined" // single /signal-trace feeds display + lanes (network)
+  | "lanes_pending" // display satisfied; dense for lanes only (network)
+  | "display_fallback_needed"; // chart-events failed; dense for fallback + lanes (network)
+
+type DenseLanesUseLoadedReason =
+  | "flag_off_combined" // display from in-memory dense; no network
+  | "display_fallback_needed"; // display fallback from in-memory dense; no network
 
 type DenseLanesNetworkDecision =
   | { action: "skip"; reason: "lanes_ready" | "chart_heavy_io_off" }
+  | { action: "use_loaded_bundle"; reason: DenseLanesUseLoadedReason }
   | { action: "restore_session"; windowKey: string }
   | {
       action: "fetch";
@@ -262,29 +267,43 @@ type DenseLanesNetworkDecision =
     };
 ```
 
-**Policy matrix (after display outcome known):**
-
-| displayLoadOutcome | lanesReady | session restore eligible | Decision |
-|--------------------|------------|--------------------------|----------|
-| any | yes | — | **skip** `lanes_ready` |
-| `skipped_flag_off` | no | — | **fetch** `flag_off_combined` |
-| `fallback_needed` | no | — | **fetch** `display_fallback_needed` |
-| `committed` | no | yes | **restore_session** |
-| `committed` | no | no | **fetch** `lanes_pending` |
-| `skipped_lanes_only` | no | yes | **restore_session** |
-| `skipped_lanes_only` | no | no | **fetch** `lanes_pending` |
-| `fallback_needed` | no | yes | **fetch** `display_fallback_needed` (session bundle stale vs fallback — prefer network) |
-
-Note: when `fallback_needed`, session restore is **not** used — dense response must feed `mergeDisplayFromDenseFallback`.
-
-**`lanesReadyForWindow` (in-memory sufficient — skip dense network):**
+**`lanesReadyForWindow` (in-memory lanes identity matches window):**
 
 ```text
 signalTraceMatchesChartWindow(committedWindowKey, loadedSignalTraceWindowKey)
 AND signalTraceStatus ∈ {"ready", "error"}
 ```
 
-Lanes UI may show error for current window; no refetch until window/variant/session identity changes or coordinator retry policy allows.
+**`canUseLoadedBundleForDisplay` (non-network display merge from in-memory dense):**
+
+```text
+lanesReadyForWindow
+AND signalTraceStatus === "ready"
+AND loadedSignalTrace !== null
+```
+
+When `lanesReadyForWindow` but `loadedSignalTrace === null` (e.g. prior lanes error cleared bundle) → **cannot** `use_loaded_bundle`; policy falls through to **fetch** if display still needs dense.
+
+**Policy matrix (after display outcome known):**
+
+| displayLoadOutcome | lanesReady | canUseLoadedBundle | session restore eligible | Decision |
+|--------------------|------------|--------------------|--------------------------|----------|
+| `fallback_needed` | yes | yes | — | **use_loaded_bundle** `display_fallback_needed` |
+| `fallback_needed` | yes | no | — | **fetch** `display_fallback_needed` |
+| `fallback_needed` | no | — | — | **fetch** `display_fallback_needed` |
+| `skipped_flag_off` | yes | yes | — | **use_loaded_bundle** `flag_off_combined` |
+| `skipped_flag_off` | yes | no | — | **fetch** `flag_off_combined` |
+| `skipped_flag_off` | no | — | — | **fetch** `flag_off_combined` |
+| `committed` | yes | — | — | **skip** `lanes_ready` (display already committed) |
+| `skipped_lanes_only` | yes | — | — | **skip** `lanes_ready` (display cache-covered) |
+| `committed` | no | — | yes | **restore_session** |
+| `committed` | no | — | no | **fetch** `lanes_pending` |
+| `skipped_lanes_only` | no | — | yes | **restore_session** |
+| `skipped_lanes_only` | no | — | no | **fetch** `lanes_pending` |
+
+**Key rule:** `lanesReady` alone is **not** always `skip`. When display still needs dense merge (`fallback_needed`, `skipped_flag_off`) and `canUseLoadedBundleForDisplay`, use **use_loaded_bundle** — no network, but **`mergeDisplayFromDenseFallback(loadedSignalTrace)`** runs.
+
+When `fallback_needed`, session restore is **not** used even if eligible — stale session bundle must not block display fallback (network fetch unless in-memory dense suffices per matrix above).
 
 **Session cache sufficient — skip dense network (restore only):**
 
@@ -293,7 +312,7 @@ All of:
 1. `chartEventsEnabled === true`
 2. `displayCacheCoversWindow === true` (display does not need dense fallback this tick)
 3. `sessionCacheHasWindow(committedWindowKey) === true`
-4. NOT `lanesReadyForWindow` (otherwise already skipped)
+4. NOT `lanesReadyForWindow` with display already satisfied (`committed` / `skipped_lanes_only` handled by matrix skip)
 5. Existing bootstrap policy would return `restore_session_cache` — i.e. `decideSignalTraceLoad` path **or** equivalent check inlined before network
 
 Action: `setSignalTrace(sessionBundle)`, update `loadedSignalTraceWindowKey`, status `ready`, **`coordinator.markMerged(lanesRequestKey, "session_restore")`** — **do not** call `loadDenseLanesTrace`, **do not** merge display from session dense when display cache already covers (5A/5B fix to `restore_session` block).
@@ -304,27 +323,31 @@ Action: `setSignalTrace(sessionBundle)`, update `loadedSignalTraceWindowKey`, st
 2. Policy returns **`action: "fetch"`** (see matrix above), AND
 3. NOT aborted/stale before policy
 
-Fetch **`reason`** distinguishes orchestration merge step:
+Fetch / use-loaded **`reason`** — when orchestrator runs display merge from dense:
 
-| `reason` | Display merge from dense? |
-|----------|---------------------------|
-| `flag_off_combined` | Yes, if not yet merged (`mergeDisplayFromDenseFallback` after fetch) |
-| `display_fallback_needed` | Yes (`mergeDisplayFromDenseFallback` after fetch) |
-| `lanes_pending` | No (display already committed or cache-covered) |
+| `action` | `reason` | Display merge from dense? |
+|----------|----------|---------------------------|
+| `fetch` | `flag_off_combined` | Yes, after network (`mergeDisplayFromDenseFallback`) |
+| `fetch` | `display_fallback_needed` | Yes, after network |
+| `fetch` | `lanes_pending` | No (display already committed or cache-covered) |
+| `use_loaded_bundle` | `flag_off_combined` | Yes, from `loadedSignalTrace` (no network) |
+| `use_loaded_bundle` | `display_fallback_needed` | Yes, from `loadedSignalTrace` (no network) |
 
-Equivalent cases (now outcome-driven):
+Equivalent cases (outcome-driven):
 
-- **Flag off** — `displayLoadOutcome: skipped_flag_off` → **fetch** `flag_off_combined` (one `/signal-trace` for display + lanes)
-- **Chart-events failed** — `displayLoadOutcome: fallback_needed` → **fetch** `display_fallback_needed`
-- **Chart-events OK, lanes pending** — `committed` or `skipped_lanes_only` → **fetch** `lanes_pending` (unless session restore)
-- **Lanes-only path** — `skipped_lanes_only` + lanes pending → **fetch** `lanes_pending` or **restore_session**
+- **Flag off, lanes not ready** — `skipped_flag_off` → **fetch** `flag_off_combined`
+- **Flag off, lanes ready + bundle** — `skipped_flag_off` → **use_loaded_bundle** `flag_off_combined`
+- **Chart-events failed, lanes not ready** — `fallback_needed` → **fetch** `display_fallback_needed`
+- **Chart-events failed, lanes ready + bundle** — `fallback_needed` → **use_loaded_bundle** `display_fallback_needed`
+- **Chart-events OK, lanes pending** — `committed` / `skipped_lanes_only` → **fetch** `lanes_pending` or **restore_session**
+- **Chart-events OK, lanes ready** — `committed` / `skipped_lanes_only` → **skip** `lanes_ready`
 
 **Dense network SKIPPED when:**
 
 | Condition | Decision |
 |-----------|----------|
 | `!chartHeavyIoEnabled` | **skip** `chart_heavy_io_off` (effect gate, before `loadTrace`) |
-| `lanesReadyForWindow` | **skip** `lanes_ready` |
+| Display satisfied + `lanesReadyForWindow` | **skip** `lanes_ready` OR **use_loaded_bundle** (never network) |
 | Flag on + display covers + session hit + lanes stale | **restore_session** (no network) |
 | Display covers + lanes ready | Scheduling early return — `loadTrace` not entered |
 
@@ -340,12 +363,14 @@ Equivalent cases (now outcome-driven):
 2. displayResult = lanesOnlyFetch ? null : await loadDisplayTraceChunk(ctx)
    displayLoadOutcome = mapDisplayLoadOutcome(lanesOnlyFetch, chartEventsEnabled, displayResult)
    (aborted/stale → return before policy)
-3. decision = decideDenseLanesNetworkLoad({ ..., displayLoadOutcome })
-4. if decision.action === "skip" → return (no loadDenseLanesTrace)
-5. if decision.action === "restore_session" → applyLanesFromSessionBundle(...); return
-6. lanesResult = await loadDenseLanesTrace(ctx)
-7. if decision.reason ∈ {flag_off_combined, display_fallback_needed} → mergeDisplayFromDenseFallback(...)
-8. apply lanes React state / errors (unchanged 5A rules)
+3. decision = decideDenseLanesNetworkLoad({ ..., displayLoadOutcome, loadedSignalTrace })
+4. if decision.action === "skip" → return
+5. if decision.action === "use_loaded_bundle" → mergeDisplayFromDenseFallback(loadedSignalTrace); return
+6. if decision.action === "restore_session" → applyLanesFromSessionBundle(...); return
+7. lanesResult = await loadDenseLanesTrace(ctx)
+8. if lanesResult.ok && decision.reason ∈ {flag_off_combined, display_fallback_needed}
+     → mergeDisplayFromDenseFallback(lanesResult.bundle)
+9. apply lanes React state / errors (unchanged 5A rules)
 ```
 
 **Session restore split (5B code change):**
@@ -368,12 +393,13 @@ When flag off or display not covered: keep today's combined session restore (dis
 | Step | When |
 |------|------|
 | `wb.lanes_trace_skip` | `decideDenseLanesNetworkLoad` → skip (reason) |
+| `wb.lanes_trace_use_loaded` | `use_loaded_bundle` — display merge from in-memory dense, no network |
 | `wb.lanes_trace_session_restore` | session restore without dense network |
 | Existing `wb.signal_trace.fetch_*` | dense network only |
 
 **Tests (implementation slice):**
 
-- Unit: `decideDenseLanesNetworkLoad` truth table (`displayLoadOutcome` × lanes ready × session × flag)
+- Unit: `decideDenseLanesNetworkLoad` truth table — include `fallback_needed` + lanesReady + bundle → `use_loaded_bundle`
 - Integration: chart-events display hit + session restore → zero `/signal-trace` (extend `chartEventsDisplayLoad.test.tsx`)
 - Integration: display covers + session miss → one `/signal-trace`, zero `/chart-events`
 - Regression: flag off → single `/signal-trace` (existing workbench tests)

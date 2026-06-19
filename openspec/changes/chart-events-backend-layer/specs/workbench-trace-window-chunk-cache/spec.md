@@ -62,8 +62,9 @@ Lanes/diagnostics MUST NOT show `ready` or error state from a prior window after
 - **AND** display cache does not cover a missing chunk
 - **AND** `lanesReadyForWindow` is true for the current `chartWindowKey`
 - **WHEN** Workbench schedules network load for the missing display chunk
-- **THEN** Workbench calls `/chart-events` for display
-- **AND** Workbench does NOT call `/signal-trace` for the same chunk
+- **AND** `/chart-events` succeeds (`displayLoadOutcome: committed`)
+- **THEN** Workbench does NOT call `/signal-trace` for the same chunk
+- **AND** Workbench does NOT merge display from in-memory dense (display already committed from chart-events)
 - **AND** pipeline debug emits `wb.lanes_trace_skip` with reason `lanes_ready`
 
 #### Scenario: Chart-events satisfied display skips dense when session restores lanes
@@ -76,6 +77,27 @@ Lanes/diagnostics MUST NOT show `ready` or error state from a prior window after
 - **THEN** Workbench does NOT request `/chart-events` or `/signal-trace`
 - **AND** Workbench restores lanes from session cache without merging display from the session dense bundle
 - **AND** pipeline debug emits `wb.lanes_trace_session_restore`
+
+#### Scenario: Chart-events failed but in-memory dense satisfies display fallback without network
+
+- **GIVEN** `VITE_CHART_EVENTS_API=1`
+- **AND** display cache does not cover a missing chunk
+- **AND** `/chart-events` fails for that chunk
+- **AND** `signalTrace` for the current `chartWindowKey` is already loaded in memory with status `ready`
+- **WHEN** Workbench completes display load with outcome `fallback_needed`
+- **THEN** Workbench does NOT request `/signal-trace`
+- **AND** Workbench merges display from the in-memory dense bundle (`use_loaded_bundle`)
+- **AND** pipeline debug emits `wb.lanes_trace_use_loaded` with reason `display_fallback_needed`
+
+#### Scenario: Flag off uses in-memory dense for display when lanes already ready
+
+- **GIVEN** `VITE_CHART_EVENTS_API` is unset or not `1`
+- **AND** display cache does not cover a missing chunk
+- **AND** `signalTrace` for the current `chartWindowKey` is already loaded in memory with status `ready`
+- **WHEN** Workbench completes display load with outcome `skipped_flag_off`
+- **THEN** Workbench does NOT request `/signal-trace`
+- **AND** Workbench merges display from the in-memory dense bundle (`use_loaded_bundle`)
+- **AND** pipeline debug emits `wb.lanes_trace_use_loaded` with reason `flag_off_combined`
 
 #### Scenario: Flag off keeps single combined dense fetch
 
