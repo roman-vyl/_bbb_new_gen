@@ -17,7 +17,12 @@ import type {
 import { clearMarketCache } from "@/features/chart/marketDataCache";
 import { resetChartEventsFlagDisabledNoteForTests } from "@/features/chart/runtime/chartEventsLoad";
 import { dbgExport, dbgReset, PIPELINE_DEBUG_STEPS as DBG } from "@/shared/diagnostics/pipelineDebug";
-import { WorkbenchProvider, useWorkbenchChart } from "@/shared/context/WorkbenchContext";
+import {
+  invalidateTraceDisplayCacheForTests,
+  WorkbenchProvider,
+  useWorkbenchChart,
+  useWorkbenchShell,
+} from "@/shared/context/WorkbenchContext";
 
 const fetchRunReport = vi.fn<typeof import("@/api/client").fetchRunReport>();
 const fetchRunSummaries = vi.fn<typeof import("@/api/client").fetchRunSummaries>();
@@ -187,9 +192,15 @@ function createDeferred<T>() {
 }
 
 let chartSliceRef: ReturnType<typeof useWorkbenchChart> | null = null;
+let shellSliceRef: ReturnType<typeof useWorkbenchShell> | null = null;
 
 function ChartSliceCapture() {
   chartSliceRef = useWorkbenchChart();
+  return null;
+}
+
+function ShellSliceCapture() {
+  shellSliceRef = useWorkbenchShell();
   return null;
 }
 
@@ -201,12 +212,14 @@ describe("chart-events display load (5A)", () => {
   afterEach(() => {
     cleanup();
     chartSliceRef = null;
+    shellSliceRef = null;
     vi.unstubAllEnvs();
     resetChartEventsFlagDisabledNoteForTests();
   });
 
   beforeEach(() => {
     chartSliceRef = null;
+    shellSliceRef = null;
     vi.clearAllMocks();
     clearMarketCache();
     dbgReset();
@@ -321,15 +334,19 @@ describe("lazy dense lanes (5B)", () => {
   afterEach(() => {
     cleanup();
     chartSliceRef = null;
+    shellSliceRef = null;
     vi.unstubAllEnvs();
     resetChartEventsFlagDisabledNoteForTests();
   });
 
   beforeEach(() => {
     chartSliceRef = null;
+    shellSliceRef = null;
     vi.clearAllMocks();
     clearMarketCache();
     dbgReset();
+    vi.stubEnv("VITE_CHART_EVENTS_API", "1");
+    vi.stubEnv("VITE_EMA_PIPELINE_DEBUG", "true");
     fetchRunSummaries.mockResolvedValue(RUNS);
     fetchConfigState.mockResolvedValue({
       family: "ema_pullback",
@@ -344,6 +361,37 @@ describe("lazy dense lanes (5B)", () => {
       ema_overlays: [],
     });
     fetchChartOverlayEma.mockResolvedValue([]);
+    fetchChartEvents.mockResolvedValue(ONE_POINT_CHART_EVENTS);
+  });
+
+  it("preserves lanes error on policy skip after display commit (no second dense fetch)", async () => {
+    fetchSignalTrace.mockRejectedValue(new Error("dense trace unavailable"));
+
+    render(
+      <Host>
+        <ChartSliceCapture />
+      </Host>,
+    );
+
+    await waitFor(() => {
+      expect(chartSliceRef?.lanesSignalTraceStatus).toBe("error");
+    });
+    expect(fetchSignalTrace).toHaveBeenCalledTimes(1);
+    expect(fetchChartEvents).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      invalidateTraceDisplayCacheForTests();
+    });
+
+    await waitFor(() => {
+      expect(fetchChartEvents).toHaveBeenCalledTimes(2);
+    });
+    expect(fetchSignalTrace).toHaveBeenCalledTimes(1);
+    expect(chartSliceRef?.lanesSignalTraceStatus).toBe("error");
+    expect(chartSliceRef?.lanesSignalTraceError).toContain("dense trace unavailable");
+
+    const skipMark = dbgExport().find((row) => row.step === DBG.lanesTrace.skip);
+    expect(skipMark?.last_meta?.reason).toBe("lanes_ready");
   });
 
   it("flag off performs single combined signal-trace fetch (no chart-events)", async () => {
@@ -379,6 +427,7 @@ describe("lazy dense lanes (5B)", () => {
     render(
       <Host>
         <ChartSliceCapture />
+        <ShellSliceCapture />
       </Host>,
     );
 

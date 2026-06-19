@@ -66,7 +66,8 @@ Scope: skip redundant `/signal-trace` when chart-events already satisfied displa
 - [x] 5B.1g Unit tests: `decideDenseLanesNetworkLoad` truth table (`displayLoadOutcome` matrix)
 - [x] 5B.1h Integration: flag-off single combined fetch; matrix covered by unit tests (full session-restore E2E deferred to 5B.2 smoke)
 - [x] 5B.1i Regression: 5A display-before-dense tests unchanged
-- [ ] 5B.2 **STOP FOR REVIEW:** no double-fetch on common pan-back / lanes-ready paths; wait before Phase 6
+- [x] 5B.1j Lanes status state machine: loading only on dense fetch; skip preserves error; restore_session null → fetch fallback
+- [ ] 5B.2 **STOP FOR REVIEW:** lanes status state machine + no double-fetch on pan-back / lanes-ready paths
 
 ## 6. Phase 6 — Migration, acceptance, archive prep
 

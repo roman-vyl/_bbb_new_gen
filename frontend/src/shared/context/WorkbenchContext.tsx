@@ -407,6 +407,7 @@ export function WorkbenchProvider({
   const signalTraceDisplayCacheRef = useRef(createSignalTraceDisplayCache());
   const signalTraceBundleSessionCacheRef = useRef(createSignalTraceBundleSessionCache());
   const [displayCacheVersion, setDisplayCacheVersion] = useState(0);
+  const [traceSchedulingTick, setTraceSchedulingTick] = useState(0);
   const [displayApplyRevision, setDisplayApplyRevision] = useState(0);
   const [renderWindowShiftSeq, setRenderWindowShiftSeq] = useState(0);
   const [chartDisplayComponentEvents, setChartDisplayComponentEvents] = useState<ComponentEvent[]>([]);
@@ -435,6 +436,7 @@ export function WorkbenchProvider({
   const signalTraceRequestCoordinatorRef = useRef(createSignalTraceRequestCoordinator());
   const signalTraceStatusRef = useRef<SignalTraceLoadStatus>("idle");
   const signalTraceRef = useRef<SignalTraceBundle | null>(null);
+  const signalTraceErrorRef = useRef<string | null>(null);
   const loadedSignalTraceWindowKeyRef = useRef<string | null>(null);
   const previousChartWindowKeyRef = useRef<string | null>(null);
   /** Last HTF aux overlays for current trace coverage; re-sliced when render window moves before trace key catches up. */
@@ -1377,6 +1379,10 @@ export function WorkbenchProvider({
   }, [signalTrace]);
 
   useEffect(() => {
+    signalTraceErrorRef.current = signalTraceError;
+  }, [signalTraceError]);
+
+  useEffect(() => {
     loadedSignalTraceWindowKeyRef.current = loadedSignalTraceWindowKey;
   }, [loadedSignalTraceWindowKey]);
 
@@ -1532,6 +1538,22 @@ export function WorkbenchProvider({
     setTraceDisplayState(EMPTY_TRACE_DISPLAY_STATE);
     setDisplayCacheVersion((version) => version + 1);
   }, [traceDisplayCacheKey, reloadToken]);
+
+  useEffect(() => {
+    registerTraceDisplayCacheInvalidatorForTests(() => {
+      if (traceDisplayCacheKey === null) {
+        return;
+      }
+      signalTraceDisplayCacheRef.current.reset(traceDisplayCacheKey);
+      signalTraceRequestCoordinatorRef.current.reset();
+      traceLoadGenerationRef.current += 1;
+      setDisplayCacheVersion((version) => version + 1);
+      setTraceSchedulingTick((tick) => tick + 1);
+    });
+    return () => {
+      registerTraceDisplayCacheInvalidatorForTests(null);
+    };
+  }, [traceDisplayCacheKey]);
 
   const sessionCacheIdentity = useMemo(() => {
     if (selectedRunId === null || selectedVariantKey === "") {
@@ -2158,6 +2180,7 @@ export function WorkbenchProvider({
       committedWindowKey: windowKey,
       loadedSignalTraceWindowKey: loadedSignalTraceWindowKeyRef.current,
       signalTraceStatus: signalTraceStatusRef.current,
+      signalTraceError: signalTraceErrorRef.current,
       loadedSignalTrace: signalTraceRef.current,
       lanesReadyAtFetchStart: lanesReadyForWindow,
     };
@@ -2166,19 +2189,6 @@ export function WorkbenchProvider({
     if (chartEventsEnabled && !lanesOnlyFetch) {
       coordinator.markInFlight(displayRequestKey, fetchGeneration);
     }
-    if (chartEventsEnabled) {
-      coordinator.markInFlight(lanesRequestKey, fetchGeneration);
-    }
-    setSignalTraceStatus("loading");
-    signalTraceStatusRef.current = "loading";
-    setSignalTraceError(null);
-    dbgMark(DBG.signalTrace.fetchStart, {
-      source: fetchSource,
-      windowKey,
-      traceRequestKey: displayRequestKey,
-      traceDisplayChunkKey,
-      chartEventsEnabled,
-    });
 
     async function loadTrace() {
       const requestedBounds = {
@@ -2193,6 +2203,38 @@ export function WorkbenchProvider({
       };
 
       const denseCoordinatorKey = chartEventsEnabled ? lanesRequestKey : networkCoordinatorKey;
+
+      const restoreLanesStatusFromSnapshot = () => {
+        setSignalTraceStatus(lanesPolicySnapshot.signalTraceStatus);
+        signalTraceStatusRef.current = lanesPolicySnapshot.signalTraceStatus;
+        setSignalTraceError(lanesPolicySnapshot.signalTraceError);
+      };
+
+      const beginDenseLanesFetch = () => {
+        coordinator.markInFlight(denseCoordinatorKey, fetchGeneration);
+        setSignalTraceStatus("loading");
+        signalTraceStatusRef.current = "loading";
+        setSignalTraceError(null);
+        dbgMark(DBG.signalTrace.fetchStart, {
+          source: fetchSource,
+          windowKey,
+          traceRequestKey: denseCoordinatorKey,
+          traceDisplayChunkKey,
+          chartEventsEnabled,
+          denseFetch: true,
+        });
+      };
+
+      if (!lanesOnlyFetch) {
+        dbgMark(DBG.signalTrace.fetchStart, {
+          source: fetchSource,
+          windowKey,
+          traceRequestKey: displayRequestKey,
+          traceDisplayChunkKey,
+          chartEventsEnabled,
+          displayFetch: true,
+        });
+      }
 
       const networkCtx = {
         params: {
@@ -2242,7 +2284,11 @@ export function WorkbenchProvider({
           ? displayResult.mergeSource
           : (displayResult?.mergeSource ?? "signal-trace-fallback");
 
-      const lanesDecision = decideDenseLanesNetworkLoad({
+      const markDensePathComplete = () => {
+        coordinator.markMerged(denseCoordinatorKey, "network");
+      };
+
+      let lanesDecision = decideDenseLanesNetworkLoad({
         chartEventsEnabled,
         committedWindowKey: windowKey,
         loadedSignalTraceWindowKey: lanesPolicySnapshot.loadedSignalTraceWindowKey,
@@ -2256,17 +2302,6 @@ export function WorkbenchProvider({
         toOpenTimeMs,
       });
 
-      const restoreLanesReadyAfterSkip = () => {
-        if (lanesPolicySnapshot.lanesReadyAtFetchStart) {
-          setSignalTraceStatus("ready");
-          signalTraceStatusRef.current = "ready";
-        }
-      };
-
-      const markDensePathComplete = () => {
-        coordinator.markMerged(denseCoordinatorKey, "network");
-      };
-
       try {
         if (lanesDecision.action === "skip") {
           dbgMark(DBG.lanesTrace.skip, {
@@ -2274,7 +2309,7 @@ export function WorkbenchProvider({
             reason: lanesDecision.reason,
             displayLoadOutcome,
           });
-          restoreLanesReadyAfterSkip();
+          restoreLanesStatusFromSnapshot();
           if (chartEventsEnabled) {
             markDensePathComplete();
           }
@@ -2296,7 +2331,6 @@ export function WorkbenchProvider({
             reason: lanesDecision.reason,
             displayLoadOutcome,
           });
-          restoreLanesReadyAfterSkip();
           markDensePathComplete();
           return;
         }
@@ -2305,29 +2339,38 @@ export function WorkbenchProvider({
           const sessionBundle = signalTraceBundleSessionCacheRef.current.get(
             lanesDecision.windowKey,
           );
-          if (sessionBundle === null) {
+          if (sessionBundle !== null) {
+            applyLanesFromSessionBundle({
+              sessionBundle,
+              windowKey: lanesDecision.windowKey,
+              lanesRequestKey,
+              coordinator,
+              applyLanesState: (bundle) => {
+                setSignalTrace(bundle);
+                setLoadedSignalTraceWindowKey(windowKey);
+                loadedSignalTraceWindowKeyRef.current = windowKey;
+                setSignalTraceStatus("ready");
+                signalTraceStatusRef.current = "ready";
+                setSignalTraceError(null);
+              },
+            });
+            flushLanesLoadDebug();
             return;
           }
-          applyLanesFromSessionBundle({
-            sessionBundle,
-            windowKey: lanesDecision.windowKey,
+          lanesDecision = {
+            action: "fetch",
             lanesRequestKey,
-            coordinator,
-            applyLanesState: (bundle) => {
-              setSignalTrace(bundle);
-              setLoadedSignalTraceWindowKey(windowKey);
-              loadedSignalTraceWindowKeyRef.current = windowKey;
-              setSignalTraceStatus("ready");
-              signalTraceStatusRef.current = "ready";
-              setSignalTraceError(null);
-            },
-          });
-          flushLanesLoadDebug();
-          return;
+            fromMs,
+            toOpenTimeMs,
+            reason: "lanes_pending",
+          };
         }
+
+        beginDenseLanesFetch();
 
         const lanesResult = await loadDenseLanesTrace(networkCtx);
         if (lanesResult.outcome === "aborted" || lanesResult.outcome === "stale") {
+          restoreLanesStatusFromSnapshot();
           return;
         }
 
@@ -2422,6 +2465,7 @@ export function WorkbenchProvider({
     finalizeTraceDisplayUpdate,
     chartHeavyIoEnabled,
     chartTimeframe,
+    traceSchedulingTick,
   ]);
 
   const symbol = report?.symbol ?? "—";
@@ -2632,6 +2676,17 @@ export function useWorkbench(): WorkbenchState {
     }),
     [shell, report, composer, chart],
   );
+}
+
+let traceDisplayCacheInvalidatorForTests: (() => void) | null = null;
+
+function registerTraceDisplayCacheInvalidatorForTests(fn: (() => void) | null): void {
+  traceDisplayCacheInvalidatorForTests = fn;
+}
+
+/** Vitest-only: invalidate display cache coverage without report reload (preserves lanes state). */
+export function invalidateTraceDisplayCacheForTests(): void {
+  traceDisplayCacheInvalidatorForTests?.();
 }
 
 export function useWorkbenchShell(): WorkbenchShellState {
