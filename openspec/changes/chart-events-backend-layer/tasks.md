@@ -22,11 +22,11 @@
 
 ## 4. Phase 4 — API endpoint + pytest
 
-- [ ] 4.1 Add `GET /api/research/runs/{run_id}/chart-events` to `research_api/routers/research_runs.py`
-- [ ] 4.2 Map errors: 400 (missing end), 422 (both `to` and `to_open_time_ms`, unsupported family), 404, 500
-- [ ] 4.3 Add `tests/test_research_api_chart_events.py` — sparse shape, 50k parity vs signal-trace display fields, cache hit spy, conflict 422, overlay ref in key, `to_open_time_ms` exclusive end
-- [ ] 4.4 Verify existing `tests/test_research_api_signal_trace.py` passes unchanged
-- [ ] 4.5 **STOP FOR REVIEW:** endpoint + pytest green; deploy backend-only smoke; wait for approval before Phase 5
+- [x] 4.1 Add `GET /api/research/runs/{run_id}/chart-events` to `research_api/routers/research_runs.py`
+- [x] 4.2 Map errors: 400 (missing end), 422 (both `to` and `to_open_time_ms`, unsupported family), 404, 500
+- [x] 4.3 Add `tests/test_research_api_chart_events.py` — sparse shape, 50k parity vs signal-trace display fields, cache hit spy, conflict 422, overlay ref in key, `to_open_time_ms` exclusive end
+- [x] 4.4 Verify existing `tests/test_research_api_signal_trace.py` passes unchanged
+- [x] 4.5 **STOP FOR REVIEW:** endpoint + pytest green; deploy backend-only smoke; wait for approval before Phase 5
 
 ## 5. Phase 5 — Frontend integration (minimal swap)
 
