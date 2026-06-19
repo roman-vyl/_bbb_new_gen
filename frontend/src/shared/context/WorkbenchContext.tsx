@@ -56,6 +56,7 @@ import {
   buildTraceRequestKey,
   createSignalTraceRequestCoordinator,
 } from "@/features/chart/runtime/signalTraceRequestCoordinator";
+import { planMissingTraceDisplayChunkFetch } from "@/features/chart/runtime/traceDisplayChunkScheduling";
 import { canEmitTradeFocus } from "@/features/chart/runtime/viewportController";
 import type { ChartInteractionEvent, ViewportCommand } from "@/features/chart/runtime/types";
 import {
@@ -1777,7 +1778,7 @@ export function WorkbenchProvider({
 
     const { windowKey, request, fetchSource } = bootstrap;
     const committedWindowKey = windowKey;
-    const traceRequestKey = buildTraceRequestKey({
+    const windowTraceRequestKey = buildTraceRequestKey({
       runId: request.runId,
       variant: request.variant,
       fromMs: request.fromMs,
@@ -1788,7 +1789,7 @@ export function WorkbenchProvider({
 
     dbgMark(DBG.signalTrace.bootstrapReady, {
       windowKey: committedWindowKey,
-      traceRequestKey,
+      traceRequestKey: windowTraceRequestKey,
       renderWindowRevision,
       boundsKey: renderWindowBoundsKey,
     });
@@ -1820,11 +1821,12 @@ export function WorkbenchProvider({
 
     const logCoordinatorDecision = (
       coordDecision: ReturnType<typeof coordinator.evaluate>,
+      requestKey: string,
       extra?: Record<string, unknown>,
     ) => {
-      const ledger = coordinator.ledgerSnapshotForKey(traceRequestKey);
+      const ledger = coordinator.ledgerSnapshotForKey(requestKey);
       dbgMark(DBG.signalTrace.decision, {
-        traceRequestKey,
+        traceRequestKey: requestKey,
         decisionReason: coordDecision.action === "fetch" ? "fetch" : coordDecision.reason,
         skipReason: coordDecision.action === "skip" ? coordDecision.reason : undefined,
         plan: plan.action,
@@ -1854,7 +1856,7 @@ export function WorkbenchProvider({
       dbgMark(DBG.traceDisplay.fetchSuperseded, {
         coalesced: coalescedFetchKey,
         windowKey: committedWindowKey,
-        traceRequestKey,
+        traceRequestKey: windowTraceRequestKey,
       });
       return;
     }
@@ -1877,11 +1879,11 @@ export function WorkbenchProvider({
       if (sessionBundle === null) {
         return;
       }
-      coordinator.markMerged(traceRequestKey, "session_restore");
+      coordinator.markMerged(windowTraceRequestKey, "session_restore");
       dbgMark(DBG.signalTrace.fetchStart, {
         source: "session_restore",
         windowKey: committedWindowKey,
-        traceRequestKey,
+        traceRequestKey: windowTraceRequestKey,
       });
       dbgTimedSync(
         DBG.traceDisplay.mergeChunk,
@@ -1900,13 +1902,17 @@ export function WorkbenchProvider({
       setSignalTraceStatus("ready");
       signalTraceStatusRef.current = "ready";
       setSignalTraceError(null);
-      dbgMark(DBG.traceDisplay.sessionHit, { windowKey: committedWindowKey, traceRequestKey });
+      dbgMark(DBG.traceDisplay.sessionHit, {
+        windowKey: committedWindowKey,
+        traceRequestKey: windowTraceRequestKey,
+      });
       logCoordinatorDecision(
         coordinator.evaluate({
-          key: traceRequestKey,
+          key: windowTraceRequestKey,
           generation: traceLoadGenerationRef.current,
           displayCacheCoversWindow,
         }),
+        windowTraceRequestKey,
         { afterSessionRestore: true },
       );
       finalizeTraceDisplayUpdate();
@@ -1915,7 +1921,10 @@ export function WorkbenchProvider({
 
     if (plan.action === "defer") {
       if (!displayCacheCoversWindow) {
-        dbgMark(DBG.traceDisplay.cacheMiss, { windowKey: committedWindowKey, traceRequestKey });
+        dbgMark(DBG.traceDisplay.cacheMiss, {
+          windowKey: committedWindowKey,
+          traceRequestKey: windowTraceRequestKey,
+        });
       }
       return;
     }
@@ -1924,12 +1933,44 @@ export function WorkbenchProvider({
       return;
     }
 
+    if (displayCacheCoversWindow) {
+      dbgMark(DBG.traceDisplay.cacheHit, {
+        windowKey: committedWindowKey,
+        source: "display_cache_covers_window",
+      });
+      finalizeTraceDisplayUpdate();
+      return;
+    }
+
+    const chunkPlan = planMissingTraceDisplayChunkFetch({
+      cache: signalTraceDisplayCacheRef.current,
+      candles: chartView.candles,
+      runId: request.runId,
+      variant: request.variant,
+      contextOverlayRef: effectiveContextOverlayRef,
+      chartTimeframe,
+    });
+
+    if (chunkPlan === null) {
+      finalizeTraceDisplayUpdate();
+      return;
+    }
+
+    const traceDisplayChunkKey = chunkPlan.traceDisplayChunkKey;
+    const traceRequestKey = buildTraceRequestKey({
+      runId: request.runId,
+      variant: request.variant,
+      fromMs: chunkPlan.fromMs,
+      toOpenTimeMs: chunkPlan.toOpenTimeMs,
+      contextOverlayRef: effectiveContextOverlayRef,
+    });
+
     const coordDecision = coordinator.evaluate({
       key: traceRequestKey,
       generation: traceLoadGenerationRef.current,
-      displayCacheCoversWindow,
+      displayCacheCoversWindow: false,
     });
-    logCoordinatorDecision(coordDecision);
+    logCoordinatorDecision(coordDecision, traceRequestKey, { traceDisplayChunkKey, chunkPlan });
 
     if (coordDecision.action !== "fetch") {
       if (
@@ -1939,30 +1980,29 @@ export function WorkbenchProvider({
         dbgMark(DBG.traceDisplay.cacheHit, {
           windowKey: committedWindowKey,
           traceRequestKey,
+          traceDisplayChunkKey,
           source: "coordinator_skip",
           reason: coordDecision.reason,
         });
         finalizeTraceDisplayUpdate();
       }
-      if (!displayCacheCoversWindow) {
-        dbgMark(DBG.traceDisplay.cacheMiss, {
-          windowKey: committedWindowKey,
-          traceRequestKey,
-          coordinatorSkip: coordDecision.reason,
-        });
-      }
       return;
     }
 
-    if (!displayCacheCoversWindow) {
-      dbgMark(DBG.traceDisplay.cacheMiss, { windowKey: committedWindowKey, traceRequestKey });
-    }
+    dbgMark(DBG.traceDisplay.cacheMiss, {
+      windowKey: committedWindowKey,
+      traceRequestKey,
+      traceDisplayChunkKey,
+      missingRange: chunkPlan.missingRange,
+      chunkFromSec: chunkPlan.fromSec,
+      chunkToSec: chunkPlan.toSec,
+    });
 
     const fetchGeneration = ++traceLoadGenerationRef.current;
     const abortController = new AbortController();
     const runId = request.runId;
     const variantKey = request.variant;
-    const { fromMs, toOpenTimeMs } = request;
+    const { fromMs, toOpenTimeMs } = chunkPlan;
 
     coordinator.markInFlight(traceRequestKey, fetchGeneration);
     setSignalTraceStatus("loading");
@@ -1972,6 +2012,7 @@ export function WorkbenchProvider({
       source: fetchSource,
       windowKey,
       traceRequestKey,
+      traceDisplayChunkKey,
     });
 
     async function loadTrace() {
@@ -2083,6 +2124,8 @@ export function WorkbenchProvider({
     effectiveContextOverlayRef,
     finalizeTraceDisplayUpdate,
     chartHeavyIoEnabled,
+    displayCacheVersion,
+    chartTimeframe,
   ]);
 
   const symbol = report?.symbol ?? "—";

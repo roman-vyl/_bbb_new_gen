@@ -42,25 +42,32 @@
 - [x] 3.7 Add or update tests for partial coverage and no full marker clear on cache miss; marker fingerprint stability remains deferred with 3.5.
 - [x] 3.8 Verify HTF context EMA overlays (`workbench-chart-htf-context-overlays`) on a variant with `strategy.contexts`.
 - [x] 3.9 Run frontend verification (`cd frontend; npm run build` and relevant tests).
-- [ ] 3.10 STOP FOR REVIEW: demonstrate pan-boundary event behavior and wait for user approval before starting PR 4.
-  - PR 3 implemented under narrowed user scope: anti-flicker display state only.
+- [x] 3.10 STOP FOR REVIEW: demonstrate pan-boundary event behavior and wait for user approval before starting PR 4.
+  - PR 3 accepted.
   - 3.5 is intentionally not implemented in this PR because it changes marker update logic outside the accepted PR 3 scope.
+  - Review note (non-blocking): on retained previous display, `traceDisplayState.events` may hold retained events while `htfSlice` stays from `nextDisplayState` (possibly empty) because visible HTF is held via `lastSlicedHtfOverlaysRef`. `traceDisplayState` is lifecycle/status metadata; visible display remains `chartDisplayComponentEvents` + `chartDisplayAuxEmaOverlays` / `lastSlicedHtfOverlaysRef`.
+  - Review note (non-blocking): while trace is loading and coverage is partial, status is `loading_missing` (not `partial`) so the hint emphasizes missing-range fetch. Richer hint text (e.g. `partial · loading missing X–Y`) is optional UX polish later.
 
 ## 4. PR 4 — MissingRange Scheduling Without Active-Pan Prefetch
 
-- [ ] 4.1 Add normalized trace display chunk identity (`traceDisplayChunkKey`) using run id, variant, context overlay ref, timeframe or candle grid, and normalized range bounds.
-- [ ] 4.2 Choose and document the temporary normalized chunk size while `/signal-trace` remains dense, preferring coarse chunks such as 25k or 50k bars.
-- [ ] 4.3 Use `displayCache.missingRange(from, to)` to plan missing trace display chunks for committed render windows.
-- [ ] 4.4 Keep `traceRequestKey` as the identity of the actual `/signal-trace` network request; use normalized bounds in `traceRequestKey` only when those bounds are actually sent to the backend.
-- [ ] 4.5 Track display/cache coverage with `traceDisplayChunkKey` and network fetch ledgers with `traceRequestKey`.
-- [ ] 4.6 Route network requests through the trace request coordinator with in-flight, merged, failed, superseded, and aborted ledgers.
-- [ ] 4.7 Preserve the rule that active-pan pending shifts do not start trace prefetch.
+- [x] 4.0 PR 4 guardrail: do not treat `traceDisplayState.events` as the sole source of visible chart display until a dedicated cleanup unifies events + HTF in one projection. PR 4 scheduling must read coverage from display cache / `traceDisplayChunkKey`, not from retained `traceDisplayState` snapshots.
+- [x] 4.1 Add normalized trace display chunk identity (`traceDisplayChunkKey`) using run id, variant, context overlay ref, timeframe or candle grid, and normalized range bounds.
+- [x] 4.2 Choose and document the temporary normalized chunk size while `/signal-trace` remains dense, preferring coarse chunks such as 25k or 50k bars.
+  - `TRACE_DISPLAY_CHUNK_BAR_COUNT = 50_000` in `traceDisplayChunkScheduling.ts` (matches render window cap).
+- [x] 4.3 Use `displayCache.missingRange(from, to)` to plan missing trace display chunks for committed render windows.
+- [x] 4.4 Keep `traceRequestKey` as the identity of the actual `/signal-trace` network request; use normalized bounds in `traceRequestKey` only when those bounds are actually sent to the backend.
+- [x] 4.5 Track display/cache coverage with `traceDisplayChunkKey` and network fetch ledgers with `traceRequestKey`.
+- [x] 4.6 Route network requests through the trace request coordinator with in-flight, merged, failed, superseded, and aborted ledgers.
+- [x] 4.7 Preserve the rule that active-pan pending shifts do not start trace prefetch.
 - [ ] 4.8 Add post-commit idle prefetch for at most one neighboring normalized trace chunk after foreground scheduling settles.
-- [ ] 4.9 Ensure trace merges update display state only and do not issue viewport commands or render-window shifts.
-- [ ] 4.10 Add or update tests for request key versus display chunk key separation, missing-range scheduling, duplicate dedupe, no active-pan prefetch, and post-commit idle prefetch.
-- [ ] 4.11 Verify HTF context EMA overlays (`workbench-chart-htf-context-overlays`) on a variant with `strategy.contexts`.
-- [ ] 4.12 Run frontend verification (`cd frontend; npm run build` and relevant tests).
+  - Intentionally not implemented in this PR (user scope: no prefetch).
+- [x] 4.9 Ensure trace merges update display state only and do not issue viewport commands or render-window shifts.
+- [x] 4.10 Add or update tests for request key versus display chunk key separation, missing-range scheduling, duplicate dedupe, and no active-pan prefetch; post-commit idle prefetch remains deferred with 4.8.
+- [x] 4.11 Verify HTF context EMA overlays (`workbench-chart-htf-context-overlays`) on a variant with `strategy.contexts`.
+  - Covered by existing `workbenchLoad` HTF test; scheduling change does not alter HTF overlay sourcing.
+- [x] 4.12 Run frontend verification (`cd frontend; npm run build` and relevant tests).
 - [ ] 4.13 STOP FOR REVIEW: report missing-range behavior and wait for user approval before starting PR 5.
+  - PR 4 implemented under narrowed user scope: `missingRange()` scheduling + `traceDisplayChunkKey` only.
 
 ## 5. PR 5 — Split Market Resource Cache
 

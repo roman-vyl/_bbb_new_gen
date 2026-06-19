@@ -543,6 +543,80 @@ describe("Workbench report-load invariant", () => {
   });
 });
 
+describe("Workbench missing-range trace scheduling", () => {
+  afterEach(() => {
+    cleanup();
+    workbenchRef = null;
+    chartSliceRef = null;
+  });
+
+  beforeEach(() => {
+    workbenchRef = null;
+    chartSliceRef = null;
+    vi.clearAllMocks();
+    clearMarketCache();
+    fetchRunSummaries.mockResolvedValue(RUNS);
+    fetchConfigState.mockResolvedValue({
+      family: "ema_pullback",
+      selected_experiment_id: null,
+      configs: [],
+      selected_path: null,
+      draft: null,
+    });
+    fetchRunReport.mockImplementation(async (runId: string) => makeReport(runId));
+    fetchChartOverlayEma.mockResolvedValue([]);
+  });
+
+  it("schedules one normalized chunk fetch on full display cache miss", async () => {
+    fetchChartMarketBundle.mockResolvedValue({
+      candles: [{ time: 1000, open: 1, high: 2, low: 0.5, close: 1.5 }],
+      ema_overlays: [],
+    });
+    fetchSignalTrace.mockResolvedValue(ONE_POINT_SIGNAL_TRACE);
+
+    render(
+      <Host>
+        <WorkbenchCapture />
+      </Host>,
+    );
+
+    await waitFor(() => {
+      expect(fetchSignalTrace).toHaveBeenCalledTimes(1);
+    });
+    expect(fetchSignalTrace.mock.calls[0]![0]).toMatchObject({
+      fromMs: 1_000_000,
+      toOpenTimeMs: 1_000_000,
+    });
+  });
+
+  it("does not duplicate fetch once display cache covers the committed window", async () => {
+    fetchChartMarketBundle.mockResolvedValue({
+      candles: [{ time: 1000, open: 1, high: 2, low: 0.5, close: 1.5 }],
+      ema_overlays: [],
+    });
+    fetchSignalTrace.mockResolvedValue(ONE_POINT_SIGNAL_TRACE);
+
+    render(
+      <Host>
+        <WorkbenchCapture />
+      </Host>,
+    );
+
+    await waitFor(() => {
+      expect(fetchSignalTrace).toHaveBeenCalledTimes(1);
+    });
+    await waitFor(() => {
+      expect(workbenchRef?.signalTraceStatus).toBe("ready");
+    });
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(fetchSignalTrace).toHaveBeenCalledTimes(1);
+  });
+});
+
 function createDeferred<T>() {
   let resolve!: (value: T) => void;
   const promise = new Promise<T>((resolvePromise) => {
