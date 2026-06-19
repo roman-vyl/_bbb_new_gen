@@ -20,9 +20,9 @@ Abort handling MUST be treated as frontend/network cancellation and stale-respon
 ### Requirement: Coordinator distinguishes request and display chunk identity
 The signal trace request coordinator SHALL distinguish `traceRequestKey` from `traceDisplayChunkKey`.
 
-`traceRequestKey` MUST identify the real `/signal-trace` network request parameters. `traceDisplayChunkKey` MUST identify frontend display/cache chunk coverage and MUST NOT replace `traceRequestKey` unless the same normalized bounds are actually sent in the network request.
+`traceRequestKey` MUST identify the real `/signal-trace` network request parameters. `traceDisplayChunkKey` MUST identify a normalized display chunk for planning/debug and MUST NOT replace `traceRequestKey` unless the same normalized bounds are actually sent in the network request.
 
-In-flight, merged, failed, and superseded ledgers for network fetches MUST use `traceRequestKey`. Display coverage ledgers MAY use `traceDisplayChunkKey`.
+In-flight, merged, failed, and superseded ledgers for network fetches MUST use `traceRequestKey`. Display cache coverage remains interval-based (`coversRange`, `missingRange`); `traceDisplayChunkKey` is not the cache address key in PR 4.
 
 #### Scenario: Duplicate network request is skipped
 - **GIVEN** a `/signal-trace` request with a specific `traceRequestKey` is already in flight

@@ -2,10 +2,11 @@ import type { ChartBar } from "@/api/types";
 import { candleTimeBounds } from "@/features/chart/chartRenderWindowDisplay";
 import type { SignalTraceDisplayCache, TimeBounds } from "@/features/chart/signalTraceDisplayCache";
 
+/** Planning/debug identity for normalized display chunks — not a cache address key. */
+export type TraceDisplayChunkKey = string;
+
 /** Coarse normalized chunk size while `/signal-trace` remains dense (matches render window cap). */
 export const TRACE_DISPLAY_CHUNK_BAR_COUNT = 50_000;
-
-export type TraceDisplayChunkKey = string;
 
 const CHUNK_KEY_SEP = "\u001e";
 

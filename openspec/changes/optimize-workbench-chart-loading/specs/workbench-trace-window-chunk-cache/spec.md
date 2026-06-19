@@ -23,7 +23,7 @@ Workbench MUST display cached events for covered portions when available and mar
 - **AND** Workbench does not call the display pipeline with an unconditional empty event list solely due to the cache miss
 
 ### Requirement: Missing-range scheduling uses normalized trace display chunks
-When trace display cache does not cover the committed render window, Workbench SHALL compute the missing range and plan one or more normalized trace display chunks. The display/cache chunk identity (`traceDisplayChunkKey`) MUST include run, variant, context overlay ref, and normalized range bounds.
+When trace display cache does not cover the committed render window, Workbench SHALL compute the missing range and plan one or more normalized trace display chunks. The planning/debug chunk identity (`traceDisplayChunkKey`) MUST include run, variant, context overlay ref, and normalized range bounds. Display cache storage and coverage remain interval-based.
 
 The network request identity (`traceRequestKey`) MUST remain the identity of the real `/signal-trace` request. If normalized bounds are actually sent to `/signal-trace`, then `traceRequestKey` MAY include those normalized bounds. If normalized chunks are only a frontend planning concept, `traceDisplayChunkKey` MUST NOT replace `traceRequestKey`.
 

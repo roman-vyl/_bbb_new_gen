@@ -617,6 +617,133 @@ describe("Workbench missing-range trace scheduling", () => {
   });
 });
 
+const ANCHOR_EMA_OVERLAYS = [
+  { role: "fast" as const, period: 200, points: [] },
+  { role: "anchor" as const, period: 500, points: [] },
+  { role: "slow" as const, period: 1000, points: [] },
+];
+
+const ALT_ANCHOR_EMA_OVERLAYS = [
+  { role: "fast" as const, period: 100, points: [] },
+  { role: "anchor" as const, period: 300, points: [] },
+  { role: "slow" as const, period: 600, points: [] },
+];
+
+function makeReportWithDistinctVariantPeriods(runId: string): RunReport {
+  const report = makeReport(runId);
+  return {
+    ...report,
+    variants: report.variants.map((variant) =>
+      variant.variant === "exp_b"
+        ? {
+            ...variant,
+            strategy_spec: {
+              anchor_stack: {
+                fast: { period: 100 },
+                anchor: { period: 300 },
+                slow: { period: 600 },
+              },
+            },
+          }
+        : variant,
+    ),
+  };
+}
+
+describe("Workbench split market resource cache", () => {
+  afterEach(() => {
+    cleanup();
+    workbenchRef = null;
+  });
+
+  beforeEach(() => {
+    workbenchRef = null;
+    vi.clearAllMocks();
+    clearMarketCache();
+    fetchRunSummaries.mockResolvedValue(RUNS);
+    fetchConfigState.mockResolvedValue({
+      family: "ema_pullback",
+      selected_experiment_id: null,
+      configs: [],
+      selected_path: null,
+      draft: null,
+    });
+    fetchRunReport.mockImplementation(async (runId: string) => makeReport(runId));
+    fetchChartOverlayEma.mockResolvedValue([]);
+    fetchSignalTrace.mockResolvedValue(EMPTY_SIGNAL_TRACE);
+  });
+
+  it("reuses cached candles and overlays when switching variants with identical anchor-stack periods", async () => {
+    fetchChartMarketBundle.mockResolvedValue({
+      candles: [{ time: 1000, open: 1, high: 2, low: 0.5, close: 1.5 }],
+      ema_overlays: ANCHOR_EMA_OVERLAYS,
+    });
+
+    render(
+      <Host>
+        <WorkbenchCapture />
+      </Host>,
+    );
+
+    await waitFor(() => {
+      expect(workbenchRef?.marketLoadStatus).toBe("ready");
+    });
+    expect(fetchChartMarketBundle).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      workbenchRef!.setSelectedVariantKey("exp_b");
+    });
+
+    await waitFor(() => {
+      expect(workbenchRef?.selectedVariantKey).toBe("exp_b");
+      expect(workbenchRef?.marketLoadStatus).toBe("ready");
+    });
+    expect(fetchChartMarketBundle).toHaveBeenCalledTimes(1);
+    expect(workbenchRef?.marketCandlesCount).toBe(1);
+  });
+
+  it("reuses cached candles and refetches overlays when variant anchor-stack periods change", async () => {
+    fetchRunReport.mockImplementation(async (runId: string) =>
+      makeReportWithDistinctVariantPeriods(runId),
+    );
+    fetchChartMarketBundle
+      .mockResolvedValueOnce({
+        candles: [{ time: 1000, open: 1, high: 2, low: 0.5, close: 1.5 }],
+        ema_overlays: ANCHOR_EMA_OVERLAYS,
+      })
+      .mockResolvedValueOnce({
+        candles: [{ time: 2000, open: 2, high: 3, low: 1.5, close: 2.5 }],
+        ema_overlays: ALT_ANCHOR_EMA_OVERLAYS,
+      });
+
+    render(
+      <Host>
+        <WorkbenchCapture />
+      </Host>,
+    );
+
+    await waitFor(() => {
+      expect(workbenchRef?.marketLoadStatus).toBe("ready");
+    });
+    expect(fetchChartMarketBundle).toHaveBeenCalledTimes(1);
+    expect(workbenchRef?.marketCandlesCount).toBe(1);
+
+    await act(async () => {
+      workbenchRef!.setSelectedVariantKey("exp_b");
+    });
+
+    await waitFor(() => {
+      expect(workbenchRef?.selectedVariantKey).toBe("exp_b");
+      expect(fetchChartMarketBundle).toHaveBeenCalledTimes(2);
+    });
+
+    expect(workbenchRef?.marketCandlesCount).toBe(1);
+    await waitFor(() => {
+      expect(workbenchRef?.marketLoadStatus).toBe("ready");
+    });
+  });
+});
+
 function createDeferred<T>() {
   let resolve!: (value: T) => void;
   const promise = new Promise<T>((resolvePromise) => {

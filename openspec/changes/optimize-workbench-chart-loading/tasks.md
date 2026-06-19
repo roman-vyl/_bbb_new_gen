@@ -50,13 +50,13 @@
 
 ## 4. PR 4 — MissingRange Scheduling Without Active-Pan Prefetch
 
-- [x] 4.0 PR 4 guardrail: do not treat `traceDisplayState.events` as the sole source of visible chart display until a dedicated cleanup unifies events + HTF in one projection. PR 4 scheduling must read coverage from display cache / `traceDisplayChunkKey`, not from retained `traceDisplayState` snapshots.
-- [x] 4.1 Add normalized trace display chunk identity (`traceDisplayChunkKey`) using run id, variant, context overlay ref, timeframe or candle grid, and normalized range bounds.
+- [x] 4.0 PR 4 guardrail: do not treat `traceDisplayState.events` as the sole source of visible chart display until a dedicated cleanup unifies events + HTF in one projection. PR 4 scheduling must read coverage from display cache interval APIs (`coversRange`, `missingRange`), not from retained `traceDisplayState` snapshots.
+- [x] 4.1 Add normalized trace display chunk identity (`traceDisplayChunkKey`) for planning/debug using run id, variant, context overlay ref, timeframe or candle grid, and normalized range bounds. This is not yet an address key inside `SignalTraceDisplayCache`.
 - [x] 4.2 Choose and document the temporary normalized chunk size while `/signal-trace` remains dense, preferring coarse chunks such as 25k or 50k bars.
   - `TRACE_DISPLAY_CHUNK_BAR_COUNT = 50_000` in `traceDisplayChunkScheduling.ts` (matches render window cap).
 - [x] 4.3 Use `displayCache.missingRange(from, to)` to plan missing trace display chunks for committed render windows.
 - [x] 4.4 Keep `traceRequestKey` as the identity of the actual `/signal-trace` network request; use normalized bounds in `traceRequestKey` only when those bounds are actually sent to the backend.
-- [x] 4.5 Track display/cache coverage with `traceDisplayChunkKey` and network fetch ledgers with `traceRequestKey`.
+- [x] 4.5 Keep display cache coverage interval-based (`coversRange` / `missingRange`); use `traceDisplayChunkKey` only as normalized display-chunk identity for planning/debug. Network fetch ledgers and dedupe remain `traceRequestKey`-based.
 - [x] 4.6 Route network requests through the trace request coordinator with in-flight, merged, failed, superseded, and aborted ledgers.
 - [x] 4.7 Preserve the rule that active-pan pending shifts do not start trace prefetch.
 - [ ] 4.8 Add post-commit idle prefetch for at most one neighboring normalized trace chunk after foreground scheduling settles.
@@ -66,20 +66,27 @@
 - [x] 4.11 Verify HTF context EMA overlays (`workbench-chart-htf-context-overlays`) on a variant with `strategy.contexts`.
   - Covered by existing `workbenchLoad` HTF test; scheduling change does not alter HTF overlay sourcing.
 - [x] 4.12 Run frontend verification (`cd frontend; npm run build` and relevant tests).
-- [ ] 4.13 STOP FOR REVIEW: report missing-range behavior and wait for user approval before starting PR 5.
-  - PR 4 implemented under narrowed user scope: `missingRange()` scheduling + `traceDisplayChunkKey` only.
+- [x] 4.13 STOP FOR REVIEW: report missing-range behavior and wait for user approval before starting PR 5.
+  - PR 4 accepted. `missingRange()` scheduling + `traceDisplayChunkKey` (planning/debug identity). Display cache coverage remains interval-based; network dedupe remains `traceRequestKey`-based.
 
 ## 5. PR 5 — Split Market Resource Cache
 
-- [ ] 5.1 Define `CandlesCache` identity as symbol, timeframe, from, to, and reload identity, excluding variant and EMA periods.
-- [ ] 5.2 Define `OverlayCache` identity as symbol, timeframe, source, period or role, range, and reload identity.
-- [ ] 5.3 Add `RunMarketView` or equivalent resolver that maps selected run/variant to the required candle and overlay resources.
-- [ ] 5.4 Seed split candle and overlay caches from the existing `/api/market/chart-bundle` response without changing backend contracts.
-- [ ] 5.5 Ensure variant switches with identical symbol/timeframe/range reuse candles and load only missing or changed overlays.
-- [ ] 5.6 Preserve current render-window slicing, anchor EMA rendering, auxiliary EMA rendering, and bar inspector values after cache split.
-- [ ] 5.7 Add or update tests for variant switch candle reuse and overlay cache refresh.
-- [ ] 5.8 Verify HTF context EMA overlays (`workbench-chart-htf-context-overlays`) on a variant with `strategy.contexts`.
-- [ ] 5.9 Run frontend verification (`cd frontend; npm run build` and relevant tests).
+- [x] 5.1 Define `CandlesCache` identity as symbol, timeframe, from, to, and reload identity, excluding variant and EMA periods.
+  - `buildCandlesCacheKey` in `marketResourceCache.ts`.
+- [x] 5.2 Define `OverlayCache` identity as symbol, timeframe, source, period or role, range, and reload identity.
+  - `buildOverlayCacheKey` with `source: "anchor_stack"`.
+- [x] 5.3 Add `RunMarketView` or equivalent resolver that maps selected run/variant to the required candle and overlay resources.
+  - `resolveRunMarketView` in `runMarketView.ts`.
+- [x] 5.4 Seed split candle and overlay caches from the existing `/api/market/chart-bundle` response without changing backend contracts.
+  - `seedChartBundleIntoResourceCaches`.
+- [x] 5.5 Ensure variant switches with identical symbol/timeframe/range reuse candles and load only missing or changed overlays.
+  - Partial compose shows cached candles while overlay fetch runs; full cache hit skips network on variant switch with same periods.
+- [x] 5.6 Preserve current render-window slicing, anchor EMA rendering, auxiliary EMA rendering, and bar inspector values after cache split.
+- [x] 5.7 Add or update tests for variant switch candle reuse and overlay cache refresh.
+  - `marketResourceCache.test.ts`, `runMarketView.test.ts`, `workbenchLoad` split-cache describe.
+- [x] 5.8 Verify HTF context EMA overlays (`workbench-chart-htf-context-overlays`) on a variant with `strategy.contexts`.
+  - Existing HTF workbench test still passes; aux overlay path unchanged.
+- [x] 5.9 Run frontend verification (`cd frontend; npm run build` and relevant tests).
 - [ ] 5.10 STOP FOR REVIEW: report variant-switch behavior and wait for user approval before archive or before creating a separate OpenSpec for sparse/materialized chart events.
 
 ## 6. Future Work — Sparse / Materialized Chart Events

@@ -113,12 +113,16 @@ import {
 } from "@/features/chart/tradeLookup";
 import { hasTradeManagementEvents } from "@/features/chart/tradeManagementChartEvents";
 import {
-  buildMarketCacheKey,
-  getMarketCache,
-  hasMarketCache,
-  setMarketCacheIfAbsent,
-  type MarketCacheKey,
-} from "@/features/chart/marketDataCache";
+  buildMarketFetchKey,
+  buildRunMarketViewIdentity,
+  composePartialRunMarketBundle,
+  getMissingMarketResources,
+  isRunMarketViewReady,
+  resolveRunMarketView,
+  seedChartBundleIntoResourceCaches,
+  type RunMarketView,
+  type RunMarketViewIdentity,
+} from "@/features/chart/runMarketView";
 import {
   decideSignalTraceLoad,
   lanesSignalTraceError as deriveLanesSignalTraceError,
@@ -383,7 +387,9 @@ export function WorkbenchProvider({
   const [reportError, setReportError] = useState<string | null>(null);
   const [marketLoadStatus, setMarketLoadStatus] = useState<MarketLoadStatus>("idle");
   const [marketError, setMarketError] = useState<string | null>(null);
-  const [marketCacheKey, setMarketCacheKey] = useState<MarketCacheKey | null>(null);
+  const [runMarketViewIdentity, setRunMarketViewIdentity] = useState<RunMarketViewIdentity | null>(
+    null,
+  );
   const [auxEmaOverlays, setAuxEmaOverlays] = useState<ChartAuxEmaOverlay[]>([]);
   const signalTraceDisplayCacheRef = useRef(createSignalTraceDisplayCache());
   const signalTraceBundleSessionCacheRef = useRef(createSignalTraceBundleSessionCache());
@@ -426,8 +432,8 @@ export function WorkbenchProvider({
   const prevRunIdForTradeBootstrapRef = useRef<string | null>(null);
   const selectedVariantKeyRef = useRef("");
   const marketLoadGenRef = useRef(0);
-  const intendedMarketCacheKeyRef = useRef<MarketCacheKey | null>(null);
-  const marketFetchInFlightKeyRef = useRef<MarketCacheKey | null>(null);
+  const intendedRunMarketViewIdentityRef = useRef<RunMarketViewIdentity | null>(null);
+  const marketFetchInFlightKeyRef = useRef<string | null>(null);
   const applyWindowCommitRef = useRef<(commit: WindowCommitResult) => void>(() => {});
   const windowSwapTransactionIdRef = useRef(0);
   const windowSwapCancelledThroughIdRef = useRef(0);
@@ -562,7 +568,7 @@ export function WorkbenchProvider({
       setReportError(null);
       setMarketError(null);
       setMarketLoadStatus("idle");
-      setMarketCacheKey(null);
+      setRunMarketViewIdentity(null);
       try {
         const loaded = await fetchRunReport(runId);
         if (cancelled) return;
@@ -695,52 +701,74 @@ export function WorkbenchProvider({
     const abortController = new AbortController();
 
     let periods: AnchorStackPeriods;
+    let view: RunMarketView;
     try {
       periods = anchorStackPeriodsFromStrategySpec(variant.strategy_spec);
+      view = resolveRunMarketView({
+        report: snapshot,
+        chartTimeframe,
+        variant,
+        reloadToken,
+      });
     } catch (err) {
       const message =
         err instanceof AnchorStackParseError
           ? err.message
           : "Invalid strategy_spec.anchor_stack in run report";
       setMarketError(message);
-      setMarketCacheKey(null);
+      setRunMarketViewIdentity(null);
       setMarketLoadStatus("error");
       return;
     }
 
-    const key = buildMarketCacheKey(
-      snapshot,
-      chartTimeframe,
-      variant.variant,
-      periods,
-      reloadToken,
-    );
-
+    const viewIdentity = buildRunMarketViewIdentity(view);
+    const missing = getMissingMarketResources(view);
+    const fetchKey = buildMarketFetchKey(view, missing);
     const loadGen = ++marketLoadGenRef.current;
-    intendedMarketCacheKeyRef.current = key;
+    intendedRunMarketViewIdentityRef.current = viewIdentity;
 
     async function loadMarket() {
       setMarketError(null);
 
-      if (hasMarketCache(key)) {
-        dbgMark(DBG.load.marketFetchCacheHit, { key });
-        if (marketLoadGenRef.current !== loadGen && intendedMarketCacheKeyRef.current !== key) {
-          dbgMark(DBG.load.marketFetchStaleResponse, { key, phase: "cache_hit" });
+      if (isRunMarketViewReady(view)) {
+        dbgMark(DBG.load.marketFetchCacheHit, {
+          viewIdentity,
+          candlesCached: true,
+          overlaysCached: true,
+        });
+        if (
+          marketLoadGenRef.current !== loadGen &&
+          intendedRunMarketViewIdentityRef.current !== viewIdentity
+        ) {
+          dbgMark(DBG.load.marketFetchStaleResponse, { key: viewIdentity, phase: "cache_hit" });
           return;
         }
-        setMarketCacheKey(key);
+        setRunMarketViewIdentity(viewIdentity);
         setMarketLoadStatus("ready");
         return;
       }
 
-      if (marketFetchInFlightKeyRef.current === key) {
-        dbgMark(DBG.load.marketFetchSkipInFlight, { key });
+      if (!missing.candles) {
+        setRunMarketViewIdentity(viewIdentity);
+        setMarketLoadStatus("ready");
+      } else {
+        setMarketLoadStatus("loading");
+      }
+
+      if (marketFetchInFlightKeyRef.current === fetchKey) {
+        dbgMark(DBG.load.marketFetchSkipInFlight, { key: fetchKey });
         return;
       }
-      dbgMark(DBG.load.marketFetchStart, { key });
-      marketFetchInFlightKeyRef.current = key;
+      dbgMark(DBG.load.marketFetchStart, {
+        key: fetchKey,
+        candlesCached: !missing.candles,
+        missingOverlayCount: missing.overlays.length,
+      });
+      marketFetchInFlightKeyRef.current = fetchKey;
 
-      setMarketLoadStatus("loading");
+      if (missing.candles) {
+        setMarketLoadStatus("loading");
+      }
       const fromMs = snapshot.data_range.from_open_time_ms;
       const toOpenTimeMs = snapshot.data_range.to_open_time_ms;
 
@@ -755,40 +783,45 @@ export function WorkbenchProvider({
           emaSlow: periods.slow,
           signal: abortController.signal,
         });
-        setMarketCacheIfAbsent(key, bundle);
+        seedChartBundleIntoResourceCaches(view, bundle);
         dbgMark(DBG.load.marketFetchEnd, {
-          key,
+          key: fetchKey,
           barCount: bundle.candles.length,
           overlayCount: bundle.ema_overlays.length,
+          candlesCached: !missing.candles,
         });
-        if (marketFetchInFlightKeyRef.current === key) {
+        if (marketFetchInFlightKeyRef.current === fetchKey) {
           marketFetchInFlightKeyRef.current = null;
         }
         const applyToUi =
-          marketLoadGenRef.current === loadGen || intendedMarketCacheKeyRef.current === key;
+          marketLoadGenRef.current === loadGen ||
+          intendedRunMarketViewIdentityRef.current === viewIdentity;
         if (!applyToUi) {
-          dbgMark(DBG.load.marketFetchStaleResponse, { key, phase: "network" });
+          dbgMark(DBG.load.marketFetchStaleResponse, { key: fetchKey, phase: "network" });
           return;
         }
-        setMarketCacheKey(key);
+        setRunMarketViewIdentity(viewIdentity);
         setMarketLoadStatus("ready");
       } catch (err) {
-        if (marketFetchInFlightKeyRef.current === key) {
+        if (marketFetchInFlightKeyRef.current === fetchKey) {
           marketFetchInFlightKeyRef.current = null;
         }
         if (isAbortError(err)) {
           dbgMark(DBG.load.marketFetchAbort, {
-            key,
+            key: fetchKey,
             note: "frontend abort/stale-response protection; backend CPU work may continue",
           });
           return;
         }
-        if (marketLoadGenRef.current !== loadGen && intendedMarketCacheKeyRef.current !== key) {
-          dbgMark(DBG.load.marketFetchStaleResponse, { key, phase: "error" });
+        if (
+          marketLoadGenRef.current !== loadGen &&
+          intendedRunMarketViewIdentityRef.current !== viewIdentity
+        ) {
+          dbgMark(DBG.load.marketFetchStaleResponse, { key: fetchKey, phase: "error" });
           return;
         }
         setMarketError(marketErrorMessage(err));
-        setMarketCacheKey(null);
+        setRunMarketViewIdentity(null);
         setMarketLoadStatus("error");
       }
     }
@@ -796,7 +829,7 @@ export function WorkbenchProvider({
     void loadMarket();
     return () => {
       abortController.abort();
-      if (marketFetchInFlightKeyRef.current === key) {
+      if (marketFetchInFlightKeyRef.current === fetchKey) {
         marketFetchInFlightKeyRef.current = null;
       }
       marketLoadGenRef.current += 1;
@@ -856,7 +889,29 @@ export function WorkbenchProvider({
   const selectedTradeEntryTimeMs = selectedTradeResolution.entryTimeMs;
   const chartTradeFocusWarning = selectedTradeResolution.warning;
 
-  const cachedBundle = marketCacheKey !== null ? getMarketCache(marketCacheKey) : undefined;
+  const intendedRunMarketView = useMemo((): RunMarketView | null => {
+    if (report === null || selectedVariant === null) return null;
+    try {
+      return resolveRunMarketView({
+        report,
+        chartTimeframe,
+        variant: selectedVariant,
+        reloadToken,
+      });
+    } catch {
+      return null;
+    }
+  }, [report, selectedVariant, chartTimeframe, reloadToken]);
+
+  const intendedRunMarketViewIdentity = useMemo((): RunMarketViewIdentity | null => {
+    if (intendedRunMarketView === null) return null;
+    return buildRunMarketViewIdentity(intendedRunMarketView);
+  }, [intendedRunMarketView]);
+
+  const cachedBundle =
+    intendedRunMarketView !== null
+      ? composePartialRunMarketBundle(intendedRunMarketView) ?? undefined
+      : undefined;
 
   useEffect(() => {
     if (marketLoadStatus === "ready" && cachedBundle !== undefined) {
@@ -958,7 +1013,7 @@ export function WorkbenchProvider({
     marketLoadStatus,
     selectedRunId,
     selectedVariantKey,
-    marketCacheKey,
+    runMarketViewIdentity,
     // eslint-disable-next-line react-hooks/exhaustive-deps -- reset only on run/variant/bundle identity
   ]);
 
@@ -996,22 +1051,6 @@ export function WorkbenchProvider({
     [emitChartViewportCommand],
   );
 
-  const intendedMarketCacheKey = useMemo((): MarketCacheKey | null => {
-    if (report === null || selectedVariant === null) return null;
-    try {
-      const periods = anchorStackPeriodsFromStrategySpec(selectedVariant.strategy_spec);
-      return buildMarketCacheKey(
-        report,
-        chartTimeframe,
-        selectedVariant.variant,
-        periods,
-        reloadToken,
-      );
-    } catch {
-      return null;
-    }
-  }, [report, selectedVariant, chartTimeframe, reloadToken]);
-
   const chartWindowSlice = useMemo(() => {
     if (!cachedBundle || marketLoadStatus === "error") {
       return {
@@ -1030,9 +1069,7 @@ export function WorkbenchProvider({
       () => {
         const manager = renderWindowManager();
         manager.setFullLength(cachedBundle.candles.length);
-        const intendedBundle =
-          intendedMarketCacheKey !== null ? getMarketCache(intendedMarketCacheKey) : undefined;
-        const anchorEmaOverlays = intendedBundle?.ema_overlays ?? [];
+        const anchorEmaOverlays = cachedBundle.ema_overlays;
         const rawCandles = manager.sliceCandles(cachedBundle.candles);
         const rawEma = manager.sliceEmaOverlays(anchorEmaOverlays, cachedBundle.candles);
         const rawAux = manager.sliceAuxOverlays(auxEmaOverlays, cachedBundle.candles);
@@ -1045,7 +1082,7 @@ export function WorkbenchProvider({
         const emaStabilizeKey = buildEmaOverlaysStabilizeKey(
           boundsKey,
           rawEma,
-          intendedMarketCacheKey ?? "",
+          intendedRunMarketViewIdentity ?? "",
         );
         const auxStabilizeKey = buildAuxOverlaysStabilizeKey(boundsKey, rawAux);
         return {
@@ -1064,8 +1101,8 @@ export function WorkbenchProvider({
     cachedBundle,
     marketLoadStatus,
     auxEmaOverlays,
-    intendedMarketCacheKey,
-    marketCacheKey,
+    intendedRunMarketViewIdentity,
+    runMarketViewIdentity,
     renderWindowRevision,
   ]);
 
@@ -1098,18 +1135,18 @@ export function WorkbenchProvider({
   }, [chartView.mode, chartView.centerTimeSec]);
 
   useEffect(() => {
-    intendedMarketCacheKeyRef.current = intendedMarketCacheKey;
-  }, [intendedMarketCacheKey]);
+    intendedRunMarketViewIdentityRef.current = intendedRunMarketViewIdentity;
+  }, [intendedRunMarketViewIdentity]);
 
   useEffect(() => {
-    if (intendedMarketCacheKey === null) return;
-    if (!hasMarketCache(intendedMarketCacheKey)) return;
-    if (marketCacheKey === intendedMarketCacheKey && marketLoadStatus === "ready") {
+    if (intendedRunMarketViewIdentity === null) return;
+    if (!isRunMarketViewReady(intendedRunMarketView!)) return;
+    if (runMarketViewIdentity === intendedRunMarketViewIdentity && marketLoadStatus === "ready") {
       return;
     }
-    setMarketCacheKey(intendedMarketCacheKey);
+    setRunMarketViewIdentity(intendedRunMarketViewIdentity);
     setMarketLoadStatus("ready");
-  }, [intendedMarketCacheKey, marketCacheKey, marketLoadStatus]);
+  }, [intendedRunMarketView, intendedRunMarketViewIdentity, runMarketViewIdentity, marketLoadStatus]);
 
   const contextOverlayRefOptions = useMemo(() => {
     if (!selectedVariant) return [];
@@ -1472,15 +1509,15 @@ export function WorkbenchProvider({
       selectedVariantKey,
       effectiveContextOverlayRef,
       reloadToken,
-      intendedMarketCacheKey ?? marketCacheKey,
+      intendedRunMarketViewIdentity ?? runMarketViewIdentity,
     );
   }, [
     selectedRunId,
     selectedVariantKey,
     effectiveContextOverlayRef,
     reloadToken,
-    intendedMarketCacheKey,
-    marketCacheKey,
+    intendedRunMarketViewIdentity,
+    runMarketViewIdentity,
   ]);
 
   useEffect(() => {

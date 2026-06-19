@@ -73,7 +73,7 @@ Alternative considered: go directly to normalized chunk fetch. Rejected because 
 The implementation must keep two identities separate:
 
 - `traceRequestKey` identifies the real network request sent to `/signal-trace`.
-- `traceDisplayChunkKey` identifies a frontend display/cache chunk used for coverage planning and display reuse.
+- `traceDisplayChunkKey` identifies a normalized display chunk for planning/debug. `SignalTraceDisplayCache` coverage remains interval-based and is not addressed by `traceDisplayChunkKey` in PR 4.
 
 In PR 1, only `traceRequestKey` is relevant and it must reflect actual network request parameters. PR 4 may introduce `traceDisplayChunkKey`. If PR 4 sends normalized bounds to `/signal-trace`, then `traceRequestKey` may include those normalized bounds because they are the real network request. If normalized chunks are only a frontend planning concept, they must not replace the network request key.
 
