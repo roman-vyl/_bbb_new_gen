@@ -17,8 +17,6 @@ import {
   fetchConfigState,
   fetchRunReport,
   fetchRunSummaries,
-  fetchChartEvents,
-  fetchSignalTrace,
   selectSavedConfig,
 } from "@/api/client";
 import {
@@ -55,10 +53,7 @@ import {
 } from "@/features/chart/runtime/traceDisplayOrchestrator";
 import {
   buildDisplayTraceRequestKey,
-  chartEventsFallbackReasonFromError,
   isChartEventsApiEnabled,
-  noteChartEventsFlagDisabledOnce,
-  type ChartEventsMergeSource,
 } from "@/features/chart/runtime/chartEventsLoad";
 import {
   buildTraceRequestKey,
@@ -68,6 +63,12 @@ import {
   buildTraceDisplayChunkKey,
   planMissingTraceDisplayChunkFetch,
 } from "@/features/chart/runtime/traceDisplayChunkScheduling";
+import {
+  flushLanesLoadDebug,
+  loadDenseLanesTrace,
+  loadDisplayTraceChunk,
+  mergeDisplayFromDenseFallback,
+} from "@/features/chart/runtime/workbenchTraceNetworkLoad";
 import { canEmitTradeFocus } from "@/features/chart/runtime/viewportController";
 import type { ChartInteractionEvent, ViewportCommand } from "@/features/chart/runtime/types";
 import {
@@ -102,11 +103,7 @@ import {
 import {
   buildTraceDisplayCacheKey,
   createSignalTraceDisplayCache,
-  computeChunkBoundsFromResponse,
-  computeChunkBoundsFromChartEvents,
-  isTraceResponseTruncated,
   mergeDisplayChunkFromResponse,
-  mergeDisplayChunkFromChartEvents,
 } from "@/features/chart/signalTraceDisplayCache";
 import {
   deriveTraceDisplayStateForCandles,
@@ -145,7 +142,6 @@ import {
 } from "@/shared/context/signalTraceLoadPolicy";
 import { evaluateSignalTraceBootstrap } from "@/shared/context/signalTraceBootstrap";
 import {
-  dbgFlush,
   dbgMark,
   dbgScheduleShiftFlush,
   dbgTimedSync,
@@ -2132,10 +2128,6 @@ export function WorkbenchProvider({
         fromSec: Math.floor(fromMs / 1000),
         toSec: Math.floor(toOpenTimeMs / 1000),
       };
-      let displayMerged = lanesOnlyFetch;
-      let mergeSource: ChartEventsMergeSource = lanesOnlyFetch
-        ? "chart-events"
-        : "signal-trace-fallback";
 
       const commitDisplayAfterMerge = () => {
         coordinator.markMerged(displayRequestKey, "network");
@@ -2143,170 +2135,66 @@ export function WorkbenchProvider({
         finalizeTraceDisplayUpdate();
       };
 
-      const denseResponseCurrent = () =>
-        coordinator.isResponseCurrent(networkCoordinatorKey, fetchGeneration);
-
-      if (!chartEventsEnabled) {
-        noteChartEventsFlagDisabledOnce();
-      }
-
-      if (chartEventsEnabled && !lanesOnlyFetch) {
-        try {
-          const chartBundle = await fetchChartEvents({
-            runId,
-            variant: variantKey,
-            fromMs,
-            toOpenTimeMs,
-            contextOverlayRef: effectiveContextOverlayRef,
-            signal: abortController.signal,
-          });
-          if (!coordinator.isResponseCurrent(displayRequestKey, fetchGeneration)) {
-            dbgMark(DBG.signalTrace.fetchStaleResponse, {
-              windowKey,
-              traceRequestKey: displayRequestKey,
-              phase: "chart_events_response",
-            });
-            return;
-          }
-          const actualBounds = computeChunkBoundsFromChartEvents(chartBundle);
-          const truncated =
-            chartBundle.coverage.truncated ||
-            isTraceResponseTruncated(requestedBounds, actualBounds);
-          dbgTimedSync(
-            DBG.traceDisplay.mergeChunk,
-            () => {
-              mergeDisplayChunkFromChartEvents(signalTraceDisplayCacheRef.current, chartBundle);
-            },
-            () => ({
-              eventCount: chartBundle.component_events?.length ?? 0,
-              timeCount: chartBundle.times.length,
-              source: "chart-events",
-            }),
-          );
-          displayMerged = true;
-          mergeSource = "chart-events";
-          dbgMark(DBG.chartEvents.merge, {
-            windowKey,
-            traceRequestKey: displayRequestKey,
-            source: mergeSource,
-            truncated,
-            requested: requestedBounds,
-            actual: actualBounds,
-          });
-          commitDisplayAfterMerge();
-        } catch (chartErr) {
-          if (isAbortError(chartErr)) {
-            dbgMark(DBG.signalTrace.fetchAbort, {
-              windowKey,
-              traceRequestKey: displayRequestKey,
-              note: "chart-events fetch aborted",
-            });
-            return;
-          }
-          dbgMark(DBG.chartEvents.fetchFail, {
-            windowKey,
-            traceRequestKey: displayRequestKey,
-            status: chartErr instanceof ApiError ? chartErr.status : undefined,
-            detail:
-              chartErr instanceof ApiError
-                ? chartErr.detail
-                : chartErr instanceof Error
-                  ? chartErr.message
-                  : String(chartErr),
-          });
-          dbgMark(DBG.chartEvents.fallback, {
-            reason: chartEventsFallbackReasonFromError(chartErr),
-          });
-        }
-      }
-
-      try {
-        const bundle = await fetchSignalTrace({
+      const networkCtx = {
+        params: {
           runId,
           variant: variantKey,
           fromMs,
           toOpenTimeMs,
           contextOverlayRef: effectiveContextOverlayRef,
-          signal: abortController.signal,
-        });
-        if (!denseResponseCurrent()) {
-          dbgMark(DBG.signalTrace.fetchStaleResponse, {
-            windowKey,
-            traceRequestKey: networkCoordinatorKey,
-            phase: "response",
-          });
-          return;
-        }
-        dbgMark(DBG.signalTrace.fetchEnd, {
           windowKey,
-          traceRequestKey: networkCoordinatorKey,
-          timeCount: bundle.times.length,
-          eventCount: bundle.component_events?.length ?? 0,
-          lanesFetch: chartEventsEnabled,
-        });
+          displayRequestKey,
+          networkCoordinatorKey,
+          fetchGeneration,
+          signal: abortController.signal,
+          lanesOnlyFetch,
+        },
+        cache: signalTraceDisplayCacheRef.current,
+        coordinator,
+        requestedBounds,
+        onCommitDisplay: commitDisplayAfterMerge,
+      };
 
-        if (!displayMerged) {
-          const actualBounds = computeChunkBoundsFromResponse(bundle);
-          const truncated = isTraceResponseTruncated(requestedBounds, actualBounds);
-          dbgTimedSync(
-            DBG.traceDisplay.mergeChunk,
-            () => {
-              mergeDisplayChunkFromResponse(signalTraceDisplayCacheRef.current, bundle);
-            },
-            () => ({
-              eventCount: bundle.component_events?.length ?? 0,
-              timeCount: bundle.times.length,
-              source: mergeSource,
-            }),
-          );
-          if (chartEventsEnabled) {
-            dbgMark(DBG.chartEvents.merge, {
-              windowKey,
-              traceRequestKey: displayRequestKey,
-              source: mergeSource,
-              truncated,
-              requested: requestedBounds,
-              actual: actualBounds,
-            });
-          } else {
-            dbgMark("wb.signal_trace_merge", {
-              windowKey,
-              traceRequestKey: displayRequestKey,
-              truncated,
-              requested: requestedBounds,
-              actual: actualBounds,
-            });
+      const displayResult = await loadDisplayTraceChunk(networkCtx);
+      if (displayResult.outcome === "aborted" || displayResult.outcome === "stale") {
+        return;
+      }
+
+      let displayMerged =
+        displayResult.outcome === "committed"
+          ? true
+          : displayResult.displayMerged;
+      let mergeSource =
+        displayResult.outcome === "committed"
+          ? displayResult.mergeSource
+          : displayResult.mergeSource;
+
+      try {
+        const lanesResult = await loadDenseLanesTrace(networkCtx);
+        if (lanesResult.outcome === "aborted" || lanesResult.outcome === "stale") {
+          return;
+        }
+
+        if (lanesResult.outcome === "error") {
+          const err = lanesResult.error;
+          if (displayMerged) {
+            setSignalTrace(null);
+            setLoadedSignalTraceWindowKey(windowKey);
+            loadedSignalTraceWindowKeyRef.current = windowKey;
+            setSignalTraceStatus("error");
+            signalTraceStatusRef.current = "error";
+            setSignalTraceError(
+              err instanceof ApiError
+                ? err.detail
+                : err instanceof Error
+                  ? err.message
+                  : "Failed to load signal trace.",
+            );
+            finalizeTraceDisplayUpdate();
+            return;
           }
-          commitDisplayAfterMerge();
-        }
 
-        coordinator.markMerged(networkCoordinatorKey, "network");
-        setSignalTrace(bundle);
-        setLoadedSignalTraceWindowKey(windowKey);
-        loadedSignalTraceWindowKeyRef.current = windowKey;
-        setSignalTraceStatus("ready");
-        signalTraceStatusRef.current = "ready";
-        signalTraceBundleSessionCacheRef.current.set(windowKey, bundle);
-        dbgFlush("workbench-after-signal-trace");
-      } catch (err) {
-        if (isAbortError(err)) {
-          dbgMark(DBG.signalTrace.fetchAbort, {
-            windowKey,
-            traceRequestKey: displayRequestKey,
-            note: "frontend abort/stale-response protection; backend CPU work may continue",
-          });
-          return;
-        }
-        if (!denseResponseCurrent()) {
-          dbgMark(DBG.signalTrace.fetchStaleResponse, {
-            windowKey,
-            traceRequestKey: networkCoordinatorKey,
-            phase: "error",
-          });
-          return;
-        }
-
-        if (displayMerged) {
+          coordinator.markFailed(networkCoordinatorKey);
           setSignalTrace(null);
           setLoadedSignalTraceWindowKey(windowKey);
           loadedSignalTraceWindowKeyRef.current = windowKey;
@@ -2319,23 +2207,27 @@ export function WorkbenchProvider({
                 ? err.message
                 : "Failed to load signal trace.",
           );
-          finalizeTraceDisplayUpdate();
           return;
         }
 
-        coordinator.markFailed(networkCoordinatorKey);
-        setSignalTrace(null);
+        const bundle = lanesResult.bundle;
+        if (!displayMerged) {
+          mergeDisplayFromDenseFallback({
+            ...networkCtx,
+            bundle,
+            mergeSource,
+          });
+          displayMerged = true;
+        }
+
+        coordinator.markMerged(networkCoordinatorKey, "network");
+        setSignalTrace(bundle);
         setLoadedSignalTraceWindowKey(windowKey);
         loadedSignalTraceWindowKeyRef.current = windowKey;
-        setSignalTraceStatus("error");
-        signalTraceStatusRef.current = "error";
-        setSignalTraceError(
-          err instanceof ApiError
-            ? err.detail
-            : err instanceof Error
-              ? err.message
-              : "Failed to load signal trace.",
-        );
+        setSignalTraceStatus("ready");
+        signalTraceStatusRef.current = "ready";
+        signalTraceBundleSessionCacheRef.current.set(windowKey, bundle);
+        flushLanesLoadDebug();
       } finally {
         coordinator.clearInFlight(networkCoordinatorKey, fetchGeneration);
         if (chartEventsEnabled && !lanesOnlyFetch) {

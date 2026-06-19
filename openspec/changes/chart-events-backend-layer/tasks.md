@@ -40,8 +40,9 @@ Scope: change **display fetch source only**. Do not refactor lanes, bar inspecto
 - [x] 5A.6 Add client tests for chart-events query params and request key parity
 - [x] 5A.7 **Keep lanes path unchanged:** existing `fetchSignalTrace` + `setSignalTrace` + session cache behavior stays as today (interim double-fetch when flag on is OK)
 - [x] 5A.7b **Display commit decoupled:** after chart-events merge → `markMerged` + `displayApplyRevision` + `finalizeTraceDisplayUpdate` before dense trace; lanes failure must not rollback display
+- [x] 5A.7c **Minimal seam extract:** `workbenchTraceNetworkLoad.ts` (`loadDisplayTraceChunk`, `loadDenseLanesTrace`, `mergeDisplayFromDenseFallback`); single orchestration flow in `WorkbenchContext`
 - [ ] 5A.8 **Verify HTF context EMA overlays** on variant with `strategy.contexts` (manual + distant trade navigation)
-- [ ] 5A.9 **STOP FOR REVIEW:** markers + HTF from chart-events; lanes/inspector still work via unchanged dense path; fallback debug visible; wait for approval before 5B
+- [ ] 5A.9 **STOP FOR REVIEW:** markers + HTF from chart-events; lanes/inspector still work via unchanged dense path; fallback debug visible; seam extract reviewed; wait for approval before 5B
 
 ## 5B. Phase 5B — Lazy dense trace for lanes (only after 5A approved)
 
