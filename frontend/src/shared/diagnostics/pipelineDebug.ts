@@ -25,6 +25,13 @@ export const PIPELINE_DEBUG_STEPS = {
   load: {
     reportReady: "wb.load.report_ready",
     marketBundleReady: "wb.load.market_bundle_ready",
+    marketFetchStart: "wb.market_fetch.start",
+    marketFetchEnd: "wb.market_fetch.end",
+    marketFetchCacheHit: "wb.market_fetch.cache_hit",
+    marketFetchSkipInFlight: "wb.market_fetch.skip_in_flight",
+    marketFetchAbort: "wb.market_fetch.abort_frontend",
+    marketFetchStaleResponse: "wb.market_fetch.stale_response",
+    chartHeavyIoBlocked: "wb.chart_heavy_io.blocked_until_activation",
     renderWindowInit: "wb.render_window.init",
   },
   renderWindow: {
@@ -47,6 +54,9 @@ export const PIPELINE_DEBUG_STEPS = {
     bootstrapReady: "wb.signal_trace.bootstrap_ready",
     bootstrapBlocked: "wb.signal_trace.bootstrap_blocked",
     fetchStart: "wb.signal_trace.fetch_start",
+    fetchEnd: "wb.signal_trace.fetch_end",
+    fetchAbort: "wb.signal_trace.fetch_abort_frontend",
+    fetchStaleResponse: "wb.signal_trace.fetch_stale_response",
     decision: "wb.signal_trace_decision",
   },
   traceDisplay: {
@@ -58,6 +68,7 @@ export const PIPELINE_DEBUG_STEPS = {
     sliceEvents: "wb.trace_display.slice_events",
     sliceHtf: "wb.trace_display.slice_htf",
     fetchSuperseded: "wb.trace_display.fetch_superseded",
+    coverage: "wb.trace_display.coverage",
   },
   chart: {
     setDataCandles: "chart.setData.candles",
@@ -205,7 +216,7 @@ const PIPELINE_DEBUG_FAQ_LINES = [
   "1. Сделайте сценарий в Workbench (Chart: run, trade, pan, дождаться events/HTF).",
   "2. Перед сценарием (опционально):  __pipelineDebugReset()",
   "3. Таблица таймингов:            __pipelineDebugFlush(\"имя-сценария\")",
-  "   Примеры имён: select-trade | pan-safe-zone | pan-window-shift | pan-cached-trace",
+  "   Примеры имён: cold-chart-open | tab-switch-chart | long-pan-boundary | distant-trade-navigation",
   "4. Сохранить JSON:               copy(JSON.stringify(__pipelineDebugExport(), null, 2))",
   "   Вставить в файл: debug/reports/workbench-<имя>.json",
   "5. Живые логи по ходу: фильтр консоли [pipeline]",

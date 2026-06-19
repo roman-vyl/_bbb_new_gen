@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { fetchSignalTrace } from "@/api/client";
+import { fetchChartMarketBundle, fetchSignalTrace } from "@/api/client";
 import {
   buildSignalTraceUrlPath,
   buildTraceRequestKey,
@@ -60,6 +60,73 @@ describe("fetchSignalTrace query params", () => {
     expect(fetchMock).toHaveBeenCalledOnce();
     const url = String(fetchMock.mock.calls[0]![0]);
     expect(url).toContain("context_overlay_ref=ctx_a");
+  });
+
+  it("passes AbortSignal to fetchSignalTrace", async () => {
+    const controller = new AbortController();
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => ({
+      ok: true,
+      json: async () => ({
+        times: [],
+        meta: { variant: "v1", component_ids: {}, setup_params: [], blocker_instances: [] },
+        long: {
+          direction_ok: [],
+          blockers_ok: [],
+          setup_ok: [],
+          trigger_ok: [],
+          risk_ok: [],
+          signal_entry: [],
+          stop_ready: [],
+          portfolio_entry: [],
+          internals: {},
+        },
+        short: {
+          direction_ok: [],
+          blockers_ok: [],
+          setup_ok: [],
+          trigger_ok: [],
+          risk_ok: [],
+          signal_entry: [],
+          stop_ready: [],
+          portfolio_entry: [],
+          internals: {},
+        },
+        component_events: [],
+      }),
+    } as Response));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await fetchSignalTrace({
+      runId: "run-1",
+      variant: "v1",
+      fromMs: 1,
+      toOpenTimeMs: 2,
+      signal: controller.signal,
+    });
+
+    expect(fetchMock.mock.calls[0]![1]).toEqual({ signal: controller.signal });
+  });
+
+  it("passes AbortSignal to fetchChartMarketBundle", async () => {
+    const controller = new AbortController();
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => ({
+      ok: true,
+      json: async () => ({ candles: [], ema_overlays: [] }),
+    } as Response));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await fetchChartMarketBundle({
+      symbol: "BTCUSDT",
+      timeframe: "5m",
+      fromMs: 1,
+      toOpenTimeMs: 2,
+      emaFast: 100,
+      emaAnchor: 200,
+      emaSlow: 500,
+      signal: controller.signal,
+    });
+
+    expect(fetchMock.mock.calls[0]![1]).toEqual({ signal: controller.signal });
   });
 
   it("traceRequestKey identifies the same URL resource as fetchSignalTrace", () => {

@@ -3,10 +3,10 @@ import { ComposerPanel } from "@/features/composer/ComposerPanel";
 import { ReportsPanel } from "@/features/reports/ReportsPanel";
 import { AppLayout } from "@/shared/layout/AppLayout";
 import { WorkbenchGate } from "@/shared/layout/WorkbenchGate";
-import { useWorkbench } from "@/shared/context/WorkbenchContext";
+import { useWorkbenchShell } from "@/shared/context/WorkbenchContext";
 
 function ReportBackedTabs() {
-  const { activeTab } = useWorkbench();
+  const { activeTab } = useWorkbenchShell();
 
   return (
     <>
@@ -19,7 +19,7 @@ function ReportBackedTabs() {
 }
 
 function WorkbenchTabs() {
-  const { activeTab } = useWorkbench();
+  const { activeTab } = useWorkbenchShell();
 
   if (activeTab === "composer") {
     return <ComposerPanel />;

@@ -56,6 +56,7 @@ import {
   buildTraceRequestKey,
   createSignalTraceRequestCoordinator,
 } from "@/features/chart/runtime/signalTraceRequestCoordinator";
+import { planMissingTraceDisplayChunkFetch } from "@/features/chart/runtime/traceDisplayChunkScheduling";
 import { canEmitTradeFocus } from "@/features/chart/runtime/viewportController";
 import type { ChartInteractionEvent, ViewportCommand } from "@/features/chart/runtime/types";
 import {
@@ -94,7 +95,11 @@ import {
   isTraceResponseTruncated,
   mergeDisplayChunkFromResponse,
 } from "@/features/chart/signalTraceDisplayCache";
-import { sliceTraceDisplayForCandles } from "@/features/chart/traceDisplayApply";
+import {
+  deriveTraceDisplayStateForCandles,
+  shouldRetainPreviousTraceDisplay,
+  type TraceDisplayState,
+} from "@/features/chart/traceDisplayApply";
 import {
   defaultClosedTradeSelection,
   deriveSelectedVariant,
@@ -108,12 +113,16 @@ import {
 } from "@/features/chart/tradeLookup";
 import { hasTradeManagementEvents } from "@/features/chart/tradeManagementChartEvents";
 import {
-  buildMarketCacheKey,
-  getMarketCache,
-  hasMarketCache,
-  setMarketCacheIfAbsent,
-  type MarketCacheKey,
-} from "@/features/chart/marketDataCache";
+  buildMarketFetchKey,
+  buildRunMarketViewIdentity,
+  composePartialRunMarketBundle,
+  getMissingMarketResources,
+  isRunMarketViewReady,
+  resolveRunMarketView,
+  seedChartBundleIntoResourceCaches,
+  type RunMarketView,
+  type RunMarketViewIdentity,
+} from "@/features/chart/runMarketView";
 import {
   decideSignalTraceLoad,
   lanesSignalTraceError as deriveLanesSignalTraceError,
@@ -218,7 +227,119 @@ type WorkbenchState = {
   settleWindowSwapCommit: (shiftSeq: number, swapTransactionId: number) => void;
 };
 
-const WorkbenchContext = createContext<WorkbenchState | null>(null);
+type WorkbenchShellState = Pick<
+  WorkbenchState,
+  | "activeTab"
+  | "setActiveTab"
+  | "reportLoadStatus"
+  | "reportError"
+  | "reloadReport"
+>;
+
+type WorkbenchReportState = Pick<
+  WorkbenchState,
+  | "symbol"
+  | "timeframe"
+  | "report"
+  | "runs"
+  | "selectedRunId"
+  | "setSelectedRunId"
+  | "selectedVariantKey"
+  | "setSelectedVariantKey"
+  | "selectedTradeId"
+  | "selectTrade"
+  | "selectedVariant"
+  | "candlesSource"
+>;
+
+type WorkbenchComposerState = Pick<
+  WorkbenchState,
+  | "configDraft"
+  | "setConfigDraft"
+  | "configLoadStatus"
+  | "configLoadError"
+  | "configList"
+  | "selectedConfigPath"
+  | "reloadConfig"
+  | "selectConfig"
+  | "createNewConfig"
+  | "refreshRunsAndSelectRun"
+  | "setActiveTab"
+>;
+
+type WorkbenchChartState = Pick<
+  WorkbenchState,
+  | "marketLoadStatus"
+  | "marketError"
+  | "chartViewModel"
+  | "chartCandles"
+  | "chartEmaOverlays"
+  | "chartAuxEmaOverlays"
+  | "chartDisplayAuxEmaOverlays"
+  | "htfAuxEmaOverlayStale"
+  | "chartDisplayComponentEvents"
+  | "componentEventsStale"
+  | "displayApplyRevision"
+  | "renderWindowShiftSeq"
+  | "chartShowEntryBlockMarkers"
+  | "setChartShowEntryBlockMarkers"
+  | "chartShowExitSignalMarkers"
+  | "setChartShowExitSignalMarkers"
+  | "chartShowSetupMarkers"
+  | "setChartShowSetupMarkers"
+  | "chartShowTradeManagementPhaseMarkers"
+  | "setChartShowTradeManagementPhaseMarkers"
+  | "chartShowTradeManagementExitMarkers"
+  | "setChartShowTradeManagementExitMarkers"
+  | "chartTimeframe"
+  | "reportTimeframe"
+  | "timeframeMismatch"
+  | "chartViewMode"
+  | "chartViewCenterTimeSec"
+  | "chartViewFirstTimeSec"
+  | "chartViewLastTimeSec"
+  | "chartViewCount"
+  | "chartTradeFocusWarning"
+  | "marketCandlesCount"
+  | "fullCandleRange"
+  | "candlesSource"
+  | "selectedVariant"
+  | "selectedTradeId"
+  | "selectTrade"
+  | "signalTrace"
+  | "signalTraceStatus"
+  | "lanesSignalTrace"
+  | "lanesSignalTraceStatus"
+  | "lanesSignalTraceError"
+  | "signalTraceError"
+  | "contextOverlayRef"
+  | "setContextOverlayRef"
+  | "effectiveContextOverlayRef"
+  | "contextOverlayRefOptions"
+  | "selectedBarTimeSec"
+  | "selectBar"
+  | "dispatchChartInteraction"
+  | "chartViewportCommand"
+  | "chartViewportCommandSeq"
+  | "acknowledgeChartViewportCommand"
+  | "isWindowSwapTransactionCancelled"
+  | "settleWindowSwapCommit"
+>;
+
+const WorkbenchShellContext = createContext<WorkbenchShellState | null>(null);
+const WorkbenchReportContext = createContext<WorkbenchReportState | null>(null);
+const WorkbenchComposerContext = createContext<WorkbenchComposerState | null>(null);
+const WorkbenchChartContext = createContext<WorkbenchChartState | null>(null);
+
+const EMPTY_TRACE_DISPLAY_STATE: TraceDisplayState = {
+  status: "empty",
+  fromSec: 0,
+  toSec: 0,
+  events: [],
+  htfSlice: { times: [], htf_context: undefined },
+  coveredRanges: [],
+  missingRange: null,
+};
 
 const EMPTY_RUNS_HINT =
   "No research runs found. Run a backtest from Strategy Composer or locally, e.g. " +
@@ -243,8 +364,19 @@ function marketErrorMessage(err: unknown): string {
   return "Failed to load market data.";
 }
 
-export function WorkbenchProvider({ children }: { children: ReactNode }) {
-  const [activeTab, setActiveTab] = useState<WorkbenchTab>("chart");
+function isAbortError(err: unknown): boolean {
+  return err instanceof Error && err.name === "AbortError";
+}
+
+export function WorkbenchProvider({
+  children,
+  initialActiveTab = "chart",
+}: {
+  children: ReactNode;
+  initialActiveTab?: WorkbenchTab;
+}) {
+  const [activeTab, setActiveTab] = useState<WorkbenchTab>(initialActiveTab);
+  const [hasChartEverActivated, setHasChartEverActivated] = useState(false);
   const [configDraft, setConfigDraft] = useState<StrategyConfigDraft | null>(null);
   const [configLoadStatus, setConfigLoadStatus] = useState<ConfigLoadStatus>("loading");
   const [configLoadError, setConfigLoadError] = useState<string | null>(null);
@@ -255,7 +387,10 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
   const [reportError, setReportError] = useState<string | null>(null);
   const [marketLoadStatus, setMarketLoadStatus] = useState<MarketLoadStatus>("idle");
   const [marketError, setMarketError] = useState<string | null>(null);
-  const [marketCacheKey, setMarketCacheKey] = useState<MarketCacheKey | null>(null);
+  const [runMarketViewIdentity, setRunMarketViewIdentity] = useState<RunMarketViewIdentity | null>(
+    null,
+  );
+  const [marketResourceRevision, setMarketResourceRevision] = useState(0);
   const [auxEmaOverlays, setAuxEmaOverlays] = useState<ChartAuxEmaOverlay[]>([]);
   const signalTraceDisplayCacheRef = useRef(createSignalTraceDisplayCache());
   const signalTraceBundleSessionCacheRef = useRef(createSignalTraceBundleSessionCache());
@@ -263,6 +398,10 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
   const [displayApplyRevision, setDisplayApplyRevision] = useState(0);
   const [renderWindowShiftSeq, setRenderWindowShiftSeq] = useState(0);
   const [chartDisplayComponentEvents, setChartDisplayComponentEvents] = useState<ComponentEvent[]>([]);
+  const chartDisplayComponentEventsRef = useRef<ComponentEvent[]>([]);
+  const [traceDisplayState, setTraceDisplayState] = useState<TraceDisplayState>(
+    EMPTY_TRACE_DISPLAY_STATE,
+  );
   const [chartShowEntryBlockMarkers, setChartShowEntryBlockMarkers] = useState(true);
   const [chartShowExitSignalMarkers, setChartShowExitSignalMarkers] = useState(true);
   const [chartShowSetupMarkers, setChartShowSetupMarkers] = useState(true);
@@ -294,8 +433,8 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
   const prevRunIdForTradeBootstrapRef = useRef<string | null>(null);
   const selectedVariantKeyRef = useRef("");
   const marketLoadGenRef = useRef(0);
-  const intendedMarketCacheKeyRef = useRef<MarketCacheKey | null>(null);
-  const marketFetchInFlightKeyRef = useRef<MarketCacheKey | null>(null);
+  const intendedRunMarketViewIdentityRef = useRef<RunMarketViewIdentity | null>(null);
+  const marketFetchInFlightKeyRef = useRef<string | null>(null);
   const applyWindowCommitRef = useRef<(commit: WindowCommitResult) => void>(() => {});
   const windowSwapTransactionIdRef = useRef(0);
   const windowSwapCancelledThroughIdRef = useRef(0);
@@ -320,6 +459,14 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
   const skipTradeWindowRebuildRef = useRef(false);
   const renderWindowShiftSeqRef = useRef(0);
   const chartViewCandlesRef = useRef<ChartBar[]>([]);
+
+  useEffect(() => {
+    if (activeTab === "chart") {
+      setHasChartEverActivated(true);
+    }
+  }, [activeTab]);
+
+  const chartHeavyIoEnabled = activeTab === "chart" || hasChartEverActivated;
 
   useEffect(() => {
     selectedVariantKeyRef.current = selectedVariantKey;
@@ -422,7 +569,8 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       setReportError(null);
       setMarketError(null);
       setMarketLoadStatus("idle");
-      setMarketCacheKey(null);
+      setRunMarketViewIdentity(null);
+      setMarketResourceRevision(0);
       try {
         const loaded = await fetchRunReport(runId);
         if (cancelled) return;
@@ -540,59 +688,93 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     applyTradeFocusSelection(selectedVariant.trade_records);
   }, [selectedVariant, selectedTradeId, selectedVariantKey, applyTradeFocusSelection]);
 
+  const bumpMarketResourceRevision = useCallback(() => {
+    setMarketResourceRevision((revision) => revision + 1);
+  }, []);
+
   useEffect(() => {
     if (report === null || reportLoadStatus !== "ready" || selectedVariant === null) {
       return;
     }
+    if (!chartHeavyIoEnabled) {
+      dbgMark(DBG.load.chartHeavyIoBlocked, {
+        source: "market",
+      });
+      return;
+    }
     const snapshot: RunReport = report;
     const variant = selectedVariant;
+    const abortController = new AbortController();
 
     let periods: AnchorStackPeriods;
+    let view: RunMarketView;
     try {
       periods = anchorStackPeriodsFromStrategySpec(variant.strategy_spec);
+      view = resolveRunMarketView({
+        report: snapshot,
+        chartTimeframe,
+        variant,
+        reloadToken,
+      });
     } catch (err) {
       const message =
         err instanceof AnchorStackParseError
           ? err.message
           : "Invalid strategy_spec.anchor_stack in run report";
       setMarketError(message);
-      setMarketCacheKey(null);
+      setRunMarketViewIdentity(null);
       setMarketLoadStatus("error");
       return;
     }
 
-    const key = buildMarketCacheKey(
-      snapshot,
-      chartTimeframe,
-      variant.variant,
-      periods,
-      reloadToken,
-    );
-
+    const viewIdentity = buildRunMarketViewIdentity(view);
+    const missing = getMissingMarketResources(view);
+    const fetchKey = buildMarketFetchKey(view, missing);
     const loadGen = ++marketLoadGenRef.current;
-    intendedMarketCacheKeyRef.current = key;
+    intendedRunMarketViewIdentityRef.current = viewIdentity;
 
     async function loadMarket() {
       setMarketError(null);
 
-      if (hasMarketCache(key)) {
-        dbgMark("wb.market_cache_hit", { key });
-        if (marketLoadGenRef.current !== loadGen && intendedMarketCacheKeyRef.current !== key) {
+      if (isRunMarketViewReady(view)) {
+        dbgMark(DBG.load.marketFetchCacheHit, {
+          viewIdentity,
+          candlesCached: true,
+          overlaysCached: true,
+        });
+        if (
+          marketLoadGenRef.current !== loadGen &&
+          intendedRunMarketViewIdentityRef.current !== viewIdentity
+        ) {
+          dbgMark(DBG.load.marketFetchStaleResponse, { key: viewIdentity, phase: "cache_hit" });
           return;
         }
-        setMarketCacheKey(key);
+        setRunMarketViewIdentity(viewIdentity);
         setMarketLoadStatus("ready");
         return;
       }
 
-      if (marketFetchInFlightKeyRef.current === key) {
-        dbgMark("wb.market_fetch_skip_in_flight", { key });
+      if (!missing.candles) {
+        setRunMarketViewIdentity(viewIdentity);
+        setMarketLoadStatus("ready");
+      } else {
+        setMarketLoadStatus("loading");
+      }
+
+      if (marketFetchInFlightKeyRef.current === fetchKey) {
+        dbgMark(DBG.load.marketFetchSkipInFlight, { key: fetchKey });
         return;
       }
-      dbgMark("wb.market_fetch_start", { key });
-      marketFetchInFlightKeyRef.current = key;
+      dbgMark(DBG.load.marketFetchStart, {
+        key: fetchKey,
+        candlesCached: !missing.candles,
+        missingOverlayCount: missing.overlays.length,
+      });
+      marketFetchInFlightKeyRef.current = fetchKey;
 
-      setMarketLoadStatus("loading");
+      if (missing.candles) {
+        setMarketLoadStatus("loading");
+      }
       const fromMs = snapshot.data_range.from_open_time_ms;
       const toOpenTimeMs = snapshot.data_range.to_open_time_ms;
 
@@ -605,36 +787,69 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
           emaFast: periods.fast,
           emaAnchor: periods.anchor,
           emaSlow: periods.slow,
+          signal: abortController.signal,
         });
-        setMarketCacheIfAbsent(key, bundle);
-        if (marketFetchInFlightKeyRef.current === key) {
+        seedChartBundleIntoResourceCaches(view, bundle);
+        bumpMarketResourceRevision();
+        dbgMark(DBG.load.marketFetchEnd, {
+          key: fetchKey,
+          barCount: bundle.candles.length,
+          overlayCount: bundle.ema_overlays.length,
+          candlesCached: !missing.candles,
+        });
+        if (marketFetchInFlightKeyRef.current === fetchKey) {
           marketFetchInFlightKeyRef.current = null;
         }
         const applyToUi =
-          marketLoadGenRef.current === loadGen || intendedMarketCacheKeyRef.current === key;
+          marketLoadGenRef.current === loadGen ||
+          intendedRunMarketViewIdentityRef.current === viewIdentity;
         if (!applyToUi) {
+          dbgMark(DBG.load.marketFetchStaleResponse, { key: fetchKey, phase: "network" });
           return;
         }
-        setMarketCacheKey(key);
+        setRunMarketViewIdentity(viewIdentity);
         setMarketLoadStatus("ready");
       } catch (err) {
-        if (marketFetchInFlightKeyRef.current === key) {
+        if (marketFetchInFlightKeyRef.current === fetchKey) {
           marketFetchInFlightKeyRef.current = null;
         }
-        if (marketLoadGenRef.current !== loadGen && intendedMarketCacheKeyRef.current !== key) {
+        if (isAbortError(err)) {
+          dbgMark(DBG.load.marketFetchAbort, {
+            key: fetchKey,
+            note: "frontend abort/stale-response protection; backend CPU work may continue",
+          });
+          return;
+        }
+        if (
+          marketLoadGenRef.current !== loadGen &&
+          intendedRunMarketViewIdentityRef.current !== viewIdentity
+        ) {
+          dbgMark(DBG.load.marketFetchStaleResponse, { key: fetchKey, phase: "error" });
           return;
         }
         setMarketError(marketErrorMessage(err));
-        setMarketCacheKey(null);
+        setRunMarketViewIdentity(null);
         setMarketLoadStatus("error");
       }
     }
 
     void loadMarket();
     return () => {
+      abortController.abort();
+      if (marketFetchInFlightKeyRef.current === fetchKey) {
+        marketFetchInFlightKeyRef.current = null;
+      }
       marketLoadGenRef.current += 1;
     };
-  }, [report, reportLoadStatus, chartTimeframe, reloadToken, selectedVariantKey]);
+  }, [
+    report,
+    reportLoadStatus,
+    chartTimeframe,
+    reloadToken,
+    selectedVariantKey,
+    chartHeavyIoEnabled,
+    bumpMarketResourceRevision,
+  ]);
 
   const setSelectedRunId = useCallback((runId: string) => {
     setSelectedRunIdState(runId);
@@ -682,7 +897,37 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
   const selectedTradeEntryTimeMs = selectedTradeResolution.entryTimeMs;
   const chartTradeFocusWarning = selectedTradeResolution.warning;
 
-  const cachedBundle = marketCacheKey !== null ? getMarketCache(marketCacheKey) : undefined;
+  const intendedRunMarketView = useMemo((): RunMarketView | null => {
+    if (report === null || selectedVariant === null) return null;
+    try {
+      return resolveRunMarketView({
+        report,
+        chartTimeframe,
+        variant: selectedVariant,
+        reloadToken,
+      });
+    } catch {
+      return null;
+    }
+  }, [report, selectedVariant, chartTimeframe, reloadToken]);
+
+  const intendedRunMarketViewIdentity = useMemo((): RunMarketViewIdentity | null => {
+    if (intendedRunMarketView === null) return null;
+    return buildRunMarketViewIdentity(intendedRunMarketView);
+  }, [intendedRunMarketView]);
+
+  const cachedBundle = useMemo(() => {
+    if (intendedRunMarketView === null || marketLoadStatus === "error") {
+      return undefined;
+    }
+    return composePartialRunMarketBundle(intendedRunMarketView) ?? undefined;
+  }, [
+    intendedRunMarketView,
+    intendedRunMarketViewIdentity,
+    runMarketViewIdentity,
+    marketResourceRevision,
+    marketLoadStatus,
+  ]);
 
   useEffect(() => {
     if (marketLoadStatus === "ready" && cachedBundle !== undefined) {
@@ -784,7 +1029,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     marketLoadStatus,
     selectedRunId,
     selectedVariantKey,
-    marketCacheKey,
+    runMarketViewIdentity,
     // eslint-disable-next-line react-hooks/exhaustive-deps -- reset only on run/variant/bundle identity
   ]);
 
@@ -822,22 +1067,6 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     [emitChartViewportCommand],
   );
 
-  const intendedMarketCacheKey = useMemo((): MarketCacheKey | null => {
-    if (report === null || selectedVariant === null) return null;
-    try {
-      const periods = anchorStackPeriodsFromStrategySpec(selectedVariant.strategy_spec);
-      return buildMarketCacheKey(
-        report,
-        chartTimeframe,
-        selectedVariant.variant,
-        periods,
-        reloadToken,
-      );
-    } catch {
-      return null;
-    }
-  }, [report, selectedVariant, chartTimeframe, reloadToken]);
-
   const chartWindowSlice = useMemo(() => {
     if (!cachedBundle || marketLoadStatus === "error") {
       return {
@@ -856,9 +1085,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       () => {
         const manager = renderWindowManager();
         manager.setFullLength(cachedBundle.candles.length);
-        const intendedBundle =
-          intendedMarketCacheKey !== null ? getMarketCache(intendedMarketCacheKey) : undefined;
-        const anchorEmaOverlays = intendedBundle?.ema_overlays ?? [];
+        const anchorEmaOverlays = cachedBundle.ema_overlays;
         const rawCandles = manager.sliceCandles(cachedBundle.candles);
         const rawEma = manager.sliceEmaOverlays(anchorEmaOverlays, cachedBundle.candles);
         const rawAux = manager.sliceAuxOverlays(auxEmaOverlays, cachedBundle.candles);
@@ -871,7 +1098,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
         const emaStabilizeKey = buildEmaOverlaysStabilizeKey(
           boundsKey,
           rawEma,
-          intendedMarketCacheKey ?? "",
+          intendedRunMarketViewIdentity ?? "",
         );
         const auxStabilizeKey = buildAuxOverlaysStabilizeKey(boundsKey, rawAux);
         return {
@@ -890,8 +1117,8 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     cachedBundle,
     marketLoadStatus,
     auxEmaOverlays,
-    intendedMarketCacheKey,
-    marketCacheKey,
+    intendedRunMarketViewIdentity,
+    runMarketViewIdentity,
     renderWindowRevision,
   ]);
 
@@ -924,18 +1151,18 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
   }, [chartView.mode, chartView.centerTimeSec]);
 
   useEffect(() => {
-    intendedMarketCacheKeyRef.current = intendedMarketCacheKey;
-  }, [intendedMarketCacheKey]);
+    intendedRunMarketViewIdentityRef.current = intendedRunMarketViewIdentity;
+  }, [intendedRunMarketViewIdentity]);
 
   useEffect(() => {
-    if (intendedMarketCacheKey === null) return;
-    if (!hasMarketCache(intendedMarketCacheKey)) return;
-    if (marketCacheKey === intendedMarketCacheKey && marketLoadStatus === "ready") {
+    if (intendedRunMarketViewIdentity === null) return;
+    if (!isRunMarketViewReady(intendedRunMarketView!)) return;
+    if (runMarketViewIdentity === intendedRunMarketViewIdentity && marketLoadStatus === "ready") {
       return;
     }
-    setMarketCacheKey(intendedMarketCacheKey);
+    setRunMarketViewIdentity(intendedRunMarketViewIdentity);
     setMarketLoadStatus("ready");
-  }, [intendedMarketCacheKey, marketCacheKey, marketLoadStatus]);
+  }, [intendedRunMarketView, intendedRunMarketViewIdentity, runMarketViewIdentity, marketLoadStatus]);
 
   const contextOverlayRefOptions = useMemo(() => {
     if (!selectedVariant) return [];
@@ -1066,35 +1293,67 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
 
   const applyTraceDisplayForCurrentWindow = useCallback(() => {
     const candles = chartViewCandlesRef.current;
-    const slice = sliceTraceDisplayForCandles(signalTraceDisplayCacheRef.current, candles);
-    if (slice === null) {
+    const nextDisplayState = deriveTraceDisplayStateForCandles(
+      signalTraceDisplayCacheRef.current,
+      candles,
+      signalTraceStatusRef.current,
+    );
+    const shouldRetainPreviousDisplay = shouldRetainPreviousTraceDisplay(nextDisplayState, {
+      eventCount: chartDisplayComponentEventsRef.current.length,
+      htfOverlayPointCount: lastSlicedHtfOverlaysRef.current.reduce(
+        (total, overlay) => total + overlay.points.length,
+        0,
+      ),
+    });
+    const retainedDisplayStatus =
+      signalTraceStatusRef.current === "loading" ? "loading_missing" : nextDisplayState.status;
+
+    setTraceDisplayState(
+      shouldRetainPreviousDisplay
+        ? {
+            ...nextDisplayState,
+            status: retainedDisplayStatus,
+            events: chartDisplayComponentEventsRef.current,
+          }
+        : nextDisplayState,
+    );
+
+    if (nextDisplayState.status === "empty") {
+      chartDisplayComponentEventsRef.current = [];
       setChartDisplayComponentEvents([]);
-      const bounds = candleTimeBounds(candles);
-      if (bounds !== null) {
-        applyHtfOverlaysFromDisplaySlice(
-          signalTraceDisplayCacheRef.current.sliceHtfContextForWindow(
-            bounds.fromSec,
-            bounds.toSec,
-          ),
-        );
-      }
+      setDisplayApplyRevision((revision) => revision + 1);
       return;
     }
 
-    setChartDisplayComponentEvents(slice.events);
+    if (!shouldRetainPreviousDisplay) {
+      chartDisplayComponentEventsRef.current = nextDisplayState.events;
+      setChartDisplayComponentEvents(nextDisplayState.events);
+    }
     setDisplayApplyRevision((revision) => revision + 1);
 
     dbgMark(DBG.traceDisplay.applyCurrentWindow, {
-      fromSec: slice.fromSec,
-      toSec: slice.toSec,
-      eventCount: slice.events.length,
-      htfTimeCount: slice.htfSlice.times.length,
+      fromSec: nextDisplayState.fromSec,
+      toSec: nextDisplayState.toSec,
+      status: shouldRetainPreviousDisplay ? retainedDisplayStatus : nextDisplayState.status,
+      eventCount: shouldRetainPreviousDisplay
+        ? chartDisplayComponentEventsRef.current.length
+        : nextDisplayState.events.length,
+      htfTimeCount: nextDisplayState.htfSlice.times.length,
+      coveredRanges: nextDisplayState.coveredRanges,
+      missingRange: nextDisplayState.missingRange,
+      retainedPreviousDisplay: shouldRetainPreviousDisplay,
     });
 
-    applyHtfOverlaysFromDisplaySlice(slice.htfSlice);
+    if (!shouldRetainPreviousDisplay || nextDisplayState.htfSlice.times.length > 0) {
+      applyHtfOverlaysFromDisplaySlice(nextDisplayState.htfSlice);
+    }
   }, [applyHtfOverlaysFromDisplaySlice]);
 
   applyTraceDisplayRef.current = applyTraceDisplayForCurrentWindow;
+
+  useEffect(() => {
+    chartDisplayComponentEventsRef.current = chartDisplayComponentEvents;
+  }, [chartDisplayComponentEvents]);
 
   useEffect(() => {
     signalTraceStatusRef.current = signalTraceStatus;
@@ -1105,6 +1364,12 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
   }, [loadedSignalTraceWindowKey]);
 
   useEffect(() => {
+    if (!chartHeavyIoEnabled) {
+      dbgMark(DBG.load.chartHeavyIoBlocked, {
+        source: "aux_ema",
+      });
+      return;
+    }
     if (marketLoadStatus !== "ready" || report === null || auxEmaSpecs.length === 0) {
       setAuxEmaOverlays([]);
       return;
@@ -1117,6 +1382,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     }
 
     let cancelled = false;
+    const abortController = new AbortController();
     const snapshot = report;
     const fromMs = snapshot.data_range.from_open_time_ms;
     const toOpenTimeMs = snapshot.data_range.to_open_time_ms;
@@ -1131,6 +1397,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
               period: spec.period,
               fromMs,
               toOpenTimeMs,
+              signal: abortController.signal,
             });
             return {
               id: spec.id,
@@ -1147,7 +1414,14 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
           const htfOnly = prev.filter((overlay) => overlay.id.startsWith("htf_"));
           return mergeAuxOverlayPoints(htfOnly, loaded);
         });
-      } catch {
+      } catch (err) {
+        if (isAbortError(err)) {
+          dbgMark(DBG.load.marketFetchAbort, {
+            source: "aux_ema",
+            note: "frontend abort/stale-response protection; backend CPU work may continue",
+          });
+          return;
+        }
         if (!cancelled) {
           setAuxEmaOverlays((prev) => prev.filter((overlay) => overlay.id.startsWith("htf_")));
         }
@@ -1157,8 +1431,15 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     void loadBffAuxEma();
     return () => {
       cancelled = true;
+      abortController.abort();
     };
-  }, [marketLoadStatus, report, chartTimeframe, auxEmaSpecs]);
+  }, [
+    marketLoadStatus,
+    report,
+    chartTimeframe,
+    auxEmaSpecs,
+    chartHeavyIoEnabled,
+  ]);
 
   useEffect(() => {
     const htfSpecCount = auxEmaSpecs.filter((spec) => spec.source === "htf_trace").length;
@@ -1229,6 +1510,9 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     signalTraceRequestCoordinatorRef.current.reset();
     traceLoadGenerationRef.current += 1;
     lastSlicedHtfOverlaysRef.current = [];
+    chartDisplayComponentEventsRef.current = [];
+    setChartDisplayComponentEvents([]);
+    setTraceDisplayState(EMPTY_TRACE_DISPLAY_STATE);
     setDisplayCacheVersion((version) => version + 1);
   }, [traceDisplayCacheKey, reloadToken]);
 
@@ -1241,15 +1525,15 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       selectedVariantKey,
       effectiveContextOverlayRef,
       reloadToken,
-      intendedMarketCacheKey ?? marketCacheKey,
+      intendedRunMarketViewIdentity ?? runMarketViewIdentity,
     );
   }, [
     selectedRunId,
     selectedVariantKey,
     effectiveContextOverlayRef,
     reloadToken,
-    intendedMarketCacheKey,
-    marketCacheKey,
+    intendedRunMarketViewIdentity,
+    runMarketViewIdentity,
   ]);
 
   useEffect(() => {
@@ -1394,24 +1678,15 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
   }, [renderWindowBounds, displayCacheVersion, applyTraceDisplayForCurrentWindow]);
 
   const componentEventsStale = useMemo(() => {
-    if (renderWindowBounds === null) {
+    if (
+      traceDisplayState.status === "current" ||
+      traceDisplayState.status === "empty" ||
+      chartDisplayComponentEvents.length === 0
+    ) {
       return false;
     }
-    if (displayCacheCoversWindow) {
-      return false;
-    }
-    if (chartDisplayComponentEvents.length > 0 || (signalTrace?.component_events?.length ?? 0) > 0) {
-      return signalTraceStatus === "loading" || !displayCacheCoversWindow;
-    }
-    return false;
-  }, [
-    renderWindowBounds,
-    displayCacheCoversWindow,
-    displayCacheVersion,
-    chartDisplayComponentEvents.length,
-    signalTrace?.component_events,
-    signalTraceStatus,
-  ]);
+    return true;
+  }, [chartDisplayComponentEvents.length, traceDisplayState.status]);
 
   const chartViewModel = useMemo(
     () =>
@@ -1423,6 +1698,8 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
         componentEvents: chartDisplayComponentEvents,
         htfOverlayStale: htfAuxEmaOverlayStale,
         componentEventsStale,
+        traceDisplayStatus: traceDisplayState.status,
+        traceDisplayMissingRange: traceDisplayState.missingRange,
         viewMode: chartView.mode,
         centerTimeSec: chartView.centerTimeSec,
         firstTimeSec: chartView.firstTimeSec,
@@ -1435,6 +1712,8 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       chartDisplayComponentEvents,
       htfAuxEmaOverlayStale,
       componentEventsStale,
+      traceDisplayState.status,
+      traceDisplayState.missingRange,
     ],
   );
 
@@ -1481,10 +1760,12 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       }
       if (tradeId !== null && entryTimeSec !== null) {
         setSelectedBarTimeSec(entryTimeSec);
-        setActiveTab("chart");
+        if (hasChartEverActivated) {
+          setActiveTab("chart");
+        }
       }
     },
-    [selectedVariant, emitChartViewportCommand],
+    [selectedVariant, emitChartViewportCommand, hasChartEverActivated],
   );
 
   const selectBar = useCallback((timeSec: number | null) => {
@@ -1492,12 +1773,40 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
+    if (!chartHeavyIoEnabled) {
+      dbgMark(DBG.load.chartHeavyIoBlocked, {
+        source: "signal_trace",
+      });
+      setSignalTrace(null);
+      setSignalTraceStatus("idle");
+      setLoadedSignalTraceWindowKey(null);
+      setSignalTraceError(null);
+      previousChartWindowKeyRef.current = null;
+      return;
+    }
+
     const displayCacheCoversWindow =
       renderWindowBounds !== null &&
       signalTraceDisplayCacheRef.current.coversRange(
         renderWindowBounds.fromSec,
         renderWindowBounds.toSec,
       );
+    const displayCacheMissingRange =
+      renderWindowBounds !== null
+        ? signalTraceDisplayCacheRef.current.missingRange(
+            renderWindowBounds.fromSec,
+            renderWindowBounds.toSec,
+          )
+        : null;
+
+    if (renderWindowBounds !== null) {
+      dbgMark(DBG.traceDisplay.coverage, {
+        fromSec: renderWindowBounds.fromSec,
+        toSec: renderWindowBounds.toSec,
+        coversWindow: displayCacheCoversWindow,
+        missingRange: displayCacheMissingRange,
+      });
+    }
 
     const bootstrap = evaluateSignalTraceBootstrap({
       report: reportLoadStatus === "ready" ? report : null,
@@ -1522,7 +1831,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
 
     const { windowKey, request, fetchSource } = bootstrap;
     const committedWindowKey = windowKey;
-    const traceRequestKey = buildTraceRequestKey({
+    const windowTraceRequestKey = buildTraceRequestKey({
       runId: request.runId,
       variant: request.variant,
       fromMs: request.fromMs,
@@ -1533,7 +1842,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
 
     dbgMark(DBG.signalTrace.bootstrapReady, {
       windowKey: committedWindowKey,
-      traceRequestKey,
+      traceRequestKey: windowTraceRequestKey,
       renderWindowRevision,
       boundsKey: renderWindowBoundsKey,
     });
@@ -1565,16 +1874,18 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
 
     const logCoordinatorDecision = (
       coordDecision: ReturnType<typeof coordinator.evaluate>,
+      requestKey: string,
       extra?: Record<string, unknown>,
     ) => {
-      const ledger = coordinator.ledgerSnapshotForKey(traceRequestKey);
+      const ledger = coordinator.ledgerSnapshotForKey(requestKey);
       dbgMark(DBG.signalTrace.decision, {
-        traceRequestKey,
+        traceRequestKey: requestKey,
         decisionReason: coordDecision.action === "fetch" ? "fetch" : coordDecision.reason,
         skipReason: coordDecision.action === "skip" ? coordDecision.reason : undefined,
         plan: plan.action,
         policyAction: loadDecision.action,
         cacheCoverage: displayCacheCoversWindow ? "hit" : "miss",
+        missingRange: displayCacheMissingRange,
         requestedFrom: request.fromMs,
         requestedTo: request.toOpenTimeMs,
         coverageFrom: renderWindowBounds?.fromSec,
@@ -1598,7 +1909,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       dbgMark(DBG.traceDisplay.fetchSuperseded, {
         coalesced: coalescedFetchKey,
         windowKey: committedWindowKey,
-        traceRequestKey,
+        traceRequestKey: windowTraceRequestKey,
       });
       return;
     }
@@ -1621,11 +1932,11 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       if (sessionBundle === null) {
         return;
       }
-      coordinator.markMerged(traceRequestKey, "session_restore");
+      coordinator.markMerged(windowTraceRequestKey, "session_restore");
       dbgMark(DBG.signalTrace.fetchStart, {
         source: "session_restore",
         windowKey: committedWindowKey,
-        traceRequestKey,
+        traceRequestKey: windowTraceRequestKey,
       });
       dbgTimedSync(
         DBG.traceDisplay.mergeChunk,
@@ -1644,13 +1955,17 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       setSignalTraceStatus("ready");
       signalTraceStatusRef.current = "ready";
       setSignalTraceError(null);
-      dbgMark(DBG.traceDisplay.sessionHit, { windowKey: committedWindowKey, traceRequestKey });
+      dbgMark(DBG.traceDisplay.sessionHit, {
+        windowKey: committedWindowKey,
+        traceRequestKey: windowTraceRequestKey,
+      });
       logCoordinatorDecision(
         coordinator.evaluate({
-          key: traceRequestKey,
+          key: windowTraceRequestKey,
           generation: traceLoadGenerationRef.current,
           displayCacheCoversWindow,
         }),
+        windowTraceRequestKey,
         { afterSessionRestore: true },
       );
       finalizeTraceDisplayUpdate();
@@ -1659,7 +1974,10 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
 
     if (plan.action === "defer") {
       if (!displayCacheCoversWindow) {
-        dbgMark(DBG.traceDisplay.cacheMiss, { windowKey: committedWindowKey, traceRequestKey });
+        dbgMark(DBG.traceDisplay.cacheMiss, {
+          windowKey: committedWindowKey,
+          traceRequestKey: windowTraceRequestKey,
+        });
       }
       return;
     }
@@ -1668,12 +1986,44 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       return;
     }
 
+    if (displayCacheCoversWindow) {
+      dbgMark(DBG.traceDisplay.cacheHit, {
+        windowKey: committedWindowKey,
+        source: "display_cache_covers_window",
+      });
+      finalizeTraceDisplayUpdate();
+      return;
+    }
+
+    const chunkPlan = planMissingTraceDisplayChunkFetch({
+      cache: signalTraceDisplayCacheRef.current,
+      candles: chartView.candles,
+      runId: request.runId,
+      variant: request.variant,
+      contextOverlayRef: effectiveContextOverlayRef,
+      chartTimeframe,
+    });
+
+    if (chunkPlan === null) {
+      finalizeTraceDisplayUpdate();
+      return;
+    }
+
+    const traceDisplayChunkKey = chunkPlan.traceDisplayChunkKey;
+    const traceRequestKey = buildTraceRequestKey({
+      runId: request.runId,
+      variant: request.variant,
+      fromMs: chunkPlan.fromMs,
+      toOpenTimeMs: chunkPlan.toOpenTimeMs,
+      contextOverlayRef: effectiveContextOverlayRef,
+    });
+
     const coordDecision = coordinator.evaluate({
       key: traceRequestKey,
       generation: traceLoadGenerationRef.current,
-      displayCacheCoversWindow,
+      displayCacheCoversWindow: false,
     });
-    logCoordinatorDecision(coordDecision);
+    logCoordinatorDecision(coordDecision, traceRequestKey, { traceDisplayChunkKey, chunkPlan });
 
     if (coordDecision.action !== "fetch") {
       if (
@@ -1683,29 +2033,29 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
         dbgMark(DBG.traceDisplay.cacheHit, {
           windowKey: committedWindowKey,
           traceRequestKey,
+          traceDisplayChunkKey,
           source: "coordinator_skip",
           reason: coordDecision.reason,
         });
         finalizeTraceDisplayUpdate();
       }
-      if (!displayCacheCoversWindow) {
-        dbgMark(DBG.traceDisplay.cacheMiss, {
-          windowKey: committedWindowKey,
-          traceRequestKey,
-          coordinatorSkip: coordDecision.reason,
-        });
-      }
       return;
     }
 
-    if (!displayCacheCoversWindow) {
-      dbgMark(DBG.traceDisplay.cacheMiss, { windowKey: committedWindowKey, traceRequestKey });
-    }
+    dbgMark(DBG.traceDisplay.cacheMiss, {
+      windowKey: committedWindowKey,
+      traceRequestKey,
+      traceDisplayChunkKey,
+      missingRange: chunkPlan.missingRange,
+      chunkFromSec: chunkPlan.fromSec,
+      chunkToSec: chunkPlan.toSec,
+    });
 
     const fetchGeneration = ++traceLoadGenerationRef.current;
+    const abortController = new AbortController();
     const runId = request.runId;
     const variantKey = request.variant;
-    const { fromMs, toOpenTimeMs } = request;
+    const { fromMs, toOpenTimeMs } = chunkPlan;
 
     coordinator.markInFlight(traceRequestKey, fetchGeneration);
     setSignalTraceStatus("loading");
@@ -1715,6 +2065,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       source: fetchSource,
       windowKey,
       traceRequestKey,
+      traceDisplayChunkKey,
     });
 
     async function loadTrace() {
@@ -1725,10 +2076,22 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
           fromMs,
           toOpenTimeMs,
           contextOverlayRef: effectiveContextOverlayRef,
+          signal: abortController.signal,
         });
         if (!coordinator.isResponseCurrent(traceRequestKey, fetchGeneration)) {
+          dbgMark(DBG.signalTrace.fetchStaleResponse, {
+            windowKey,
+            traceRequestKey,
+            phase: "response",
+          });
           return;
         }
+        dbgMark(DBG.signalTrace.fetchEnd, {
+          windowKey,
+          traceRequestKey,
+          timeCount: bundle.times.length,
+          eventCount: bundle.component_events?.length ?? 0,
+        });
         const requestedBounds = {
           fromSec: Math.floor(fromMs / 1000),
           toSec: Math.floor(toOpenTimeMs / 1000),
@@ -1763,7 +2126,20 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
         signalTraceBundleSessionCacheRef.current.set(windowKey, bundle);
         dbgFlush("workbench-after-signal-trace");
       } catch (err) {
+        if (isAbortError(err)) {
+          dbgMark(DBG.signalTrace.fetchAbort, {
+            windowKey,
+            traceRequestKey,
+            note: "frontend abort/stale-response protection; backend CPU work may continue",
+          });
+          return;
+        }
         if (!coordinator.isResponseCurrent(traceRequestKey, fetchGeneration)) {
+          dbgMark(DBG.signalTrace.fetchStaleResponse, {
+            windowKey,
+            traceRequestKey,
+            phase: "error",
+          });
           return;
         }
         coordinator.markFailed(traceRequestKey);
@@ -1785,6 +2161,11 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     }
 
     void loadTrace();
+    return () => {
+      abortController.abort();
+      coordinator.clearInFlight(traceRequestKey, fetchGeneration);
+      traceLoadGenerationRef.current += 1;
+    };
   }, [
     reportLoadStatus,
     selectedRunId,
@@ -1795,28 +2176,85 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     marketLoadStatus,
     effectiveContextOverlayRef,
     finalizeTraceDisplayUpdate,
+    chartHeavyIoEnabled,
+    displayCacheVersion,
+    chartTimeframe,
   ]);
 
   const symbol = report?.symbol ?? "—";
   const timeframe = chartTimeframe;
 
-  const value = useMemo<WorkbenchState>(
+  const shellValue = useMemo<WorkbenchShellState>(
     () => ({
-      symbol,
-      timeframe,
-      chartTimeframe,
-      reportTimeframe,
-      timeframeMismatch,
       activeTab,
       setActiveTab,
       reportLoadStatus,
       reportError,
-      marketLoadStatus,
-      marketError,
+      reloadReport,
+    }),
+    [activeTab, reportLoadStatus, reportError, reloadReport],
+  );
+
+  const reportValue = useMemo<WorkbenchReportState>(
+    () => ({
+      symbol,
+      timeframe,
+      report,
       runs,
       selectedRunId,
       setSelectedRunId,
+      selectedVariantKey,
+      setSelectedVariantKey,
+      selectedTradeId,
+      selectTrade,
+      selectedVariant,
+      candlesSource,
+    }),
+    [
+      symbol,
+      timeframe,
       report,
+      runs,
+      selectedRunId,
+      selectedVariantKey,
+      selectedTradeId,
+      selectTrade,
+      selectedVariant,
+      candlesSource,
+    ],
+  );
+
+  const composerValue = useMemo<WorkbenchComposerState>(
+    () => ({
+      configDraft,
+      setConfigDraft,
+      configLoadStatus,
+      configLoadError,
+      configList,
+      selectedConfigPath,
+      reloadConfig,
+      selectConfig,
+      createNewConfig,
+      refreshRunsAndSelectRun,
+      setActiveTab,
+    }),
+    [
+      configDraft,
+      configLoadStatus,
+      configLoadError,
+      configList,
+      selectedConfigPath,
+      reloadConfig,
+      selectConfig,
+      createNewConfig,
+      refreshRunsAndSelectRun,
+    ],
+  );
+
+  const chartValue = useMemo<WorkbenchChartState>(
+    () => ({
+      marketLoadStatus,
+      marketError,
       chartViewModel,
       chartCandles: chartView.candles,
       chartEmaOverlays: chartView.emaOverlays,
@@ -1837,6 +2275,9 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       setChartShowTradeManagementPhaseMarkers,
       chartShowTradeManagementExitMarkers,
       setChartShowTradeManagementExitMarkers,
+      chartTimeframe,
+      reportTimeframe,
+      timeframeMismatch,
       chartViewMode: chartView.mode,
       chartViewCenterTimeSec: chartView.centerTimeSec,
       chartViewFirstTimeSec: chartView.firstTimeSec,
@@ -1846,22 +2287,9 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       marketCandlesCount,
       fullCandleRange,
       candlesSource,
-      selectedVariantKey,
-      setSelectedVariantKey,
       selectedTradeId,
       selectTrade,
       selectedVariant,
-      configDraft,
-      setConfigDraft,
-      configLoadStatus,
-      configLoadError,
-      configList,
-      selectedConfigPath,
-      reloadConfig,
-      selectConfig,
-      createNewConfig,
-      reloadReport,
-      refreshRunsAndSelectRun,
       signalTrace,
       signalTraceStatus,
       lanesSignalTrace,
@@ -1882,23 +2310,15 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       settleWindowSwapCommit,
     }),
     [
-      symbol,
-      timeframe,
       chartTimeframe,
       reportTimeframe,
       timeframeMismatch,
-      activeTab,
-      reportLoadStatus,
-      reportError,
       marketLoadStatus,
       marketError,
-      runs,
-      selectedRunId,
-      setSelectedRunId,
-      report,
       chartViewModel,
       chartView.candles,
       chartView.emaOverlays,
+      chartView.auxEmaOverlays,
       chartDisplayAuxEmaOverlays,
       htfAuxEmaOverlayStale,
       chartDisplayComponentEvents,
@@ -1919,20 +2339,9 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       marketCandlesCount,
       fullCandleRange,
       candlesSource,
-      selectedVariantKey,
       selectedTradeId,
       selectTrade,
       selectedVariant,
-      configDraft,
-      configLoadStatus,
-      configLoadError,
-      configList,
-      selectedConfigPath,
-      reloadConfig,
-      selectConfig,
-      createNewConfig,
-      reloadReport,
-      refreshRunsAndSelectRun,
       signalTrace,
       signalTraceStatus,
       lanesSignalTrace,
@@ -1955,14 +2364,61 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     ],
   );
 
-  return <WorkbenchContext.Provider value={value}>{children}</WorkbenchContext.Provider>;
+  return (
+    <WorkbenchShellContext.Provider value={shellValue}>
+      <WorkbenchReportContext.Provider value={reportValue}>
+        <WorkbenchComposerContext.Provider value={composerValue}>
+          <WorkbenchChartContext.Provider value={chartValue}>{children}</WorkbenchChartContext.Provider>
+        </WorkbenchComposerContext.Provider>
+      </WorkbenchReportContext.Provider>
+    </WorkbenchShellContext.Provider>
+  );
 }
 
 export function useWorkbench(): WorkbenchState {
-  const ctx = useContext(WorkbenchContext);
+  const shell = useWorkbenchShell();
+  const report = useWorkbenchReport();
+  const composer = useWorkbenchComposer();
+  const chart = useWorkbenchChart();
+  return useMemo(
+    () => ({
+      ...shell,
+      ...report,
+      ...composer,
+      ...chart,
+    }),
+    [shell, report, composer, chart],
+  );
+}
+
+export function useWorkbenchShell(): WorkbenchShellState {
+  const ctx = useContext(WorkbenchShellContext);
   if (!ctx) {
-    throw new Error("useWorkbench must be used within WorkbenchProvider");
+    throw new Error("useWorkbenchShell must be used within WorkbenchProvider");
   }
   return ctx;
 }
 
+export function useWorkbenchReport(): WorkbenchReportState {
+  const ctx = useContext(WorkbenchReportContext);
+  if (!ctx) {
+    throw new Error("useWorkbenchReport must be used within WorkbenchProvider");
+  }
+  return ctx;
+}
+
+export function useWorkbenchComposer(): WorkbenchComposerState {
+  const ctx = useContext(WorkbenchComposerContext);
+  if (!ctx) {
+    throw new Error("useWorkbenchComposer must be used within WorkbenchProvider");
+  }
+  return ctx;
+}
+
+export function useWorkbenchChart(): WorkbenchChartState {
+  const ctx = useContext(WorkbenchChartContext);
+  if (!ctx) {
+    throw new Error("useWorkbenchChart must be used within WorkbenchProvider");
+  }
+  return ctx;
+}

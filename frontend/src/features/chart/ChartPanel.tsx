@@ -72,7 +72,7 @@ import { executeViewportCommand } from "@/features/chart/runtime/executeViewport
 import { CHART_RENDER_WINDOW_SIZE } from "@/features/chart/chartDataWindowManager";
 import { findTradeById, tradeDisplayNumber } from "@/features/chart/tradeLookup";
 
-import { useWorkbench } from "@/shared/context/WorkbenchContext";
+import { useWorkbenchChart } from "@/shared/context/WorkbenchContext";
 
 
 
@@ -219,7 +219,7 @@ export function ChartPanel() {
 
     renderWindowShiftSeq,
 
-  } = useWorkbench();
+  } = useWorkbenchChart();
 
   const dispatchChartInteractionRef = useRef(dispatchChartInteraction);
   dispatchChartInteractionRef.current = dispatchChartInteraction;
@@ -227,6 +227,8 @@ export function ChartPanel() {
   const chartEmaOverlays = chartViewModel.emaOverlays;
   const chartDisplayAuxEmaOverlays = chartViewModel.displayAuxEmaOverlays;
   const chartDisplayComponentEvents = chartViewModel.componentEvents;
+  const traceDisplayStatus = chartViewModel.traceDisplayStatus;
+  const traceDisplayMissingRange = chartViewModel.traceDisplayMissingRange;
 
   const chartCandlesRef = useRef(chartCandles);
   chartCandlesRef.current = chartCandles;
@@ -337,6 +339,17 @@ export function ChartPanel() {
       ? " · component events may lag (signal trace reloading)"
       : "";
 
+    const traceDisplayStateNote =
+      traceDisplayStatus === "loading_missing"
+        ? traceDisplayMissingRange
+          ? ` · trace display loading missing ${traceDisplayMissingRange.fromSec}–${traceDisplayMissingRange.toSec}`
+          : " · trace display loading missing range"
+        : traceDisplayStatus === "partial"
+          ? " · trace display partial"
+          : traceDisplayStatus === "stale"
+            ? " · trace display stale"
+            : "";
+
     const htfAlignedEventNote =
       hasHtfAlignedComponentEvents(chartDisplayComponentEvents) &&
       chartDisplayComponentEvents.some(
@@ -377,6 +390,7 @@ export function ChartPanel() {
       traceLoadingHint,
       componentEventNote,
       componentStaleNote,
+      traceDisplayStateNote,
       htfAlignedEventNote,
     ].filter(Boolean);
 
@@ -407,6 +421,10 @@ export function ChartPanel() {
     chartDisplayComponentEvents,
 
     componentEventsStale,
+
+    traceDisplayStatus,
+
+    traceDisplayMissingRange,
 
     chartTimeframe,
 

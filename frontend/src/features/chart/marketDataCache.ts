@@ -1,9 +1,15 @@
+/**
+ * Legacy monolithic market bundle cache — superseded by `marketResourceCache` + `runMarketView` in PR 5.
+ * Kept for test cleanup (`clearMarketCache`) until all call sites migrate.
+ */
 import type { AnchorStackPeriods, ChartMarketBundle, RunReport } from "@/api/types";
+import { clearMarketResourceCache } from "@/features/chart/marketResourceCache";
 
 export type MarketCacheKey = string;
 
-const cache = new Map<MarketCacheKey, ChartMarketBundle>();
+const legacyCache = new Map<MarketCacheKey, ChartMarketBundle>();
 
+/** @deprecated Use `buildCandlesCacheKey` / `buildOverlayCacheKey` via `resolveRunMarketView`. */
 export function buildMarketCacheKey(
   report: RunReport,
   chartTimeframe: string,
@@ -26,25 +32,28 @@ export function buildMarketCacheKey(
   ].join("|");
 }
 
+/** @deprecated Use `composeRunMarketBundle` from `runMarketView`. */
 export function getMarketCache(key: MarketCacheKey): ChartMarketBundle | undefined {
-  return cache.get(key);
+  return legacyCache.get(key);
 }
 
+/** @deprecated Use `isRunMarketViewReady`. */
 export function hasMarketCache(key: MarketCacheKey): boolean {
-  return cache.has(key);
+  return legacyCache.has(key);
 }
 
-/** Immutable by key: never overwrite an existing entry. */
+/** @deprecated Use `seedChartBundleIntoResourceCaches`. */
 export function setMarketCacheIfAbsent(key: MarketCacheKey, bundle: ChartMarketBundle): void {
-  if (!cache.has(key)) {
-    cache.set(key, bundle);
+  if (!legacyCache.has(key)) {
+    legacyCache.set(key, bundle);
   }
 }
 
 export function deleteMarketCache(key: MarketCacheKey): void {
-  cache.delete(key);
+  legacyCache.delete(key);
 }
 
 export function clearMarketCache(): void {
-  cache.clear();
+  legacyCache.clear();
+  clearMarketResourceCache();
 }

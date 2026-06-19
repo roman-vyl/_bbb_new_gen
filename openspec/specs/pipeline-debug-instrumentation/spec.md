@@ -1,7 +1,9 @@
-# Pipeline debug instrumentation
+# pipeline-debug-instrumentation Specification
+
+## Purpose
 
 Opt-in step counters and timings for the ema_pullback research path and Workbench network loads. Enable with `EMA_PIPELINE_DEBUG` (Python) and `VITE_EMA_PIPELINE_DEBUG=true` (frontend). CLI: `debug/run-pipeline-debug.bat`.
-
+## Requirements
 ### Requirement: Pipeline debug is opt-in with zero overhead when disabled
 
 The system MUST NOT record pipeline timings, increment step counters, or write debug output unless the layer-specific debug flag is enabled (`EMA_PIPELINE_DEBUG` for Python, `VITE_EMA_PIPELINE_DEBUG` for the Workbench frontend build).
@@ -233,3 +235,30 @@ Pipeline debug instrumentation MUST NOT alter backtest metrics, trade records, r
 
 - **WHEN** a strategy spec is run with debug off versus debug on (only env differs)
 - **THEN** variant trade counts and total PnL in the result payload are identical
+
+### Requirement: Chart load diagnostics cover heavy IO and render mutations
+Pipeline debug instrumentation SHALL record timing and decision markers for Workbench Chart heavy IO and imperative render mutations.
+
+Instrumentation MUST cover market fetch start/end/cache hit, trace fetch start/end/cache hit/cache miss, display cache `coversRange` and `missingRange` results, candle/EMA `setData`, marker `setMarkers`, and duplicate or superseded trace request decisions.
+
+#### Scenario: Cold chart open produces baseline events
+- **GIVEN** Workbench loads a run report and the user opens Chart for the first time
+- **WHEN** market and trace requests run
+- **THEN** debug output includes market fetch start/end or cache hit
+- **AND** debug output includes trace fetch start/end or cache hit/miss
+- **AND** debug output includes chart `setData` and marker `setMarkers` timings
+
+#### Scenario: Duplicate trace request is observable
+- **GIVEN** trace scheduling evaluates a request whose identity is already in flight or already merged
+- **WHEN** the coordinator skips the request
+- **THEN** debug output records the trace request key
+- **AND** debug output records whether the skip was duplicate, cache hit, in-flight, merged, failed, or superseded
+
+### Requirement: Debug scenarios are named for review
+The implementation SHALL provide a way to measure the named review scenarios: cold chart open, tab switch to Chart, long pan across a render-window boundary, and distant trade navigation.
+
+#### Scenario: Review captures required measurements
+- **WHEN** PR 1 verification is reported
+- **THEN** the report includes debug evidence for cold chart open
+- **AND** the report includes debug evidence for tab switch, long pan, and distant trade navigation
+

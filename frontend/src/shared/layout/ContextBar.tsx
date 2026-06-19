@@ -1,4 +1,4 @@
-import { useWorkbench } from "@/shared/context/WorkbenchContext";
+import { useWorkbenchReport } from "@/shared/context/WorkbenchContext";
 
 export function ContextBar() {
   const {
@@ -11,7 +11,7 @@ export function ContextBar() {
     selectedVariantKey,
     setSelectedVariantKey,
     candlesSource,
-  } = useWorkbench();
+  } = useWorkbenchReport();
 
   if (!report) {
     return null;

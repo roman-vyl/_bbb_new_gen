@@ -64,6 +64,7 @@ market.sqlite
 # Research artifacts (backtests, batch runs, Workbench — local/generated)
 /research/results/*.json
 /research/results/runs/*.json
+/research/results/runs/*/
 
 # Workbench saved strategy configs
 /research/experiments/configs/

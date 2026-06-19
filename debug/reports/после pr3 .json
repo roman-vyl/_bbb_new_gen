@@ -1,0 +1,358 @@
+[
+  {
+    "step": "api.fetchChartMarketBundle",
+    "count": 2,
+    "total_ms": 67517.2,
+    "max_ms": 66896.2,
+    "avg_ms": 33758.6,
+    "last_meta": {}
+  },
+  {
+    "step": "api.fetchRunReport",
+    "count": 1,
+    "total_ms": 85.6,
+    "max_ms": 85.6,
+    "avg_ms": 85.6,
+    "last_meta": {}
+  },
+  {
+    "step": "api.fetchSignalTrace",
+    "count": 2,
+    "total_ms": 9445.6,
+    "max_ms": 5464.4,
+    "avg_ms": 4722.8,
+    "last_meta": {}
+  },
+  {
+    "step": "chart.markers.rebuild",
+    "count": 15,
+    "total_ms": 142.2,
+    "max_ms": 29.8,
+    "avg_ms": 9.5,
+    "last_meta": {
+      "tradeMarkerCount": 42,
+      "componentMarkerCount": 0,
+      "tradeManagementMarkerCount": 2
+    }
+  },
+  {
+    "step": "chart.setData.anchor_ema",
+    "count": 10,
+    "total_ms": 2640.2,
+    "max_ms": 485.5,
+    "avg_ms": 264,
+    "last_meta": {
+      "overlayCount": 3
+    }
+  },
+  {
+    "step": "chart.setData.aux_htf",
+    "count": 10,
+    "total_ms": 0.3,
+    "max_ms": 0.2,
+    "avg_ms": 0,
+    "last_meta": {
+      "overlayCount": 0
+    }
+  },
+  {
+    "step": "chart.setData.candles",
+    "count": 10,
+    "total_ms": 2421.6,
+    "max_ms": 440.2,
+    "avg_ms": 242.2,
+    "last_meta": {
+      "barCount": 50000
+    }
+  },
+  {
+    "step": "chart.viewport.apply",
+    "count": 4,
+    "total_ms": 1.3,
+    "max_ms": 0.9,
+    "avg_ms": 0.3,
+    "last_meta": {
+      "command": "focusTrade",
+      "barCount": 50000
+    }
+  },
+  {
+    "step": "chart.viewport.apply_trade_focus",
+    "count": 4,
+    "total_ms": 0,
+    "max_ms": 0,
+    "avg_ms": 0
+  },
+  {
+    "step": "wb.chart_window_slice",
+    "count": 6,
+    "total_ms": 203.3,
+    "max_ms": 59.3,
+    "avg_ms": 33.9,
+    "last_meta": {
+      "barCount": 50000,
+      "overlayCount": 3
+    }
+  },
+  {
+    "step": "wb.load.market_bundle_ready",
+    "count": 1,
+    "total_ms": 0,
+    "max_ms": 0,
+    "avg_ms": 0,
+    "last_meta": {
+      "barCount": 646029
+    }
+  },
+  {
+    "step": "wb.load.report_ready",
+    "count": 1,
+    "total_ms": 0,
+    "max_ms": 0,
+    "avg_ms": 0,
+    "last_meta": {
+      "runId": "2026-06-17T210326Z_ema_pullback_BTCUSDT_5m__phase3b_perf_current_base_sharp_1h_2p5_10_adx40_runner_rsi90_10_fee04"
+    }
+  },
+  {
+    "step": "wb.market_fetch.abort_frontend",
+    "count": 1,
+    "total_ms": 0,
+    "max_ms": 0,
+    "avg_ms": 0,
+    "last_meta": {
+      "key": "2026-06-17T210326Z_ema_pullback_BTCUSDT_5m__phase3b_perf_current_base_sharp_1h_2p5_10_adx40_runner_rsi90_10_fee04|BTCUSDT|5m|phase3b_perf_current_base_sharp_1h_2p5_10_adx40_runner_rsi90_10_fee04|100|200|496|1585132500000|1778940900000|0",
+      "note": "frontend abort/stale-response protection; backend CPU work may continue"
+    }
+  },
+  {
+    "step": "wb.market_fetch.end",
+    "count": 1,
+    "total_ms": 0,
+    "max_ms": 0,
+    "avg_ms": 0,
+    "last_meta": {
+      "key": "2026-06-17T210326Z_ema_pullback_BTCUSDT_5m__phase3b_perf_current_base_sharp_1h_2p5_10_adx40_runner_rsi90_10_fee04|BTCUSDT|5m|phase3b_perf_current_base_sharp_1h_2p5_10_adx40_runner_rsi90_10_fee04|100|200|496|1585132500000|1778940900000|0",
+      "barCount": 646029,
+      "overlayCount": 3
+    }
+  },
+  {
+    "step": "wb.market_fetch.start",
+    "count": 2,
+    "total_ms": 0,
+    "max_ms": 0,
+    "avg_ms": 0,
+    "last_meta": {
+      "key": "2026-06-17T210326Z_ema_pullback_BTCUSDT_5m__phase3b_perf_current_base_sharp_1h_2p5_10_adx40_runner_rsi90_10_fee04|BTCUSDT|5m|phase3b_perf_current_base_sharp_1h_2p5_10_adx40_runner_rsi90_10_fee04|100|200|496|1585132500000|1778940900000|0"
+    }
+  },
+  {
+    "step": "wb.pan.suppressed_programmatic",
+    "count": 8,
+    "total_ms": 0,
+    "max_ms": 0,
+    "avg_ms": 0
+  },
+  {
+    "step": "wb.render_window.init",
+    "count": 1,
+    "total_ms": 0,
+    "max_ms": 0,
+    "avg_ms": 0,
+    "last_meta": {
+      "fullLength": 646029,
+      "variant": "phase3b_perf_current_base_sharp_1h_2p5_10_adx40_runner_rsi90_10_fee04"
+    }
+  },
+  {
+    "step": "wb.render_window.trade_select",
+    "count": 6,
+    "total_ms": 0.6,
+    "max_ms": 0.5,
+    "avg_ms": 0.1,
+    "last_meta": {
+      "rebuilt": false,
+      "skipped": true
+    }
+  },
+  {
+    "step": "wb.signal_trace_decision",
+    "count": 2,
+    "total_ms": 0,
+    "max_ms": 0,
+    "avg_ms": 0,
+    "last_meta": {
+      "traceRequestKey": "2026-06-17T210326Z_ema_pullback_BTCUSDT_5m__phase3b_perf_current_base_sharp_1h_2p5_10_adx40_runner_rsi90_10_fee04\u001fphase3b_perf_current_base_sharp_1h_2p5_10_adx40_runner_rsi90_10_fee04\u001f1585132500000\u001f1600132200000\u001f",
+      "decisionReason": "fetch",
+      "plan": "evaluate_network",
+      "policyAction": "proceed",
+      "cacheCoverage": "miss",
+      "missingRange": {
+        "fromSec": 1585132500,
+        "toSec": 1600132200
+      },
+      "requestedFrom": 1585132500000,
+      "requestedTo": 1600132200000,
+      "coverageFrom": 1585132500,
+      "coverageTo": 1600132200,
+      "inFlightKeysCount": 0,
+      "inFlightKey": null,
+      "mergedKeysHit": false,
+      "failedKeysHit": false,
+      "windowKey": "2026-06-17T210326Z_ema_pullback_BTCUSDT_5m__phase3b_perf_current_base_sharp_1h_2p5_10_adx40_runner_rsi90_10_fee04:phase3b_perf_current_base_sharp_1h_2p5_10_adx40_runner_rsi90_10_fee04:1585132500:1600132200:",
+      "sessionCacheHasWindow": false,
+      "fetchSource": "window_shift"
+    }
+  },
+  {
+    "step": "wb.signal_trace_merge",
+    "count": 2,
+    "total_ms": 0,
+    "max_ms": 0,
+    "avg_ms": 0,
+    "last_meta": {
+      "windowKey": "2026-06-17T210326Z_ema_pullback_BTCUSDT_5m__phase3b_perf_current_base_sharp_1h_2p5_10_adx40_runner_rsi90_10_fee04:phase3b_perf_current_base_sharp_1h_2p5_10_adx40_runner_rsi90_10_fee04:1585132500:1600132200:",
+      "traceRequestKey": "2026-06-17T210326Z_ema_pullback_BTCUSDT_5m__phase3b_perf_current_base_sharp_1h_2p5_10_adx40_runner_rsi90_10_fee04\u001fphase3b_perf_current_base_sharp_1h_2p5_10_adx40_runner_rsi90_10_fee04\u001f1585132500000\u001f1600132200000\u001f",
+      "truncated": false,
+      "requested": {
+        "fromSec": 1585132500,
+        "toSec": 1600132200
+      },
+      "actual": {
+        "fromSec": 1585132500,
+        "toSec": 1600132200
+      }
+    }
+  },
+  {
+    "step": "wb.signal_trace.bootstrap_blocked",
+    "count": 9,
+    "total_ms": 0,
+    "max_ms": 0,
+    "avg_ms": 0,
+    "last_meta": {
+      "reason": "no_render_window"
+    }
+  },
+  {
+    "step": "wb.signal_trace.bootstrap_ready",
+    "count": 2,
+    "total_ms": 0,
+    "max_ms": 0,
+    "avg_ms": 0,
+    "last_meta": {
+      "windowKey": "2026-06-17T210326Z_ema_pullback_BTCUSDT_5m__phase3b_perf_current_base_sharp_1h_2p5_10_adx40_runner_rsi90_10_fee04:phase3b_perf_current_base_sharp_1h_2p5_10_adx40_runner_rsi90_10_fee04:1585132500:1600132200:",
+      "traceRequestKey": "2026-06-17T210326Z_ema_pullback_BTCUSDT_5m__phase3b_perf_current_base_sharp_1h_2p5_10_adx40_runner_rsi90_10_fee04\u001fphase3b_perf_current_base_sharp_1h_2p5_10_adx40_runner_rsi90_10_fee04\u001f1585132500000\u001f1600132200000\u001f",
+      "renderWindowRevision": 6,
+      "boundsKey": "1585132500:1600132200:50000"
+    }
+  },
+  {
+    "step": "wb.signal_trace.fetch_end",
+    "count": 2,
+    "total_ms": 0,
+    "max_ms": 0,
+    "avg_ms": 0,
+    "last_meta": {
+      "windowKey": "2026-06-17T210326Z_ema_pullback_BTCUSDT_5m__phase3b_perf_current_base_sharp_1h_2p5_10_adx40_runner_rsi90_10_fee04:phase3b_perf_current_base_sharp_1h_2p5_10_adx40_runner_rsi90_10_fee04:1585132500:1600132200:",
+      "traceRequestKey": "2026-06-17T210326Z_ema_pullback_BTCUSDT_5m__phase3b_perf_current_base_sharp_1h_2p5_10_adx40_runner_rsi90_10_fee04\u001fphase3b_perf_current_base_sharp_1h_2p5_10_adx40_runner_rsi90_10_fee04\u001f1585132500000\u001f1600132200000\u001f",
+      "timeCount": 50000,
+      "eventCount": 1686
+    }
+  },
+  {
+    "step": "wb.signal_trace.fetch_start",
+    "count": 2,
+    "total_ms": 0,
+    "max_ms": 0,
+    "avg_ms": 0,
+    "last_meta": {
+      "source": "window_shift",
+      "windowKey": "2026-06-17T210326Z_ema_pullback_BTCUSDT_5m__phase3b_perf_current_base_sharp_1h_2p5_10_adx40_runner_rsi90_10_fee04:phase3b_perf_current_base_sharp_1h_2p5_10_adx40_runner_rsi90_10_fee04:1585132500:1600132200:",
+      "traceRequestKey": "2026-06-17T210326Z_ema_pullback_BTCUSDT_5m__phase3b_perf_current_base_sharp_1h_2p5_10_adx40_runner_rsi90_10_fee04\u001fphase3b_perf_current_base_sharp_1h_2p5_10_adx40_runner_rsi90_10_fee04\u001f1585132500000\u001f1600132200000\u001f"
+    }
+  },
+  {
+    "step": "wb.trace_display.apply_current_window",
+    "count": 6,
+    "total_ms": 0,
+    "max_ms": 0,
+    "avg_ms": 0,
+    "last_meta": {
+      "fromSec": 1585132500,
+      "toSec": 1600132200,
+      "status": "current",
+      "eventCount": 1686,
+      "htfTimeCount": 50000,
+      "coveredRanges": [
+        {
+          "fromSec": 1585132500,
+          "toSec": 1600132200
+        }
+      ],
+      "missingRange": null,
+      "retainedPreviousDisplay": false
+    }
+  },
+  {
+    "step": "wb.trace_display.cache_miss",
+    "count": 2,
+    "total_ms": 0,
+    "max_ms": 0,
+    "avg_ms": 0,
+    "last_meta": {
+      "windowKey": "2026-06-17T210326Z_ema_pullback_BTCUSDT_5m__phase3b_perf_current_base_sharp_1h_2p5_10_adx40_runner_rsi90_10_fee04:phase3b_perf_current_base_sharp_1h_2p5_10_adx40_runner_rsi90_10_fee04:1585132500:1600132200:",
+      "traceRequestKey": "2026-06-17T210326Z_ema_pullback_BTCUSDT_5m__phase3b_perf_current_base_sharp_1h_2p5_10_adx40_runner_rsi90_10_fee04\u001fphase3b_perf_current_base_sharp_1h_2p5_10_adx40_runner_rsi90_10_fee04\u001f1585132500000\u001f1600132200000\u001f"
+    }
+  },
+  {
+    "step": "wb.trace_display.coverage",
+    "count": 2,
+    "total_ms": 0,
+    "max_ms": 0,
+    "avg_ms": 0,
+    "last_meta": {
+      "fromSec": 1585132500,
+      "toSec": 1600132200,
+      "coversWindow": false,
+      "missingRange": {
+        "fromSec": 1585132500,
+        "toSec": 1600132200
+      }
+    }
+  },
+  {
+    "step": "wb.trace_display.merge_chunk",
+    "count": 2,
+    "total_ms": 133.7,
+    "max_ms": 131.9,
+    "avg_ms": 66.9,
+    "last_meta": {
+      "eventCount": 1686,
+      "timeCount": 50000
+    }
+  },
+  {
+    "step": "wb.trace_display.slice_events",
+    "count": 8,
+    "total_ms": 1.3,
+    "max_ms": 0.5,
+    "avg_ms": 0.2,
+    "last_meta": {
+      "fromSec": 1585132500,
+      "toSec": 1600132200
+    }
+  },
+  {
+    "step": "wb.trace_display.slice_htf",
+    "count": 8,
+    "total_ms": 39.7,
+    "max_ms": 10.7,
+    "avg_ms": 5,
+    "last_meta": {
+      "fromSec": 1585132500,
+      "toSec": 1600132200
+    }
+  }
+]

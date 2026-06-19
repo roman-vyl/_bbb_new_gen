@@ -175,6 +175,10 @@ describe("SignalTraceDisplayCache", () => {
     expect(cache.coversRange(100, 200)).toBe(true);
     expect(cache.coversRange(250, 350)).toBe(true);
     expect(cache.coversRange(100, 350)).toBe(false);
+    expect(cache.coveredRanges(150, 300)).toEqual([
+      { fromSec: 150, toSec: 200 },
+      { fromSec: 250, toSec: 300 },
+    ]);
     expect(cache.missingRange(100, 350)).toEqual({ fromSec: 201, toSec: 350 });
   });
 

@@ -12,6 +12,8 @@ describe("buildChartViewModel", () => {
       componentEvents: [],
       htfOverlayStale: false,
       componentEventsStale: false,
+      traceDisplayStatus: "empty",
+      traceDisplayMissingRange: null,
       viewMode: "tail",
       centerTimeSec: null,
       firstTimeSec: 1000,
