@@ -675,6 +675,9 @@ export function WorkbenchProvider({
     void loadMarket();
     return () => {
       abortController.abort();
+      if (marketFetchInFlightKeyRef.current === key) {
+        marketFetchInFlightKeyRef.current = null;
+      }
       marketLoadGenRef.current += 1;
     };
   }, [
@@ -1916,6 +1919,8 @@ export function WorkbenchProvider({
     void loadTrace();
     return () => {
       abortController.abort();
+      coordinator.clearInFlight(traceRequestKey, fetchGeneration);
+      traceLoadGenerationRef.current += 1;
     };
   }, [
     reportLoadStatus,

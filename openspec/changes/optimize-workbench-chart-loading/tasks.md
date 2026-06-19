@@ -12,7 +12,9 @@
 - [x] 1.10 Add or update focused frontend tests for lazy chart activation, Reports trade selection before Chart activation, and stale response suppression.
 - [x] 1.11 Verify HTF context EMA overlays (`workbench-chart-htf-context-overlays`) on a variant with `strategy.contexts`.
 - [x] 1.12 Run frontend verification (`cd frontend; npm run build` and relevant tests).
-- [x] 1.13 STOP FOR REVIEW: report PR 1 debug measurements and wait for user approval before starting PR 2.
+- [ ] 1.13 STOP FOR REVIEW: report PR 1 debug measurements and wait for user approval before starting PR 2.
+  - Baseline JSON for `cold-chart-open`, `tab-switch-chart`, `long-pan-boundary`, `distant-trade-navigation` pending in `debug/reports/` (see `pr1-review-packet.md`).
+  - Note: `initialActiveTab` defaults to `"chart"`, so lazy activation does not defer cold Chart open in the default app route; PR 1 foundation only.
 
 ## 2. PR 2 — WorkbenchContext Split Without Behavior Changes
 

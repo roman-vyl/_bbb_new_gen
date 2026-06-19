@@ -2,6 +2,7 @@
  * @vitest-environment jsdom
  */
 import type { ReactNode } from "react";
+import { StrictMode } from "react";
 import { act, cleanup, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -384,6 +385,98 @@ describe("Workbench report-load invariant", () => {
       expect(fetchSignalTrace).toHaveBeenCalledTimes(1);
     });
     expect(workbenchRef?.selectedTradeId).toBe(1);
+  });
+});
+
+function createDeferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+}
+
+describe("Workbench abort + in-flight dedupe", () => {
+  afterEach(() => {
+    cleanup();
+    workbenchRef = null;
+  });
+
+  beforeEach(() => {
+    workbenchRef = null;
+    vi.clearAllMocks();
+    clearMarketCache();
+    fetchRunSummaries.mockResolvedValue(RUNS);
+    fetchConfigState.mockResolvedValue({
+      family: "ema_pullback",
+      selected_experiment_id: null,
+      configs: [],
+      selected_path: null,
+      draft: null,
+    });
+    fetchRunReport.mockImplementation(async (runId: string) => makeReport(runId));
+    fetchChartOverlayEma.mockResolvedValue([]);
+    fetchSignalTrace.mockResolvedValue(EMPTY_SIGNAL_TRACE);
+  });
+
+  it("market: StrictMode remount with same key does not leave marketLoadStatus loading", async () => {
+    const marketBundle = {
+      candles: [{ time: 1000, open: 1, high: 2, low: 0.5, close: 1.5 }],
+      ema_overlays: [],
+    };
+    const deferred = createDeferred<typeof marketBundle>();
+    fetchChartMarketBundle.mockReturnValue(deferred.promise);
+
+    render(
+      <StrictMode>
+        <Host>
+          <WorkbenchCapture />
+        </Host>
+      </StrictMode>,
+    );
+
+    await waitFor(() => {
+      expect(fetchChartMarketBundle.mock.calls.length).toBeGreaterThanOrEqual(1);
+    });
+
+    await act(async () => {
+      deferred.resolve(marketBundle);
+    });
+
+    await waitFor(() => {
+      expect(workbenchRef?.marketLoadStatus).toBe("ready");
+    });
+    expect(workbenchRef?.marketLoadStatus).not.toBe("loading");
+  });
+
+  it("signalTrace: StrictMode remount with same traceRequestKey does not leave signalTraceStatus loading", async () => {
+    fetchChartMarketBundle.mockResolvedValue({
+      candles: [{ time: 1000, open: 1, high: 2, low: 0.5, close: 1.5 }],
+      ema_overlays: [],
+    });
+    const deferred = createDeferred<SignalTraceBundle>();
+    fetchSignalTrace.mockReturnValue(deferred.promise);
+
+    render(
+      <StrictMode>
+        <Host>
+          <WorkbenchCapture />
+        </Host>
+      </StrictMode>,
+    );
+
+    await waitFor(() => {
+      expect(fetchSignalTrace.mock.calls.length).toBeGreaterThanOrEqual(1);
+    });
+
+    await act(async () => {
+      deferred.resolve(EMPTY_SIGNAL_TRACE);
+    });
+
+    await waitFor(() => {
+      expect(workbenchRef?.signalTraceStatus).toBe("ready");
+    });
+    expect(workbenchRef?.signalTraceStatus).not.toBe("loading");
   });
 });
 
