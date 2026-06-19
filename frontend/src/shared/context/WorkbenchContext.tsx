@@ -390,6 +390,7 @@ export function WorkbenchProvider({
   const [runMarketViewIdentity, setRunMarketViewIdentity] = useState<RunMarketViewIdentity | null>(
     null,
   );
+  const [marketResourceRevision, setMarketResourceRevision] = useState(0);
   const [auxEmaOverlays, setAuxEmaOverlays] = useState<ChartAuxEmaOverlay[]>([]);
   const signalTraceDisplayCacheRef = useRef(createSignalTraceDisplayCache());
   const signalTraceBundleSessionCacheRef = useRef(createSignalTraceBundleSessionCache());
@@ -569,6 +570,7 @@ export function WorkbenchProvider({
       setMarketError(null);
       setMarketLoadStatus("idle");
       setRunMarketViewIdentity(null);
+      setMarketResourceRevision(0);
       try {
         const loaded = await fetchRunReport(runId);
         if (cancelled) return;
@@ -686,6 +688,10 @@ export function WorkbenchProvider({
     applyTradeFocusSelection(selectedVariant.trade_records);
   }, [selectedVariant, selectedTradeId, selectedVariantKey, applyTradeFocusSelection]);
 
+  const bumpMarketResourceRevision = useCallback(() => {
+    setMarketResourceRevision((revision) => revision + 1);
+  }, []);
+
   useEffect(() => {
     if (report === null || reportLoadStatus !== "ready" || selectedVariant === null) {
       return;
@@ -784,6 +790,7 @@ export function WorkbenchProvider({
           signal: abortController.signal,
         });
         seedChartBundleIntoResourceCaches(view, bundle);
+        bumpMarketResourceRevision();
         dbgMark(DBG.load.marketFetchEnd, {
           key: fetchKey,
           barCount: bundle.candles.length,
@@ -841,6 +848,7 @@ export function WorkbenchProvider({
     reloadToken,
     selectedVariantKey,
     chartHeavyIoEnabled,
+    bumpMarketResourceRevision,
   ]);
 
   const setSelectedRunId = useCallback((runId: string) => {
@@ -908,10 +916,18 @@ export function WorkbenchProvider({
     return buildRunMarketViewIdentity(intendedRunMarketView);
   }, [intendedRunMarketView]);
 
-  const cachedBundle =
-    intendedRunMarketView !== null
-      ? composePartialRunMarketBundle(intendedRunMarketView) ?? undefined
-      : undefined;
+  const cachedBundle = useMemo(() => {
+    if (intendedRunMarketView === null || marketLoadStatus === "error") {
+      return undefined;
+    }
+    return composePartialRunMarketBundle(intendedRunMarketView) ?? undefined;
+  }, [
+    intendedRunMarketView,
+    intendedRunMarketViewIdentity,
+    runMarketViewIdentity,
+    marketResourceRevision,
+    marketLoadStatus,
+  ]);
 
   useEffect(() => {
     if (marketLoadStatus === "ready" && cachedBundle !== undefined) {

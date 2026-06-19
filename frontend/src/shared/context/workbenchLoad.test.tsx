@@ -618,15 +618,39 @@ describe("Workbench missing-range trace scheduling", () => {
 });
 
 const ANCHOR_EMA_OVERLAYS = [
-  { role: "fast" as const, period: 200, points: [] },
-  { role: "anchor" as const, period: 500, points: [] },
-  { role: "slow" as const, period: 1000, points: [] },
+  {
+    role: "fast" as const,
+    period: 200,
+    points: [{ time: 1000, value: 1, kind: "chart_overlay_ema" as const }],
+  },
+  {
+    role: "anchor" as const,
+    period: 500,
+    points: [{ time: 1000, value: 2, kind: "chart_overlay_ema" as const }],
+  },
+  {
+    role: "slow" as const,
+    period: 1000,
+    points: [{ time: 1000, value: 3, kind: "chart_overlay_ema" as const }],
+  },
 ];
 
 const ALT_ANCHOR_EMA_OVERLAYS = [
-  { role: "fast" as const, period: 100, points: [] },
-  { role: "anchor" as const, period: 300, points: [] },
-  { role: "slow" as const, period: 600, points: [] },
+  {
+    role: "fast" as const,
+    period: 100,
+    points: [{ time: 1000, value: 4, kind: "chart_overlay_ema" as const }],
+  },
+  {
+    role: "anchor" as const,
+    period: 300,
+    points: [{ time: 1000, value: 5, kind: "chart_overlay_ema" as const }],
+  },
+  {
+    role: "slow" as const,
+    period: 600,
+    points: [{ time: 1000, value: 6, kind: "chart_overlay_ema" as const }],
+  },
 ];
 
 function makeReportWithDistinctVariantPeriods(runId: string): RunReport {
@@ -706,27 +730,29 @@ describe("Workbench split market resource cache", () => {
     fetchRunReport.mockImplementation(async (runId: string) =>
       makeReportWithDistinctVariantPeriods(runId),
     );
+    const deferredOverlayBundle = createDeferred<{
+      candles: { time: number; open: number; high: number; low: number; close: number }[];
+      ema_overlays: typeof ALT_ANCHOR_EMA_OVERLAYS;
+    }>();
     fetchChartMarketBundle
       .mockResolvedValueOnce({
         candles: [{ time: 1000, open: 1, high: 2, low: 0.5, close: 1.5 }],
         ema_overlays: ANCHOR_EMA_OVERLAYS,
       })
-      .mockResolvedValueOnce({
-        candles: [{ time: 2000, open: 2, high: 3, low: 1.5, close: 2.5 }],
-        ema_overlays: ALT_ANCHOR_EMA_OVERLAYS,
-      });
+      .mockReturnValueOnce(deferredOverlayBundle.promise);
 
     render(
       <Host>
         <WorkbenchCapture />
+        <ChartSliceCapture />
       </Host>,
     );
 
     await waitFor(() => {
       expect(workbenchRef?.marketLoadStatus).toBe("ready");
+      expect(chartSliceRef?.chartEmaOverlays).toHaveLength(3);
     });
     expect(fetchChartMarketBundle).toHaveBeenCalledTimes(1);
-    expect(workbenchRef?.marketCandlesCount).toBe(1);
 
     await act(async () => {
       workbenchRef!.setSelectedVariantKey("exp_b");
@@ -735,12 +761,46 @@ describe("Workbench split market resource cache", () => {
     await waitFor(() => {
       expect(workbenchRef?.selectedVariantKey).toBe("exp_b");
       expect(fetchChartMarketBundle).toHaveBeenCalledTimes(2);
+      expect(workbenchRef?.marketCandlesCount).toBe(1);
+    });
+    expect(chartSliceRef?.chartEmaOverlays).toHaveLength(0);
+
+    await act(async () => {
+      deferredOverlayBundle.resolve({
+        candles: [{ time: 2000, open: 2, high: 3, low: 1.5, close: 2.5 }],
+        ema_overlays: ALT_ANCHOR_EMA_OVERLAYS,
+      });
     });
 
-    expect(workbenchRef?.marketCandlesCount).toBe(1);
+    await waitFor(() => {
+      expect(chartSliceRef?.chartEmaOverlays).toHaveLength(3);
+      expect(workbenchRef?.marketLoadStatus).toBe("ready");
+      expect(workbenchRef?.marketCandlesCount).toBe(1);
+    });
+  });
+
+  it("keeps cachedBundle reference stable across unrelated renders", async () => {
+    fetchChartMarketBundle.mockResolvedValue({
+      candles: [{ time: 1000, open: 1, high: 2, low: 0.5, close: 1.5 }],
+      ema_overlays: ANCHOR_EMA_OVERLAYS,
+    });
+
+    render(
+      <Host>
+        <WorkbenchCapture />
+        <ChartSliceCapture />
+      </Host>,
+    );
+
     await waitFor(() => {
       expect(workbenchRef?.marketLoadStatus).toBe("ready");
     });
+
+    const initialEma = chartSliceRef?.chartEmaOverlays;
+    await act(async () => {
+      workbenchRef!.setChartShowSetupMarkers(false);
+    });
+    expect(chartSliceRef?.chartEmaOverlays).toBe(initialEma);
   });
 });
 

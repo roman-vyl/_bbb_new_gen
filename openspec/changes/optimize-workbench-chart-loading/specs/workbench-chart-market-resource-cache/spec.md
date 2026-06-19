@@ -17,6 +17,7 @@ Overlay cache identity MUST include symbol, timeframe, source, period or overlay
 - **WHEN** the user switches variants
 - **THEN** Workbench resolves overlay cache keys for the new periods
 - **AND** Workbench only loads or recomputes overlays whose cache keys are missing
+- **AND** frontend may still request full `/api/market/chart-bundle` until split backend endpoints exist; candle reuse is a frontend cache benefit, not a reduced network payload guarantee
 
 ### Requirement: Chart bundle responses can seed split resource caches
 While `/api/market/chart-bundle` remains in use, Workbench MAY use a chart-bundle response as a source payload but MUST store its candles and EMA overlays into separate resource cache layers.

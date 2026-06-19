@@ -80,7 +80,8 @@
 - [x] 5.4 Seed split candle and overlay caches from the existing `/api/market/chart-bundle` response without changing backend contracts.
   - `seedChartBundleIntoResourceCaches`.
 - [x] 5.5 Ensure variant switches with identical symbol/timeframe/range reuse candles and load only missing or changed overlays.
-  - Partial compose shows cached candles while overlay fetch runs; full cache hit skips network on variant switch with same periods.
+  - Frontend reuses cached candles and avoids candle identity coupling on variant switch. Partial compose shows cached candles while overlay fetch runs; full cache hit skips network when periods unchanged. Network still transfers full `/chart-bundle` when missing overlays require backend fetch (cold payload not solved in PR5).
+  - `marketResourceRevision` bumps after cache seed so `cachedBundle` is stable via `useMemo` and partial → full overlay transition re-renders chart.
 - [x] 5.6 Preserve current render-window slicing, anchor EMA rendering, auxiliary EMA rendering, and bar inspector values after cache split.
 - [x] 5.7 Add or update tests for variant switch candle reuse and overlay cache refresh.
   - `marketResourceCache.test.ts`, `runMarketView.test.ts`, `workbenchLoad` split-cache describe.
@@ -88,6 +89,7 @@
   - Existing HTF workbench test still passes; aux overlay path unchanged.
 - [x] 5.9 Run frontend verification (`cd frontend; npm run build` and relevant tests).
 - [ ] 5.10 STOP FOR REVIEW: report variant-switch behavior and wait for user approval before archive or before creating a separate OpenSpec for sparse/materialized chart events.
+  - PR5 reuses cached candles in frontend and avoids candle identity coupling. It does not yet avoid full chart-bundle transfer when missing overlays require backend fetch.
 
 ## 6. Future Work — Sparse / Materialized Chart Events
 
