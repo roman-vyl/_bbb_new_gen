@@ -1,4 +1,4 @@
-import { useWorkbench } from "@/shared/context/WorkbenchContext";
+import { useWorkbenchShell } from "@/shared/context/WorkbenchContext";
 import type { WorkbenchTab } from "@/api/types";
 
 const TABS: { id: WorkbenchTab; label: string }[] = [
@@ -8,7 +8,7 @@ const TABS: { id: WorkbenchTab; label: string }[] = [
 ];
 
 export function TabNav() {
-  const { activeTab, setActiveTab } = useWorkbench();
+  const { activeTab, setActiveTab } = useWorkbenchShell();
 
   return (
     <nav className="tab-nav" aria-label="Workbench sections">

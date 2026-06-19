@@ -218,7 +218,109 @@ type WorkbenchState = {
   settleWindowSwapCommit: (shiftSeq: number, swapTransactionId: number) => void;
 };
 
-const WorkbenchContext = createContext<WorkbenchState | null>(null);
+type WorkbenchShellState = Pick<
+  WorkbenchState,
+  | "activeTab"
+  | "setActiveTab"
+  | "reportLoadStatus"
+  | "reportError"
+  | "reloadReport"
+>;
+
+type WorkbenchReportState = Pick<
+  WorkbenchState,
+  | "symbol"
+  | "timeframe"
+  | "report"
+  | "runs"
+  | "selectedRunId"
+  | "setSelectedRunId"
+  | "selectedVariantKey"
+  | "setSelectedVariantKey"
+  | "selectedTradeId"
+  | "selectTrade"
+  | "selectedVariant"
+  | "candlesSource"
+>;
+
+type WorkbenchComposerState = Pick<
+  WorkbenchState,
+  | "configDraft"
+  | "setConfigDraft"
+  | "configLoadStatus"
+  | "configLoadError"
+  | "configList"
+  | "selectedConfigPath"
+  | "reloadConfig"
+  | "selectConfig"
+  | "createNewConfig"
+  | "refreshRunsAndSelectRun"
+  | "setActiveTab"
+>;
+
+type WorkbenchChartState = Pick<
+  WorkbenchState,
+  | "marketLoadStatus"
+  | "marketError"
+  | "chartViewModel"
+  | "chartCandles"
+  | "chartEmaOverlays"
+  | "chartAuxEmaOverlays"
+  | "chartDisplayAuxEmaOverlays"
+  | "htfAuxEmaOverlayStale"
+  | "chartDisplayComponentEvents"
+  | "componentEventsStale"
+  | "displayApplyRevision"
+  | "renderWindowShiftSeq"
+  | "chartShowEntryBlockMarkers"
+  | "setChartShowEntryBlockMarkers"
+  | "chartShowExitSignalMarkers"
+  | "setChartShowExitSignalMarkers"
+  | "chartShowSetupMarkers"
+  | "setChartShowSetupMarkers"
+  | "chartShowTradeManagementPhaseMarkers"
+  | "setChartShowTradeManagementPhaseMarkers"
+  | "chartShowTradeManagementExitMarkers"
+  | "setChartShowTradeManagementExitMarkers"
+  | "chartTimeframe"
+  | "reportTimeframe"
+  | "timeframeMismatch"
+  | "chartViewMode"
+  | "chartViewCenterTimeSec"
+  | "chartViewFirstTimeSec"
+  | "chartViewLastTimeSec"
+  | "chartViewCount"
+  | "chartTradeFocusWarning"
+  | "marketCandlesCount"
+  | "fullCandleRange"
+  | "candlesSource"
+  | "selectedVariant"
+  | "selectedTradeId"
+  | "selectTrade"
+  | "signalTrace"
+  | "signalTraceStatus"
+  | "lanesSignalTrace"
+  | "lanesSignalTraceStatus"
+  | "lanesSignalTraceError"
+  | "signalTraceError"
+  | "contextOverlayRef"
+  | "setContextOverlayRef"
+  | "effectiveContextOverlayRef"
+  | "contextOverlayRefOptions"
+  | "selectedBarTimeSec"
+  | "selectBar"
+  | "dispatchChartInteraction"
+  | "chartViewportCommand"
+  | "chartViewportCommandSeq"
+  | "acknowledgeChartViewportCommand"
+  | "isWindowSwapTransactionCancelled"
+  | "settleWindowSwapCommit"
+>;
+
+const WorkbenchShellContext = createContext<WorkbenchShellState | null>(null);
+const WorkbenchReportContext = createContext<WorkbenchReportState | null>(null);
+const WorkbenchComposerContext = createContext<WorkbenchComposerState | null>(null);
+const WorkbenchChartContext = createContext<WorkbenchChartState | null>(null);
 
 const EMPTY_RUNS_HINT =
   "No research runs found. Run a backtest from Strategy Composer or locally, e.g. " +
@@ -1938,23 +2040,77 @@ export function WorkbenchProvider({
   const symbol = report?.symbol ?? "—";
   const timeframe = chartTimeframe;
 
-  const value = useMemo<WorkbenchState>(
+  const shellValue = useMemo<WorkbenchShellState>(
     () => ({
-      symbol,
-      timeframe,
-      chartTimeframe,
-      reportTimeframe,
-      timeframeMismatch,
       activeTab,
       setActiveTab,
       reportLoadStatus,
       reportError,
-      marketLoadStatus,
-      marketError,
+      reloadReport,
+    }),
+    [activeTab, reportLoadStatus, reportError, reloadReport],
+  );
+
+  const reportValue = useMemo<WorkbenchReportState>(
+    () => ({
+      symbol,
+      timeframe,
+      report,
       runs,
       selectedRunId,
       setSelectedRunId,
+      selectedVariantKey,
+      setSelectedVariantKey,
+      selectedTradeId,
+      selectTrade,
+      selectedVariant,
+      candlesSource,
+    }),
+    [
+      symbol,
+      timeframe,
       report,
+      runs,
+      selectedRunId,
+      selectedVariantKey,
+      selectedTradeId,
+      selectTrade,
+      selectedVariant,
+      candlesSource,
+    ],
+  );
+
+  const composerValue = useMemo<WorkbenchComposerState>(
+    () => ({
+      configDraft,
+      setConfigDraft,
+      configLoadStatus,
+      configLoadError,
+      configList,
+      selectedConfigPath,
+      reloadConfig,
+      selectConfig,
+      createNewConfig,
+      refreshRunsAndSelectRun,
+      setActiveTab,
+    }),
+    [
+      configDraft,
+      configLoadStatus,
+      configLoadError,
+      configList,
+      selectedConfigPath,
+      reloadConfig,
+      selectConfig,
+      createNewConfig,
+      refreshRunsAndSelectRun,
+    ],
+  );
+
+  const chartValue = useMemo<WorkbenchChartState>(
+    () => ({
+      marketLoadStatus,
+      marketError,
       chartViewModel,
       chartCandles: chartView.candles,
       chartEmaOverlays: chartView.emaOverlays,
@@ -1975,6 +2131,9 @@ export function WorkbenchProvider({
       setChartShowTradeManagementPhaseMarkers,
       chartShowTradeManagementExitMarkers,
       setChartShowTradeManagementExitMarkers,
+      chartTimeframe,
+      reportTimeframe,
+      timeframeMismatch,
       chartViewMode: chartView.mode,
       chartViewCenterTimeSec: chartView.centerTimeSec,
       chartViewFirstTimeSec: chartView.firstTimeSec,
@@ -1984,22 +2143,9 @@ export function WorkbenchProvider({
       marketCandlesCount,
       fullCandleRange,
       candlesSource,
-      selectedVariantKey,
-      setSelectedVariantKey,
       selectedTradeId,
       selectTrade,
       selectedVariant,
-      configDraft,
-      setConfigDraft,
-      configLoadStatus,
-      configLoadError,
-      configList,
-      selectedConfigPath,
-      reloadConfig,
-      selectConfig,
-      createNewConfig,
-      reloadReport,
-      refreshRunsAndSelectRun,
       signalTrace,
       signalTraceStatus,
       lanesSignalTrace,
@@ -2020,23 +2166,15 @@ export function WorkbenchProvider({
       settleWindowSwapCommit,
     }),
     [
-      symbol,
-      timeframe,
       chartTimeframe,
       reportTimeframe,
       timeframeMismatch,
-      activeTab,
-      reportLoadStatus,
-      reportError,
       marketLoadStatus,
       marketError,
-      runs,
-      selectedRunId,
-      setSelectedRunId,
-      report,
       chartViewModel,
       chartView.candles,
       chartView.emaOverlays,
+      chartView.auxEmaOverlays,
       chartDisplayAuxEmaOverlays,
       htfAuxEmaOverlayStale,
       chartDisplayComponentEvents,
@@ -2057,20 +2195,9 @@ export function WorkbenchProvider({
       marketCandlesCount,
       fullCandleRange,
       candlesSource,
-      selectedVariantKey,
       selectedTradeId,
       selectTrade,
       selectedVariant,
-      configDraft,
-      configLoadStatus,
-      configLoadError,
-      configList,
-      selectedConfigPath,
-      reloadConfig,
-      selectConfig,
-      createNewConfig,
-      reloadReport,
-      refreshRunsAndSelectRun,
       signalTrace,
       signalTraceStatus,
       lanesSignalTrace,
@@ -2093,14 +2220,61 @@ export function WorkbenchProvider({
     ],
   );
 
-  return <WorkbenchContext.Provider value={value}>{children}</WorkbenchContext.Provider>;
+  return (
+    <WorkbenchShellContext.Provider value={shellValue}>
+      <WorkbenchReportContext.Provider value={reportValue}>
+        <WorkbenchComposerContext.Provider value={composerValue}>
+          <WorkbenchChartContext.Provider value={chartValue}>{children}</WorkbenchChartContext.Provider>
+        </WorkbenchComposerContext.Provider>
+      </WorkbenchReportContext.Provider>
+    </WorkbenchShellContext.Provider>
+  );
 }
 
 export function useWorkbench(): WorkbenchState {
-  const ctx = useContext(WorkbenchContext);
+  const shell = useWorkbenchShell();
+  const report = useWorkbenchReport();
+  const composer = useWorkbenchComposer();
+  const chart = useWorkbenchChart();
+  return useMemo(
+    () => ({
+      ...shell,
+      ...report,
+      ...composer,
+      ...chart,
+    }),
+    [shell, report, composer, chart],
+  );
+}
+
+export function useWorkbenchShell(): WorkbenchShellState {
+  const ctx = useContext(WorkbenchShellContext);
   if (!ctx) {
-    throw new Error("useWorkbench must be used within WorkbenchProvider");
+    throw new Error("useWorkbenchShell must be used within WorkbenchProvider");
   }
   return ctx;
 }
 
+export function useWorkbenchReport(): WorkbenchReportState {
+  const ctx = useContext(WorkbenchReportContext);
+  if (!ctx) {
+    throw new Error("useWorkbenchReport must be used within WorkbenchProvider");
+  }
+  return ctx;
+}
+
+export function useWorkbenchComposer(): WorkbenchComposerState {
+  const ctx = useContext(WorkbenchComposerContext);
+  if (!ctx) {
+    throw new Error("useWorkbenchComposer must be used within WorkbenchProvider");
+  }
+  return ctx;
+}
+
+export function useWorkbenchChart(): WorkbenchChartState {
+  const ctx = useContext(WorkbenchChartContext);
+  if (!ctx) {
+    throw new Error("useWorkbenchChart must be used within WorkbenchProvider");
+  }
+  return ctx;
+}

@@ -72,7 +72,7 @@ import { executeViewportCommand } from "@/features/chart/runtime/executeViewport
 import { CHART_RENDER_WINDOW_SIZE } from "@/features/chart/chartDataWindowManager";
 import { findTradeById, tradeDisplayNumber } from "@/features/chart/tradeLookup";
 
-import { useWorkbench } from "@/shared/context/WorkbenchContext";
+import { useWorkbenchChart } from "@/shared/context/WorkbenchContext";
 
 
 
@@ -219,7 +219,7 @@ export function ChartPanel() {
 
     renderWindowShiftSeq,
 
-  } = useWorkbench();
+  } = useWorkbenchChart();
 
   const dispatchChartInteractionRef = useRef(dispatchChartInteraction);
   dispatchChartInteractionRef.current = dispatchChartInteraction;

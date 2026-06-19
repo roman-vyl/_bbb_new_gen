@@ -1,9 +1,9 @@
 import type { ReactNode } from "react";
 
-import { useWorkbench } from "@/shared/context/WorkbenchContext";
+import { useWorkbenchShell } from "@/shared/context/WorkbenchContext";
 
 export function WorkbenchGate({ children }: { children: ReactNode }) {
-  const { reportLoadStatus, reportError, reloadReport } = useWorkbench();
+  const { reportLoadStatus, reportError, reloadReport } = useWorkbenchShell();
 
   if (reportLoadStatus === "loading") {
     return (

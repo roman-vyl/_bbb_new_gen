@@ -39,16 +39,16 @@ Cold Chart open optimization is **out of PR 1 scope** (later PRs + optional rout
 | `long-pan-boundary` | Pan until render-window shift crosses boundary; wait for shift settle | `workbench-long-pan-boundary.json` |
 | `distant-trade-navigation` | Select a trade far from current viewport | `workbench-distant-trade-navigation.json` |
 
-## Baseline measurements (pending)
+## Baseline measurements
 
-| Scenario | Status | Notes |
-|----------|--------|-------|
-| cold-chart-open | **pending** | |
-| tab-switch-chart | **pending** | |
-| long-pan-boundary | **pending** | |
-| distant-trade-navigation | **pending** | |
+| Scenario | Status | Key timings / notes |
+|----------|--------|---------------------|
+| cold-chart-open | **captured** | `api.fetchChartMarketBundle` ~113s; `api.fetchSignalTrace` ~1.4s; `market_fetch.start`×2 + `abort_frontend`×1 + `end`×1 (StrictMode, no orphan `skip_in_flight`); trace complete (`fetch_end`, 562 events) |
+| tab-switch-chart | **captured** | After reset: `api.fetchSignalTrace` ~11s (cache warm BFF); chart `setData` only; no market refetch |
+| long-pan-boundary | **needs manual re-capture** | Auto pan did not trigger `wb.render_window.shift_applied` (Playwright drag on canvas). Current JSON has only 2 steps — not valid baseline |
+| distant-trade-navigation | **captured (thin)** | Auto: oldest trade from Reports → Chart; only `markers.rebuild` + `trace_display.apply` (same render window, no new `/signal-trace`). Consider manual re-capture if you want viewport-shift + trace decision steps |
 
-Fill rows after JSON files are saved. Compare `count`, `total_ms`, `max_ms` per step; flag unexpected `wb.market_fetch.skip_in_flight` without matching `wb.market_fetch.end`, or `signalTraceStatus` stuck on `loading`.
+Files: `debug/reports/workbench-*.json`. Re-capture script: `node debug/capture-pr1-baselines.mjs` (env `PR1_BASELINE_FROM=1..4`).
 
 ## Approval
 

@@ -17,7 +17,7 @@ const { mockUseWorkbench } = vi.hoisted(() => ({
 }));
 
 vi.mock("@/shared/context/WorkbenchContext", () => ({
-  useWorkbench: () => mockUseWorkbench(),
+  useWorkbenchReport: () => mockUseWorkbench(),
 }));
 
 afterEach(() => {

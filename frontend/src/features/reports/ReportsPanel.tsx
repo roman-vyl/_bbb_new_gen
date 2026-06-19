@@ -33,10 +33,10 @@ import {
 } from "@/features/reports/tradeDiagnosticsFilters";
 import { DIAGNOSTICS_COLUMNS } from "@/features/reports/tradeTableColumns";
 import { findTradeById, tradeDisplayNumber, tradeIdsEqual } from "@/features/chart/tradeLookup";
-import { useWorkbench } from "@/shared/context/WorkbenchContext";
+import { useWorkbenchReport } from "@/shared/context/WorkbenchContext";
 
 export function ReportsPanel() {
-  const { report, selectedVariant, selectedTradeId, selectTrade } = useWorkbench();
+  const { report, selectedVariant, selectedTradeId, selectTrade } = useWorkbenchReport();
   const [filters, setFilters] = useState<TradeDiagnosticsFilterState>(
     DEFAULT_TRADE_DIAGNOSTICS_FILTERS,
   );

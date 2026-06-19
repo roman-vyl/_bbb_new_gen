@@ -19,7 +19,7 @@ import type {
   ValidationErrorItem,
   ValidationResult,
 } from "@/api/types";
-import { useWorkbench } from "@/shared/context/WorkbenchContext";
+import { useWorkbenchComposer } from "@/shared/context/WorkbenchContext";
 
 import { ComponentHelpHint } from "./ComponentHelpHint";
 import {
@@ -389,7 +389,7 @@ export function ComposerPanel() {
     createNewConfig,
     refreshRunsAndSelectRun,
     setActiveTab,
-  } = useWorkbench();
+  } = useWorkbenchComposer();
   const [catalog, setCatalog] = useState<ComponentCatalog | null>(null);
   const [catalogError, setCatalogError] = useState<string | null>(null);
   const [selectedIndex, setSelectedIndex] = useState(0);

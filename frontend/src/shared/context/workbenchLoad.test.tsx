@@ -15,7 +15,12 @@ import type {
   WorkbenchTab,
 } from "@/api/types";
 import { clearMarketCache } from "@/features/chart/marketDataCache";
-import { WorkbenchProvider, useWorkbench } from "@/shared/context/WorkbenchContext";
+import {
+  WorkbenchProvider,
+  useWorkbench,
+  useWorkbenchChart,
+  useWorkbenchReport,
+} from "@/shared/context/WorkbenchContext";
 
 const fetchRunReport = vi.fn<typeof import("@/api/client").fetchRunReport>();
 const fetchRunSummaries = vi.fn<typeof import("@/api/client").fetchRunSummaries>();
@@ -104,6 +109,44 @@ const EMPTY_SIGNAL_TRACE: SignalTraceBundle = {
     stop_ready: [],
     portfolio_entry: [],
     internals: {},
+  },
+};
+
+const ONE_POINT_SIGNAL_TRACE: SignalTraceBundle = {
+  ...EMPTY_SIGNAL_TRACE,
+  times: [1000],
+  long: {
+    direction_ok: [false],
+    blockers_ok: [false],
+    setup_ok: [false],
+    trigger_ok: [false],
+    risk_ok: [false],
+    signal_entry: [false],
+    stop_ready: [false],
+    portfolio_entry: [false],
+    internals: {},
+  },
+  short: {
+    direction_ok: [false],
+    blockers_ok: [false],
+    setup_ok: [false],
+    trigger_ok: [false],
+    risk_ok: [false],
+    signal_entry: [false],
+    stop_ready: [false],
+    portfolio_entry: [false],
+    internals: {},
+  },
+};
+
+const ONE_POINT_HTF_SIGNAL_TRACE: SignalTraceBundle = {
+  ...ONE_POINT_SIGNAL_TRACE,
+  htf_context: {
+    state: ["up"],
+    fast: [101],
+    anchor: [99],
+    slow: [97],
+    meta: {},
   },
 };
 
@@ -213,7 +256,45 @@ function makeReport(runId: string): RunReport {
   };
 }
 
+function makeHtfReport(runId: string): RunReport {
+  const report = makeReport(runId);
+  return {
+    ...report,
+    variants: report.variants.map((variant) =>
+      variant.variant === "exp_a"
+        ? {
+            ...variant,
+            strategy_spec: {
+              ...variant.strategy_spec,
+              contexts: {
+                htf_1: {
+                  component_id: "htf_context",
+                  timeframe: "4h",
+                  fast_period: 21,
+                  anchor_period: 55,
+                  slow_period: 144,
+                },
+              },
+              trade_management: {
+                exit_policy: {
+                  context_consumption: {
+                    context_ref: "htf_1",
+                  },
+                  always_on: {
+                    exits: [],
+                  },
+                },
+              },
+            },
+          }
+        : variant,
+    ),
+  };
+}
+
 let workbenchRef: ReturnType<typeof useWorkbench> | null = null;
+let reportSliceRenderCount = 0;
+let chartSliceRef: ReturnType<typeof useWorkbenchChart> | null = null;
 
 function WorkbenchCapture() {
   workbenchRef = useWorkbench();
@@ -224,6 +305,17 @@ function WorkbenchCapture() {
       data-active-tab={workbenchRef.activeTab}
     />
   );
+}
+
+function ReportSliceCapture() {
+  const reportSlice = useWorkbenchReport();
+  reportSliceRenderCount += 1;
+  return <div data-report-run-id={reportSlice.report?.run_id ?? ""} />;
+}
+
+function ChartSliceCapture() {
+  chartSliceRef = useWorkbenchChart();
+  return null;
 }
 
 function Host({
@@ -240,10 +332,14 @@ describe("Workbench report-load invariant", () => {
   afterEach(() => {
     cleanup();
     workbenchRef = null;
+    chartSliceRef = null;
+    reportSliceRenderCount = 0;
   });
 
   beforeEach(() => {
     workbenchRef = null;
+    chartSliceRef = null;
+    reportSliceRenderCount = 0;
     vi.clearAllMocks();
     clearMarketCache();
     fetchRunSummaries.mockResolvedValue(RUNS);
@@ -385,6 +481,65 @@ describe("Workbench report-load invariant", () => {
       expect(fetchSignalTrace).toHaveBeenCalledTimes(1);
     });
     expect(workbenchRef?.selectedTradeId).toBe(1);
+  });
+
+  it("does not notify report slice consumers when chart display revision changes", async () => {
+    fetchChartMarketBundle.mockResolvedValue({
+      candles: [{ time: 1000, open: 1, high: 2, low: 0.5, close: 1.5 }],
+      ema_overlays: [],
+    });
+    const deferred = createDeferred<SignalTraceBundle>();
+    fetchSignalTrace.mockReturnValue(deferred.promise);
+
+    render(
+      <Host>
+        <ReportSliceCapture />
+        <ChartSliceCapture />
+      </Host>,
+    );
+
+    await waitFor(() => {
+      expect(fetchSignalTrace).toHaveBeenCalledTimes(1);
+    });
+    const rendersBeforeTraceApply = reportSliceRenderCount;
+    const revisionBeforeTraceApply = chartSliceRef?.displayApplyRevision ?? 0;
+
+    await act(async () => {
+      deferred.resolve(ONE_POINT_SIGNAL_TRACE);
+    });
+
+    await waitFor(() => {
+      expect(chartSliceRef?.displayApplyRevision).toBeGreaterThan(revisionBeforeTraceApply);
+    });
+    expect(reportSliceRenderCount).toBe(rendersBeforeTraceApply);
+  });
+
+  it("keeps HTF context EMA overlays sourced from signal trace after context split", async () => {
+    fetchRunReport.mockImplementation(async (runId: string) => makeHtfReport(runId));
+    fetchChartMarketBundle.mockResolvedValue({
+      candles: [{ time: 1000, open: 1, high: 2, low: 0.5, close: 1.5 }],
+      ema_overlays: [],
+    });
+    fetchSignalTrace.mockResolvedValue(ONE_POINT_HTF_SIGNAL_TRACE);
+
+    render(
+      <Host>
+        <ChartSliceCapture />
+      </Host>,
+    );
+
+    await waitFor(() => {
+      expect(fetchSignalTrace).toHaveBeenCalledTimes(1);
+    });
+    expect(fetchSignalTrace.mock.calls[0]![0].contextOverlayRef).toBe("htf_1");
+
+    await waitFor(() => {
+      expect(
+        chartSliceRef?.chartViewModel.displayAuxEmaOverlays.some(
+          (overlay) => overlay.id === "htf_fast" && overlay.dashed && overlay.points[0]?.value === 101,
+        ),
+      ).toBe(true);
+    });
   });
 });
 

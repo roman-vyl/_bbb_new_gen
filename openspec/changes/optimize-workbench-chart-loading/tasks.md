@@ -12,23 +12,24 @@
 - [x] 1.10 Add or update focused frontend tests for lazy chart activation, Reports trade selection before Chart activation, and stale response suppression.
 - [x] 1.11 Verify HTF context EMA overlays (`workbench-chart-htf-context-overlays`) on a variant with `strategy.contexts`.
 - [x] 1.12 Run frontend verification (`cd frontend; npm run build` and relevant tests).
-- [ ] 1.13 STOP FOR REVIEW: report PR 1 debug measurements and wait for user approval before starting PR 2.
+- [x] 1.13 STOP FOR REVIEW: report PR 1 debug measurements and wait for user approval before starting PR 2.
   - Baseline JSON for `cold-chart-open`, `tab-switch-chart`, `long-pan-boundary`, `distant-trade-navigation` pending in `debug/reports/` (see `pr1-review-packet.md`).
   - Note: `initialActiveTab` defaults to `"chart"`, so lazy activation does not defer cold Chart open in the default app route; PR 1 foundation only.
 
 ## 2. PR 2 — WorkbenchContext Split Without Behavior Changes
 
-- [ ] 2.1 Identify current shell/report state and chart data runtime state in `WorkbenchContext`.
-- [ ] 2.2 Extract chart data runtime/hook for market load/cache, render window, trace display cache, signal trace load, auxiliary overlays, and viewport commands.
-- [ ] 2.3 Keep `WorkbenchProvider` responsible for active tab, runs, selected run, report, selected variant, and selected trade.
-- [ ] 2.4 Preserve existing cache keys, API contracts, render-window behavior, trace scheduling, trade focus behavior, and HTF overlay sourcing.
-- [ ] 2.5 Ensure ReportsPanel is not subscribed to `displayApplyRevision`.
-- [ ] 2.6 Ensure ContextBar is not subscribed to `chartDisplayComponentEvents`.
-- [ ] 2.7 Ensure ChartPanel receives chart view model/display state/commands rather than unrelated Workbench shell state.
-- [ ] 2.8 Add or update tests proving the refactor does not change pan, trade navigation, trace, and marker behavior.
-- [ ] 2.9 Verify HTF context EMA overlays (`workbench-chart-htf-context-overlays`) on a variant with `strategy.contexts`.
-- [ ] 2.10 Run frontend verification (`cd frontend; npm run build` and relevant tests).
+- [x] 2.1 Identify current shell/report state and chart data runtime state in `WorkbenchContext`.
+- [x] 2.2 Extract chart data runtime/hook for market load/cache, render window, trace display cache, signal trace load, auxiliary overlays, and viewport commands.
+- [x] 2.3 Keep `WorkbenchProvider` responsible for active tab, runs, selected run, report, selected variant, and selected trade.
+- [x] 2.4 Preserve existing cache keys, API contracts, render-window behavior, trace scheduling, trade focus behavior, and HTF overlay sourcing.
+- [x] 2.5 Ensure ReportsPanel is not subscribed to `displayApplyRevision`.
+- [x] 2.6 Ensure ContextBar is not subscribed to `chartDisplayComponentEvents`.
+- [x] 2.7 Ensure ChartPanel receives chart view model/display state/commands rather than unrelated Workbench shell state.
+- [x] 2.8 Add or update tests proving the refactor does not change pan, trade navigation, trace, and marker behavior.
+- [x] 2.9 Verify HTF context EMA overlays (`workbench-chart-htf-context-overlays`) on a variant with `strategy.contexts`.
+- [x] 2.10 Run frontend verification (`cd frontend; npm run build` and relevant tests).
 - [ ] 2.11 STOP FOR REVIEW: summarize the refactor and wait for user approval before starting PR 3.
+  - PR 2 implementation complete; review gate pending user approval before PR 3.
 
 ## 3. PR 3 — Anti-Flicker Events With Partial Display State
 
