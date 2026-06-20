@@ -68,16 +68,19 @@ Scope: skip redundant `/signal-trace` when chart-events already satisfied displa
 - [x] 5B.1i Regression: 5A display-before-dense tests unchanged
 - [x] 5B.1j Lanes status state machine: loading only on dense fetch; skip preserves error; restore_session null → fetch fallback
 - [x] 5B.1k Distant trade + deferred chart-events: re-apply trade focus on trace ready; marker rebuild after display merge
-- [ ] 5B.2 **STOP FOR REVIEW:** lanes status + distant trade marker apply; manual smoke
+- [x] 5B.2 Manual smoke: lanes status + distant trade marker apply (local `frontend/.env.local` with `VITE_CHART_EVENTS_API=1`)
+- [x] 5B.3 **APPROVED:** lazy dense lanes policy live; display path unchanged; distant-trade marker fix verified — proceed to Phase 6
+
+  Smoke checklist (local only — do not commit env): create `frontend/.env.local` with `VITE_CHART_EVENTS_API=1`, restart Vite, then verify distant trade marker, `selectedTradeEntryMarkerInView`, lanes error on skip, no redundant dense fetch when lanes ready.
 
 ## 6. Phase 6 — Migration, acceptance, archive prep
 
-- [ ] 6.1 Record chart-events vs signal-trace payload ratio in `debug/signal-trace-window-perf.md`
-- [ ] 6.2 Acceptance: pan within cached range — zero chart-events network
-- [ ] 6.3 Acceptance: pan to missing range — chart-events chunk fetch (not dense trace for display)
-- [ ] 6.4 Acceptance: lanes / bar inspector / ChartTradeDiagnostics via signal-trace (after 5B); bar inspector regime from dense `htf_context.state`
-- [ ] 6.5 Acceptance: backend cache tests use call-count/key assertions only (no timing)
-- [ ] 6.6 Acceptance: fallback scenario emits debug marks (not silent)
+- [x] 6.1 Record chart-events vs signal-trace payload ratio in `debug/signal-trace-window-perf.md` (50k synthetic: **4.37×**, 8250 KB → 1886 KB)
+- [x] 6.2 Acceptance: pan within cached range — zero chart-events network (planner + coordinator + orchestrator tests)
+- [x] 6.3 Acceptance: pan to missing range — chart-events chunk fetch (not dense trace for display)
+- [x] 6.4 Acceptance: lanes / bar inspector / ChartTradeDiagnostics via signal-trace; bar inspector regime from dense `htf_context.state`
+- [x] 6.5 Acceptance: backend cache tests use call-count/key assertions only (no timing)
+- [x] 6.6 Acceptance: fallback scenario emits debug marks (`workbenchTraceNetworkLoad.test.ts`)
 - [ ] 6.7 **STOP FOR REVIEW:** acceptance checklist complete; user approval to archive change
 
 ## Future work (out of scope — do not implement in this change)

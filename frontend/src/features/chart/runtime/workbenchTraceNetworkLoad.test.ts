@@ -13,6 +13,7 @@ import {
   mergeDisplayFromDenseFallback,
   type WorkbenchTraceNetworkLoadContext,
 } from "@/features/chart/runtime/workbenchTraceNetworkLoad";
+import { dbgExport, dbgReset, PIPELINE_DEBUG_STEPS as DBG } from "@/shared/diagnostics/pipelineDebug";
 
 const fetchChartEvents = vi.fn<typeof import("@/api/client").fetchChartEvents>();
 const fetchSignalTrace = vi.fn<typeof import("@/api/client").fetchSignalTrace>();
@@ -117,6 +118,7 @@ describe("loadDisplayTraceChunk", () => {
   afterEach(() => {
     vi.unstubAllEnvs();
     vi.clearAllMocks();
+    dbgReset();
   });
 
   it("commits display from chart-events when flag enabled", async () => {
@@ -144,6 +146,18 @@ describe("loadDisplayTraceChunk", () => {
 
     expect(result.outcome).toBe("continue");
     expect(ctx.onCommitDisplay).not.toHaveBeenCalled();
+  });
+
+  it("emits fetch_fail and fallback debug marks on chart-events failure (Phase 6.6)", async () => {
+    vi.stubEnv("VITE_CHART_EVENTS_API", "1");
+    vi.stubEnv("VITE_EMA_PIPELINE_DEBUG", "true");
+    fetchChartEvents.mockRejectedValue(new Error("404"));
+    const ctx = makeCtx();
+
+    await loadDisplayTraceChunk(ctx);
+
+    expect(dbgExport().some((row) => row.step === DBG.chartEvents.fetchFail)).toBe(true);
+    expect(dbgExport().some((row) => row.step === DBG.chartEvents.fallback)).toBe(true);
   });
 });
 

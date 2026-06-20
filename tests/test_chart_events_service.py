@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from unittest.mock import MagicMock
 
 import pytest
@@ -167,3 +168,85 @@ def test_chart_events_cache_populated_after_fetch(monkeypatch: pytest.MonkeyPatc
         to_ms=2_000,
     )
     assert len(ces._CHART_EVENTS_CACHE) == 1
+
+
+def _large_signal_trace(*, bar_count: int) -> SignalTraceBundle:
+    times = [1_700_000_000 + i * 300 for i in range(bar_count)]
+    bool_lane = [i % 2 == 0 for i in range(bar_count)]
+    internals = {
+        "direction": {"ema_slope": [0.1 if i % 3 == 0 else -0.1 for i in range(bar_count)]},
+    }
+    side = SideSignalTrace(
+        direction_ok=bool_lane,
+        blockers_ok=bool_lane,
+        setup_ok=bool_lane,
+        trigger_ok=bool_lane,
+        risk_ok=bool_lane,
+        signal_entry=bool_lane,
+        stop_ready=bool_lane,
+        portfolio_entry=bool_lane,
+        internals=internals,
+    )
+    meta = SignalTraceMeta(
+        variant="v1",
+        component_ids={
+            "direction": "ema_anchor_stack_trend",
+            "setups": [],
+            "trigger": "reclaim_trigger",
+            "risk": "fixed_risk",
+        },
+        setup_params=[],
+        blocker_instances=[],
+    )
+    return SignalTraceBundle(
+        times=times,
+        meta=meta,
+        htf_context=HtfContextTrace(
+            state=["up" if i % 2 == 0 else "neutral" for i in range(bar_count)],
+            fast=[float(i) for i in range(bar_count)],
+            anchor=[float(i) + 0.5 for i in range(bar_count)],
+            slow=[float(i) + 1.0 for i in range(bar_count)],
+            meta={"context_ref": "htf_1", "timeframe": "4h"},
+        ),
+        context_consumption_trace=[
+            {
+                "role": "blocker",
+                "component_id": "c",
+                "context_ref": "htf_1",
+                "policy_id": "p",
+                "context_applied": bool_lane,
+            }
+        ],
+        component_events=[
+            ComponentEvent(
+                time=times[i],
+                event_type="point",
+                role="exit_signal",
+                side="long",
+                component_id="comp",
+                instance_id="inst",
+                label=f"exit-{i}",
+            )
+            for i in range(0, bar_count, max(1, bar_count // 50))
+        ],
+        long=side,
+        short=side,
+    )
+
+
+def test_chart_events_payload_ratio_at_representative_window() -> None:
+    """Phase 6.1: sparse chart-events JSON is materially smaller than dense signal-trace."""
+    bar_count = 50_000
+    trace = _large_signal_trace(bar_count=bar_count)
+    sparse = ces._project_display_bundle(
+        trace,
+        requested_from_sec=trace.times[0],
+        requested_to_sec=trace.times[-1],
+    )
+
+    dense_bytes = len(json.dumps(trace.model_dump(mode="json")).encode("utf-8"))
+    sparse_bytes = len(json.dumps(sparse.model_dump(mode="json")).encode("utf-8"))
+    ratio = dense_bytes / sparse_bytes
+
+    assert sparse_bytes < dense_bytes
+    assert ratio >= 3.0
