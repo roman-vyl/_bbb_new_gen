@@ -2,26 +2,28 @@ Review-gated implementation: **STOP after each phase** and wait for user approva
 
 ## 1. Phase 1 — Audit / baseline (no runtime changes)
 
-- [ ] 1.1 Document monolithic flow: `fetchChartMarketBundle (full range) → seed → slice 50k` in `debug/reports/market-bundle-cold-load-baseline.md`
-- [ ] 1.2 Capture baseline with `VITE_EMA_PIPELINE_DEBUG=true`: cold-open duration, chart-bundle bar/EMA counts, payload estimate, time until candles visible vs overlays visible
-- [ ] 1.3 Note entry points: `WorkbenchContext.tsx`, `runMarketView.ts`, `marketResourceCache.ts`, `research_api/routers/market.py`
-- [ ] 1.4 **STOP FOR REVIEW:** publish baseline; wait for approval before Phase 2
+- [x] 1.1 Document monolithic flow: `fetchChartMarketBundle (full range) → seed → slice 50k` in `debug/reports/market-bundle-cold-load-baseline.md`
+- [x] 1.2 Capture baseline with `VITE_EMA_PIPELINE_DEBUG=true`: cold-open duration, chart-bundle bar/EMA counts, payload estimate, time until candles visible vs overlays visible
+- [x] 1.3 Note entry points: `WorkbenchContext.tsx`, `runMarketView.ts`, `marketResourceCache.ts`, `research_api/routers/market.py`
+- [x] 1.4 **STOP FOR REVIEW:** publish baseline doc and measurements; wait for user approval before Phase 2
 
 ## 2. Phase 2 — Backend contracts only (no service, no router)
 
 - [ ] 2.1 Add `CandlesWindowBundle` + coverage to `research_api/contracts/chart.py`
-- [ ] 2.2 Add `EmaWindowBundle` + coverage (`calculation_origin_ms`, `cache_hit`) to `research_api/contracts/chart.py`
+- [ ] 2.2 Add `EmaWindowBundle` + coverage (`calculation_origin_ms`, `coverage_to_ms`, `cache_hit` always present) to `research_api/contracts/chart.py`
 - [ ] 2.3 Add matching TypeScript types in `frontend/src/api/types.ts`
 - [ ] 2.4 Add contract/schema tests only (Pydantic shape, TS parity) — no `market_reader` / EMA cache implementation
 - [ ] 2.5 **STOP FOR REVIEW:** confirm split contracts (candles-only, ema-only, no bundled window); wait for approval before Phase 3
 
 ## 3. Phase 3 — Backend services (no router)
 
+**Prerequisite:** EMA canonical cache semantics documented in `design.md` §2 and `research-api-market-ema-window` spec (extendable entry, `coverage_to_ms`, market data identity invalidation).
+
 - [ ] 3.1 Implement `fetch_candles_window` in `research_api/services/market_reader.py` (display window only + coverage)
-- [ ] 3.2 Implement canonical EMA series cache service (e.g. `chart_ema_cache.py`): key `(symbol, timeframe, period, origin_policy)`, full-series compute on miss, slice on hit
-- [ ] 3.3 Implement `fetch_ema_window` using canonical cache + `origin_policy=canonical`
-- [ ] 3.4 Service tests: candles-window bounds/truncation; ema-window canonical consistency vs full-range chart-bundle; cache_hit on second window; no warmup bars in response
-- [ ] 3.5 **STOP FOR REVIEW:** report EMA parity and cache_hit behavior; wait for approval before Phase 4
+- [ ] 3.2 Implement canonical EMA cache: entry stores `calculation_origin_ms`, `coverage_to_ms`, sorted points; key includes market data identity
+- [ ] 3.3 Implement `fetch_ema_window`: first request computes origin→`requested_to_ms`; extend when `requested_to_ms > coverage_to_ms`; slice when in-coverage; always return window slice only
+- [ ] 3.4 Service tests: candles-window; ema extension vs full recompute; cache_hit; parity vs chart-bundle; invalidation on market data identity change
+- [ ] 3.5 **STOP FOR REVIEW:** report EMA extension/parity and cache semantics; wait for approval before Phase 4
 
 ## 4. Phase 4 — Backend endpoints
 

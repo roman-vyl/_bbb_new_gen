@@ -77,21 +77,44 @@ backend ema-window (origin_policy=canonical):
 
 ### 2. Canonical on-demand EMA cache (backend in-memory)
 
-**Choice:** New service (e.g. `chart_ema_cache.py`) keyed by `(symbol, timeframe, period, origin_policy)`. On cache miss:
+**Choice:** New service (e.g. `chart_ema_cache.py`) with **extendable** canonical series entries.
 
-1. Resolve `calculation_origin_ms` — earliest available candle open for symbol/tf (canonical origin).
-2. `range_get` from origin through window end.
-3. `compute_chart_overlay_ema` on full series.
-4. Store full `IndicatorPoint[]` in process memory.
-5. Return slice `[from_ms, to_ms)`.
+**Cache entry shape (per key):**
 
-On cache hit: slice only. Response includes `coverage.cache_hit`.
+```text
+key: (symbol, timeframe, period, origin_policy, market_data_identity)
+entry:
+  calculation_origin_ms    # canonical EMA seed start (earliest candle open used)
+  coverage_to_ms           # last bar open time (or exclusive end) through which EMA is computed
+  points[]                 # sorted IndicatorPoint[] for [origin .. coverage_to_ms)
+```
 
-**Rationale:** Frontend unaware of warmup; EMA exact and consistent between windows; first EMA500 request may compute full series but does not block candles and does not JSON-serialize 600k points.
+`market_data_identity` MUST tie the cache to the current market DB/source (e.g. SQLite file path or mtime hash). Documented invalidation: entry discarded when market data identity changes (DB refresh/reload).
 
-**Trade-off:** First ema-window per period pays full-series compute cost once. Acceptable — non-blocking, backend-only, amortized across window navigations.
+**First request** for a cache key when `requested_to_ms > coverage_to_ms` (or cache miss):
 
-**Rejected:** Per-request `period + 5` warmup read — frontend-adjacent contract complexity; still recomputes on every new distant window without canonical consistency guarantee.
+1. Resolve `calculation_origin_ms` — earliest available candle open for symbol/tf.
+2. Read candles from `calculation_origin_ms` through at least `requested_to_ms` (exclusive end per market API parity).
+3. Compute canonical EMA from origin through that range.
+4. Store `calculation_origin_ms`, `coverage_to_ms`, sorted `points`.
+5. Return **only** the requested window slice `[from_ms, to_ms)`.
+
+**Later request** with `requested_to_ms` beyond current `coverage_to_ms`:
+
+1. **Extend** — read candles from existing `coverage_to_ms` through new `requested_to_ms`; continue EMA recurrence from last cached EMA state and append points.
+2. Update `coverage_to_ms`.
+3. Return only requested window slice.
+
+**Later request** within existing `coverage_to_ms`:
+
+1. Slice cached `points` — `cache_hit=true`.
+2. No recompute from display-window start.
+
+**Response contract (v1):** `coverage.calculation_origin_ms` and `coverage.cache_hit` are **always present** in API responses (not debug-only).
+
+**Rejected:** Recompute from display-window start on each request. Recompute full series from origin on every window change when extension suffices.
+
+**Trade-off:** First ema-window per period may compute a long series; extension amortizes distant-trade and pan-right navigation. Does not block candles.
 
 ### 3. Frontend interval/chunk cache (unchanged model)
 
@@ -167,6 +190,7 @@ Review-gated (see `tasks.md`):
 
 ## Open Questions
 
-- **EMA cache eviction:** LRU per `(symbol, tf, period)` when many variants/symbols visited — policy in Phase 3.
+- **EMA cache eviction:** LRU per cache key when many symbols/periods visited — policy in Phase 3.
 - **Parallel vs sequential overlay fetches:** Default parallel for fast/anchor/slow in v1?
 - **Max intervals per frontend cache key:** `MAX_CHUNKS_PER_KEY` like trace cache.
+- **market_data_identity:** Exact field (db path + mtime vs content hash) — finalize in Phase 2 contracts.
