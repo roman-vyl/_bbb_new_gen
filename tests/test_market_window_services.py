@@ -295,3 +295,116 @@ def test_extend_chart_overlay_ema_continues_series() -> None:
     seed = compute_chart_overlay_ema(bars[:2], period=2)
     extended = extend_chart_overlay_ema(seed, bars[2:], period=2)
     assert [p.value for p in extended] == [p.value for p in full]
+
+
+def test_ema_first_miss_single_chart_bars_read(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import research_api.services.chart_ema_cache as ema_cache_mod
+
+    db_file = tmp_path / "market.sqlite"
+    symbol, tf, from_ms, to_ms = _seed_candles(db_file, count=6)
+    cache = reset_chart_ema_cache_for_tests()
+    calls: list[tuple[int, int]] = []
+
+    original = ema_cache_mod.fetch_chart_bars
+
+    def _spy_fetch_chart_bars(**kwargs):
+        calls.append((int(kwargs["from_ms"]), int(kwargs["to_ms"])))
+        return original(**kwargs)
+
+    monkeypatch.setattr(ema_cache_mod, "fetch_chart_bars", _spy_fetch_chart_bars)
+
+    fetch_ema_window(
+        symbol=symbol,
+        timeframe=tf,
+        period=2,
+        from_ms=from_ms,
+        to_ms=to_ms,
+        db_path=db_file,
+        cache=cache,
+    )
+
+    assert calls == [(0, to_ms)]
+
+
+def test_ema_extension_reads_append_range_only(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import research_api.services.chart_ema_cache as ema_cache_mod
+
+    db_file = tmp_path / "market.sqlite"
+    symbol, tf, from_ms, to_ms = _seed_candles(db_file, count=6)
+    cache = reset_chart_ema_cache_for_tests()
+    partial_to = from_ms + 3 * STEP_MS
+    calls: list[tuple[int, int]] = []
+
+    original = ema_cache_mod.fetch_chart_bars
+
+    def _spy_fetch_chart_bars(**kwargs):
+        calls.append((int(kwargs["from_ms"]), int(kwargs["to_ms"])))
+        return original(**kwargs)
+
+    monkeypatch.setattr(ema_cache_mod, "fetch_chart_bars", _spy_fetch_chart_bars)
+
+    fetch_ema_window(
+        symbol=symbol,
+        timeframe=tf,
+        period=2,
+        from_ms=from_ms,
+        to_ms=partial_to,
+        db_path=db_file,
+        cache=cache,
+    )
+    calls.clear()
+
+    fetch_ema_window(
+        symbol=symbol,
+        timeframe=tf,
+        period=2,
+        from_ms=from_ms,
+        to_ms=to_ms,
+        db_path=db_file,
+        cache=cache,
+    )
+
+    assert calls == [(partial_to, to_ms)]
+
+
+def test_ema_pure_slice_does_not_touch_db(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import research_api.services.chart_ema_cache as ema_cache_mod
+
+    db_file = tmp_path / "market.sqlite"
+    symbol, tf, from_ms, to_ms = _seed_candles(db_file)
+    cache = reset_chart_ema_cache_for_tests()
+
+    fetch_ema_window(
+        symbol=symbol,
+        timeframe=tf,
+        period=2,
+        from_ms=from_ms,
+        to_ms=to_ms,
+        db_path=db_file,
+        cache=cache,
+    )
+
+    def _forbidden_fetch(**_kwargs):
+        raise AssertionError("fetch_chart_bars must not run on pure cache slice")
+
+    monkeypatch.setattr(ema_cache_mod, "fetch_chart_bars", _forbidden_fetch)
+
+    second = fetch_ema_window(
+        symbol=symbol,
+        timeframe=tf,
+        period=2,
+        from_ms=from_ms + STEP_MS,
+        to_ms=to_ms - STEP_MS,
+        db_path=db_file,
+        cache=cache,
+    )
+    assert second.coverage.cache_hit is True

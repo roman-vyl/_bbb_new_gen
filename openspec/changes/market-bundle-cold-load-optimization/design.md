@@ -121,7 +121,17 @@ entry:
 
 Extension and first compute are both `cache_hit=false`. Do not set `cache_hit=true` when any compute/extend work ran for this request.
 
-**Rejected:** Recompute from display-window start on each request. Recompute full series from origin on every window change when extension suffices. `cache_hit=true` after extension.
+**Read pattern (no hidden prefix double-read):**
+
+| Path | DB reads |
+|------|----------|
+| Pure slice (`cache_hit=true`) | **None** |
+| First miss | **One** `fetch_chart_bars(0, requested_to_ms)`; `origin_ms = bars[0]` |
+| Extension | **One** `fetch_chart_bars(entry.coverage_to_ms, requested_to_ms)` only |
+
+Extension and first-miss paths MUST NOT call `range_get(0, requested_to)` for origin discovery when cache entry already exists or when a single bars read suffices.
+
+**Rejected:** Recompute from display-window start on each request. Recompute full series from origin on every window change when extension suffices. `cache_hit=true` after extension. Prefix `range_get(0, through_ms)` before extension branch.
 
 **Trade-off:** First ema-window per period may compute a long series; extension amortizes distant-trade and pan-right navigation. Does not block candles.
 

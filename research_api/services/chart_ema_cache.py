@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from data_engine.config import Settings
-from data_engine.contracts import TimeWindow, timeframe_ms, validate_timeframe
+from data_engine.contracts import timeframe_ms, validate_timeframe
 
 from research_api.contracts.chart import EmaWindowBundle, EmaWindowCoverage, IndicatorPoint
 from research_api.services.indicators import (
@@ -15,7 +15,7 @@ from research_api.services.indicators import (
     slice_indicator_points_for_window,
 )
 from research_api.services.market_params import normalize_symbol, parse_time_range_ms
-from research_api.services.market_reader import _open_db, fetch_chart_bars
+from research_api.services.market_reader import fetch_chart_bars
 
 CANONICAL_ORIGIN_POLICY = "canonical"
 
@@ -63,6 +63,24 @@ def _points_exclusive_end_ms(points: list[IndicatorPoint], tf_ms: int) -> int:
     if not points:
         return 0
     return int(points[-1].time * 1000) + tf_ms
+
+
+def _empty_ema_bundle(
+    *,
+    requested_from_ms: int,
+    requested_to_ms: int,
+    tf_ms: int,
+) -> EmaWindowBundle:
+    coverage = _ema_window_coverage(
+        requested_from_ms=requested_from_ms,
+        requested_to_ms=requested_to_ms,
+        sliced=[],
+        calculation_origin_ms=0,
+        coverage_to_ms=0,
+        cache_hit=False,
+        tf_ms=tf_ms,
+    )
+    return EmaWindowBundle(points=[], coverage=coverage)
 
 
 def _ema_window_coverage(
@@ -143,7 +161,6 @@ class ChartEmaCache:
         )
 
         entry = self._entries.get(key)
-        cache_hit = False
 
         if entry is not None and requested_to_ms <= entry.coverage_to_ms:
             sliced = slice_indicator_points_for_window(
@@ -162,42 +179,7 @@ class ChartEmaCache:
             )
             return EmaWindowBundle(points=sliced, coverage=coverage)
 
-        db = _open_db(db_path)
-        origin_ms = self._resolve_calculation_origin_ms(
-            db=db,
-            symbol=sym,
-            timeframe=tf,
-            through_ms=requested_to_ms,
-        )
-        if origin_ms is None:
-            coverage = _ema_window_coverage(
-                requested_from_ms=requested_from_ms,
-                requested_to_ms=requested_to_ms,
-                sliced=[],
-                calculation_origin_ms=0,
-                coverage_to_ms=0,
-                cache_hit=False,
-                tf_ms=tf_ms,
-            )
-            return EmaWindowBundle(points=[], coverage=coverage)
-
-        if entry is None:
-            bars = fetch_chart_bars(
-                symbol=sym,
-                timeframe=tf,
-                from_ms=origin_ms,
-                to_ms=requested_to_ms,
-                db_path=db_path,
-            )
-            points = compute_chart_overlay_ema(bars, period=period)
-            coverage_to_ms = _bars_exclusive_end_ms(bars, tf_ms) if bars else origin_ms
-            entry = _CanonicalEmaEntry(
-                calculation_origin_ms=origin_ms,
-                coverage_to_ms=coverage_to_ms,
-                points=points,
-            )
-            self._entries[key] = entry
-        elif requested_to_ms > entry.coverage_to_ms:
+        if entry is not None and requested_to_ms > entry.coverage_to_ms:
             new_bars = fetch_chart_bars(
                 symbol=sym,
                 timeframe=tf,
@@ -208,6 +190,28 @@ class ChartEmaCache:
             entry.points = extend_chart_overlay_ema(entry.points, new_bars, period=period)
             if new_bars:
                 entry.coverage_to_ms = _bars_exclusive_end_ms(new_bars, tf_ms)
+            self._entries[key] = entry
+        else:
+            bars = fetch_chart_bars(
+                symbol=sym,
+                timeframe=tf,
+                from_ms=0,
+                to_ms=requested_to_ms,
+                db_path=db_path,
+            )
+            if not bars:
+                return _empty_ema_bundle(
+                    requested_from_ms=requested_from_ms,
+                    requested_to_ms=requested_to_ms,
+                    tf_ms=tf_ms,
+                )
+            origin_ms = int(bars[0].time * 1000)
+            points = compute_chart_overlay_ema(bars, period=period)
+            entry = _CanonicalEmaEntry(
+                calculation_origin_ms=origin_ms,
+                coverage_to_ms=_bars_exclusive_end_ms(bars, tf_ms),
+                points=points,
+            )
             self._entries[key] = entry
 
         sliced = slice_indicator_points_for_window(
@@ -221,23 +225,10 @@ class ChartEmaCache:
             sliced=sliced,
             calculation_origin_ms=entry.calculation_origin_ms,
             coverage_to_ms=entry.coverage_to_ms,
-            cache_hit=cache_hit,
+            cache_hit=False,
             tf_ms=tf_ms,
         )
         return EmaWindowBundle(points=sliced, coverage=coverage)
-
-    @staticmethod
-    def _resolve_calculation_origin_ms(
-        *,
-        db,
-        symbol: str,
-        timeframe: str,
-        through_ms: int,
-    ) -> int | None:
-        candles = db.range_get(symbol, timeframe, TimeWindow(0, through_ms))
-        if not candles:
-            return None
-        return int(candles[0].open_time_ms)
 
 
 _default_cache: ChartEmaCache | None = None
