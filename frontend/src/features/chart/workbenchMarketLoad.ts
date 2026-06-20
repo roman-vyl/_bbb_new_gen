@@ -89,6 +89,15 @@ export type ExecuteMarketWindowLoadResult = {
   emaFetched: number;
 };
 
+export type MarketWindowChunkKind = "candles" | "ema";
+
+export function buildMarketTargetWindowKey(
+  viewIdentity: string,
+  targetWindow: MarketDisplayWindowMs,
+): string {
+  return `${viewIdentity}:${targetWindow.fromMs}:${targetWindow.toMs}:${targetWindow.toOpenTimeMs}`;
+}
+
 export async function executeMarketWindowLoad(input: {
   view: RunMarketView;
   targetWindow: MarketDisplayWindowMs;
@@ -96,7 +105,7 @@ export async function executeMarketWindowLoad(input: {
   timeframe: string;
   signal: AbortSignal;
   inFlightKeys: Set<string>;
-  onChunkSeeded?: () => void;
+  onChunkSeeded?: (kind: MarketWindowChunkKind) => void;
 }): Promise<ExecuteMarketWindowLoadResult> {
   let candlesFetched = false;
   let emaFetched = 0;
@@ -115,7 +124,7 @@ export async function executeMarketWindowLoad(input: {
         signal: input.signal,
       });
       candlesFetched = true;
-      input.onChunkSeeded?.();
+      input.onChunkSeeded?.("candles");
     } finally {
       input.inFlightKeys.delete(candlesPlan.inFlightKey);
     }
@@ -139,7 +148,7 @@ export async function executeMarketWindowLoad(input: {
           signal: input.signal,
         });
         emaFetched += 1;
-        input.onChunkSeeded?.();
+        input.onChunkSeeded?.("ema");
       } finally {
         input.inFlightKeys.delete(plan.inFlightKey);
       }

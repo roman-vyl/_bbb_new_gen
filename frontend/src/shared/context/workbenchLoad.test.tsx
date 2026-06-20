@@ -16,6 +16,7 @@ import type {
 } from "@/api/types";
 import { clearMarketResourceCache } from "@/features/chart/marketResourceCache";
 import { installSplitMarketWindowMocks, mockCandlesWindowBundle, mockEmaWindowBundle } from "@/test/marketWindowApiMocks";
+import { dbgExport, dbgReset, PIPELINE_DEBUG_STEPS as DBG } from "@/shared/diagnostics/pipelineDebug";
 import {
   WorkbenchProvider,
   useWorkbench,
@@ -682,12 +683,14 @@ describe("Workbench split market resource cache", () => {
   afterEach(() => {
     cleanup();
     workbenchRef = null;
+    vi.unstubAllEnvs();
   });
 
   beforeEach(() => {
     workbenchRef = null;
     vi.clearAllMocks();
     clearMarketResourceCache();
+    vi.stubEnv("VITE_EMA_PIPELINE_DEBUG", "true");
     fetchRunSummaries.mockResolvedValue(RUNS);
     fetchConfigState.mockResolvedValue({
       family: "ema_pullback",
@@ -773,6 +776,65 @@ describe("Workbench split market resource cache", () => {
     await waitFor(() => {
       expect(chartSliceRef?.chartEmaOverlays).toHaveLength(3);
     });
+  });
+
+  it("does not re-init render window when only EMA overlays arrive", async () => {
+    installDefaultMarketMocks(ANCHOR_EMA_OVERLAYS);
+    dbgReset();
+    const emaDeferreds = new Map<
+      number,
+      ReturnType<typeof createDeferred<Awaited<ReturnType<typeof fetchEmaWindow>>>>
+    >();
+    fetchEmaWindow.mockImplementation(async (params) => {
+      const deferred = createDeferred<Awaited<ReturnType<typeof fetchEmaWindow>>>();
+      emaDeferreds.set(params.period, deferred);
+      const overlay = ANCHOR_EMA_OVERLAYS.find((candidate) => candidate.period === params.period);
+      return deferred.promise.then(() =>
+        mockEmaWindowBundle(
+          overlay?.points ?? [],
+          params.fromMs,
+          params.toOpenTimeMs + 300_000,
+        ),
+      );
+    });
+
+    render(
+      <Host>
+        <WorkbenchCapture />
+        <ChartSliceCapture />
+      </Host>,
+    );
+
+    await waitFor(() => {
+      expect(workbenchRef?.marketLoadStatus).toBe("ready");
+      expect(
+        dbgExport().find((row) => row.step === DBG.load.renderWindowInit)?.count,
+      ).toBe(1);
+    });
+
+    const initCountAfterCandles = dbgExport().find(
+      (row) => row.step === DBG.load.renderWindowInit,
+    )?.count;
+    expect(initCountAfterCandles).toBe(1);
+
+    await act(async () => {
+      for (const overlay of ANCHOR_EMA_OVERLAYS) {
+        emaDeferreds.get(overlay.period)?.resolve(
+          mockEmaWindowBundle(overlay.points, 0, 2_000_000),
+        );
+      }
+    });
+
+    await waitFor(() => {
+      expect(chartSliceRef?.chartEmaOverlays).toHaveLength(3);
+    });
+
+    const initCountAfterEma = dbgExport().find(
+      (row) => row.step === DBG.load.renderWindowInit,
+    )?.count;
+    expect(initCountAfterEma).toBe(1);
+    expect(fetchCandlesWindow).toHaveBeenCalledTimes(1);
+    expect(fetchEmaWindow).toHaveBeenCalledTimes(3);
   });
 
   it("reuses cached candles and refetches overlays when variant anchor-stack periods change", async () => {
