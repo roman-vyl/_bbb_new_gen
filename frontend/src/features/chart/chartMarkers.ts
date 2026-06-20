@@ -137,6 +137,25 @@ export function buildTradeMarkersForView(
   return filterMarkersToTimeRange(all, fromSec, toSec);
 }
 
+/** True when the selected trade's entry marker would appear in the current view candles. */
+export function selectedTradeEntryMarkerInView(
+  trades: TradeRecord[],
+  selectedTradeId: number | string | null,
+  viewCandles: { time: number }[],
+): boolean {
+  if (selectedTradeId === null || viewCandles.length === 0) {
+    return false;
+  }
+  const trade = trades.find((row) => tradeIdsEqual(selectedTradeId, row.trade_id));
+  if (trade === undefined) {
+    return false;
+  }
+  const entrySec = Math.floor(trade.entry_time_ms / 1000);
+  const fromSec = viewCandles[0]!.time;
+  const toSec = viewCandles[viewCandles.length - 1]!.time;
+  return entrySec >= fromSec && entrySec <= toSec;
+}
+
 export function candleRangeMs(candles: { time: number }[]): { min: number; max: number } | null {
   if (candles.length === 0) return null;
   const min = candles[0].time * 1000;

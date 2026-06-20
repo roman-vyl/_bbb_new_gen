@@ -89,7 +89,7 @@ import {
   defaultChartContextOverlayRef,
   strategyContextRefOptions,
 } from "@/features/chart/strategyContexts";
-import { candleRangeMs } from "@/features/chart/chartMarkers";
+import { candleRangeMs, selectedTradeEntryMarkerInView } from "@/features/chart/chartMarkers";
 import {
   buildAuxOverlaysStabilizeKey,
   buildEmaOverlaysStabilizeKey,
@@ -437,6 +437,7 @@ export function WorkbenchProvider({
   const signalTraceStatusRef = useRef<SignalTraceLoadStatus>("idle");
   const signalTraceRef = useRef<SignalTraceBundle | null>(null);
   const signalTraceErrorRef = useRef<string | null>(null);
+  const selectedTradeIdRef = useRef<number | string | null>(null);
   const loadedSignalTraceWindowKeyRef = useRef<string | null>(null);
   const previousChartWindowKeyRef = useRef<string | null>(null);
   /** Last HTF aux overlays for current trace coverage; re-sliced when render window moves before trace key catches up. */
@@ -1346,6 +1347,17 @@ export function WorkbenchProvider({
     }
     setDisplayApplyRevision((revision) => revision + 1);
 
+    const bounds = candleTimeBounds(candles);
+    const selectedTradeIdSnapshot = selectedTradeIdRef.current;
+    const selectedTradeEntryTimeSec =
+      selectedTradeIdSnapshot !== null && selectedVariant
+        ? (() => {
+            const trade = findTradeById(selectedVariant.trade_records, selectedTradeIdSnapshot);
+            const entryMs = trade ? resolveTradeEntryTimeMs(trade) : null;
+            return entryMs !== null ? Math.floor(entryMs / 1000) : null;
+          })()
+        : null;
+
     dbgMark(DBG.traceDisplay.applyCurrentWindow, {
       fromSec: nextDisplayState.fromSec,
       toSec: nextDisplayState.toSec,
@@ -1357,12 +1369,24 @@ export function WorkbenchProvider({
       coveredRanges: nextDisplayState.coveredRanges,
       missingRange: nextDisplayState.missingRange,
       retainedPreviousDisplay: shouldRetainPreviousDisplay,
+      selectedTradeId: selectedTradeIdSnapshot,
+      selectedTradeEntryTimeSec,
+      renderWindowFromSec: bounds?.fromSec,
+      renderWindowToSec: bounds?.toSec,
+      selectedTradeEntryMarkerInView:
+        selectedVariant !== null && selectedTradeIdSnapshot !== null
+          ? selectedTradeEntryMarkerInView(
+              selectedVariant.trade_records,
+              selectedTradeIdSnapshot,
+              candles,
+            )
+          : false,
     });
 
     if (!shouldRetainPreviousDisplay || nextDisplayState.htfSlice.times.length > 0) {
       applyHtfOverlaysFromDisplaySlice(nextDisplayState.htfSlice);
     }
-  }, [applyHtfOverlaysFromDisplaySlice]);
+  }, [applyHtfOverlaysFromDisplaySlice, selectedVariant]);
 
   applyTraceDisplayRef.current = applyTraceDisplayForCurrentWindow;
 
@@ -1381,6 +1405,10 @@ export function WorkbenchProvider({
   useEffect(() => {
     signalTraceErrorRef.current = signalTraceError;
   }, [signalTraceError]);
+
+  useEffect(() => {
+    selectedTradeIdRef.current = selectedTradeId;
+  }, [selectedTradeId]);
 
   useEffect(() => {
     loadedSignalTraceWindowKeyRef.current = loadedSignalTraceWindowKey;

@@ -5,9 +5,22 @@ import {
 } from "@/features/chart/runtime/viewportController";
 
 describe("viewportController", () => {
-  it("traceReady always returns noViewportChange", () => {
+  it("traceReady returns noViewportChange without trade focus intent", () => {
     const controller = createViewportController();
     expect(controller.onTraceReady()).toEqual({ type: "noViewportChange" });
+  });
+
+  it("traceReady re-emits focusTrade when trade focus intent is active", () => {
+    const controller = createViewportController({
+      mode: "around-trade",
+      centerTimeSec: 1_100,
+      activeFocusIntent: "trade",
+      viewportOwner: "trade",
+    });
+    expect(controller.onTraceReady()).toEqual({
+      type: "focusTrade",
+      entryTimeSec: 1_100,
+    });
   });
 
   it("explicit trade_selected sets trade focus intent once", () => {

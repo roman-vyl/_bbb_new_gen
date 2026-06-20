@@ -772,7 +772,7 @@ export function ChartPanel() {
     settleWindowSwapCommit,
   ]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
 
     const markersPlugin = markersRef.current;
 
@@ -825,6 +825,8 @@ export function ChartPanel() {
     selectedTradeId,
     chartDisplayComponentEvents,
     displayApplyRevision,
+    renderWindowShiftSeq,
+    chartViewportCommandSeq,
     chartShowEntryBlockMarkers,
     chartShowExitSignalMarkers,
     chartShowSetupMarkers,
