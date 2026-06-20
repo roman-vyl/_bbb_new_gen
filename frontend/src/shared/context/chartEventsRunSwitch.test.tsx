@@ -14,7 +14,7 @@ import type {
   SignalTraceBundle,
   VariantMetrics,
 } from "@/api/types";
-import { clearMarketCache } from "@/features/chart/marketDataCache";
+import { clearMarketResourceCache } from "@/features/chart/marketResourceCache";
 import { resetChartEventsFlagDisabledNoteForTests } from "@/features/chart/runtime/chartEventsLoad";
 import { dbgExport, dbgReset, PIPELINE_DEBUG_STEPS as DBG } from "@/shared/diagnostics/pipelineDebug";
 import {
@@ -233,7 +233,7 @@ describe("chart-events run switch bootstrap", () => {
     chartSliceRef = null;
     reportSliceRef = null;
     vi.clearAllMocks();
-    clearMarketCache();
+    clearMarketResourceCache();
     dbgReset();
     vi.stubEnv("VITE_CHART_EVENTS_API", "1");
     vi.stubEnv("VITE_EMA_PIPELINE_DEBUG", "true");
