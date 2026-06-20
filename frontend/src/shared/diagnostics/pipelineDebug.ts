@@ -78,6 +78,7 @@ export const PIPELINE_DEBUG_STEPS = {
   market: {
     candlesDecision: "wb.market_candles_decision",
     emaDecision: "wb.market_ema_decision",
+    panPrefetchDecision: "wb.market_pan_prefetch_decision",
   },
   lanesTrace: {
     skip: "wb.lanes_trace_skip",

@@ -4,10 +4,13 @@ import type { RunReport } from "@/api/types";
 import { clearMarketResourceCache, mergeCandlesWindowBundle } from "@/features/chart/marketResourceCache";
 import { resolveRunMarketView } from "@/features/chart/runMarketView";
 import {
+  evaluateMarketPanPrefetchExpansion,
   executeMarketWindowLoad,
   marketCandlesReadyForTarget,
+  marketWindowChunkMs,
   resolveMarketTargetWindow,
 } from "@/features/chart/workbenchMarketLoad";
+import { CHART_RENDER_SAFE_ZONE } from "@/features/chart/chartViewWindow";
 
 const fetchCandlesWindow = vi.fn<typeof import("@/api/client").fetchCandlesWindow>();
 const fetchEmaWindow = vi.fn<typeof import("@/api/client").fetchEmaWindow>();
@@ -169,5 +172,84 @@ describe("workbenchMarketLoad", () => {
     expect(result.candlesFetched).toBe(false);
     expect(fetchCandlesWindow).not.toHaveBeenCalled();
     expect(fetchEmaWindow).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe("evaluateMarketPanPrefetchExpansion", () => {
+  const timeframeMs = 300_000;
+  const chunkMs = marketWindowChunkMs(timeframeMs);
+  const marginMs = CHART_RENDER_SAFE_ZONE * timeframeMs;
+  const reportFromMs = 0;
+  const reportToMs = chunkMs * 4;
+
+  function targetWindow(fromMs: number, toMs: number) {
+    return {
+      fromMs,
+      toMs,
+      toOpenTimeMs: Math.max(fromMs, toMs - timeframeMs),
+    };
+  }
+
+  it("returns not_user_pan when interaction is programmatic", () => {
+    const target = targetWindow(chunkMs, chunkMs * 2);
+    const decision = evaluateMarketPanPrefetchExpansion({
+      targetWindow: target,
+      visibleFromSec: chunkMs / 1000,
+      visibleToSec: chunkMs / 1000,
+      reportFromMs,
+      reportToMs,
+      timeframeMs,
+      isUserPan: false,
+    });
+    expect(decision.reason).toBe("not_user_pan");
+    expect(decision.expanded).toBeNull();
+  });
+
+  it("expands target left by one chunk when visible range is near left edge", () => {
+    const target = targetWindow(chunkMs, chunkMs * 2);
+    const decision = evaluateMarketPanPrefetchExpansion({
+      targetWindow: target,
+      visibleFromSec: chunkMs / 1000,
+      visibleToSec: (chunkMs + timeframeMs) / 1000,
+      reportFromMs,
+      reportToMs,
+      timeframeMs,
+      isUserPan: true,
+    });
+    expect(decision.reason).toBe("near_left_edge");
+    expect(decision.expanded?.fromMs).toBe(0);
+    expect(decision.expanded?.toMs).toBe(target.toMs);
+    expect(decision.meta.margin_ms).toBe(marginMs);
+  });
+
+  it("expands target right by one chunk when visible range is near right edge", () => {
+    const target = targetWindow(chunkMs, chunkMs * 2);
+    const visibleToOpenMs = target.toOpenTimeMs;
+    const decision = evaluateMarketPanPrefetchExpansion({
+      targetWindow: target,
+      visibleFromSec: (visibleToOpenMs - marginMs) / 1000,
+      visibleToSec: visibleToOpenMs / 1000,
+      reportFromMs,
+      reportToMs,
+      timeframeMs,
+      isUserPan: true,
+    });
+    expect(decision.reason).toBe("near_right_edge");
+    expect(decision.expanded?.toMs).toBe(chunkMs * 3);
+  });
+
+  it("returns clamped when already at report boundary", () => {
+    const target = targetWindow(0, chunkMs);
+    const decision = evaluateMarketPanPrefetchExpansion({
+      targetWindow: target,
+      visibleFromSec: 0,
+      visibleToSec: timeframeMs / 1000,
+      reportFromMs,
+      reportToMs,
+      timeframeMs,
+      isUserPan: true,
+    });
+    expect(decision.reason).toBe("clamped");
+    expect(decision.expanded).toBeNull();
   });
 });

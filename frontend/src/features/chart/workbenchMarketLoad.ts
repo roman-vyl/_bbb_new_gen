@@ -1,6 +1,10 @@
 import { fetchCandlesWindow, fetchEmaWindow } from "@/api/client";
 import type { RunMarketView } from "@/features/chart/runMarketView";
 import {
+  CHART_RENDER_SAFE_ZONE,
+  CHART_RENDER_WINDOW_SIZE,
+} from "@/features/chart/chartViewWindow";
+import {
   isMarketCandlesReadyForWindow,
   planCandlesWindowFetchForView,
   planEmaWindowFetchesForView,
@@ -45,6 +49,127 @@ export function mergeMarketDisplayWindow(
     toMs: Math.max(base.toMs, renderToExclusiveMs),
     toOpenTimeMs: Math.max(base.toOpenTimeMs, renderToOpenMs),
   };
+}
+
+export function marketWindowChunkMs(timeframeMs: number): number {
+  return CHART_RENDER_WINDOW_SIZE * timeframeMs;
+}
+
+export type MarketPanPrefetchReason =
+  | "none"
+  | "near_left_edge"
+  | "near_right_edge"
+  | "both"
+  | "clamped"
+  | "not_user_pan";
+
+export type MarketPanPrefetchDecision = {
+  expanded: MarketDisplayWindowMs | null;
+  reason: MarketPanPrefetchReason;
+  meta: {
+    visible_from_ms: number;
+    visible_to_ms: number;
+    target_from_ms: number;
+    target_to_ms: number;
+    expanded_from_ms: number | null;
+    expanded_to_ms: number | null;
+    margin_ms: number;
+    margin_bars: number;
+  };
+};
+
+function lastBarOpenMs(bounds: Pick<MarketDisplayWindowMs, "fromMs" | "toMs">, timeframeMs: number): number {
+  return Math.max(bounds.fromMs, bounds.toMs - timeframeMs);
+}
+
+export function evaluateMarketPanPrefetchExpansion(input: {
+  targetWindow: MarketDisplayWindowMs;
+  visibleFromSec: number;
+  visibleToSec: number;
+  reportFromMs: number;
+  reportToMs: number;
+  timeframeMs: number;
+  isUserPan: boolean;
+}): MarketPanPrefetchDecision {
+  const marginBars = CHART_RENDER_SAFE_ZONE;
+  const marginMs = marginBars * input.timeframeMs;
+  const chunkMs = marketWindowChunkMs(input.timeframeMs);
+  const visibleFromMs = input.visibleFromSec * 1000;
+  const visibleToOpenMs = input.visibleToSec * 1000;
+  const baseMeta = {
+    visible_from_ms: visibleFromMs,
+    visible_to_ms: visibleToOpenMs,
+    target_from_ms: input.targetWindow.fromMs,
+    target_to_ms: input.targetWindow.toMs,
+    expanded_from_ms: null as number | null,
+    expanded_to_ms: null as number | null,
+    margin_ms: marginMs,
+    margin_bars: marginBars,
+  };
+
+  if (!input.isUserPan) {
+    return { expanded: null, reason: "not_user_pan", meta: baseMeta };
+  }
+
+  const atLeftBoundary = input.targetWindow.fromMs <= input.reportFromMs;
+  const atRightBoundary = input.targetWindow.toMs >= input.reportToMs;
+  const nearLeftEdge = visibleFromMs - input.targetWindow.fromMs <= marginMs;
+  const nearRightEdge = input.targetWindow.toOpenTimeMs - visibleToOpenMs <= marginMs;
+
+  if (nearLeftEdge && atLeftBoundary) {
+    return { expanded: null, reason: "clamped", meta: baseMeta };
+  }
+  if (nearRightEdge && atRightBoundary) {
+    return { expanded: null, reason: "clamped", meta: baseMeta };
+  }
+
+  const nearLeft = nearLeftEdge && input.targetWindow.fromMs > input.reportFromMs;
+  const nearRight = nearRightEdge && input.targetWindow.toMs < input.reportToMs;
+
+  if (!nearLeft && !nearRight) {
+    return { expanded: null, reason: "none", meta: baseMeta };
+  }
+
+  let fromMs = input.targetWindow.fromMs;
+  let toMs = input.targetWindow.toMs;
+  let clamped = false;
+
+  if (nearLeft) {
+    const nextFromMs = Math.max(input.reportFromMs, fromMs - chunkMs);
+    clamped ||= nextFromMs === fromMs;
+    fromMs = nextFromMs;
+  }
+  if (nearRight) {
+    const nextToMs = Math.min(input.reportToMs, toMs + chunkMs);
+    clamped ||= nextToMs === toMs;
+    toMs = nextToMs;
+  }
+
+  const expanded: MarketDisplayWindowMs = {
+    fromMs,
+    toMs,
+    toOpenTimeMs: lastBarOpenMs({ fromMs, toMs }, input.timeframeMs),
+  };
+
+  baseMeta.expanded_from_ms = expanded.fromMs;
+  baseMeta.expanded_to_ms = expanded.toMs;
+
+  if (
+    expanded.fromMs === input.targetWindow.fromMs &&
+    expanded.toMs === input.targetWindow.toMs &&
+    expanded.toOpenTimeMs === input.targetWindow.toOpenTimeMs
+  ) {
+    return { expanded: null, reason: clamped ? "clamped" : "none", meta: baseMeta };
+  }
+
+  const reason: MarketPanPrefetchReason =
+    nearLeft && nearRight
+      ? "both"
+      : nearLeft
+        ? "near_left_edge"
+        : "near_right_edge";
+
+  return { expanded, reason, meta: baseMeta };
 }
 
 export async function fetchPlannedCandlesWindow(

@@ -51,8 +51,9 @@ Review-gated implementation: **STOP after each phase** and wait for user approva
 - [x] 6.4 Ensure chart-events and signal-trace scheduling unchanged
 - [x] 6.5 Update tests: cold open must not call `fetchChartMarketBundle`; candles render before overlays in integration tests where applicable
 - [x] 6.6 Verify HTF context EMA overlays (`workbench-chart-htf-context-overlays`) on variant with `strategy.contexts`
-- [ ] 6.7 **STOP FOR REVIEW:** manual pass — cold open shows candles before EMA; distant trade; pan across interval; **window stability** (no feedback loop on EMA arrival)
 - [x] 6.8 Fix intent-driven target window stability (split candles vs overlay revision; render window foundation key)
+- [x] 6.9 Edge-proximity market pan prefetch (user pan only; chunk expansion; `wb.market_pan_prefetch_decision`)
+- [ ] 6.7 **STOP FOR REVIEW:** manual pass — cold open; distant trade; **pan prefetch at chart edge**; no feedback loop
 
 ## 7. Phase 7 — Perf / migration / archive
 
