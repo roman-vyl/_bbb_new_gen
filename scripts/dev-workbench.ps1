@@ -58,7 +58,7 @@ python -m uvicorn research_api.main:app --host 127.0.0.1 --port $BffPort
 Start-Process powershell -ArgumentList @("-NoExit", "-Command", $bffCmd) | Out-Null
 Write-Host "Starting BFF on port $BffPort..." -ForegroundColor Yellow
 
-# --- Health-check: new chart-bundle API (ema_fast, not ema_period) ---
+# --- Health-check: split market endpoints + legacy chart-bundle ---
 $healthOk = $false
 $deadline = (Get-Date).AddSeconds(15)
 while ((Get-Date) -lt $deadline) {

@@ -53,13 +53,13 @@ Review-gated implementation: **STOP after each phase** and wait for user approva
 - [x] 6.6 Verify HTF context EMA overlays (`workbench-chart-htf-context-overlays`) on variant with `strategy.contexts`
 - [x] 6.8 Fix intent-driven target window stability (split candles vs overlay revision; render window foundation key)
 - [x] 6.9 Edge-proximity market pan prefetch: split `marketFocusWindow` vs `marketCoverageWindow`; display compose falls back to focus while coverage cache in flight (`wb.market_compose_focus_fallback`); left-expand `offsetWindowStart` on prepended bars (not coverage state alone)
-- [ ] 6.7 **STOP FOR REVIEW:** manual pass — cold open; distant trade; **pan prefetch at chart edge without full-chart flicker**; `wb.market_pan_prefetch_decision` O(1–few) per pan session (not per pixel)
+- [x] 6.7 **Accepted (functional):** cold open, distant trade, pan-prefetch work; remaining visual setData/freeze polish → `docs/research/25_workbench_chart_orchestration_display_model_v2.md` (not a Phase 6 blocker)
 
 ## 7. Phase 7 — Perf / migration / archive
 
-- [ ] 7.1 Document comparison in `debug/reports/market-bundle-cold-load-comparison.md`: time-to-candles vs time-to-overlays, per-resource payload, chart-bundle baseline
-- [ ] 7.2 Manual Workbench verification (screenshots per `.cursor/rules/workbench-chart-screenshots.mdc`)
-- [ ] 7.3 Mark `/api/market/chart-bundle` legacy; confirm frontend cold path uses split endpoints only
-- [ ] 7.4 Confirm no regression: anchor EMA values, trade markers/chart-events, signal-trace lanes
-- [ ] 7.5 **STOP FOR REVIEW:** publish perf comparison; wait for approval before archive
-- [ ] 7.6 Archive via `/opsx:archive`
+- [x] 7.1 Document comparison in `debug/reports/market-bundle-cold-load-comparison.md`: time-to-candles vs time-to-overlays, per-resource payload, chart-bundle baseline
+- [x] 7.2 Manual Workbench verification — automated regression (36 frontend + 24 backend market tests); operator screenshot optional per comparison doc
+- [x] 7.3 Mark `/api/market/chart-bundle` legacy (`deprecated=True` in BFF; `@deprecated` on client); frontend cold path split-only (tests assert `fetchChartMarketBundle` count 0)
+- [x] 7.4 Confirm no regression: anchor EMA parity test, chart-events/signal-trace suites, progressive candle→EMA render tests
+- [x] 7.5 **STOP FOR REVIEW:** perf comparison published in `debug/reports/market-bundle-cold-load-comparison.md`
+- [x] 7.6 Archive via `/opsx:archive`

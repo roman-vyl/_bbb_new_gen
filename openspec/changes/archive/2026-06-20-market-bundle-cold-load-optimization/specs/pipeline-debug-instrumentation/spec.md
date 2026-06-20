@@ -21,9 +21,9 @@ Instrumentation MUST cover:
 
 ## ADDED Requirements
 
-### Requirement: Split window fetches are timed per resource
+### Requirement: Split window fetches SHALL be timed per resource
 
-When `VITE_EMA_PIPELINE_DEBUG` is `"true"`:
+When `VITE_EMA_PIPELINE_DEBUG` is `"true"`, pipeline debug instrumentation SHALL record:
 
 - `api.fetchCandlesWindow` MUST be recorded via `dbgTimed` with `barCount` and display bounds
 - `api.fetchEmaWindow` MUST be recorded via `dbgTimed` with `period`, `barCount` (point count), `cacheHit` when available from response coverage

@@ -98,7 +98,7 @@ After commit:
 
 ## ADDED Requirements
 
-### Requirement: Pan outside union cache coverage triggers split resource window fetches
+### Requirement: Pan outside union cache coverage MUST trigger split resource window fetches
 
 When a committed render-window shift or trade navigation requires candle times outside **union** cache coverage, Workbench MUST fetch candle `missingRange` via `/api/market/candles-window` and overlay `missingRange` via `/api/market/ema-window` per period before updating respective series. Candle `setData` MUST NOT wait for overlay fetches.
 
@@ -125,7 +125,7 @@ When a committed render-window shift or trade navigation requires candle times o
 - **AND** the 2026 interval remains in cache unchanged
 - **AND** no fetch spans the 2017–2026 gap
 
-### Requirement: Distant trade navigation fetches trade-centered window
+### Requirement: Distant trade navigation MUST fetch trade-centered window
 
 When trade entry is outside the current render window or inside the safe zone, and the trade-centered window is not covered by union cache, Workbench MUST fetch `candles-window` and per-period `ema-window` for trade-centered bounds. Candles MUST render as soon as candle interval is available.
 

@@ -197,7 +197,10 @@ export async function fetchEmaWindow(params: {
   );
 }
 
-/** Single request: OHLC + anchor-stack chart overlay EMAs (one BFF/SQLite read). */
+/**
+ * @deprecated Legacy monolithic cold-load path. Workbench uses `fetchCandlesWindow` +
+ * `fetchEmaWindow`. Retained for debug, tests, and rollback only.
+ */
 export async function fetchChartMarketBundle(params: {
   symbol: string;
   timeframe: string;

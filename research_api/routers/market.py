@@ -52,12 +52,15 @@ def _range_end_ms(
 @router.get(
     "/chart-bundle",
     response_model=ChartMarketBundle,
-    summary="OHLC + anchor-stack chart overlay EMAs (single DB read)",
+    summary="[LEGACY] OHLC + anchor-stack EMAs (full-range monolithic bundle)",
     description=(
-        "Preferred Workbench chart payload: one SQLite ``range_get`` for candles, "
+        "**Legacy** Workbench payload — prefer ``GET /candles-window`` and "
+        "``GET /ema-window`` for cold load. One SQLite ``range_get`` for candles, "
         "then three in-process chart overlay EMAs (fast/anchor/slow) from candle "
-        "closes. Not research strategy feature columns (``ema_close_*``)."
+        "closes. Retained for debug and rollback only; frontend cold path does "
+        "not use this endpoint after market-bundle-cold-load-optimization."
     ),
+    deprecated=True,
 )
 def get_chart_bundle(
     symbol: str = Query(..., min_length=2, max_length=32),
