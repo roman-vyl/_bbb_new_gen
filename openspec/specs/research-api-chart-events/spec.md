@@ -1,11 +1,9 @@
-# research-api-chart-events Specification (delta)
+# research-api-chart-events Specification
 
 ## Purpose
 
 Lightweight BFF product for Workbench Chart **display**: sparse component events, HTF EMA overlay series, bar grid, and coverage metadata. Dense per-bar diagnostics remain on `/signal-trace`.
-
-## ADDED Requirements
-
+## Requirements
 ### Requirement: Chart-events endpoint returns sparse display bundle
 
 The BFF SHALL expose `GET /api/research/runs/{run_id}/chart-events` for `ema_pullback` runs.
@@ -161,3 +159,4 @@ This capability MUST NOT modify `/signal-trace` route, response schema, or exist
 - **GIVEN** chart-events is deployed
 - **WHEN** existing signal-trace pytest suite runs
 - **THEN** all tests pass without modification to signal-trace contracts
+

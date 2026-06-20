@@ -2,11 +2,11 @@
 
 ## ADDED Requirements
 
-### Requirement: HTF EMA overlays may source from chart-events display bundle
+### Requirement: HTF EMA overlays MUST use chart-events htf_context when display fetch is enabled
 
 When chart-events is enabled for display fetches, HTF context EMA dashed lines (`htf_fast`, `htf_anchor`, `htf_slow`) MUST be built from `chart-events.htf_context.{fast,anchor,slow}` aligned to `chart-events.times`.
 
-Point values MUST match the equivalent signal-trace slice for the same window and `context_overlay_ref`. Chart-events does NOT supply `htf_context.state`; regime display remains signal-trace only.
+Point values MUST match the equivalent signal-trace slice for the same window and `context_overlay_ref`. Regime display MUST remain signal-trace only; chart-events MUST NOT supply `htf_context.state`.
 
 #### Scenario: Overlay points match chart-events htf_context series
 
@@ -25,7 +25,7 @@ Point values MUST match the equivalent signal-trace slice for the same window an
 - **THEN** `htf_context.fast`, `anchor`, and `slow` are empty arrays
 - **AND** the chart does not render HTF context EMA lines
 
-### Requirement: Chart-events BFF cache keys include context_overlay_ref
+### Requirement: Chart-events BFF cache keys MUST include context_overlay_ref
 
 The chart-events BFF cache (`research_api/services/chart_events_service.py`) MUST include `context_overlay_ref` (empty string when null) and `schema_version` in the cache key alongside `run_id`, `variant`, and resolved time range.
 

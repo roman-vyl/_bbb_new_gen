@@ -5,9 +5,7 @@
 Workbench Chart accumulates **display-only** signal trace chunks (`component_events`, `htf_context`) in a session cache keyed by run, variant, and context overlay ref, plus a **session bundle cache** for full `SignalTraceBundle` per render window (lanes/diagnostics). Pan within cached time ranges updates events and HTF EMA overlays from display cache without refetch; lanes restore from session bundle cache on pan-back when available.
 
 **Related specs:** `workbench-chart-sliding-window`, `workbench-chart-component-event-markers`, `workbench-chart-htf-context-overlays`, `pipeline-debug-instrumentation`.
-
 ## Requirements
-
 ### Requirement: Signal trace BFF resolves to_open_time_ms with exclusive end (market API parity)
 
 When Workbench requests signal trace with query param `to_open_time_ms` (last render-window candle open time in milliseconds), the research_api BFF MUST resolve the OHLCV load window end the same way as market bundle endpoints: **`exclusive_end = to_open_time_ms + timeframe_ms(report.timeframe)`** for half-open `TimeWindow [from_ms, exclusive_end)`.
@@ -219,9 +217,9 @@ Display MUST NOT treat the latest single `fetchSignalTrace` response as the sole
 
 ### Requirement: Uncovered render window shows loading or partial stale state
 
-When the render window is not fully covered by cache and a fetch is in progress, Workbench MAY show existing stale/loading indicators (`htfAuxEmaOverlayStale`, `componentEventsStale`) for uncovered data.
+When the render window is not fully covered by cache and a fetch is in progress, Workbench MUST preserve existing stale/loading indicators (`htfAuxEmaOverlayStale`, `componentEventsStale`) for uncovered data and MAY continue showing them until coverage completes.
 
-When cache partially covers the window, Workbench MAY display events/HTF for the covered sub-range while loading the remainder.
+When cache partially covers the window, Workbench MUST display events/HTF for the covered sub-range while loading the remainder.
 
 #### Scenario: Stale banner during chunk load
 
@@ -333,30 +331,85 @@ Reset on run/variant/context alone is **not sufficient** — reload with the sam
 
 ### Requirement: Lanes and diagnostics use per-window signal trace (v1 dual model)
 
-Signal timeline lanes and trade diagnostics MUST use the latest `signalTrace` bundle for the **current** render window (`loadedSignalTraceWindowKey` matches `chartWindowKey`). Display cache hits for chart events/HTF MUST NOT skip per-window trace availability when the loaded bundle is for a different window.
+Signal timeline lanes and trade diagnostics MUST use the latest dense `signalTrace` bundle for the **current** render window (`loadedSignalTraceWindowKey` matches `chartWindowKey`).
 
-When display cache covers the render window but `signalTrace` is for another window, Workbench MUST obtain the bundle for the current window — from **session cache** when present, otherwise via network fetch — while chart layers read from display cache.
+Chart display (component events and HTF EMA overlays) MUST use `SignalTraceDisplayCache`, populated from **chart-events** when enabled or from signal-trace projection when not.
+
+Display cache hits for chart events/HTF MUST NOT skip per-window dense trace availability when lanes require the current window and the loaded dense bundle is for a different window.
+
+When display cache covers the render window but `signalTrace` is for another window, Workbench MUST obtain the dense bundle for the current window — from **session cache** when present, otherwise via `/signal-trace` network fetch — while chart layers read from display cache.
 
 Lanes/diagnostics MUST NOT show `ready` or error state from a prior window after pan to a cached range.
 
 #### Scenario: Pan back restores lanes from session cache while chart uses display cache
 
 - **GIVEN** display cache covers render window `[Ta, Tb]`
-- **AND** session cache holds the full bundle for `chartWindowKey` of `[Ta, Tb]`
+- **AND** session cache holds the full dense bundle for `chartWindowKey` of `[Ta, Tb]`
 - **AND** `signalTrace` was last loaded for window `[Tc, Td]`
 - **WHEN** user pans back to `[Ta, Tb]`
-- **THEN** component events and HTF render from display cache without network refetch for chart layers
-- **AND** Workbench restores lanes/diagnostics bundle for `[Ta, Tb]` from session cache without network refetch
+- **THEN** component events and HTF render from display cache without chart-events refetch for chart layers
+- **AND** Workbench restores lanes/diagnostics dense bundle for `[Ta, Tb]` from session cache without `/signal-trace` refetch
 - **AND** lanes do not display `[Tc, Td]` trace data as ready
 
-#### Scenario: Pan back with session miss fetches lanes bundle
+#### Scenario: Pan back with session miss fetches dense lanes bundle
 
 - **GIVEN** display cache covers render window `[Ta, Tb]`
-- **AND** session cache does not hold the bundle for `[Ta, Tb]` (evicted or never fetched)
+- **AND** session cache does not hold the dense bundle for `[Ta, Tb]` (evicted or never fetched)
 - **WHEN** user pans back to `[Ta, Tb]`
 - **THEN** component events and HTF render from display cache without refetch for chart layers
-- **AND** Workbench requests signal trace for `[Ta, Tb]` for lanes/diagnostics
+- **AND** Workbench requests `/signal-trace` for `[Ta, Tb]` for lanes/diagnostics only
 - **AND** lanes do not display stale trace from another window as ready
+
+#### Scenario: Chart-events display chunk does not force redundant dense fetch when lanes ready
+
+- **GIVEN** `VITE_CHART_EVENTS_API=1`
+- **AND** display cache does not cover a missing chunk
+- **AND** `lanesReadyForWindow` is true for the current `chartWindowKey`
+- **WHEN** Workbench schedules network load for the missing display chunk
+- **AND** `/chart-events` succeeds (`displayLoadOutcome: committed`)
+- **THEN** Workbench does NOT call `/signal-trace` for the same chunk
+- **AND** Workbench does NOT merge display from in-memory dense (display already committed from chart-events)
+- **AND** pipeline debug emits `wb.lanes_trace_skip` with reason `lanes_ready`
+
+#### Scenario: Chart-events satisfied display skips dense when session restores lanes
+
+- **GIVEN** `VITE_CHART_EVENTS_API=1`
+- **AND** display cache covers render window `[Ta, Tb]`
+- **AND** session cache holds dense bundle for `chartWindowKey` of `[Ta, Tb]`
+- **AND** in-memory `signalTrace` is for a different window
+- **WHEN** trace scheduling runs for `[Ta, Tb]`
+- **THEN** Workbench does NOT request `/chart-events` or `/signal-trace`
+- **AND** Workbench restores lanes from session cache without merging display from the session dense bundle
+- **AND** pipeline debug emits `wb.lanes_trace_session_restore`
+
+#### Scenario: Chart-events failed but in-memory dense satisfies display fallback without network
+
+- **GIVEN** `VITE_CHART_EVENTS_API=1`
+- **AND** display cache does not cover a missing chunk
+- **AND** `/chart-events` fails for that chunk
+- **AND** `signalTrace` for the current `chartWindowKey` is already loaded in memory with status `ready`
+- **WHEN** Workbench completes display load with outcome `fallback_needed`
+- **THEN** Workbench does NOT request `/signal-trace`
+- **AND** Workbench merges display from the in-memory dense bundle (`use_loaded_bundle`)
+- **AND** pipeline debug emits `wb.lanes_trace_use_loaded` with reason `display_fallback_needed`
+
+#### Scenario: Flag off uses in-memory dense for display when lanes already ready
+
+- **GIVEN** `VITE_CHART_EVENTS_API` is unset or not `1`
+- **AND** display cache does not cover a missing chunk
+- **AND** `signalTrace` for the current `chartWindowKey` is already loaded in memory with status `ready`
+- **WHEN** Workbench completes display load with outcome `skipped_flag_off`
+- **THEN** Workbench does NOT request `/signal-trace`
+- **AND** Workbench merges display from the in-memory dense bundle (`use_loaded_bundle`)
+- **AND** pipeline debug emits `wb.lanes_trace_use_loaded` with reason `flag_off_combined`
+
+#### Scenario: Flag off keeps single combined dense fetch
+
+- **GIVEN** `VITE_CHART_EVENTS_API` is unset or not `1`
+- **AND** display cache does not cover the committed window
+- **WHEN** Workbench schedules network load
+- **THEN** Workbench performs exactly one `/signal-trace` request for the chunk
+- **AND** display and lanes both update from that response
 
 ### Requirement: Trace display exposes partial coverage state
 
@@ -388,9 +441,11 @@ Workbench MUST display cached events for covered portions when available and mar
 
 When trace display cache does not cover the committed render window, Workbench SHALL compute the missing range and plan one or more normalized trace display chunks. The planning/debug chunk identity (`traceDisplayChunkKey`) MUST include run, variant, context overlay ref, and normalized range bounds. Display cache storage and coverage remain interval-based.
 
-The network request identity (`traceRequestKey`) MUST remain the identity of the real `/signal-trace` request. If normalized bounds are actually sent to `/signal-trace`, then `traceRequestKey` MAY include those normalized bounds. If normalized chunks are only a frontend planning concept, `traceDisplayChunkKey` MUST NOT replace `traceRequestKey`.
+The network request identity (`traceRequestKey` or chart-events equivalent) MUST remain the identity of the real display fetch request. When chart-events is enabled, `traceRequestKey` MUST match `/chart-events` query parameters. When disabled, it MUST match `/signal-trace` parameters as today.
 
-While dense `/signal-trace` remains the source, normalized chunks MUST be coarse enough to avoid many small recomputations. Active-pan prefetch MUST NOT be introduced in the first missing-range scheduling slice.
+If normalized bounds are actually sent over the network, the request key MUST include those normalized bounds. `traceDisplayChunkKey` MUST NOT replace the network request key.
+
+Normalized chunks MUST be coarse enough to avoid many small recomputations. Active-pan prefetch MUST NOT be introduced in the first missing-range scheduling slice.
 
 #### Scenario: Uncovered window schedules normalized chunk
 
@@ -399,15 +454,15 @@ While dense `/signal-trace` remains the source, normalized chunks MUST be coarse
 - **THEN** Workbench computes missing coverage
 - **AND** Workbench maps the missing coverage to normalized chunk bounds
 - **AND** Workbench records those bounds in `traceDisplayChunkKey`
-- **AND** `traceRequestKey` continues to match the actual network request parameters
+- **AND** the network request key matches the actual chart-events or signal-trace request parameters
 
 #### Scenario: Frontend-only normalized chunk does not replace network key
 
 - **GIVEN** Workbench plans a normalized display chunk for cache coverage
-- **AND** Workbench chooses to send a different exact range to `/signal-trace`
+- **AND** Workbench sends chunk bounds to `/chart-events` or `/signal-trace`
 - **WHEN** the network request is scheduled
 - **THEN** `traceDisplayChunkKey` uses the normalized display chunk bounds
-- **AND** `traceRequestKey` uses the exact range sent over the network
+- **AND** the network request key uses the exact range sent over the network
 
 #### Scenario: Active pan does not prefetch missing trace
 
@@ -428,3 +483,25 @@ After request identity, supersede, abort/stale-response handling, and in-flight 
 - **WHEN** post-commit idle prefetch is enabled
 - **THEN** Workbench may request one neighboring normalized trace chunk
 - **AND** the prefetch is tracked by the same in-flight and supersede ledgers as foreground trace requests
+
+### Requirement: Chart display network source is chart-events when enabled
+
+When `VITE_CHART_EVENTS_API` is enabled, Workbench display chunk fetches MUST use `GET /api/research/runs/{run_id}/chart-events` for markers and HTF overlay data merged into `SignalTraceDisplayCache`.
+
+Dense `/signal-trace` MUST remain available for lanes, bar inspector, and diagnostics — display cache hits MUST NOT replace per-window dense trace when lanes require it.
+
+#### Scenario: Display fetch uses chart-events endpoint
+
+- **GIVEN** `VITE_CHART_EVENTS_API=1`
+- **AND** display cache does not cover the committed render window
+- **WHEN** Workbench schedules a display chunk network fetch
+- **THEN** the request targets `/chart-events` with the same window query params as today's signal-trace display fetch
+- **AND** the response is merged via chart-events display adapter (not full `SignalTraceBundle`)
+
+#### Scenario: Flag disabled keeps signal-trace display path
+
+- **GIVEN** `VITE_CHART_EVENTS_API` is unset or not `1`
+- **WHEN** Workbench schedules a display chunk network fetch
+- **THEN** the request targets `/signal-trace` as today
+- **AND** pipeline debug emits `wb.chart_events_fallback` with reason `flag_disabled` once per session
+
