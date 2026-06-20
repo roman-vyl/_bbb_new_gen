@@ -27,11 +27,11 @@ Review-gated implementation: **STOP after each phase** and wait for user approva
 
 ## 4. Phase 4 — Backend endpoints
 
-- [ ] 4.1 Add `GET /api/market/candles-window` to `research_api/routers/market.py`
-- [ ] 4.2 Add `GET /api/market/ema-window` with `period`, `origin_policy=canonical`
-- [ ] 4.3 HTTP integration tests for both endpoints (200 shape, 400 validation, 503 missing DB)
-- [ ] 4.4 Verify neither endpoint returns full run range when display window is a subset
-- [ ] 4.5 **STOP FOR REVIEW:** demonstrate both endpoints via pytest/curl; wait for approval before Phase 5
+- [x] 4.1 Add `GET /api/market/candles-window` to `research_api/routers/market.py`
+- [x] 4.2 Add `GET /api/market/ema-window` with `period`, `origin_policy=canonical`
+- [x] 4.3 HTTP integration tests for both endpoints (200 shape, 400 validation, 503 missing DB)
+- [x] 4.4 Verify neither endpoint returns full run range when display window is a subset
+- [x] 4.5 **STOP FOR REVIEW:** demonstrate both endpoints via pytest/curl; wait for approval before Phase 5
 
 ## 5. Phase 5 — Frontend cache / planner (no WorkbenchContext switch yet)
 
