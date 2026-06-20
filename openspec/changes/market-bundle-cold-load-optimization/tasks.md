@@ -52,7 +52,7 @@ Review-gated implementation: **STOP after each phase** and wait for user approva
 - [x] 6.5 Update tests: cold open must not call `fetchChartMarketBundle`; candles render before overlays in integration tests where applicable
 - [x] 6.6 Verify HTF context EMA overlays (`workbench-chart-htf-context-overlays`) on variant with `strategy.contexts`
 - [x] 6.8 Fix intent-driven target window stability (split candles vs overlay revision; render window foundation key)
-- [x] 6.9 Edge-proximity market pan prefetch: split `marketFocusWindow` (render/trade intent) vs `marketCoverageWindow` (fetch/prefetch only); user-pan gated + visible-sample dedupe; pan expansion must not change `renderWindowFoundationKey` or re-run `wb.render_window.init`
+- [x] 6.9 Edge-proximity market pan prefetch: split `marketFocusWindow` vs `marketCoverageWindow`; display compose falls back to focus while coverage cache in flight (`wb.market_compose_focus_fallback`); left-expand `offsetWindowStart` on prepended bars (not coverage state alone)
 - [ ] 6.7 **STOP FOR REVIEW:** manual pass — cold open; distant trade; **pan prefetch at chart edge without full-chart flicker**; `wb.market_pan_prefetch_decision` O(1–few) per pan session (not per pixel)
 
 ## 7. Phase 7 — Perf / migration / archive

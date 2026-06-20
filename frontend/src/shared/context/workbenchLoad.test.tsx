@@ -1217,6 +1217,105 @@ describe("Workbench market pan prefetch", () => {
     expect(prefetchMark).toBeDefined();
   });
 
+  it("keeps chart slice stable while coverage prefetch is in flight", async () => {
+    const timeframeMs = 300_000;
+    const chunkMs = marketWindowChunkMs(timeframeMs);
+    const wideCandles = Array.from({ length: 5 }, (_, index) => ({
+      time: Math.floor((chunkMs * index) / 1000),
+      open: 1,
+      high: 1,
+      low: 1,
+      close: 1,
+    }));
+    const leftChunkDeferred = createDeferred<Awaited<ReturnType<typeof fetchCandlesWindow>>>();
+
+    fetchRunReport.mockImplementation(async () => {
+      const report = makeReport("run-a");
+      return {
+        ...report,
+        data_range: { from_open_time_ms: 0, to_open_time_ms: chunkMs * 4 },
+        variants: report.variants.map((variant) => ({
+          ...variant,
+          trade_records: [],
+        })),
+      };
+    });
+    fetchCandlesWindow.mockImplementation(async ({ fromMs, toOpenTimeMs }) => {
+      const toMs = toOpenTimeMs + timeframeMs;
+      if (fromMs < chunkMs * 3) {
+        return leftChunkDeferred.promise;
+      }
+      const inRange = wideCandles.filter(
+        (bar) => bar.time * 1000 >= fromMs && bar.time * 1000 < toMs,
+      );
+      return mockCandlesWindowBundle(
+        inRange.length > 0 ? inRange : [wideCandles[3]!],
+        fromMs,
+        toMs,
+      );
+    });
+    fetchEmaWindow.mockImplementation(async ({ period, fromMs, toOpenTimeMs }) =>
+      mockEmaWindowBundle(
+        [{ time: Math.floor(fromMs / 1000), value: period, kind: "chart_overlay_ema" as const }],
+        fromMs,
+        toOpenTimeMs + timeframeMs,
+      ),
+    );
+
+    render(
+      <Host>
+        <WorkbenchCapture />
+        <ChartSliceCapture />
+      </Host>,
+    );
+
+    await waitFor(() => {
+      expect(workbenchRef?.marketLoadStatus).toBe("ready");
+      expect(chartSliceRef?.chartViewCount).toBeGreaterThan(0);
+    });
+
+    const seriesKeyBefore = chartSliceRef!.chartViewModel.seriesKey;
+    const setDataBefore = dbgExport().find((row) => row.step === DBG.chart.setDataCandles)?.count ?? 0;
+
+    const leftEdgeTimeSec = Math.floor((chunkMs * 3) / 1000);
+    act(() => {
+      chartSliceRef!.dispatchChartInteraction({ type: "pointerdown" });
+      chartSliceRef!.dispatchChartInteraction({
+        type: "visible_range_changed",
+        visible: { from: 0, to: 0 },
+        anchorTimeSec: leftEdgeTimeSec,
+      });
+      chartSliceRef!.dispatchChartInteraction({ type: "pointerup" });
+    });
+
+    await waitFor(() => {
+      expect(fetchCandlesWindow.mock.calls.length).toBeGreaterThan(1);
+    });
+
+    expect(chartSliceRef?.chartViewCount).toBeGreaterThan(0);
+    expect(chartSliceRef?.chartViewModel.seriesKey).toBe(seriesKeyBefore);
+    expect(dbgExport().find((row) => row.step === DBG.market.composeFocusFallback)).toBeDefined();
+    expect(dbgExport().find((row) => row.step === DBG.chart.setDataCandles)?.count ?? 0).toBe(
+      setDataBefore,
+    );
+
+    await act(async () => {
+      leftChunkDeferred.resolve(
+        mockCandlesWindowBundle(
+          wideCandles.filter((bar) => bar.time * 1000 < chunkMs * 3),
+          0,
+          chunkMs * 3,
+        ),
+      );
+    });
+
+    await waitFor(() => {
+      expect(
+        dbgExport().find((row) => row.step === DBG.load.renderWindowInit)?.count,
+      ).toBe(1);
+    });
+  });
+
   it("cold open still fetches candles-window once and ema-window once per period", async () => {
     render(
       <Host>

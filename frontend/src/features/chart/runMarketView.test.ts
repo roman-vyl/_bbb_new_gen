@@ -1,9 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 
 import type { RunReport } from "@/api/types";
 import { clearMarketResourceCache, mergeCandlesWindowBundle } from "@/features/chart/marketResourceCache";
 import {
   buildMarketFetchKey,
+  composeDisplayMarketWindowBundle,
   composePartialRunMarketBundle,
   composePartialRunMarketWindowBundle,
   composeRunMarketBundle,
@@ -202,5 +203,38 @@ describe("runMarketView", () => {
     expect(composeRunMarketWindowBundle(view, targetWindow)).toBeNull();
     expect(composeRunMarketBundle(view)).toBeNull();
     expect(composePartialRunMarketBundle(view)).toBeNull();
+  });
+});
+
+describe("composeDisplayMarketWindowBundle", () => {
+  beforeEach(() => {
+    clearMarketResourceCache();
+  });
+
+  it("falls back to focus window when coverage prefetch is not cached yet", () => {
+    const report = makeReport();
+    const view = resolveRunMarketView({
+      report,
+      chartTimeframe: "5m",
+      variant: report.variants[0]!,
+      reloadToken: 0,
+    });
+    const focusWindow = { fromMs: 1_300_000, toMs: 1_900_000, toOpenTimeMs: 1_600_000 };
+    const coverageWindow = { fromMs: 1_000_000, toMs: 1_900_000, toOpenTimeMs: 1_600_000 };
+    mergeCandlesWindowBundle(view.candlesKey, {
+      candles: [{ time: 1300, open: 1, high: 1, low: 1, close: 1 }],
+      coverage: {
+        requested_from_ms: focusWindow.fromMs,
+        requested_to_ms: focusWindow.toMs,
+        actual_from_ms: focusWindow.fromMs,
+        actual_to_ms: focusWindow.toMs,
+        truncated: false,
+      },
+    });
+
+    expect(composePartialRunMarketWindowBundle(view, coverageWindow)).toBeNull();
+    const composed = composeDisplayMarketWindowBundle(view, focusWindow, coverageWindow);
+    expect(composed?.source).toBe("focus");
+    expect(composed?.bundle.candles).toHaveLength(1);
   });
 });

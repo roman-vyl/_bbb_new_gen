@@ -136,6 +136,7 @@ import {
 import { hasTradeManagementEvents } from "@/features/chart/tradeManagementChartEvents";
 import {
   buildRunMarketViewIdentity,
+  composeDisplayMarketWindowBundle,
   composePartialRunMarketWindowBundle,
   resolveRunMarketView,
   type RunMarketView,
@@ -417,7 +418,9 @@ export function WorkbenchProvider({
   const lastPanPrefetchLogKeyRef = useRef<string | null>(null);
   const lastPanPrefetchExpansionKeyRef = useRef<string | null>(null);
   const lastVisiblePrefetchSampleRef = useRef<string | null>(null);
-  const prevCoverageFromMsRef = useRef<number | null>(null);
+  const prevBundleFirstTimeSecRef = useRef<number | null>(null);
+  const lastComposeFallbackKeyRef = useRef<string | null>(null);
+  const marketComposeSourceRef = useRef<"coverage" | "focus" | null>(null);
   const [marketFocusWindow, setMarketFocusWindow] = useState<MarketDisplayWindowMs | null>(null);
   const [marketCoverageWindow, setMarketCoverageWindow] = useState<MarketDisplayWindowMs | null>(
     null,
@@ -841,7 +844,8 @@ export function WorkbenchProvider({
       lastPanPrefetchExpansionKeyRef.current = null;
       lastPanPrefetchLogKeyRef.current = null;
       lastVisiblePrefetchSampleRef.current = null;
-      prevCoverageFromMsRef.current = null;
+      prevBundleFirstTimeSecRef.current = null;
+      lastComposeFallbackKeyRef.current = null;
       return;
     }
     const nextFocus = resolveMarketTargetWindow(
@@ -861,7 +865,8 @@ export function WorkbenchProvider({
       lastPanPrefetchExpansionKeyRef.current = null;
       lastPanPrefetchLogKeyRef.current = null;
       lastVisiblePrefetchSampleRef.current = null;
-      prevCoverageFromMsRef.current = null;
+      prevBundleFirstTimeSecRef.current = null;
+      lastComposeFallbackKeyRef.current = null;
       return nextFocus;
     });
     setMarketCoverageWindow((previous) => {
@@ -1075,10 +1080,13 @@ export function WorkbenchProvider({
     if (!marketCandlesReadyForTarget(intendedRunMarketView, marketFocusWindow)) {
       return undefined;
     }
-    return (
-      composePartialRunMarketWindowBundle(intendedRunMarketView, marketCoverageWindow) ??
-      undefined
+    const composed = composeDisplayMarketWindowBundle(
+      intendedRunMarketView,
+      marketFocusWindow,
+      marketCoverageWindow,
     );
+    marketComposeSourceRef.current = composed?.source ?? null;
+    return composed?.bundle;
   }, [
     intendedRunMarketView,
     intendedRunMarketViewIdentity,
@@ -1135,6 +1143,37 @@ export function WorkbenchProvider({
   }, [renderWindowFoundationKey, intendedRunMarketView, marketCoverageWindow, marketCandlesRevision]);
 
   useEffect(() => {
+    if (
+      marketComposeSourceRef.current === "focus" &&
+      marketFocusWindow !== null &&
+      marketCoverageWindow !== null &&
+      marketCoverageWindowKey !== null &&
+      marketFocusWindowKey !== null &&
+      marketCoverageWindowKey !== marketFocusWindowKey
+    ) {
+      const fallbackKey = `${marketCoverageWindowKey}:${marketCandlesRevision}`;
+      if (fallbackKey !== lastComposeFallbackKeyRef.current) {
+        lastComposeFallbackKeyRef.current = fallbackKey;
+        dbgMark(DBG.market.composeFocusFallback, {
+          focusFromMs: marketFocusWindow.fromMs,
+          focusToMs: marketFocusWindow.toMs,
+          coverageFromMs: marketCoverageWindow.fromMs,
+          coverageToMs: marketCoverageWindow.toMs,
+        });
+      }
+    } else if (marketComposeSourceRef.current === "coverage") {
+      lastComposeFallbackKeyRef.current = null;
+    }
+  }, [
+    marketFocusWindow,
+    marketCoverageWindow,
+    marketFocusWindowKey,
+    marketCoverageWindowKey,
+    marketCandlesRevision,
+    cachedBundle,
+  ]);
+
+  useEffect(() => {
     if (marketLoadStatus === "ready" && cachedBundle !== undefined) {
       dbgMark(DBG.load.marketBundleReady, { barCount: cachedBundle.candles.length });
     }
@@ -1147,16 +1186,15 @@ export function WorkbenchProvider({
   useEffect(() => {
     if (
       intendedRunMarketView === null ||
-      marketCoverageWindow === null ||
-      cachedBundle === undefined
+      cachedBundle === undefined ||
+      cachedBundle.candles.length === 0
     ) {
       return;
     }
-    const prevFromMs = prevCoverageFromMsRef.current;
-    const nextFromMs = marketCoverageWindow.fromMs;
-    if (prevFromMs !== null && nextFromMs < prevFromMs) {
-      const prevFromSec = Math.floor(prevFromMs / 1000);
-      const delta = findBarIndexAtOrBefore(cachedBundle.candles, prevFromSec);
+    const firstTimeSec = cachedBundle.candles[0]!.time;
+    const prevFirstTimeSec = prevBundleFirstTimeSecRef.current;
+    if (prevFirstTimeSec !== null && firstTimeSec < prevFirstTimeSec) {
+      const delta = findBarIndexAtOrBefore(cachedBundle.candles, prevFirstTimeSec);
       if (delta > 0) {
         const changed = renderWindowManager().offsetWindowStart(delta);
         if (changed !== null) {
@@ -1164,8 +1202,8 @@ export function WorkbenchProvider({
         }
       }
     }
-    prevCoverageFromMsRef.current = nextFromMs;
-  }, [marketCandlesRevision, marketCoverageWindow, cachedBundle, bumpRenderWindow]);
+    prevBundleFirstTimeSecRef.current = firstTimeSec;
+  }, [marketCandlesRevision, cachedBundle, intendedRunMarketView, bumpRenderWindow]);
 
   const emitChartViewportCommand = useCallback((command: ViewportCommand) => {
     if (command.type === "noViewportChange" || command.type === "preserveUserRange") {

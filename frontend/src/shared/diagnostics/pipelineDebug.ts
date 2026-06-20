@@ -79,6 +79,7 @@ export const PIPELINE_DEBUG_STEPS = {
     candlesDecision: "wb.market_candles_decision",
     emaDecision: "wb.market_ema_decision",
     panPrefetchDecision: "wb.market_pan_prefetch_decision",
+    composeFocusFallback: "wb.market_compose_focus_fallback",
   },
   lanesTrace: {
     skip: "wb.lanes_trace_skip",

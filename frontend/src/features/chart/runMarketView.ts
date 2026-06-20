@@ -13,6 +13,7 @@ import {
   getOverlay,
   hasCandles,
   hasOverlay,
+  marketCandlesReady,
   setCandlesIfAbsent,
   setOverlayIfAbsent,
   type CandlesCacheKey,
@@ -221,6 +222,53 @@ export function composePartialRunMarketWindowBundle(
     .map((ref) => getOverlay(ref.key, fromMs, toMs))
     .filter((overlay): overlay is ChartEmaOverlay => overlay !== undefined);
   return { candles, ema_overlays: emaOverlays };
+}
+
+export type MarketBundleComposeSource = "coverage" | "focus";
+
+/** Which window to compose for chart display (coverage only when fully cached). */
+export function resolveMarketBundleComposeWindow(
+  view: RunMarketView,
+  focusWindow: MarketTimeBoundsMs,
+  coverageWindow: MarketTimeBoundsMs,
+): { window: MarketTimeBoundsMs; source: MarketBundleComposeSource } {
+  if (marketCandlesReady(view.candlesKey, coverageWindow.fromMs, coverageWindow.toMs)) {
+    return { window: coverageWindow, source: "coverage" };
+  }
+  return { window: focusWindow, source: "focus" };
+}
+
+/**
+ * Display compose for split market path: keep focus-window data visible while a
+ * larger coverage prefetch is in flight (avoids cachedBundle → null → chart blink).
+ */
+export function composeDisplayMarketWindowBundle(
+  view: RunMarketView,
+  focusWindow: MarketTimeBoundsMs,
+  coverageWindow: MarketTimeBoundsMs,
+): { bundle: ChartMarketBundle; source: MarketBundleComposeSource } | null {
+  const { window: candleWindow, source } = resolveMarketBundleComposeWindow(
+    view,
+    focusWindow,
+    coverageWindow,
+  );
+  const candles = getCandles(view.candlesKey, candleWindow.fromMs, candleWindow.toMs);
+  if (candles === undefined) {
+    return null;
+  }
+  const emaOverlays = view.overlayRefs
+    .map((ref) => {
+      const overlay = getOverlay(ref.key, candleWindow.fromMs, candleWindow.toMs);
+      if (overlay !== undefined) {
+        return overlay;
+      }
+      if (source === "coverage") {
+        return getOverlay(ref.key, focusWindow.fromMs, focusWindow.toMs);
+      }
+      return undefined;
+    })
+    .filter((overlay): overlay is ChartEmaOverlay => overlay !== undefined);
+  return { bundle: { candles, ema_overlays: emaOverlays }, source };
 }
 
 export function seedChartBundleIntoResourceCaches(
