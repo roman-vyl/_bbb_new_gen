@@ -14,7 +14,7 @@ import type {
   VariantMetrics,
   WorkbenchTab,
 } from "@/api/types";
-import { clearMarketCache } from "@/features/chart/marketDataCache";
+import { clearMarketResourceCache } from "@/features/chart/marketResourceCache";
 import {
   WorkbenchProvider,
   useWorkbench,
@@ -341,7 +341,7 @@ describe("Workbench report-load invariant", () => {
     chartSliceRef = null;
     reportSliceRenderCount = 0;
     vi.clearAllMocks();
-    clearMarketCache();
+    clearMarketResourceCache();
     fetchRunSummaries.mockResolvedValue(RUNS);
     fetchConfigState.mockResolvedValue({
       family: "ema_pullback",
@@ -554,7 +554,7 @@ describe("Workbench missing-range trace scheduling", () => {
     workbenchRef = null;
     chartSliceRef = null;
     vi.clearAllMocks();
-    clearMarketCache();
+    clearMarketResourceCache();
     fetchRunSummaries.mockResolvedValue(RUNS);
     fetchConfigState.mockResolvedValue({
       family: "ema_pullback",
@@ -683,7 +683,7 @@ describe("Workbench split market resource cache", () => {
   beforeEach(() => {
     workbenchRef = null;
     vi.clearAllMocks();
-    clearMarketCache();
+    clearMarketResourceCache();
     fetchRunSummaries.mockResolvedValue(RUNS);
     fetchConfigState.mockResolvedValue({
       family: "ema_pullback",
@@ -822,7 +822,7 @@ describe("Workbench abort + in-flight dedupe", () => {
   beforeEach(() => {
     workbenchRef = null;
     vi.clearAllMocks();
-    clearMarketCache();
+    clearMarketResourceCache();
     fetchRunSummaries.mockResolvedValue(RUNS);
     fetchConfigState.mockResolvedValue({
       family: "ema_pullback",

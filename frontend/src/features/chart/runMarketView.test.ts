@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { RunReport } from "@/api/types";
-import { clearMarketCache } from "@/features/chart/marketDataCache";
+import { clearMarketResourceCache } from "@/features/chart/marketResourceCache";
 import {
   buildMarketFetchKey,
   composePartialRunMarketBundle,
@@ -78,7 +78,7 @@ const bundle = {
 
 describe("runMarketView", () => {
   it("reuses candles across variants with identical symbol/timeframe/range", () => {
-    clearMarketCache();
+    clearMarketResourceCache();
     const report = makeReport();
     const viewA = resolveRunMarketView({
       report,
@@ -104,7 +104,7 @@ describe("runMarketView", () => {
   });
 
   it("seeds chart-bundle candles and overlays into split caches", () => {
-    clearMarketCache();
+    clearMarketResourceCache();
     const report = makeReport();
     const view = resolveRunMarketView({
       report,
@@ -118,7 +118,7 @@ describe("runMarketView", () => {
   });
 
   it("builds fetch key only for missing resources", () => {
-    clearMarketCache();
+    clearMarketResourceCache();
     const report = makeReport();
     const viewA = resolveRunMarketView({
       report,
