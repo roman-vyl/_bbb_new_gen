@@ -13,11 +13,15 @@ import {
   getOverlay,
   hasCandles,
   hasOverlay,
+  marketCandlesReady,
   setCandlesIfAbsent,
   setOverlayIfAbsent,
   type CandlesCacheKey,
+  type MarketTimeBoundsMs,
   type OverlayCacheKey,
 } from "@/features/chart/marketResourceCache";
+
+export type { MarketTimeBoundsMs as MarketWindowBoundsMs };
 
 export type OverlayResourceRef = {
   key: OverlayCacheKey;
@@ -51,11 +55,10 @@ export function resolveRunMarketView(params: {
   const { report, chartTimeframe, variant, reloadToken } = params;
   const periods = anchorStackPeriodsFromStrategySpec(variant.strategy_spec);
   const { from_open_time_ms: fromOpenTimeMs, to_open_time_ms: toOpenTimeMs } = report.data_range;
-  const range = { fromOpenTimeMs, toOpenTimeMs, reloadToken };
   const candlesKey = buildCandlesCacheKey({
     symbol: report.symbol,
     timeframe: chartTimeframe,
-    ...range,
+    reloadToken,
   });
   const overlayRefs: OverlayResourceRef[] = (
     ["fast", "anchor", "slow"] as const
@@ -70,7 +73,7 @@ export function resolveRunMarketView(params: {
         source: "anchor_stack",
         role,
         period,
-        ...range,
+        reloadToken,
       }),
     };
   });
@@ -103,15 +106,41 @@ export type MissingMarketResources = {
   overlays: OverlayResourceRef[];
 };
 
+/**
+ * Legacy `/api/market/chart-bundle` path — checks full report `data_range`.
+ * Do not use for split candles-window / ema-window load (Phase 6+).
+ */
 export function getMissingMarketResources(view: RunMarketView): MissingMarketResources {
+  return getMissingMarketWindowResources(view, {
+    fromMs: view.fromOpenTimeMs,
+    toMs: view.toOpenTimeMs,
+  });
+}
+
+/** Target display window — split cold-load path (Phase 6+). */
+export function getMissingMarketWindowResources(
+  view: RunMarketView,
+  targetWindow: MarketTimeBoundsMs,
+): MissingMarketResources {
+  const { fromMs, toMs } = targetWindow;
   return {
-    candles: !hasCandles(view.candlesKey),
-    overlays: view.overlayRefs.filter((ref) => !hasOverlay(ref.key)),
+    candles: !hasCandles(view.candlesKey, fromMs, toMs),
+    overlays: view.overlayRefs.filter((ref) => !hasOverlay(ref.key, fromMs, toMs)),
   };
 }
 
+/** Legacy chart-bundle readiness over full report range. */
 export function isRunMarketViewReady(view: RunMarketView): boolean {
   const missing = getMissingMarketResources(view);
+  return !missing.candles && missing.overlays.length === 0;
+}
+
+/** Split-path readiness for a target display window only. */
+export function isRunMarketWindowReady(
+  view: RunMarketView,
+  targetWindow: MarketTimeBoundsMs,
+): boolean {
+  const missing = getMissingMarketWindowResources(view, targetWindow);
   return !missing.candles && missing.overlays.length === 0;
 }
 
@@ -126,14 +155,43 @@ export function buildMarketFetchKey(view: RunMarketView, missing: MissingMarketR
   return parts.join("|");
 }
 
+/** Split-path fetch dedupe key scoped to target display window. */
+export function buildMarketWindowFetchKey(
+  view: RunMarketView,
+  missing: MissingMarketResources,
+  targetWindow: MarketTimeBoundsMs,
+): string {
+  const parts: string[] = [`w:${targetWindow.fromMs}:${targetWindow.toMs}`];
+  if (missing.candles) {
+    parts.push(`c:${view.candlesKey}`);
+  }
+  for (const overlay of missing.overlays) {
+    parts.push(`o:${overlay.key}`);
+  }
+  return parts.join("|");
+}
+
+/** Legacy chart-bundle compose over full report range. */
 export function composeRunMarketBundle(view: RunMarketView): ChartMarketBundle | null {
-  const candles = getCandles(view.candlesKey);
+  return composeRunMarketWindowBundle(view, {
+    fromMs: view.fromOpenTimeMs,
+    toMs: view.toOpenTimeMs,
+  });
+}
+
+/** Split-path compose — all overlays required for target window. */
+export function composeRunMarketWindowBundle(
+  view: RunMarketView,
+  targetWindow: MarketTimeBoundsMs,
+): ChartMarketBundle | null {
+  const { fromMs, toMs } = targetWindow;
+  const candles = getCandles(view.candlesKey, fromMs, toMs);
   if (candles === undefined) {
     return null;
   }
   const emaOverlays: ChartEmaOverlay[] = [];
   for (const ref of view.overlayRefs) {
-    const overlay = getOverlay(ref.key);
+    const overlay = getOverlay(ref.key, fromMs, toMs);
     if (overlay === undefined) {
       return null;
     }
@@ -142,16 +200,75 @@ export function composeRunMarketBundle(view: RunMarketView): ChartMarketBundle |
   return { candles, ema_overlays: emaOverlays };
 }
 
-/** Candles when cached; anchor EMA overlays only for keys already present. */
+/** Legacy chart-bundle partial compose over full report range. */
 export function composePartialRunMarketBundle(view: RunMarketView): ChartMarketBundle | null {
-  const candles = getCandles(view.candlesKey);
+  return composePartialRunMarketWindowBundle(view, {
+    fromMs: view.fromOpenTimeMs,
+    toMs: view.toOpenTimeMs,
+  });
+}
+
+/** Split-path partial compose — candles + any overlays already cached for target window. */
+export function composePartialRunMarketWindowBundle(
+  view: RunMarketView,
+  targetWindow: MarketTimeBoundsMs,
+): ChartMarketBundle | null {
+  const { fromMs, toMs } = targetWindow;
+  const candles = getCandles(view.candlesKey, fromMs, toMs);
   if (candles === undefined) {
     return null;
   }
   const emaOverlays = view.overlayRefs
-    .map((ref) => getOverlay(ref.key))
+    .map((ref) => getOverlay(ref.key, fromMs, toMs))
     .filter((overlay): overlay is ChartEmaOverlay => overlay !== undefined);
   return { candles, ema_overlays: emaOverlays };
+}
+
+export type MarketBundleComposeSource = "coverage" | "focus";
+
+/** Which window to compose for chart display (coverage only when fully cached). */
+export function resolveMarketBundleComposeWindow(
+  view: RunMarketView,
+  focusWindow: MarketTimeBoundsMs,
+  coverageWindow: MarketTimeBoundsMs,
+): { window: MarketTimeBoundsMs; source: MarketBundleComposeSource } {
+  if (marketCandlesReady(view.candlesKey, coverageWindow.fromMs, coverageWindow.toMs)) {
+    return { window: coverageWindow, source: "coverage" };
+  }
+  return { window: focusWindow, source: "focus" };
+}
+
+/**
+ * Display compose for split market path: keep focus-window data visible while a
+ * larger coverage prefetch is in flight (avoids cachedBundle → null → chart blink).
+ */
+export function composeDisplayMarketWindowBundle(
+  view: RunMarketView,
+  focusWindow: MarketTimeBoundsMs,
+  coverageWindow: MarketTimeBoundsMs,
+): { bundle: ChartMarketBundle; source: MarketBundleComposeSource } | null {
+  const { window: candleWindow, source } = resolveMarketBundleComposeWindow(
+    view,
+    focusWindow,
+    coverageWindow,
+  );
+  const candles = getCandles(view.candlesKey, candleWindow.fromMs, candleWindow.toMs);
+  if (candles === undefined) {
+    return null;
+  }
+  const emaOverlays = view.overlayRefs
+    .map((ref) => {
+      const overlay = getOverlay(ref.key, candleWindow.fromMs, candleWindow.toMs);
+      if (overlay !== undefined) {
+        return overlay;
+      }
+      if (source === "coverage") {
+        return getOverlay(ref.key, focusWindow.fromMs, focusWindow.toMs);
+      }
+      return undefined;
+    })
+    .filter((overlay): overlay is ChartEmaOverlay => overlay !== undefined);
+  return { bundle: { candles, ema_overlays: emaOverlays }, source };
 }
 
 export function seedChartBundleIntoResourceCaches(

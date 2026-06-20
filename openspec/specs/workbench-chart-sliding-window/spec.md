@@ -2,33 +2,35 @@
 
 ## Purpose
 
-Workbench Chart keeps a **sliding render window** (default 50 000 bars) over the full in-memory market bundle. Pan near window edges shifts the slice from cache with deferred commit during active drag. Controller-owned pan lifecycle is specified in `workbench-chart-controller-orchestration`.
+Workbench Chart keeps a **sliding render window** (default 50 000 bars) over cached market intervals. Pan near window edges shifts the slice from cache with deferred commit during active drag; pan outside cache coverage triggers split `candles-window` / `ema-window` fetches for missing ranges only.
 ## Requirements
 ### Requirement: Chart maintains a sliding render window over the cached full candle bundle
 
-The Workbench Chart SHALL keep a **render window** — a contiguous slice of `cachedBundle.candles` already loaded in memory — rather than treating a one-shot trade-centric slice as the permanent data bound.
+The Workbench Chart SHALL keep a **render window** — a contiguous slice of cached candles from the **covering interval** for the current target display bounds — rather than treating a one-shot trade-centric slice as the permanent data bound.
 
 The render window MUST be managed by a dedicated frontend module (`chartDataWindowManager`) that tracks:
 
-- `fullCandlesCount`
-- `windowStartIndex` and `windowEndIndex` (half-open indices into the full cached array)
+- `fullCandlesCount` (bars available in the covering cached interval for the current target bounds)
+- `windowStartIndex` and `windowEndIndex` (half-open indices into that interval's bar array)
 - `renderWindowSize` (default **50 000** bars)
 - `safeZoneSize` (default **10 000** bars from each window edge)
 
-Pan-driven window shifts MUST NOT trigger new market API requests; they MUST slice from the in-memory cached array only.
+Pan-driven window shifts inside the **covering cached interval** MUST NOT trigger market API requests; they MUST slice from that interval's in-memory array only.
+
+When a committed pan shift or trade navigation requires display bounds **outside union cache coverage**, Workbench MUST schedule resource-specific window fetches (`candles-window` and `ema-window` per period) for `missingRange` only before applying the new render window. Candle display MUST NOT wait for overlay fetches.
 
 #### Scenario: Full bundle larger than render window
 
-- **GIVEN** `cachedBundle.candles` contains 120 000 bars
+- **GIVEN** the covering cached interval contains 120 000 bars
 - **WHEN** the chart initializes for the variant
 - **THEN** the chart series receives at most `renderWindowSize` bars (50 000 by default)
-- **AND** the render window is a contiguous sub-range of the full cached array
+- **AND** the render window is a contiguous sub-range of that interval's bar array
 
 #### Scenario: Full bundle smaller than render window
 
-- **GIVEN** `cachedBundle.candles` contains 3 000 bars
+- **GIVEN** the covering cached interval contains 3 000 bars
 - **WHEN** the chart renders
-- **THEN** the render window equals the full cached array (3 000 bars)
+- **THEN** the render window equals that interval (3 000 bars)
 - **AND** no pan shift is attempted beyond global array bounds
 
 ### Requirement: Pan near window edge shifts the render window from cache
@@ -55,7 +57,8 @@ Commit policy:
 After commit:
 
 - Workbench MUST apply at most one committed shift for the latest pending intent
-- Workbench MUST call `setData` with the new window slice
+- If the new render window bounds are covered by `marketResourceCache`, Workbench MUST call `setData` with the new window slice from cache
+- If the new bounds are not covered, Workbench MUST fetch missing candles via `candles-window` and missing overlays via `ema-window`, merge into cache, then call `setData` for each ready resource (candles first)
 - Workbench MUST restore viewport using a time-based anchor (pre-swap visible-time center, or cursor-time anchor when available) within tolerance of one bar
 - Workbench MUST NOT restore using pre-swap logical index as primary anchor
 
@@ -70,6 +73,7 @@ After commit:
 #### Scenario: Idle commit applies one queued shift
 
 - **GIVEN** a pending right-shift intent exists after active pan
+- **AND** the target bounds are within union cache coverage (a covering interval exists)
 - **WHEN** pan becomes idle per configured debounce
 - **THEN** Workbench swaps render window once from cache and calls `setData` once
 - **AND** viewport is restored to preserve user continuity around anchor time
@@ -77,6 +81,7 @@ After commit:
 #### Scenario: Pointerup commit applies queued shift
 
 - **GIVEN** pointer drag lifecycle is active and pending shift exists
+- **AND** the target bounds are within union cache coverage (a covering interval exists)
 - **WHEN** `pointerup` event is received
 - **THEN** Workbench commits one accepted shift without waiting for additional idle delay
 - **AND** fallback debounce is not required for that commit
@@ -94,6 +99,46 @@ After commit:
 - **WHEN** the user pans within the chart
 - **THEN** no pending shift is recorded
 - **AND** render-window indices remain unchanged
+
+### Requirement: Pan outside union cache coverage MUST trigger split resource window fetches
+
+When a committed render-window shift or trade navigation requires candle times outside **union** cache coverage, Workbench MUST fetch candle `missingRange` via `/api/market/candles-window` and overlay `missingRange` via `/api/market/ema-window` per period before updating respective series. Candle `setData` MUST NOT wait for overlay fetches.
+
+#### Scenario: Left pan beyond covering interval triggers fetch
+
+- **GIVEN** the covering cached interval covers `[5000, 10000)` in bar-time units
+- **AND** user pans left until committed render window requires bars before time 5000
+- **WHEN** pan commit occurs
+- **THEN** Workbench schedules `candles-window` for candle `missingRange` of the left edge only
+- **AND** does not request the full report range or any gap between unrelated intervals
+
+#### Scenario: Pan inside covering interval remains zero network
+
+- **GIVEN** union cache coverage fully includes the committed render window after pan
+- **WHEN** pan commit applies the new window slice
+- **THEN** no `candles-window` or `ema-window` or `chart-bundle` network request occurs
+- **AND** candles and overlays update from the covering interval slice only
+
+#### Scenario: Distant trade jump does not load gap
+
+- **GIVEN** tail interval cached for 2026 and user jumps to trade in 2017
+- **WHEN** trade-centered window fetch completes and render window updates
+- **THEN** only the 2017 trade window interval is fetched
+- **AND** the 2026 interval remains in cache unchanged
+- **AND** no fetch spans the 2017–2026 gap
+
+### Requirement: Distant trade navigation MUST fetch trade-centered window
+
+When trade entry is outside the current render window or inside the safe zone, and the trade-centered window is not covered by union cache, Workbench MUST fetch `candles-window` and per-period `ema-window` for trade-centered bounds. Candles MUST render as soon as candle interval is available.
+
+#### Scenario: Distant trade outside union coverage fetches split resources
+
+- **GIVEN** trade entry time is not covered by any cached candle interval
+- **WHEN** user selects that trade
+- **THEN** Workbench fetches `candles-window` for trade-centered candle bounds
+- **AND** Workbench fetches `ema-window` per required anchor period for the same bounds
+- **AND** candle `setData` may occur before all EMA fetches complete
+- **AND** previously cached intervals (e.g. tail window) are preserved
 
 ### Requirement: Trade selection minimizes unnecessary setData
 
@@ -184,7 +229,7 @@ When trade selection only re-centers viewport inside current safe zone, `chartWi
 
 ### Requirement: Anchor-stack EMA render-window stabilize cache MUST invalidate when overlay content or variant market key changes
 
-Workbench slices anchor-stack `ema_overlays` from the variant's market bundle (`intendedMarketCacheKey`) to the committed render window and MAY stabilize the sliced result for performance.
+Workbench SHALL slice anchor-stack `ema_overlays` from the variant's market bundle (`intendedMarketCacheKey`) to the committed render window and MAY stabilize the sliced result for performance.
 
 When render-window bounds are unchanged but anchor overlay point sets change — for example after variant switch when the new instance's market bundle arrives — the stabilize cache key MUST incorporate the market cache identity and an overlay content fingerprint (e.g. per-line `role:period:points.length`) via `buildEmaOverlaysStabilizeKey`.
 

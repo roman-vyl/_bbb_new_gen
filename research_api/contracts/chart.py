@@ -61,3 +61,60 @@ class ChartMarketBundle(BaseModel):
 
     candles: list[ChartBar]
     ema_overlays: list[ChartEmaOverlay]
+
+
+class CandlesWindowCoverage(BaseModel):
+    """Coverage metadata for ``GET /api/market/candles-window``."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    requested_from_ms: int = Field(ge=0, description="Client-requested window start (ms, inclusive).")
+    requested_to_ms: int = Field(ge=0, description="Client-requested window end (ms, exclusive).")
+    actual_from_ms: int = Field(ge=0, description="Earliest bar open time returned (ms).")
+    actual_to_ms: int = Field(ge=0, description="Exclusive end of returned bars (ms).")
+    truncated: bool = Field(
+        description="True when requested bounds could not be fully satisfied at data edges.",
+    )
+
+
+class CandlesWindowBundle(BaseModel):
+    """Windowed OHLC payload — candles only (no EMA overlays)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    candles: list[ChartBar]
+    coverage: CandlesWindowCoverage
+
+
+class EmaWindowCoverage(BaseModel):
+    """Coverage and canonical EMA cache metadata for ``GET /api/market/ema-window``."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    requested_from_ms: int = Field(ge=0)
+    requested_to_ms: int = Field(ge=0)
+    actual_from_ms: int = Field(ge=0)
+    actual_to_ms: int = Field(ge=0)
+    calculation_origin_ms: int = Field(
+        ge=0,
+        description="Canonical EMA series start (earliest candle open used for seeding).",
+    )
+    coverage_to_ms: int = Field(
+        ge=0,
+        description="Exclusive end through which canonical EMA points are materialized in cache.",
+    )
+    cache_hit: bool = Field(
+        description="True when response sliced from cached canonical series without extension compute.",
+    )
+    truncated: bool = Field(
+        description="True when requested bounds exceed available market data.",
+    )
+
+
+class EmaWindowBundle(BaseModel):
+    """Windowed chart overlay EMA — one period per response (no candles)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    points: list[IndicatorPoint]
+    coverage: EmaWindowCoverage

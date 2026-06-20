@@ -418,3 +418,10 @@ docs/research/20_trade_exit_management_runtime_v1.md
 docs/research/21_state_driven_exit_management_v1.md
 docs/research/22_phase_rule_condition.md
 ```
+
+Frontend / Workbench chart loading:
+
+```text
+docs/research/24_workbench_chart_loading_roadmap.md
+docs/research/25_workbench_chart_orchestration_display_model_v2.md
+```

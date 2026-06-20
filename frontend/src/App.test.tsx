@@ -24,7 +24,29 @@ vi.mock("@/api/client", async (importOriginal) => {
       fetchConfigState(...args),
     fetchComponentCatalog: (...args: Parameters<typeof fetchComponentCatalog>) =>
       fetchComponentCatalog(...args),
-    fetchChartMarketBundle: vi.fn().mockResolvedValue({ candles: [], ema_overlays: [] }),
+    fetchCandlesWindow: vi.fn().mockResolvedValue({
+      candles: [],
+      coverage: {
+        requested_from_ms: 0,
+        requested_to_ms: 0,
+        actual_from_ms: 0,
+        actual_to_ms: 0,
+        truncated: false,
+      },
+    }),
+    fetchEmaWindow: vi.fn().mockResolvedValue({
+      points: [],
+      coverage: {
+        requested_from_ms: 0,
+        requested_to_ms: 0,
+        actual_from_ms: 0,
+        actual_to_ms: 0,
+        calculation_origin_ms: 0,
+        coverage_to_ms: 0,
+        cache_hit: false,
+        truncated: false,
+      },
+    }),
     fetchSignalTrace: vi.fn(),
     fetchChartOverlayEma: vi.fn().mockResolvedValue([]),
     selectSavedConfig: vi.fn(),

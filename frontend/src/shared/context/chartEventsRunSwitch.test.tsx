@@ -17,6 +17,7 @@ import type {
 import { clearMarketResourceCache } from "@/features/chart/marketResourceCache";
 import { resetChartEventsFlagDisabledNoteForTests } from "@/features/chart/runtime/chartEventsLoad";
 import { dbgExport, dbgReset, PIPELINE_DEBUG_STEPS as DBG } from "@/shared/diagnostics/pipelineDebug";
+import { mockCandlesWindowBundle, mockEmaWindowBundle } from "@/test/marketWindowApiMocks";
 import {
   WorkbenchProvider,
   useWorkbenchChart,
@@ -26,7 +27,8 @@ import {
 const fetchRunReport = vi.fn<typeof import("@/api/client").fetchRunReport>();
 const fetchRunSummaries = vi.fn<typeof import("@/api/client").fetchRunSummaries>();
 const fetchConfigState = vi.fn<typeof import("@/api/client").fetchConfigState>();
-const fetchChartMarketBundle = vi.fn<typeof import("@/api/client").fetchChartMarketBundle>();
+const fetchCandlesWindow = vi.fn<typeof import("@/api/client").fetchCandlesWindow>();
+const fetchEmaWindow = vi.fn<typeof import("@/api/client").fetchEmaWindow>();
 const fetchSignalTrace = vi.fn<typeof import("@/api/client").fetchSignalTrace>();
 const fetchChartEvents = vi.fn<typeof import("@/api/client").fetchChartEvents>();
 const fetchChartOverlayEma = vi.fn<typeof import("@/api/client").fetchChartOverlayEma>();
@@ -44,8 +46,9 @@ vi.mock("@/api/client", () => ({
   fetchRunReport: (...args: Parameters<typeof fetchRunReport>) => fetchRunReport(...args),
   fetchRunSummaries: (...args: Parameters<typeof fetchRunSummaries>) => fetchRunSummaries(...args),
   fetchConfigState: (...args: Parameters<typeof fetchConfigState>) => fetchConfigState(...args),
-  fetchChartMarketBundle: (...args: Parameters<typeof fetchChartMarketBundle>) =>
-    fetchChartMarketBundle(...args),
+  fetchCandlesWindow: (...args: Parameters<typeof fetchCandlesWindow>) =>
+    fetchCandlesWindow(...args),
+  fetchEmaWindow: (...args: Parameters<typeof fetchEmaWindow>) => fetchEmaWindow(...args),
   fetchSignalTrace: (...args: Parameters<typeof fetchSignalTrace>) => fetchSignalTrace(...args),
   fetchChartEvents: (...args: Parameters<typeof fetchChartEvents>) => fetchChartEvents(...args),
   fetchChartOverlayEma: (...args: Parameters<typeof fetchChartOverlayEma>) =>
@@ -246,18 +249,24 @@ describe("chart-events run switch bootstrap", () => {
       draft: null,
     });
     fetchRunReport.mockImplementation(async (runId: string) => makeReport(runId));
-    fetchChartMarketBundle.mockImplementation(async ({ fromMs }: { fromMs: number }) => ({
-      candles: [
-        {
-          time: Math.floor(fromMs / 1000),
-          open: 1,
-          high: 2,
-          low: 0.5,
-          close: 1.5,
-        },
-      ],
-      ema_overlays: [],
-    }));
+    fetchCandlesWindow.mockImplementation(async ({ fromMs, toOpenTimeMs }) =>
+      mockCandlesWindowBundle(
+        [
+          {
+            time: Math.floor(fromMs / 1000),
+            open: 1,
+            high: 2,
+            low: 0.5,
+            close: 1.5,
+          },
+        ],
+        fromMs,
+        toOpenTimeMs + 300_000,
+      ),
+    );
+    fetchEmaWindow.mockImplementation(async ({ fromMs, toOpenTimeMs }) =>
+      mockEmaWindowBundle([], fromMs, toOpenTimeMs + 300_000),
+    );
     fetchChartOverlayEma.mockResolvedValue([]);
     fetchChartEvents.mockImplementation(async ({ runId }: { runId: string }) =>
       chartEventsForTime(runId === "run-b" ? 2000 : 1000),

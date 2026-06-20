@@ -4,13 +4,22 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query
 
-from research_api.contracts.chart import ChartBar, ChartMarketBundle, IndicatorPoint
+from research_api.contracts.chart import (
+    CandlesWindowBundle,
+    ChartBar,
+    ChartMarketBundle,
+    EmaWindowBundle,
+    IndicatorPoint,
+)
+from research_api.services.chart_ema_cache import CANONICAL_ORIGIN_POLICY
 from research_api.services.market_params import MarketParamError
 from research_api.services.market_reader import (
     MarketDataNotFoundError,
+    fetch_candles_window,
     fetch_chart_bars,
     fetch_chart_market_bundle,
     fetch_ema_points,
+    fetch_ema_window,
     resolve_exclusive_to_ms,
 )
 
@@ -43,12 +52,15 @@ def _range_end_ms(
 @router.get(
     "/chart-bundle",
     response_model=ChartMarketBundle,
-    summary="OHLC + anchor-stack chart overlay EMAs (single DB read)",
+    summary="[LEGACY] OHLC + anchor-stack EMAs (full-range monolithic bundle)",
     description=(
-        "Preferred Workbench chart payload: one SQLite ``range_get`` for candles, "
+        "**Legacy** Workbench payload — prefer ``GET /candles-window`` and "
+        "``GET /ema-window`` for cold load. One SQLite ``range_get`` for candles, "
         "then three in-process chart overlay EMAs (fast/anchor/slow) from candle "
-        "closes. Not research strategy feature columns (``ema_close_*``)."
+        "closes. Retained for debug and rollback only; frontend cold path does "
+        "not use this endpoint after market-bundle-cold-load-optimization."
     ),
+    deprecated=True,
 )
 def get_chart_bundle(
     symbol: str = Query(..., min_length=2, max_length=32),
@@ -70,6 +82,70 @@ def get_chart_bundle(
             ema_fast=ema_fast,
             ema_anchor=ema_anchor,
             ema_slow=ema_slow,
+        )
+    except Exception as exc:
+        raise _http_from_market(exc) from exc
+
+
+@router.get(
+    "/candles-window",
+    response_model=CandlesWindowBundle,
+    summary="Windowed OHLC candles with coverage metadata",
+    description=(
+        "Display-window candles only for Workbench cold load. "
+        "Returns ``candles`` and ``coverage`` for the requested half-open range."
+    ),
+)
+def get_candles_window(
+    symbol: str = Query(..., min_length=2, max_length=32),
+    timeframe: str = Query(..., min_length=2, max_length=8),
+    from_ms: int = Query(..., alias="from", ge=0),
+    to_ms: int | None = Query(None, alias="to", ge=1),
+    to_open_time_ms: int | None = Query(None, ge=0),
+) -> CandlesWindowBundle:
+    try:
+        end_ms = _range_end_ms(timeframe=timeframe, to_ms=to_ms, to_open_time_ms=to_open_time_ms)
+        return fetch_candles_window(
+            symbol=symbol,
+            timeframe=timeframe,
+            from_ms=from_ms,
+            to_ms=end_ms,
+        )
+    except Exception as exc:
+        raise _http_from_market(exc) from exc
+
+
+@router.get(
+    "/ema-window",
+    response_model=EmaWindowBundle,
+    summary="Windowed canonical chart overlay EMA with cache metadata",
+    description=(
+        "One EMA period per request. Canonical series is cached in-process; "
+        "response includes ``coverage.calculation_origin_ms``, ``coverage_to_ms``, "
+        "and ``cache_hit``."
+    ),
+)
+def get_ema_window(
+    symbol: str = Query(..., min_length=2, max_length=32),
+    timeframe: str = Query(..., min_length=2, max_length=8),
+    period: int = Query(..., ge=1, le=5000),
+    from_ms: int = Query(..., alias="from", ge=0),
+    to_ms: int | None = Query(None, alias="to", ge=1),
+    to_open_time_ms: int | None = Query(None, ge=0),
+    origin_policy: str = Query(
+        CANONICAL_ORIGIN_POLICY,
+        description="v1 supports canonical full-series EMA cache only.",
+    ),
+) -> EmaWindowBundle:
+    try:
+        end_ms = _range_end_ms(timeframe=timeframe, to_ms=to_ms, to_open_time_ms=to_open_time_ms)
+        return fetch_ema_window(
+            symbol=symbol,
+            timeframe=timeframe,
+            period=period,
+            from_ms=from_ms,
+            to_ms=end_ms,
+            origin_policy=origin_policy,
         )
     except Exception as exc:
         raise _http_from_market(exc) from exc
