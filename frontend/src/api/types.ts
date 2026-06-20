@@ -45,6 +45,39 @@ export type ChartMarketBundle = {
   ema_overlays: ChartEmaOverlay[];
 };
 
+/** Coverage for `GET /api/market/candles-window`. */
+export type CandlesWindowCoverage = {
+  requested_from_ms: number;
+  requested_to_ms: number;
+  actual_from_ms: number;
+  actual_to_ms: number;
+  truncated: boolean;
+};
+
+/** Windowed candles only — no EMA overlays. */
+export type CandlesWindowBundle = {
+  candles: ChartBar[];
+  coverage: CandlesWindowCoverage;
+};
+
+/** Coverage for `GET /api/market/ema-window` (canonical cache metadata always present in v1). */
+export type EmaWindowCoverage = {
+  requested_from_ms: number;
+  requested_to_ms: number;
+  actual_from_ms: number;
+  actual_to_ms: number;
+  calculation_origin_ms: number;
+  coverage_to_ms: number;
+  cache_hit: boolean;
+  truncated: boolean;
+};
+
+/** Windowed chart overlay EMA — one period per response (no candles). */
+export type EmaWindowBundle = {
+  points: IndicatorPoint[];
+  coverage: EmaWindowCoverage;
+};
+
 /** Non-anchor-stack EMA line (exit policy on chart TF or HTF context from signal trace). */
 export type ChartAuxEmaOverlay = {
   id: string;

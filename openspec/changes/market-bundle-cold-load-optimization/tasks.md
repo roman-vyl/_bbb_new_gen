@@ -9,11 +9,11 @@ Review-gated implementation: **STOP after each phase** and wait for user approva
 
 ## 2. Phase 2 — Backend contracts only (no service, no router)
 
-- [ ] 2.1 Add `CandlesWindowBundle` + coverage to `research_api/contracts/chart.py`
-- [ ] 2.2 Add `EmaWindowBundle` + coverage (`calculation_origin_ms`, `coverage_to_ms`, `cache_hit` always present) to `research_api/contracts/chart.py`
-- [ ] 2.3 Add matching TypeScript types in `frontend/src/api/types.ts`
-- [ ] 2.4 Add contract/schema tests only (Pydantic shape, TS parity) — no `market_reader` / EMA cache implementation
-- [ ] 2.5 **STOP FOR REVIEW:** confirm split contracts (candles-only, ema-only, no bundled window); wait for approval before Phase 3
+- [x] 2.1 Add `CandlesWindowBundle` + coverage to `research_api/contracts/chart.py`
+- [x] 2.2 Add `EmaWindowBundle` + coverage (`calculation_origin_ms`, `coverage_to_ms`, `cache_hit` always present) to `research_api/contracts/chart.py`
+- [x] 2.3 Add matching TypeScript types in `frontend/src/api/types.ts`
+- [x] 2.4 Add contract/schema tests only (Pydantic shape, TS parity) — no `market_reader` / EMA cache implementation
+- [x] 2.5 **STOP FOR REVIEW:** confirm split contracts (candles-only, ema-only, no bundled window); wait for approval before Phase 3
 
 ## 3. Phase 3 — Backend services (no router)
 
