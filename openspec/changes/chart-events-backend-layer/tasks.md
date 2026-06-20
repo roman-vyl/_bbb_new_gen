@@ -82,6 +82,7 @@ Scope: skip redundant `/signal-trace` when chart-events already satisfied displa
 - [x] 6.5 Acceptance: backend cache tests use call-count/key assertions only (no timing)
 - [x] 6.6 Acceptance: fallback scenario emits debug marks (`workbenchTraceNetworkLoad.test.ts`)
 - [ ] 6.7 **STOP FOR REVIEW:** acceptance checklist complete; user approval to archive change
+- [x] 6.8 Run-switch bootstrap guard: block trace/chart-events until report/market/renderWindow aligned; stale 404 silent
 
 ## Future work (out of scope — do not implement in this change)
 

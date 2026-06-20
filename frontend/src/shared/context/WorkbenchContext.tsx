@@ -613,6 +613,12 @@ export function WorkbenchProvider({
   }, [selectedRunId, reloadToken]);
 
   useEffect(() => {
+    traceLoadGenerationRef.current += 1;
+    signalTraceRequestCoordinatorRef.current.reset();
+    previousChartWindowKeyRef.current = null;
+  }, [selectedRunId]);
+
+  useEffect(() => {
     if (reportLoadStatus === "ready" && selectedRunId !== null) {
       dbgMark(DBG.load.reportReady, { runId: selectedRunId });
     }
@@ -665,6 +671,30 @@ export function WorkbenchProvider({
     () => deriveSelectedVariant(report, selectedVariantKey),
     [report, selectedVariantKey],
   );
+
+  const expectedRunMarketViewIdentity = useMemo((): RunMarketViewIdentity | null => {
+    if (
+      reportLoadStatus !== "ready" ||
+      report === null ||
+      selectedVariant === null ||
+      selectedRunId === null ||
+      report.run_id !== selectedRunId
+    ) {
+      return null;
+    }
+    try {
+      return buildRunMarketViewIdentity(
+        resolveRunMarketView({
+          report,
+          chartTimeframe,
+          variant: selectedVariant,
+          reloadToken,
+        }),
+      );
+    } catch {
+      return null;
+    }
+  }, [reportLoadStatus, report, selectedVariant, selectedRunId, chartTimeframe, reloadToken]);
 
   useEffect(() => {
     if (report === null) {
@@ -1876,10 +1906,13 @@ export function WorkbenchProvider({
     }
 
     const bootstrap = evaluateSignalTraceBootstrap({
-      report: reportLoadStatus === "ready" ? report : null,
+      report,
+      reportLoadStatus,
       selectedRunId,
       selectedVariantKey: selectedVariantKey || null,
       marketLoadStatus,
+      runMarketViewIdentity,
+      expectedRunMarketViewIdentity,
       chartWindowKey,
       candles: chartView.candles,
       renderWindowBounds,
@@ -2483,12 +2516,15 @@ export function WorkbenchProvider({
     };
   }, [
     reportLoadStatus,
+    report,
     selectedRunId,
     selectedVariantKey,
     chartWindowKey,
     renderWindowRevision,
     renderWindowBoundsKey,
     marketLoadStatus,
+    runMarketViewIdentity,
+    expectedRunMarketViewIdentity,
     effectiveContextOverlayRef,
     finalizeTraceDisplayUpdate,
     chartHeavyIoEnabled,

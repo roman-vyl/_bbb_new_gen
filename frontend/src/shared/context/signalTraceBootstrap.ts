@@ -4,11 +4,17 @@ import type { SignalTraceRequest } from "@/shared/context/signalTraceLoadPolicy"
 
 export type SignalTraceBootstrapMarketStatus = "idle" | "loading" | "ready" | "error";
 
+export type SignalTraceBootstrapReportStatus = "idle" | "loading" | "ready" | "error";
+
 export type SignalTraceBootstrapBlockReason =
   | "no_report"
   | "no_run"
   | "no_variant"
+  | "report_not_ready"
+  | "report_run_mismatch"
+  | "run_switch_not_ready"
   | "market_not_ready"
+  | "render_window_not_ready"
   | "no_render_window"
   | "no_bounds";
 
@@ -38,30 +44,76 @@ export function resolveSignalTraceFetchSource(
   return "window_shift";
 }
 
+export function variantBelongsToReport(report: RunReport, variantKey: string | null): boolean {
+  if (variantKey === null || variantKey === "") {
+    return false;
+  }
+  return report.variants.some((variant) => variant.variant === variantKey);
+}
+
+export function chartWindowKeyMatchesRunVariant(
+  chartWindowKey: string | null,
+  runId: string,
+  variantKey: string,
+): boolean {
+  if (chartWindowKey === null) {
+    return false;
+  }
+  return chartWindowKey.startsWith(`${runId}:${variantKey}:`);
+}
+
 export function evaluateSignalTraceBootstrap(input: {
   report: RunReport | null;
+  reportLoadStatus: SignalTraceBootstrapReportStatus;
   selectedRunId: string | null;
   selectedVariantKey: string | null;
   marketLoadStatus: SignalTraceBootstrapMarketStatus;
+  runMarketViewIdentity: string | null;
+  expectedRunMarketViewIdentity: string | null;
   chartWindowKey: string | null;
   candles: readonly ChartBar[];
   renderWindowBounds: { fromSec: number; toSec: number } | null;
   previousWindowKey: string | null;
 }): SignalTraceBootstrapState {
-  if (input.report === null) {
-    return { ready: false, reason: "no_report" };
-  }
   if (input.selectedRunId === null) {
     return { ready: false, reason: "no_run" };
   }
+  if (input.reportLoadStatus !== "ready" || input.report === null) {
+    if (input.reportLoadStatus === "loading" || input.reportLoadStatus === "idle") {
+      return { ready: false, reason: "run_switch_not_ready" };
+    }
+    return { ready: false, reason: "no_report" };
+  }
+  if (input.report.run_id !== input.selectedRunId) {
+    return { ready: false, reason: "report_run_mismatch" };
+  }
   if (input.selectedVariantKey === null || input.selectedVariantKey === "") {
+    return { ready: false, reason: "no_variant" };
+  }
+  if (!variantBelongsToReport(input.report, input.selectedVariantKey)) {
     return { ready: false, reason: "no_variant" };
   }
   if (input.marketLoadStatus !== "ready") {
     return { ready: false, reason: "market_not_ready" };
   }
+  if (
+    input.runMarketViewIdentity === null ||
+    input.expectedRunMarketViewIdentity === null ||
+    input.runMarketViewIdentity !== input.expectedRunMarketViewIdentity
+  ) {
+    return { ready: false, reason: "run_switch_not_ready" };
+  }
   if (input.chartWindowKey === null) {
     return { ready: false, reason: "no_render_window" };
+  }
+  if (
+    !chartWindowKeyMatchesRunVariant(
+      input.chartWindowKey,
+      input.report.run_id,
+      input.selectedVariantKey,
+    )
+  ) {
+    return { ready: false, reason: "render_window_not_ready" };
   }
   if (input.candles.length === 0 || input.renderWindowBounds === null) {
     return { ready: false, reason: "no_bounds" };

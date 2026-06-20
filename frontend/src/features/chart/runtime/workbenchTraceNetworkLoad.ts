@@ -315,6 +315,17 @@ export async function loadDisplayTraceChunk(
       });
       return { outcome: "aborted" };
     }
+    if (
+      signal.aborted ||
+      !coordinator.isResponseCurrent(displayRequestKey, fetchGeneration)
+    ) {
+      dbgMark(DBG.signalTrace.fetchStaleResponse, {
+        windowKey,
+        traceRequestKey: displayRequestKey,
+        phase: "chart_events_error",
+      });
+      return { outcome: "stale", phase: "chart_events_response" };
+    }
     dbgMark(DBG.chartEvents.fetchFail, {
       windowKey,
       traceRequestKey: displayRequestKey,

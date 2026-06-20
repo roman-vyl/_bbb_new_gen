@@ -159,6 +159,26 @@ describe("loadDisplayTraceChunk", () => {
     expect(dbgExport().some((row) => row.step === DBG.chartEvents.fetchFail)).toBe(true);
     expect(dbgExport().some((row) => row.step === DBG.chartEvents.fallback)).toBe(true);
   });
+
+  it("ignores chart-events 404 when fetch generation is stale (run switch)", async () => {
+    vi.stubEnv("VITE_CHART_EVENTS_API", "1");
+    vi.stubEnv("VITE_EMA_PIPELINE_DEBUG", "true");
+    const { ApiError } = await import("@/api/client");
+    let rejectDeferred!: (reason?: unknown) => void;
+    fetchChartEvents.mockReturnValue(
+      new Promise((_resolve, reject) => {
+        rejectDeferred = reject;
+      }),
+    );
+    const ctx = makeCtx();
+    const promise = loadDisplayTraceChunk(ctx);
+    ctx.coordinator.clearInFlight(ctx.params.displayRequestKey, ctx.params.fetchGeneration);
+    rejectDeferred(new ApiError(404, "not found"));
+    const result = await promise;
+    expect(result).toEqual({ outcome: "stale", phase: "chart_events_response" });
+    expect(dbgExport().some((row) => row.step === DBG.chartEvents.fetchFail)).toBe(false);
+    expect(dbgExport().some((row) => row.step === DBG.chartEvents.fallback)).toBe(false);
+  });
 });
 
 describe("loadDenseLanesTrace", () => {
