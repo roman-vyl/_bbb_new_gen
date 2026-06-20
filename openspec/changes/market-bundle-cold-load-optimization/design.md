@@ -1,27 +1,42 @@
 ## Context
 
-**Current flow (post hygiene cleanup):**
+**Current flow (monolithic):**
 
 ```text
-report load
-  → resolveRunMarketView (full report data_range)
-  → isRunMarketViewReady? (checks marketResourceCache by full-range keys)
-  → fetchChartMarketBundle(from=report.from, to=report.to)  // entire run
-  → seedChartBundleIntoResourceCaches
-  → composeRunMarketBundle from cache
-  → chartDataWindowManager slices ~50k render window locally
+frontend:  fetchChartMarketBundle(full report range)
+backend:   candles + fast/anchor/slow EMA for ~600k bars
+frontend:  seed caches → slice 50k render window locally
 ```
 
-`marketResourceCache.ts` stores candles and overlays keyed by **full report range** (`fromOpenTimeMs`, `toOpenTimeMs`). `runMarketView.ts` resolves identity against those keys. `fetchChartMarketBundle` in `WorkbenchContext.tsx` always requests the full `data_range` when candles are missing.
+**Target flow (split resources):**
 
-The sliding render window (`workbench-chart-sliding-window`) assumes the full bundle is already in memory; pan shifts slice from cache with **zero network**. This is correct once data is loaded, but cold open pays the cost of the entire run.
+```text
+frontend:  plan target window (~50k around view / trade)
+           candles missing? → GET /api/market/candles-window
+           candles ready → ChartPanel renders OHLC (marketCandlesReady)
+           overlay missing per period? → GET /api/market/ema-window (one period each)
+           overlays arrive → EMA lines paint progressively (marketOverlaysReady)
+
+backend candles-window:
+  range_get for requested window only → return candles + coverage
+
+backend ema-window (origin_policy=canonical):
+  first request for (symbol, tf, period):
+    read candles from calculation_origin_ms
+    compute full canonical EMA series once → in-memory cache
+    return requested window slice only
+  subsequent requests:
+    slice cached series → return window only
+```
+
+`marketResourceCache.ts` already separates candles and overlays. This change aligns **network scheduling and readiness** with that split — no second cache layer, no monolithic bundle v2.
 
 **Constraints:**
 
-- Layer boundaries: EMA computed in BFF (`research_api/services/indicators.py`), not frontend.
-- `compute_chart_overlay_ema` today seeds from first bar in window — narrowing `from` without warmup biases EMA (documented in `indicators.py` and `test_chart_overlay_ema_window_narrowing_changes_values`).
-- Chart-events and signal-trace are separate products; this change must not couple market window fetches to trace/chart-events scheduling.
-- HTF context overlays come from signal-trace, not BFF chart-window — verify no regression per `workbench-chart-htf-context-overlays`.
+- EMA computed only in BFF; frontend never sees warmup bars or computes EMA.
+- Chart-events and signal-trace remain separate coordinators.
+- HTF context overlays from signal-trace, not BFF ema-window — verify per `workbench-chart-htf-context-overlays`.
+- Multi-interval chunk coverage (tail 2026 + distant trade 2017) — gaps not loaded.
 
 **Reference docs:** `docs/frontend/implementation_plan.md`, `docs/research/24_workbench_chart_loading_roadmap.md`, `openspec/specs/workbench-chart-market-resource-cache/spec.md`.
 
@@ -29,128 +44,129 @@ The sliding render window (`workbench-chart-sliding-window`) assumes the full bu
 
 **Goals:**
 
-- Cold open fetches only the **initial display window** (~50k bars or trade-centered window), not full report range.
-- Distant trade navigation fetches a window around the target trade when outside cache coverage.
-- Pan inside cached coverage remains zero-network; pan outside coverage fetches the missing window chunk.
-- Backend EMA values match full-range calculation within accepted tolerance (warmup bars before display `from`).
-- Seed window responses into existing `marketResourceCache` without a second cache layer.
-- Instrument old vs new fetch paths for perf comparison.
+- Cold open fetches **candles-window** for initial display bounds only — chart visible before EMA.
+- EMA overlays load via **per-period ema-window** requests; paint progressively as each arrives.
+- Backend canonical EMA cache ensures values consistent across windows without frontend warmup knowledge.
+- Distant trade and pan-outside-coverage fetch only missing resource windows.
+- Split readiness: `marketCandlesReady` vs `marketOverlaysReady`.
+- Instrument old monolithic path vs new split-resource path.
 
 **Non-Goals:**
 
-- Changing `/chart-events`, `/signal-trace`, strategy semantics, or data_engine storage.
-- Overlay-only endpoint in v1.
-- Materialized chart-events chunks.
-- Reviving `marketDataCache.ts` or rewriting all of `WorkbenchContext.tsx`.
-- Frontend EMA computation.
+- Persistent indicator DB or materialized EMA storage.
+- Frontend EMA computation or warmup candle delivery.
+- Monolithic `chart-window` / `chart-bundle v2`.
+- Blocking candles on EMA arrival.
+- Coupling market fetches to chart-events/signal-trace.
+- Changing `/chart-events`, `/signal-trace`, strategy semantics, `data_engine/`.
 
 ## Decisions
 
-### 1. New endpoint: `GET /api/market/chart-window`
+### 1. Split endpoints (not monolithic chart-window)
 
-**Choice:** Single windowed bundle endpoint returning display candles + display EMA overlays + coverage metadata.
+**Choice:**
 
-**Rationale:** Mirrors existing `chart-bundle` shape so `seedChartBundleIntoResourceCaches` can be reused with minimal change. One DB read per window fetch (warmup + display in one `range_get`).
+| Endpoint | Returns |
+|----------|---------|
+| `GET /api/market/candles-window` | Candles + coverage only |
+| `GET /api/market/ema-window` | EMA points for one `period` + coverage + `calculation_origin_ms` |
 
-**Query params (proposed):**
+**Rationale:** Matches split `marketResourceCache`, enables progressive render, avoids shipping 3 EMA series when only candles are needed for first paint. Same architectural pattern as chart-events vs signal-trace separation.
 
-| Param | Role |
-|-------|------|
-| `symbol`, `timeframe` | Market identity |
-| `display_from` | Display window start (ms, inclusive) |
-| `display_to` or `display_to_open_time_ms` | Display window end (half-open, parity with existing market APIs) |
-| `ema_fast`, `ema_anchor`, `ema_slow` | Anchor-stack periods |
-| `warmup_bars` (optional) | Override; default `max(ema_slow) + margin` |
+**Rejected:** Single `chart-window` returning candles + all EMA — monolithic bundle under new name; blocks candles on slowest EMA.
 
-**Response model `ChartMarketWindowBundle`:**
+### 2. Canonical on-demand EMA cache (backend in-memory)
+
+**Choice:** New service (e.g. `chart_ema_cache.py`) keyed by `(symbol, timeframe, period, origin_policy)`. On cache miss:
+
+1. Resolve `calculation_origin_ms` — earliest available candle open for symbol/tf (canonical origin).
+2. `range_get` from origin through window end.
+3. `compute_chart_overlay_ema` on full series.
+4. Store full `IndicatorPoint[]` in process memory.
+5. Return slice `[from_ms, to_ms)`.
+
+On cache hit: slice only. Response includes `coverage.cache_hit`.
+
+**Rationale:** Frontend unaware of warmup; EMA exact and consistent between windows; first EMA500 request may compute full series but does not block candles and does not JSON-serialize 600k points.
+
+**Trade-off:** First ema-window per period pays full-series compute cost once. Acceptable — non-blocking, backend-only, amortized across window navigations.
+
+**Rejected:** Per-request `period + 5` warmup read — frontend-adjacent contract complexity; still recomputes on every new distant window without canonical consistency guarantee.
+
+### 3. Frontend interval/chunk cache (unchanged model)
+
+Multi-interval chunk storage per resource identity with union `coversRange` / `missingRange` / `sliceForRange` — see prior design revision. Candles and overlays tracked independently.
+
+### 4. Split readiness and progressive render
+
+**Choice:**
 
 ```text
-candles: ChartBar[]           // display window only
-ema_overlays: ChartEmaOverlay[] // display window only
-coverage:
-  requested_display_from_ms
-  requested_display_to_ms
-  actual_display_from_ms
-  actual_display_to_ms
-  warmup_from_ms
-  warmup_bars_used
-  truncated: bool              // true if DB lacked bars at range edge
+marketCandlesReady(bounds): union candle intervals cover bounds
+marketOverlaysReady(bounds, periods[]): each required overlay interval covers bounds
+
+ChartPanel:
+  candles setData when marketCandlesReady
+  each EMA setData when that overlay interval ready (may be staggered)
 ```
 
-**Alternative considered:** Split `/candles` + `/indicators/ema` per window — rejected for v1 because it doubles round-trips and loses single-read guarantee.
+WorkbenchContext (or chart runtime) MUST NOT gate candle `setData` on overlay readiness.
 
-### 2. EMA warmup policy
+**Rationale:** User sees OHLC immediately; EMA lines appear as overlays complete — matches desired UX.
 
-**Choice:** Backend reads `[warmup_from_ms, display_to_ms)` where `warmup_from_ms = display_from_ms - warmup_bars * timeframe_ms`, clamped to 0. Compute EMA on warmup+display bars; **return only points with `time >= display_from_sec`**.
+### 5. `marketWindowPlanner` — split scheduling
 
-**Default warmup:** `max(ema_slow) + 5` bars (aligned with `signal_trace_service._warmup_bars_ms` margin pattern).
+**Choice:** Planner owns:
 
-**Rationale:** Matches full-range EMA at display window start (verified by contract test comparing windowed vs full-range tail). Documented in `indicators.py` as the intended future BFF enhancement.
+- `resolveTargetDisplayWindow(...)`
+- `planCandlesWindowFetch(view, bounds)` → `candles-window` if `missingRange` for candles
+- `planEmaWindowFetches(view, bounds, overlayRefs)` → list of per-period `ema-window` fetches for missing overlay intervals
+- `seedCandlesWindow` / `seedEmaWindow` — merge into respective cache chunk lists
+- Separate in-flight dedupe keys per resource type and period
 
-**Alternative considered:** Return warmup EMA points to frontend — rejected; frontend must not receive or slice warmup data for display.
+**Integration:** WorkbenchContext market load effect schedules candles first, then overlay fetches in parallel (or staggered). Render-window commit re-plans per resource.
 
-### 3. Frontend cache: extend `marketResourceCache` with span coverage
+### 6. Pan behavior
 
-**Choice:** Add **contiguous span storage** per `(symbol, timeframe, reloadToken)` with `coversRange(fromMs, toMs)` and `missingRange(fromMs, toMs)` — pattern from `signalTraceDisplayCache.ts`. Window responses **merge** into the span (dedupe by bar `time`). Overlay spans tracked per overlay key (role/period).
+Pan inside covering interval → zero network slice. Pan outside union coverage → `candles-window` and/or `ema-window` for `missingRange` per resource. Returning to cached interval → zero network.
 
-**Rationale:** User requirement: no second cache layer. Existing `setCandlesIfAbsent` / full-range keys are insufficient for incremental windows; migrate to merge-based API while keeping `runMarketView` as the identity/readiness facade.
+### 7. Legacy `/chart-bundle`
 
-**Cache key change:** Candles/overlays keyed by `(symbol, timeframe, reloadToken[, role, period])` without embedding full report range in the key. Report `data_range` becomes an upper bound for validity, not the fetch unit.
+Keep for fallback/debug; mark legacy after Phase 6. Frontend cold path stops using it.
 
-**Alternative considered:** Keep full-range keys and store each window as separate key — rejected because `composeRunMarketBundle` would need multi-key merge on every read.
+### 8. Instrumentation
 
-### 4. `marketWindowPlanner` module
-
-**Choice:** New module `frontend/src/features/chart/marketWindowPlanner.ts` owning:
-
-- `resolveTargetDisplayWindow(...)` — initial tail window, trade-centered window (~50k default, ~400 bars trade focus per sliding-window spec).
-- `planMarketWindowFetch(view, targetBounds)` — returns `{ needed: bool, missingBounds, fetchKey }` from cache `missingRange`.
-- `seedChartWindowBundle(view, bundle)` — merge into `marketResourceCache`.
-
-**Integration point:** `WorkbenchContext.tsx` market load effect calls planner instead of unconditional full-range `fetchChartMarketBundle`. Render-window controller calls planner on committed shift when new bounds are outside cache coverage.
-
-**Rationale:** Keeps WorkbenchContext changes minimal; mirrors trace display scheduling separation.
-
-### 5. Pan behavior update
-
-**Choice:** Modify sliding-window semantics: pan **inside** cached span → slice only (unchanged). Pan **outside** cached span → enqueue market window fetch for missing bounds; defer `setData` until fetch completes (or show loading state on candle layer only).
-
-**Rationale:** Spec `workbench-chart-sliding-window` currently forbids pan-driven network; this is an intentional MODIFIED requirement to match windowed cold-load architecture.
-
-### 6. Legacy `/chart-bundle` retention
-
-**Choice:** Keep endpoint; mark as legacy in router description after Phase 5. Remove frontend cold-path usage first; retain for manual/debug fallback until Phase 6 perf sign-off.
-
-**Rationale:** Safe rollback; existing tests continue to validate full-range path.
-
-### 7. Instrumentation
-
-**Choice:** Add `api.fetchChartWindow` to `dbgTimed`; add `wb.market_window_decision` marks (cache_hit, cache_miss, fetch_start, fetch_end, barCount, payloadBytes estimate). Extend `pipeline-debug-instrumentation` spec.
+- `api.fetchCandlesWindow`, `api.fetchEmaWindow` (per period)
+- `wb.market_candles_decision`, `wb.market_ema_decision` (or unified with `resourceKind` field)
+- Split readiness transitions: `marketCandlesReady`, `marketOverlaysReady`
 
 ## Risks / Trade-offs
 
 | Risk | Mitigation |
 |------|------------|
-| EMA mismatch at window edge vs full-range | Contract test: windowed EMA vs full-range for same display bounds within `pytest.approx` tolerance |
-| Cache merge bugs (gaps, duplicates) | Unit tests on `coversRange`/`missingRange`/merge; mirror signalTraceDisplayCache test patterns |
-| Pan fetch latency visible to user | Fetch only missing chunk; show existing window until merge completes; abort stale fetches via existing AbortSignal pattern |
-| WorkbenchContext complexity | Isolate logic in `marketWindowPlanner`; touch market load effect and render-window commit hook only |
-| HTF overlay regression | Explicit verification task on variant with `strategy.contexts` |
-| Multiple overlapping window fetches | In-flight key dedupe (reuse `marketFetchInFlightKeyRef` pattern) |
+| First EMA period request slow (full-series compute) | Non-blocking — candles already visible; parallel fetches for fast/anchor/slow; cache_hit on subsequent windows |
+| Backend memory for full EMA series | One series per (symbol, tf, period) in BFF process; bounded by active symbols; eviction policy TBD |
+| Staggered overlay paint flicker | Acceptable v1; optional batch UI hint "loading overlays" |
+| EMA mismatch vs legacy chart-bundle | Contract test: ema-window slice vs chart-bundle at same bar times |
+| Split fetch coordination complexity | Isolate in `marketWindowPlanner`; separate in-flight keys |
+| HTF overlay regression | Phase 6 verification task |
 
 ## Migration Plan
 
-1. **Phase 1** — Baseline doc only; capture metrics with `VITE_EMA_PIPELINE_DEBUG=true`.
-2. **Phase 2** — Pydantic contract + tests (no router).
-3. **Phase 3** — Backend endpoint behind existing market router; no frontend switch yet.
-4. **Phase 4** — Frontend planner + cache span APIs; unit tests; feature flag or env gate optional for incremental merge.
-5. **Phase 5** — Switch Workbench cold open and distant-trade path to chart-window; update pan-outside-coverage behavior.
-6. **Phase 6** — Compare baselines; deprecate cold-path `fetchChartMarketBundle`; archive change.
+Review-gated (see `tasks.md`):
 
-**Rollback:** Revert WorkbenchContext to full-range `fetchChartMarketBundle` call; backend endpoint is additive and harmless if unused.
+1. Baseline (monolithic chart-bundle metrics)
+2. Contracts (`CandlesWindowBundle`, `EmaWindowBundle`)
+3. Services (`fetch_candles_window`, canonical EMA cache + `fetch_ema_window`)
+4. Endpoints (two routes)
+5. Frontend cache/planner + split readiness (no Workbench switch)
+6. Workbench integration
+7. Perf / archive
+
+**Rollback:** Revert WorkbenchContext to `fetchChartMarketBundle`; new endpoints additive.
 
 ## Open Questions
 
-- **Exact initial cold window:** Tail-aligned 50k bars vs right-edge of report — confirm matches current `chartDataWindowManager` init policy (likely yes).
-- **Max single window fetch size:** Cap at 50k display bars or allow larger chunks for distant-trade prefetch?
-- **Variant switch:** When periods change, overlay cache miss is expected; candles span may reuse if symbol/tf/range overlap — confirm overlay re-fetch uses chart-window for display bounds only.
+- **EMA cache eviction:** LRU per `(symbol, tf, period)` when many variants/symbols visited — policy in Phase 3.
+- **Parallel vs sequential overlay fetches:** Default parallel for fast/anchor/slow in v1?
+- **Max intervals per frontend cache key:** `MAX_CHUNKS_PER_KEY` like trace cache.

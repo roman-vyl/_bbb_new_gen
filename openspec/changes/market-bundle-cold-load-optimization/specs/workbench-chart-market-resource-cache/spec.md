@@ -4,64 +4,74 @@
 
 Workbench Chart SHALL maintain frontend market resource identity separately for candles and overlays. Candle cache identity MUST be based on symbol, timeframe, and reload identity, and MUST NOT include variant or anchor-stack periods.
 
-Candle and overlay spans MUST support incremental window merges. Cache identity MUST NOT require the full report `data_range` as the fetch or storage unit.
+Candle and overlay storage MUST support incremental window chunks loaded via **independent network resources** (`candles-window` and `ema-window`). Cache identity MUST NOT require the full report `data_range` as the fetch or storage unit.
 
 Overlay cache identity MUST include symbol, timeframe, source, period or overlay role, and reload identity.
 
 #### Scenario: Variant switch reuses identical candles
 
-- **GIVEN** two variants in the same run share symbol, chart timeframe, and overlapping cached candle span
-- **AND** candles for the target display window are already covered in cache
+- **GIVEN** two variants in the same run share symbol, chart timeframe, and a cached candle interval covering the target display window
 - **WHEN** the user switches from the first variant to the second variant
-- **THEN** Workbench reuses cached candles for the covered span
+- **THEN** Workbench reuses cached candles for the covered window
 - **AND** Workbench does not start another candle fetch solely because the variant changed
 
 #### Scenario: Variant switch refreshes changed overlays
 
-- **GIVEN** two variants share candle span coverage but use different anchor-stack periods
+- **GIVEN** two variants share candle interval coverage but use different anchor-stack periods
 - **WHEN** the user switches variants
 - **THEN** Workbench resolves overlay cache keys for the new periods
-- **AND** Workbench only loads overlays whose cache keys are missing for the current display window
-- **AND** candle span reuse is preserved when symbol/timeframe/reload identity is unchanged
+- **AND** Workbench fetches only missing `ema-window` intervals per changed period
+- **AND** candle interval reuse is preserved when symbol/timeframe/reload identity is unchanged
 
 ## ADDED Requirements
 
-### Requirement: Market resource cache supports span coverage queries
+### Requirement: Market resource cache uses interval/chunk storage with union coverage
 
-`marketResourceCache` MUST expose `coversRange(fromMs, toMs)` and `missingRange(fromMs, toMs)` for candles and per-overlay spans within a run reload identity.
+`marketResourceCache` MUST store candles and overlays as a **list of intervals (chunks)** per resource identity, not as a single contiguous span.
 
-Merged window chunks MUST form a contiguous span without duplicate bar times.
+Each chunk MUST record `{ fromMs, toMs, data }` where `data` is the sorted bar or overlay point array for that interval.
 
-#### Scenario: Partial span reports missing range
+`coversRange(fromMs, toMs)` MUST return `true` only when the **union** of stored intervals fully covers `[fromMs, toMs)`.
 
-- **GIVEN** candles cached for `[1000, 5000)` ms
-- **WHEN** `missingRange(0, 10000)` is evaluated
-- **THEN** result is `{ fromMs: 0, toMs: 1000 }` merged with any gap after 5000 if applicable
-- **AND** `coversRange(2000, 4000)` is true
+`missingRange(fromMs, toMs)` MUST return the first uncovered sub-interval within `[fromMs, toMs)`.
 
-#### Scenario: Merged chunks dedupe by bar time
+Overlapping window responses for the same resource MUST merge into one interval (dedupe by `time`). Non-overlapping windows MUST remain separate intervals.
 
-- **GIVEN** two chart-window responses with overlapping display bounds
-- **WHEN** both are seeded into the cache
-- **THEN** the stored candle array has no duplicate `time` values
-- **AND** bars are sorted ascending by `time`
+#### Scenario: Distant trade creates second interval without loading gap
 
-### Requirement: Chart-window responses seed split resource caches
+- **GIVEN** candle interval A cached for the report tail (2026)
+- **AND** user navigates to a distant trade in 2017
+- **WHEN** `candles-window` fetch for trade bounds completes
+- **THEN** cache holds two candle intervals A and B with a gap between them
+- **AND** `coversRange` is true for each interval's bounds independently
+- **AND** the gap is not covered and not fetched unless navigated into
 
-Workbench MUST use `/api/market/chart-window` responses as the primary cold-load and incremental network source. Each accepted response MUST store candles and EMA overlays into separate resource cache layers via span merge.
+#### Scenario: Candles and overlays have independent interval sets
 
-#### Scenario: Chart-window seeds split caches
+- **GIVEN** candle interval covers `[X, Y)`
+- **AND** overlay `EMA(50)` interval covers `[X, Y)` but `EMA(500)` does not
+- **WHEN** readiness is evaluated
+- **THEN** `marketCandlesReady` is true for `[X, Y)`
+- **AND** `marketOverlaysReady` is false until `EMA(500)` interval is seeded
 
-- **GIVEN** Workbench receives a `ChartMarketWindowBundle` for display bounds `[X, Y)`
-- **WHEN** the response is accepted for the current run/variant
-- **THEN** candles are merged into the candle span for symbol/timeframe/reload identity
-- **AND** each overlay is merged into its overlay span identity
-- **AND** `RunMarketView` resolves the selected variant to the required candle and overlay resources for the current display window
+### Requirement: Split window endpoints seed respective cache layers
+
+Workbench MUST use `/api/market/candles-window` and `/api/market/ema-window` as primary network sources — not monolithic `chart-bundle` or bundled `chart-window`.
+
+- `candles-window` responses MUST seed candle chunks only
+- `ema-window` responses MUST seed one overlay chunk per period
+
+#### Scenario: Candles-window does not seed overlays
+
+- **GIVEN** a `CandlesWindowBundle` is accepted
+- **WHEN** merge completes
+- **THEN** only candle chunk storage changes
+- **AND** overlay chunk count is unchanged
 
 ## REMOVED Requirements
 
 ### Requirement: Chart bundle responses can seed split resource caches
 
-**Reason**: Replaced by windowed chart-window seeding as the primary network source; full-range chart-bundle is no longer the cold-load path.
+**Reason**: Replaced by independent `candles-window` and `ema-window` seeding; monolithic chart-bundle is no longer the cold-load path.
 
-**Migration**: Use `seedChartWindowBundle` (or equivalent merge API) for `/api/market/chart-window` responses. Full-range `/api/market/chart-bundle` may remain as legacy fallback only.
+**Migration**: `mergeCandlesChunk` from candles-window; `mergeOverlayChunk` per ema-window response. `/api/market/chart-bundle` legacy fallback only.

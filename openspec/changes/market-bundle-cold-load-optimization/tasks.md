@@ -1,45 +1,61 @@
+Review-gated implementation: **STOP after each phase** and wait for user approval before starting the next. Do not batch phases.
+
 ## 1. Phase 1 — Audit / baseline (no runtime changes)
 
-- [ ] 1.1 Trace and document current flow: `report → runMarketView → fetchChartMarketBundle (full range) → seed marketResourceCache → local slice` in `debug/reports/market-bundle-cold-load-baseline.md`
-- [ ] 1.2 Capture baseline with `VITE_EMA_PIPELINE_DEBUG=true`: cold-open duration, `api.fetchChartMarketBundle` bar count, payload estimate, EMA points count, initial render-window size
-- [ ] 1.3 Note entry points in `WorkbenchContext.tsx`, `runMarketView.ts`, `marketResourceCache.ts`, `research_api/routers/market.py` for Phase 2+ handoff
+- [ ] 1.1 Document monolithic flow: `fetchChartMarketBundle (full range) → seed → slice 50k` in `debug/reports/market-bundle-cold-load-baseline.md`
+- [ ] 1.2 Capture baseline with `VITE_EMA_PIPELINE_DEBUG=true`: cold-open duration, chart-bundle bar/EMA counts, payload estimate, time until candles visible vs overlays visible
+- [ ] 1.3 Note entry points: `WorkbenchContext.tsx`, `runMarketView.ts`, `marketResourceCache.ts`, `research_api/routers/market.py`
+- [ ] 1.4 **STOP FOR REVIEW:** publish baseline; wait for approval before Phase 2
 
-## 2. Phase 2 — Backend chart-window contract
+## 2. Phase 2 — Backend contracts only (no service, no router)
 
-- [ ] 2.1 Add `ChartMarketWindowCoverage` and `ChartMarketWindowBundle` to `research_api/contracts/chart.py` (mirror `ChartMarketBundle` + coverage fields per design)
-- [ ] 2.2 Add matching TypeScript types in `frontend/src/api/types.ts`
-- [ ] 2.3 Implement `fetch_chart_market_window` in `research_api/services/market_reader.py` with warmup read + display-only filter (no router yet)
-- [ ] 2.4 Add contract tests in `tests/test_research_api_market.py`: display-only candles, warmup metadata, EMA parity vs full-range, truncation at data edge, invalid stack order
+- [ ] 2.1 Add `CandlesWindowBundle` + coverage to `research_api/contracts/chart.py`
+- [ ] 2.2 Add `EmaWindowBundle` + coverage (`calculation_origin_ms`, `cache_hit`) to `research_api/contracts/chart.py`
+- [ ] 2.3 Add matching TypeScript types in `frontend/src/api/types.ts`
+- [ ] 2.4 Add contract/schema tests only (Pydantic shape, TS parity) — no `market_reader` / EMA cache implementation
+- [ ] 2.5 **STOP FOR REVIEW:** confirm split contracts (candles-only, ema-only, no bundled window); wait for approval before Phase 3
 
-## 3. Phase 3 — Backend endpoint
+## 3. Phase 3 — Backend services (no router)
 
-- [ ] 3.1 Add `GET /api/market/chart-window` to `research_api/routers/market.py` with query params: `display_from`, `display_to` / `display_to_open_time_ms`, EMA periods, optional `warmup_bars`
-- [ ] 3.2 Wire router to `fetch_chart_market_window`; ensure `resolve_exclusive_to_ms` parity with existing market endpoints
-- [ ] 3.3 Add HTTP integration tests for chart-window endpoint (200 shape, 400 validation, 503 missing DB)
-- [ ] 3.4 Verify endpoint does not read/return full run range when display window is a subset
+- [ ] 3.1 Implement `fetch_candles_window` in `research_api/services/market_reader.py` (display window only + coverage)
+- [ ] 3.2 Implement canonical EMA series cache service (e.g. `chart_ema_cache.py`): key `(symbol, timeframe, period, origin_policy)`, full-series compute on miss, slice on hit
+- [ ] 3.3 Implement `fetch_ema_window` using canonical cache + `origin_policy=canonical`
+- [ ] 3.4 Service tests: candles-window bounds/truncation; ema-window canonical consistency vs full-range chart-bundle; cache_hit on second window; no warmup bars in response
+- [ ] 3.5 **STOP FOR REVIEW:** report EMA parity and cache_hit behavior; wait for approval before Phase 4
 
-## 4. Phase 4 — Frontend scheduler / cache integration
+## 4. Phase 4 — Backend endpoints
 
-- [ ] 4.1 Extend `marketResourceCache.ts` with span storage, `mergeCandlesSpan`, `mergeOverlaySpan`, `coversRange`, `missingRange` (pattern from `signalTraceDisplayCache.ts`)
-- [ ] 4.2 Update `runMarketView.ts` readiness checks to use span coverage for current display bounds instead of full-range key presence
-- [ ] 4.3 Add `fetchChartWindow` to `frontend/src/api/client.ts` with `dbgTimed("api.fetchChartWindow", ...)`
-- [ ] 4.4 Create `frontend/src/features/chart/marketWindowPlanner.ts`: `resolveTargetDisplayWindow`, `planMarketWindowFetch`, `seedChartWindowBundle`, in-flight dedupe
-- [ ] 4.5 Add unit tests: `marketResourceCache` merge/coverage, `marketWindowPlanner` cache hit/miss/in-flight
-- [ ] 4.6 Add `wb.market_window_decision` debug marks per `pipeline-debug-instrumentation` delta spec
+- [ ] 4.1 Add `GET /api/market/candles-window` to `research_api/routers/market.py`
+- [ ] 4.2 Add `GET /api/market/ema-window` with `period`, `origin_policy=canonical`
+- [ ] 4.3 HTTP integration tests for both endpoints (200 shape, 400 validation, 503 missing DB)
+- [ ] 4.4 Verify neither endpoint returns full run range when display window is a subset
+- [ ] 4.5 **STOP FOR REVIEW:** demonstrate both endpoints via pytest/curl; wait for approval before Phase 5
 
-## 5. Phase 5 — Workbench integration
+## 5. Phase 5 — Frontend cache / planner (no WorkbenchContext switch yet)
 
-- [ ] 5.1 Replace cold-path full-range `fetchChartMarketBundle` in `WorkbenchContext.tsx` market load effect with `marketWindowPlanner` + `fetchChartWindow`
-- [ ] 5.2 Wire distant trade navigation to fetch trade-centered chart-window when outside cache coverage
-- [ ] 5.3 Update render-window commit hook: pan inside cache → zero network slice; pan outside cache → chart-window fetch then `setData`
-- [ ] 5.4 Ensure chart-events and signal-trace scheduling are unchanged (no coupling to market window planner)
-- [ ] 5.5 Update affected tests: `workbenchLoad.test.tsx`, `runMarketView.test.ts`, chart-events display tests — cold open must not call `fetchChartMarketBundle`
-- [ ] 5.6 Verify HTF context EMA overlays (`workbench-chart-htf-context-overlays`) on variant with `strategy.contexts` — dashed HTF lines and Bar Inspector values after windowed cold load
+- [ ] 5.1 Extend `marketResourceCache.ts`: interval/chunk storage, union `coversRange`/`missingRange`/`sliceForRange` per candles and per overlay
+- [ ] 5.2 Split readiness helpers: `marketCandlesReady`, `marketOverlaysReady`
+- [ ] 5.3 Add `fetchCandlesWindow` and `fetchEmaWindow` to `frontend/src/api/client.ts` with `dbgTimed`
+- [ ] 5.4 Create `marketWindowPlanner.ts`: `resolveTargetDisplayWindow`, `planCandlesWindowFetch`, `planEmaWindowFetches` (per period), `seedCandlesWindow`/`seedEmaWindow`, split in-flight dedupe
+- [ ] 5.5 Unit tests: dual-interval candles; independent overlay intervals; candles-ready before overlays-ready; distant-trade gap not loaded
+- [ ] 5.6 Add `wb.market_candles_decision` / `wb.market_ema_decision` debug marks
+- [ ] 5.7 **STOP FOR REVIEW:** report split planner tests and progressive readiness behavior; wait for approval before Phase 6
 
-## 6. Phase 6 — Perf / migration / archive
+## 6. Phase 6 — Workbench integration
 
-- [ ] 6.1 Re-run baseline scenarios with windowed path; document comparison in `debug/reports/market-bundle-cold-load-comparison.md` (duration, payload, bar counts)
-- [ ] 6.2 Manual Workbench verification: cold open, tab switch to Chart, long pan across cache boundary, distant trade navigation (follow `.cursor/rules/workbench-chart-screenshots.mdc`)
-- [ ] 6.3 Mark `/api/market/chart-bundle` as legacy in router description; confirm frontend cold path no longer uses it
-- [ ] 6.4 Confirm no regression: anchor EMA overlays, trade markers/chart-events, signal-trace lanes
-- [ ] 6.5 Archive change via `/opsx:archive` after review
+- [ ] 6.1 Replace cold-path `fetchChartMarketBundle` with split planner: candles-window first, ema-window per period
+- [ ] 6.2 ChartPanel/runtime: candle `setData` on `marketCandlesReady`; per-overlay `setData` as each ema-window arrives — do not block candles on EMA
+- [ ] 6.3 Distant trade + pan-outside-coverage: resource-specific `missingRange` fetches
+- [ ] 6.4 Ensure chart-events and signal-trace scheduling unchanged
+- [ ] 6.5 Update tests: cold open must not call `fetchChartMarketBundle`; candles render before overlays in integration tests where applicable
+- [ ] 6.6 Verify HTF context EMA overlays (`workbench-chart-htf-context-overlays`) on variant with `strategy.contexts`
+- [ ] 6.7 **STOP FOR REVIEW:** manual pass — cold open shows candles before EMA; distant trade; pan across interval; wait for approval before Phase 7
+
+## 7. Phase 7 — Perf / migration / archive
+
+- [ ] 7.1 Document comparison in `debug/reports/market-bundle-cold-load-comparison.md`: time-to-candles vs time-to-overlays, per-resource payload, chart-bundle baseline
+- [ ] 7.2 Manual Workbench verification (screenshots per `.cursor/rules/workbench-chart-screenshots.mdc`)
+- [ ] 7.3 Mark `/api/market/chart-bundle` legacy; confirm frontend cold path uses split endpoints only
+- [ ] 7.4 Confirm no regression: anchor EMA values, trade markers/chart-events, signal-trace lanes
+- [ ] 7.5 **STOP FOR REVIEW:** publish perf comparison; wait for approval before archive
+- [ ] 7.6 Archive via `/opsx:archive`

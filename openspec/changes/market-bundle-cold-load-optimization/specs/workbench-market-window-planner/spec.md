@@ -6,76 +6,132 @@ Workbench Chart SHALL determine a **target display window** (time bounds in mill
 
 Initial cold open MUST resolve either:
 
-- a tail-aligned render window (default ~50 000 bars), or
+- a tail-aligned render window (default ~50 000 bars), or
 - a trade-centered window when a distant trade is the navigation target (~400 bars centered on entry per sliding-window policy, expanded to render-window size when needed)
 
 The planner MUST NOT default to the full report `data_range` for the first fetch.
 
 #### Scenario: Cold open targets tail window not full report
 
-- **GIVEN** a report with 120 000 bars in `data_range`
+- **GIVEN** a report with 120 000 bars in `data_range`
 - **AND** no prior market cache for the run
 - **WHEN** Chart activates and market load starts
-- **THEN** the first market network request display bounds cover at most the initial render window near the report tail
-- **AND** the request does not span the full 120 000-bar report range
+- **THEN** the first candles network request covers at most the initial render window near the report tail
+- **AND** no request spans the full 120 000-bar report range
 
 #### Scenario: Distant trade targets window around entry
 
-- **GIVEN** a selected trade whose entry time is far from the current cached span
+- **GIVEN** a selected trade whose entry time is outside all cached intervals (or only inside a gap between intervals)
 - **WHEN** trade navigation requests market data
 - **THEN** the planner resolves display bounds centered on the trade entry
-- **AND** the fetch covers the trade-centered render window, not the full report range
+- **AND** resource fetches cover the trade-centered render window only, not the full report range
 
-### Requirement: Planner checks cache coverage before fetching
+### Requirement: Planner schedules candles and EMA overlays independently
 
-Before calling `/api/market/chart-window`, the planner MUST evaluate `marketResourceCache` span coverage for the target display bounds (candles and required anchor-stack overlays).
+The planner MUST evaluate `marketResourceCache` union interval coverage separately for candles and for each required anchor-stack overlay.
 
-When coverage is complete, the planner MUST skip network and resolve display data from cache only.
+Candles fetches MUST use `/api/market/candles-window` when candle `missingRange` is non-null.
 
-#### Scenario: Cache hit avoids network
+Each missing overlay MUST use a separate `/api/market/ema-window` request for its `period` (and role identity). The planner MUST NOT bundle multiple periods into one network call in v1.
 
-- **GIVEN** `marketResourceCache` already covers the target display bounds for candles and all required overlays
-- **WHEN** the planner runs for that window
-- **THEN** no `api.fetchChartWindow` call is made
-- **AND** `composeRunMarketBundle` or equivalent read returns data from cache
+#### Scenario: Candles fetch does not wait for EMA
 
-#### Scenario: Cache miss fetches only missing bounds
+- **GIVEN** target display bounds `[X, Y)` with no cached candles
+- **AND** no cached EMA overlays
+- **WHEN** planner runs
+- **THEN** it schedules `candles-window` for candle `missingRange`
+- **AND** may schedule `ema-window` fetches in parallel or after candles plan
+- **AND** candles fetch is not blocked on EMA fetch completion
 
-- **GIVEN** candles cover `[A, B)` but target window is `[X, Y)` with `X < A`
-- **WHEN** the planner evaluates missing range
-- **THEN** it schedules a chart-window fetch for the missing sub-range only
-- **AND** does not re-fetch the already-covered `[A, B)` span
+#### Scenario: Cache hit avoids network per resource
 
-### Requirement: Chart-window responses seed split resource caches
+- **GIVEN** candle intervals cover `[X, Y)` but overlay `EMA(200)` does not
+- **WHEN** planner runs for bounds `[X, Y)`
+- **THEN** no `candles-window` fetch occurs
+- **AND** exactly one `ema-window` fetch occurs for period 200
+- **AND** other covered overlay periods produce no fetch
 
-On successful `chart-window` response, Workbench MUST merge candles and each EMA overlay into `marketResourceCache` span storage. Seeding MUST preserve split candle vs overlay identity per `workbench-chart-market-resource-cache`.
+#### Scenario: Distant trade fetches only trade window not gap
 
-#### Scenario: Window response merges into cache
+- **GIVEN** tail candle interval A cached for 2026
+- **AND** user selects a trade in 2017 outside interval A
+- **WHEN** planner resolves trade-centered bounds `[T_from, T_to)`
+- **THEN** `candles-window` fetch covers only candle `missingRange` within `[T_from, T_to)`
+- **AND** no fetch spans the gap between 2017 and 2026
+- **AND** after seeding, two separate candle intervals exist in cache
 
-- **GIVEN** a successful `ChartMarketWindowBundle` for display bounds `[X, Y)`
+### Requirement: Split market readiness gates chart layers independently
+
+Workbench MUST expose separate readiness for candles and overlays:
+
+- `marketCandlesReady`: union candle intervals cover current target display bounds
+- `marketOverlaysReady`: every required anchor-stack overlay interval covers current target display bounds
+
+ChartPanel (or chart runtime) MUST render candle `setData` when `marketCandlesReady` is true.
+
+ChartPanel MUST render each anchor EMA overlay `setData` when that overlay's interval covers the display bounds — overlays MAY arrive and render after candles.
+
+Workbench MUST NOT delay candle render until `marketOverlaysReady`.
+
+#### Scenario: Candles render before EMA arrives
+
+- **GIVEN** `candles-window` response merged into cache for bounds `[X, Y)`
+- **AND** `ema-window` requests for fast/anchor/slow are still in flight
+- **WHEN** `marketCandlesReady` becomes true
+- **THEN** candle series `setData` runs
+- **AND** chart displays OHLC without anchor EMA lines
+- **AND** EMA lines appear individually as each `ema-window` completes
+
+#### Scenario: All overlays ready after staggered arrival
+
+- **GIVEN** three `ema-window` fetches complete in arbitrary order
+- **WHEN** the last required overlay interval covers `[X, Y)`
+- **THEN** `marketOverlaysReady` becomes true
+- **AND** all three anchor EMA series are visible
+
+### Requirement: Window responses seed split resource caches
+
+On successful response, Workbench MUST merge:
+
+- `candles-window` → candle interval chunks via `mergeCandlesChunk`
+- each `ema-window` → overlay interval chunk for that period/role via `mergeOverlayChunk`
+
+#### Scenario: Candles-window seeds candle cache only
+
+- **GIVEN** a successful `CandlesWindowBundle` for `[X, Y)`
 - **WHEN** seeding completes
-- **THEN** `marketResourceCache.coversRange(X, Y)` is true for candles
-- **AND** each required anchor-stack overlay covers `[X, Y)`
-- **AND** overlay points are stored under overlay resource identity (role, period, symbol, timeframe)
+- **THEN** `marketResourceCache` candle `coversRange(X, Y)` is true
+- **AND** no overlay intervals are created or modified by that response alone
 
-### Requirement: In-flight dedupe prevents duplicate window fetches
+#### Scenario: Ema-window seeds one overlay cache entry
 
-The planner MUST dedupe concurrent fetches for the same window fetch key (symbol, timeframe, display bounds, EMA periods, reload token). Superseded or aborted responses MUST NOT update cache or UI state.
+- **GIVEN** a successful `EmaWindowBundle` for `period=500` and bounds `[X, Y)`
+- **WHEN** seeding completes
+- **THEN** overlay cache for role/period 500 covers `[X, Y)`
+- **AND** candle intervals are unchanged
 
-#### Scenario: Duplicate planner invocation skips in-flight fetch
+### Requirement: In-flight dedupe prevents duplicate window fetches per resource
 
-- **GIVEN** a chart-window fetch is already in flight for fetch key `K`
-- **WHEN** the planner runs again with the same `K` before completion
-- **THEN** no second network request starts
-- **AND** pipeline debug records an in-flight skip decision
+The planner MUST dedupe concurrent fetches per resource fetch key:
+
+- Candles: `(symbol, timeframe, bounds, reloadToken)`
+- EMA: `(symbol, timeframe, period, bounds, reloadToken)`
+
+Superseded or aborted responses MUST NOT update cache or UI state.
+
+#### Scenario: Duplicate candles fetch skipped
+
+- **GIVEN** a `candles-window` fetch is in flight for key `K`
+- **WHEN** planner runs again with the same `K`
+- **THEN** no second candles request starts
 
 ### Requirement: Market window planner does not schedule chart-events or signal-trace fetches
 
-The planner MUST only orchestrate candles and BFF anchor-stack EMA overlays. It MUST NOT invoke `/chart-events` or `/signal-trace` endpoints or share fetch keys with trace display scheduling.
+The planner MUST only orchestrate candles and BFF anchor-stack EMA overlays. It MUST NOT invoke `/chart-events` or `/signal-trace`.
 
-#### Scenario: Market window fetch does not trigger trace fetch
+#### Scenario: Candles-window fetch does not trigger trace fetch
 
-- **GIVEN** a chart-window fetch completes for a new display bounds
-- **WHEN** only market layer data was missing
-- **THEN** signal-trace and chart-events scheduling remain governed by their own coordinators
-- **AND** no trace fetch starts solely because market window data arrived
+- **GIVEN** a `candles-window` fetch completes
+- **WHEN** only candle layer data was missing
+- **THEN** signal-trace and chart-events scheduling remain unchanged
+- **AND** no trace fetch starts solely because candles arrived
