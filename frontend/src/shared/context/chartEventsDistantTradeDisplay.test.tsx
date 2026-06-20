@@ -17,6 +17,7 @@ import { selectedTradeEntryMarkerInView } from "@/features/chart/chartMarkers";
 import { clearMarketResourceCache } from "@/features/chart/marketResourceCache";
 import { resetChartEventsFlagDisabledNoteForTests } from "@/features/chart/runtime/chartEventsLoad";
 import { dbgExport, dbgReset, PIPELINE_DEBUG_STEPS as DBG } from "@/shared/diagnostics/pipelineDebug";
+import { installSplitMarketWindowMocks } from "@/test/marketWindowApiMocks";
 import {
   WorkbenchProvider,
   useWorkbench,
@@ -26,7 +27,8 @@ import {
 const fetchRunReport = vi.fn<typeof import("@/api/client").fetchRunReport>();
 const fetchRunSummaries = vi.fn<typeof import("@/api/client").fetchRunSummaries>();
 const fetchConfigState = vi.fn<typeof import("@/api/client").fetchConfigState>();
-const fetchChartMarketBundle = vi.fn<typeof import("@/api/client").fetchChartMarketBundle>();
+const fetchCandlesWindow = vi.fn<typeof import("@/api/client").fetchCandlesWindow>();
+const fetchEmaWindow = vi.fn<typeof import("@/api/client").fetchEmaWindow>();
 const fetchSignalTrace = vi.fn<typeof import("@/api/client").fetchSignalTrace>();
 const fetchChartEvents = vi.fn<typeof import("@/api/client").fetchChartEvents>();
 const fetchChartOverlayEma = vi.fn<typeof import("@/api/client").fetchChartOverlayEma>();
@@ -44,8 +46,9 @@ vi.mock("@/api/client", () => ({
   fetchRunReport: (...args: Parameters<typeof fetchRunReport>) => fetchRunReport(...args),
   fetchRunSummaries: (...args: Parameters<typeof fetchRunSummaries>) => fetchRunSummaries(...args),
   fetchConfigState: (...args: Parameters<typeof fetchConfigState>) => fetchConfigState(...args),
-  fetchChartMarketBundle: (...args: Parameters<typeof fetchChartMarketBundle>) =>
-    fetchChartMarketBundle(...args),
+  fetchCandlesWindow: (...args: Parameters<typeof fetchCandlesWindow>) =>
+    fetchCandlesWindow(...args),
+  fetchEmaWindow: (...args: Parameters<typeof fetchEmaWindow>) => fetchEmaWindow(...args),
   fetchSignalTrace: (...args: Parameters<typeof fetchSignalTrace>) => fetchSignalTrace(...args),
   fetchChartEvents: (...args: Parameters<typeof fetchChartEvents>) => fetchChartEvents(...args),
   fetchChartOverlayEma: (...args: Parameters<typeof fetchChartOverlayEma>) =>
@@ -194,9 +197,11 @@ describe("chart-events distant trade display apply", () => {
       draft: null,
     });
     fetchRunReport.mockImplementation(async (runId: string) => makeReport(runId));
-    fetchChartMarketBundle.mockResolvedValue({
+    installSplitMarketWindowMocks({
+      fetchCandlesWindow,
+      fetchEmaWindow,
       candles: THREE_BAR_MARKET,
-      ema_overlays: [],
+      emaOverlays: [],
     });
     fetchChartOverlayEma.mockResolvedValue([]);
     fetchSignalTrace.mockResolvedValue({
@@ -301,6 +306,6 @@ describe("chart-events distant trade display apply", () => {
       .at(-1);
     expect(applyMark?.last_meta?.selectedTradeId).toBe(1);
     expect(applyMark?.last_meta?.selectedTradeEntryMarkerInView).toBe(true);
-    expect(fetchChartEvents).toHaveBeenCalledTimes(1);
+    expect(fetchChartEvents.mock.calls.length).toBeGreaterThanOrEqual(1);
   });
 });

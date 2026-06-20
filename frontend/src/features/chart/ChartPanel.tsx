@@ -609,13 +609,11 @@ export function ChartPanel() {
   useLayoutEffect(() => {
     const chart = chartRef.current;
     const series = seriesRef.current;
-    const emaByRole = emaSeriesByRoleRef.current;
     if (!chart || !series || !selectedVariant || chartSeriesDataKey === "") {
       return;
     }
 
     if (atomicShiftSeriesKeyRef.current === chartSeriesDataKey) {
-      atomicShiftSeriesKeyRef.current = null;
       return;
     }
 
@@ -626,6 +624,19 @@ export function ChartPanel() {
       },
       () => ({ barCount: chartCandles.length }),
     );
+  }, [chartCandles, chartSeriesDataKey, selectedVariant]);
+
+  useLayoutEffect(() => {
+    const chart = chartRef.current;
+    const emaByRole = emaSeriesByRoleRef.current;
+    if (!chart || !selectedVariant || chartSeriesDataKey === "") {
+      return;
+    }
+
+    if (atomicShiftSeriesKeyRef.current === chartSeriesDataKey) {
+      atomicShiftSeriesKeyRef.current = null;
+      return;
+    }
 
     dbgTimedSync(
       DBG.chart.setDataAnchorEma,
@@ -694,7 +705,6 @@ export function ChartPanel() {
 
     atomicShiftSeriesKeyRef.current = chartSeriesDataKey;
   }, [
-    chartCandles,
     chartEmaOverlays,
     chartDisplayAuxEmaOverlays,
     chartSeriesDataKey,
