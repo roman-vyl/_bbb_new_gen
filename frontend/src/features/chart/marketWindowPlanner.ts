@@ -1,4 +1,5 @@
 import type { CandlesWindowBundle, EmaWindowBundle } from "@/api/types";
+import { resolveChartTimeframeMs } from "@/features/chart/chartTimeframeMs";
 import { CHART_RENDER_WINDOW_SIZE } from "@/features/chart/chartViewWindow";
 import {
   buildCandlesCacheKey,
@@ -22,7 +23,8 @@ export type MarketDisplayWindowMs = MarketTimeBoundsMs & {
 };
 
 const PLANNER_KEY_SEP = "\u001e";
-const DEFAULT_TIMEFRAME_MS = 300_000;
+
+export { resolveChartTimeframeMs };
 
 export type PlannedCandlesWindowFetch = {
   inFlightKey: string;
@@ -49,9 +51,9 @@ export function resolveTargetDisplayWindow(input: {
   reportToMs: number;
   mode: "tail" | "around-trade";
   centerTimeSec?: number | null;
-  timeframeMs?: number;
+  timeframeMs: number;
 }): MarketDisplayWindowMs {
-  const timeframeMs = input.timeframeMs ?? DEFAULT_TIMEFRAME_MS;
+  const { timeframeMs } = input;
   const spanMs = CHART_RENDER_WINDOW_SIZE * timeframeMs;
 
   if (input.mode === "around-trade" && input.centerTimeSec != null) {
@@ -75,6 +77,16 @@ export function resolveTargetDisplayWindow(input: {
     toMs: input.reportToMs,
     toOpenTimeMs: lastOpenMs,
   };
+}
+
+export function resolveTargetDisplayWindowForView(
+  view: RunMarketView,
+  input: Omit<Parameters<typeof resolveTargetDisplayWindow>[0], "timeframeMs">,
+): MarketDisplayWindowMs {
+  return resolveTargetDisplayWindow({
+    ...input,
+    timeframeMs: resolveChartTimeframeMs(view.chartTimeframe),
+  });
 }
 
 function lastBarOpenMs(bounds: MarketDisplayWindowMs, timeframeMs: number): number {
@@ -104,9 +116,9 @@ export function buildEmaWindowInFlightKey(params: {
 export function planCandlesWindowFetch(input: {
   view: RunMarketView;
   targetWindow: MarketDisplayWindowMs;
-  timeframeMs?: number;
+  timeframeMs: number;
 }): PlannedCandlesWindowFetch | null {
-  const timeframeMs = input.timeframeMs ?? DEFAULT_TIMEFRAME_MS;
+  const { timeframeMs } = input;
   const { fromMs, toMs } = input.targetWindow;
   const cache = getMarketCandlesCache(input.view.candlesKey);
 
@@ -158,13 +170,23 @@ export function planCandlesWindowFetch(input: {
   };
 }
 
+export function planCandlesWindowFetchForView(input: {
+  view: RunMarketView;
+  targetWindow: MarketDisplayWindowMs;
+}): PlannedCandlesWindowFetch | null {
+  return planCandlesWindowFetch({
+    ...input,
+    timeframeMs: resolveChartTimeframeMs(input.view.chartTimeframe),
+  });
+}
+
 export function planEmaWindowFetches(input: {
   view: RunMarketView;
   targetWindow: MarketDisplayWindowMs;
   overlayRefs?: OverlayResourceRef[];
-  timeframeMs?: number;
+  timeframeMs: number;
 }): PlannedEmaWindowFetch[] {
-  const timeframeMs = input.timeframeMs ?? DEFAULT_TIMEFRAME_MS;
+  const { timeframeMs } = input;
   const { fromMs, toMs } = input.targetWindow;
   const refs = input.overlayRefs ?? input.view.overlayRefs;
   const planned: PlannedEmaWindowFetch[] = [];
@@ -228,6 +250,17 @@ export function planEmaWindowFetches(input: {
   }
 
   return planned;
+}
+
+export function planEmaWindowFetchesForView(input: {
+  view: RunMarketView;
+  targetWindow: MarketDisplayWindowMs;
+  overlayRefs?: OverlayResourceRef[];
+}): PlannedEmaWindowFetch[] {
+  return planEmaWindowFetches({
+    ...input,
+    timeframeMs: resolveChartTimeframeMs(input.view.chartTimeframe),
+  });
 }
 
 export function seedCandlesWindow(candlesKey: CandlesCacheKey, bundle: CandlesWindowBundle): void {

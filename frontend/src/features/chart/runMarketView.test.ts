@@ -1,13 +1,17 @@
 import { describe, expect, it } from "vitest";
 
 import type { RunReport } from "@/api/types";
-import { clearMarketResourceCache } from "@/features/chart/marketResourceCache";
+import { clearMarketResourceCache, mergeCandlesWindowBundle } from "@/features/chart/marketResourceCache";
 import {
   buildMarketFetchKey,
   composePartialRunMarketBundle,
+  composePartialRunMarketWindowBundle,
   composeRunMarketBundle,
+  composeRunMarketWindowBundle,
   getMissingMarketResources,
+  getMissingMarketWindowResources,
   isRunMarketViewReady,
+  isRunMarketWindowReady,
   resolveRunMarketView,
   seedChartBundleIntoResourceCaches,
 } from "@/features/chart/runMarketView";
@@ -166,5 +170,37 @@ describe("runMarketView", () => {
     expect(fetchKey).not.toContain(`c:${viewB.candlesKey}`);
     expect(missingB.overlays).toHaveLength(3);
     expect(fetchKey.split("|")).toHaveLength(3);
+  });
+
+  it("window-aware compose reads target display window, not full report range", () => {
+    clearMarketResourceCache();
+    const report = makeReport();
+    const view = resolveRunMarketView({
+      report,
+      chartTimeframe: "5m",
+      variant: report.variants[0]!,
+      reloadToken: 0,
+    });
+    const targetWindow = { fromMs: 1_000_000, toMs: 1_600_000 };
+
+    mergeCandlesWindowBundle(view.candlesKey, {
+      candles: [bundle.candles[0]!, bundle.candles[1]!],
+      coverage: {
+        requested_from_ms: targetWindow.fromMs,
+        requested_to_ms: targetWindow.toMs,
+        actual_from_ms: targetWindow.fromMs,
+        actual_to_ms: targetWindow.toMs,
+        truncated: false,
+      },
+    });
+
+    expect(getMissingMarketWindowResources(view, targetWindow).candles).toBe(false);
+    expect(getMissingMarketResources(view).candles).toBe(true);
+    expect(isRunMarketWindowReady(view, targetWindow)).toBe(false);
+    expect(isRunMarketViewReady(view)).toBe(false);
+    expect(composePartialRunMarketWindowBundle(view, targetWindow)?.candles).toHaveLength(2);
+    expect(composeRunMarketWindowBundle(view, targetWindow)).toBeNull();
+    expect(composeRunMarketBundle(view)).toBeNull();
+    expect(composePartialRunMarketBundle(view)).toBeNull();
   });
 });

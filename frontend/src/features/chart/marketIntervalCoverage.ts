@@ -66,7 +66,7 @@ export function missingMarketRange(
       continue;
     }
     if (interval.fromMs > cursor) {
-      return { fromMs: cursor, toMs };
+      return { fromMs: cursor, toMs: Math.min(toMs, interval.fromMs) };
     }
     cursor = Math.max(cursor, interval.toMs);
     if (cursor >= toMs) {

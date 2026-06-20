@@ -77,7 +77,7 @@ describe("marketResourceCache interval storage", () => {
     expect(store.coversRange(100_000, 200_000)).toBe(true);
     expect(store.coversRange(250_000, 350_000)).toBe(true);
     expect(store.coversRange(100_000, 350_000)).toBe(false);
-    expect(store.missingRange(100_000, 350_000)).toEqual({ fromMs: 200_000, toMs: 350_000 });
+    expect(store.missingRange(100_000, 350_000)).toEqual({ fromMs: 200_000, toMs: 250_000 });
   });
 
   it("sliceForRange returns bars in half-open window", () => {

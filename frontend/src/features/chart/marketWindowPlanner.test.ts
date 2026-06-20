@@ -10,9 +10,10 @@ import {
 import {
   isMarketCandlesReadyForWindow,
   isMarketOverlaysReadyForWindow,
-  planCandlesWindowFetch,
-  planEmaWindowFetches,
+  planCandlesWindowFetchForView,
+  planEmaWindowFetchesForView,
   resolveTargetDisplayWindow,
+  resolveTargetDisplayWindowForView,
   seedCandlesWindow,
   seedEmaWindow,
 } from "@/features/chart/marketWindowPlanner";
@@ -80,6 +81,59 @@ describe("resolveTargetDisplayWindow", () => {
     expect(window.toMs).toBe(reportTo);
     expect(window.fromMs).toBe(reportTo - 50_000 * 300_000);
   });
+
+  it("uses 1h bar duration for window span (not 5m default)", () => {
+    const reportFrom = 0;
+    const reportTo = 50_000 * 3_600_000 + 3_600_000;
+    const window5m = resolveTargetDisplayWindow({
+      reportFromMs: reportFrom,
+      reportToMs: reportTo,
+      mode: "tail",
+      timeframeMs: 300_000,
+    });
+    const window1h = resolveTargetDisplayWindow({
+      reportFromMs: reportFrom,
+      reportToMs: reportTo,
+      mode: "tail",
+      timeframeMs: 3_600_000,
+    });
+
+    expect(window1h.fromMs).toBe(reportTo - 50_000 * 3_600_000);
+    expect(window5m.fromMs).toBe(reportTo - 50_000 * 300_000);
+    expect(window1h.fromMs).toBeLessThan(window5m.fromMs);
+  });
+
+  it("resolveTargetDisplayWindowForView derives timeframe from chartTimeframe", () => {
+    const report = makeReport({
+      from_open_time_ms: 0,
+      to_open_time_ms: 50_000 * 3_600_000 + 3_600_000,
+    });
+    const view5m = resolveRunMarketView({
+      report,
+      chartTimeframe: "5m",
+      variant: report.variants[0]!,
+      reloadToken: 0,
+    });
+    const view1h = resolveRunMarketView({
+      report,
+      chartTimeframe: "1h",
+      variant: report.variants[0]!,
+      reloadToken: 0,
+    });
+
+    const window5m = resolveTargetDisplayWindowForView(view5m, {
+      reportFromMs: view5m.fromOpenTimeMs,
+      reportToMs: view5m.toOpenTimeMs,
+      mode: "tail",
+    });
+    const window1h = resolveTargetDisplayWindowForView(view1h, {
+      reportFromMs: view1h.fromOpenTimeMs,
+      reportToMs: view1h.toOpenTimeMs,
+      mode: "tail",
+    });
+
+    expect(window1h.fromMs).toBeLessThan(window5m.fromMs);
+  });
 });
 
 describe("marketWindowPlanner", () => {
@@ -98,13 +152,13 @@ describe("marketWindowPlanner", () => {
       variant: report.variants[0]!,
       reloadToken: 0,
     });
-    const target = resolveTargetDisplayWindow({
+    const target = resolveTargetDisplayWindowForView(view, {
       reportFromMs: view.fromOpenTimeMs,
       reportToMs: view.toOpenTimeMs,
       mode: "tail",
     });
 
-    const planned = planCandlesWindowFetch({ view, targetWindow: target });
+    const planned = planCandlesWindowFetchForView({ view, targetWindow: target });
     expect(planned).not.toBeNull();
     expect(planned!.candlesKey).toBe(view.candlesKey);
     expect(planned!.inFlightKey).toContain("candles");
@@ -121,7 +175,7 @@ describe("marketWindowPlanner", () => {
       variant: report.variants[0]!,
       reloadToken: 0,
     });
-    const target = resolveTargetDisplayWindow({
+    const target = resolveTargetDisplayWindowForView(view, {
       reportFromMs: view.fromOpenTimeMs,
       reportToMs: view.toOpenTimeMs,
       mode: "tail",
@@ -138,7 +192,7 @@ describe("marketWindowPlanner", () => {
       },
     });
 
-    expect(planCandlesWindowFetch({ view, targetWindow: target })).toBeNull();
+    expect(planCandlesWindowFetchForView({ view, targetWindow: target })).toBeNull();
     expect(isMarketCandlesReadyForWindow(view, target)).toBe(true);
   });
 
@@ -153,7 +207,7 @@ describe("marketWindowPlanner", () => {
       variant: report.variants[0]!,
       reloadToken: 0,
     });
-    const target = resolveTargetDisplayWindow({
+    const target = resolveTargetDisplayWindowForView(view, {
       reportFromMs: view.fromOpenTimeMs,
       reportToMs: view.toOpenTimeMs,
       mode: "tail",
@@ -172,7 +226,7 @@ describe("marketWindowPlanner", () => {
 
     expect(isMarketCandlesReadyForWindow(view, target)).toBe(true);
     expect(isMarketOverlaysReadyForWindow(view, target)).toBe(false);
-    expect(planEmaWindowFetches({ view, targetWindow: target })).toHaveLength(3);
+    expect(planEmaWindowFetchesForView({ view, targetWindow: target })).toHaveLength(3);
   });
 
   it("distant trade second interval does not cover gap", () => {
@@ -187,7 +241,7 @@ describe("marketWindowPlanner", () => {
       reloadToken: 0,
     });
 
-    const tailTarget = resolveTargetDisplayWindow({
+    const tailTarget = resolveTargetDisplayWindowForView(view, {
       reportFromMs: view.fromOpenTimeMs,
       reportToMs: view.toOpenTimeMs,
       mode: "tail",
@@ -203,7 +257,7 @@ describe("marketWindowPlanner", () => {
       },
     });
 
-    const distantTarget = resolveTargetDisplayWindow({
+    const distantTarget = resolveTargetDisplayWindowForView(view, {
       reportFromMs: view.fromOpenTimeMs,
       reportToMs: view.toOpenTimeMs,
       mode: "around-trade",
@@ -228,7 +282,7 @@ describe("marketWindowPlanner", () => {
       toOpenTimeMs: view.toOpenTimeMs - 300_000,
     })).toBe(false);
 
-    const gapPlan = planCandlesWindowFetch({
+    const gapPlan = planCandlesWindowFetchForView({
       view,
       targetWindow: {
         fromMs: view.fromOpenTimeMs,
@@ -238,6 +292,7 @@ describe("marketWindowPlanner", () => {
     });
     expect(gapPlan).not.toBeNull();
     expect(gapPlan!.missingRange.fromMs).toBeGreaterThanOrEqual(distantTarget.toMs);
+    expect(gapPlan!.missingRange.toMs).toBeLessThanOrEqual(tailTarget.fromMs);
     expect(gapPlan!.missingRange.toMs).toBeGreaterThan(gapPlan!.missingRange.fromMs);
   });
 
@@ -252,7 +307,7 @@ describe("marketWindowPlanner", () => {
       variant: report.variants[0]!,
       reloadToken: 0,
     });
-    const target = resolveTargetDisplayWindow({
+    const target = resolveTargetDisplayWindowForView(view, {
       reportFromMs: view.fromOpenTimeMs,
       reportToMs: view.toOpenTimeMs,
       mode: "tail",
@@ -281,7 +336,7 @@ describe("marketWindowPlanner", () => {
       },
     });
 
-    const planned = planEmaWindowFetches({ view, targetWindow: target });
+    const planned = planEmaWindowFetchesForView({ view, targetWindow: target });
     expect(planned).toHaveLength(2);
     expect(planned.every((item) => item.role !== "fast")).toBe(true);
   });
