@@ -15,6 +15,7 @@ import type {
   WorkbenchTab,
 } from "@/api/types";
 import { clearMarketResourceCache } from "@/features/chart/marketResourceCache";
+import { marketWindowChunkMs } from "@/features/chart/workbenchMarketLoad";
 import { installSplitMarketWindowMocks, mockCandlesWindowBundle, mockEmaWindowBundle } from "@/test/marketWindowApiMocks";
 import { dbgExport, dbgReset, PIPELINE_DEBUG_STEPS as DBG } from "@/shared/diagnostics/pipelineDebug";
 import {
@@ -1069,10 +1070,10 @@ describe("Workbench market pan prefetch", () => {
       chartSliceRef!.dispatchChartInteraction({ type: "programmatic_viewport_end" });
     });
 
-    const prefetchMark = dbgExport()
-      .filter((row) => row.step === DBG.market.panPrefetchDecision)
-      .at(-1);
-    expect(prefetchMark?.last_meta?.reason).toBe("not_user_pan");
+    const prefetchMarks = dbgExport().filter(
+      (row) => row.step === DBG.market.panPrefetchDecision,
+    );
+    expect(prefetchMarks).toHaveLength(0);
     expect(fetchCandlesWindow.mock.calls.length).toBe(callsBefore);
   });
 
@@ -1106,6 +1107,114 @@ describe("Workbench market pan prefetch", () => {
     expect(prefetchMark?.last_meta?.reason).not.toBe("not_user_pan");
     expect(workbenchRef!.selectedTradeId).toBe(tradeIdBefore);
     expect(workbenchRef!.chartViewportCommandSeq).toBe(viewportSeqBefore);
+  });
+
+  it("dedupes pan prefetch decisions for identical visible-range samples", async () => {
+    render(
+      <Host>
+        <WorkbenchCapture />
+        <ChartSliceCapture />
+      </Host>,
+    );
+
+    await waitFor(() => {
+      expect(workbenchRef?.marketLoadStatus).toBe("ready");
+    });
+
+    act(() => {
+      chartSliceRef!.dispatchChartInteraction({ type: "pointerdown" });
+      for (let i = 0; i < 5; i += 1) {
+        chartSliceRef!.dispatchChartInteraction({
+          type: "visible_range_changed",
+          visible: { from: 0, to: 10 },
+          anchorTimeSec: 1000,
+        });
+      }
+      chartSliceRef!.dispatchChartInteraction({ type: "pointerup" });
+    });
+
+    const prefetchMarks = dbgExport().filter(
+      (row) => row.step === DBG.market.panPrefetchDecision,
+    );
+    expect(prefetchMarks.length).toBeLessThanOrEqual(1);
+  });
+
+  it("does not re-init render window when pan prefetch expands coverage only", async () => {
+    const timeframeMs = 300_000;
+    const chunkMs = marketWindowChunkMs(timeframeMs);
+    const wideCandles = Array.from({ length: 5 }, (_, index) => ({
+      time: Math.floor((chunkMs * index) / 1000),
+      open: 1,
+      high: 1,
+      low: 1,
+      close: 1,
+    }));
+
+    fetchRunReport.mockImplementation(async () => {
+      const report = makeReport("run-a");
+      return {
+        ...report,
+        data_range: { from_open_time_ms: 0, to_open_time_ms: chunkMs * 4 },
+        variants: report.variants.map((variant) => ({
+          ...variant,
+          trade_records: [],
+        })),
+      };
+    });
+    fetchCandlesWindow.mockImplementation(async ({ fromMs, toOpenTimeMs }) => {
+      const toMs = toOpenTimeMs + timeframeMs;
+      const inRange = wideCandles.filter(
+        (bar) => bar.time * 1000 >= fromMs && bar.time * 1000 < toMs,
+      );
+      return mockCandlesWindowBundle(
+        inRange.length > 0 ? inRange : [wideCandles[0]!],
+        fromMs,
+        toMs,
+      );
+    });
+    fetchEmaWindow.mockImplementation(async ({ period, fromMs, toOpenTimeMs }) =>
+      mockEmaWindowBundle(
+        [{ time: Math.floor(fromMs / 1000), value: period, kind: "chart_overlay_ema" as const }],
+        fromMs,
+        toOpenTimeMs + timeframeMs,
+      ),
+    );
+
+    render(
+      <Host>
+        <WorkbenchCapture />
+        <ChartSliceCapture />
+      </Host>,
+    );
+
+    await waitFor(() => {
+      expect(workbenchRef?.marketLoadStatus).toBe("ready");
+      expect(
+        dbgExport().find((row) => row.step === DBG.load.renderWindowInit)?.count,
+      ).toBe(1);
+    });
+
+    const leftEdgeTimeSec = Math.floor((chunkMs * 3) / 1000);
+    act(() => {
+      chartSliceRef!.dispatchChartInteraction({ type: "pointerdown" });
+      chartSliceRef!.dispatchChartInteraction({
+        type: "visible_range_changed",
+        visible: { from: 0, to: 0 },
+        anchorTimeSec: leftEdgeTimeSec,
+      });
+      chartSliceRef!.dispatchChartInteraction({ type: "pointerup" });
+    });
+
+    await waitFor(() => {
+      expect(fetchCandlesWindow.mock.calls.length).toBeGreaterThan(1);
+    });
+
+    const initCount = dbgExport().find((row) => row.step === DBG.load.renderWindowInit)?.count;
+    expect(initCount).toBe(1);
+    const prefetchMark = dbgExport()
+      .filter((row) => row.step === DBG.market.panPrefetchDecision)
+      .find((row) => row.last_meta?.reason === "near_left_edge");
+    expect(prefetchMark).toBeDefined();
   });
 
   it("cold open still fetches candles-window once and ema-window once per period", async () => {

@@ -32,6 +32,7 @@ export type ChartDataWindowManagerConfig = {
 export type ChartDataWindowManager = {
   reset(fullLength: number): void;
   setFullLength(fullLength: number): void;
+  offsetWindowStart(delta: number): WindowBounds | null;
   getWindowIndices(): WindowBounds;
   getWindowLength(): number;
   buildTailWindow(): WindowBounds | null;
@@ -147,6 +148,18 @@ export function createChartDataWindowManager(
         windowStartIndex = clampWindowStart(windowStartIndex, fullLength, size);
         windowEndIndex = windowStartIndex + size;
       }
+    },
+
+    offsetWindowStart(delta: number) {
+      if (delta === 0 || fullLength === 0) {
+        return null;
+      }
+      const size = effectiveWindowSize();
+      const nextStart = clampWindowStart(windowStartIndex + delta, fullLength, size);
+      return applyBounds({
+        windowStartIndex: nextStart,
+        windowEndIndex: nextStart + size,
+      });
     },
 
     getWindowIndices: currentBounds,

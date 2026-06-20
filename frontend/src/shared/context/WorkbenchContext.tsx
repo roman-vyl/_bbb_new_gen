@@ -411,9 +411,17 @@ export function WorkbenchProvider({
   const [marketOverlayRevision, setMarketOverlayRevision] = useState(0);
   const marketReadyTargetKeyRef = useRef<string | null>(null);
   const cachedBundleCandlesRef = useRef<ChartBar[]>([]);
-  const marketTargetWindowRef = useRef<MarketDisplayWindowMs | null>(null);
+  const marketFocusWindowRef = useRef<MarketDisplayWindowMs | null>(null);
+  const marketCoverageWindowRef = useRef<MarketDisplayWindowMs | null>(null);
   const intendedRunMarketViewRef = useRef<RunMarketView | null>(null);
-  const [marketTargetWindow, setMarketTargetWindow] = useState<MarketDisplayWindowMs | null>(null);
+  const lastPanPrefetchLogKeyRef = useRef<string | null>(null);
+  const lastPanPrefetchExpansionKeyRef = useRef<string | null>(null);
+  const lastVisiblePrefetchSampleRef = useRef<string | null>(null);
+  const prevCoverageFromMsRef = useRef<number | null>(null);
+  const [marketFocusWindow, setMarketFocusWindow] = useState<MarketDisplayWindowMs | null>(null);
+  const [marketCoverageWindow, setMarketCoverageWindow] = useState<MarketDisplayWindowMs | null>(
+    null,
+  );
   const [auxEmaOverlays, setAuxEmaOverlays] = useState<ChartAuxEmaOverlay[]>([]);
   const signalTraceDisplayCacheRef = useRef(createSignalTraceDisplayCache());
   const signalTraceBundleSessionCacheRef = useRef(createSignalTraceBundleSessionCache());
@@ -827,25 +835,45 @@ export function WorkbenchProvider({
 
   useEffect(() => {
     if (intendedRunMarketView === null) {
-      setMarketTargetWindow(null);
+      setMarketFocusWindow(null);
+      setMarketCoverageWindow(null);
       marketReadyTargetKeyRef.current = null;
+      lastPanPrefetchExpansionKeyRef.current = null;
+      lastPanPrefetchLogKeyRef.current = null;
+      lastVisiblePrefetchSampleRef.current = null;
+      prevCoverageFromMsRef.current = null;
       return;
     }
-    const nextTarget = resolveMarketTargetWindow(
+    const nextFocus = resolveMarketTargetWindow(
       intendedRunMarketView,
       selectedTradeEntryTimeMs,
     );
-    setMarketTargetWindow((previous) => {
+    setMarketFocusWindow((previous) => {
       if (
         previous !== null &&
-        previous.fromMs === nextTarget.fromMs &&
-        previous.toMs === nextTarget.toMs &&
-        previous.toOpenTimeMs === nextTarget.toOpenTimeMs
+        previous.fromMs === nextFocus.fromMs &&
+        previous.toMs === nextFocus.toMs &&
+        previous.toOpenTimeMs === nextFocus.toOpenTimeMs
       ) {
         return previous;
       }
       marketReadyTargetKeyRef.current = null;
-      return nextTarget;
+      lastPanPrefetchExpansionKeyRef.current = null;
+      lastPanPrefetchLogKeyRef.current = null;
+      lastVisiblePrefetchSampleRef.current = null;
+      prevCoverageFromMsRef.current = null;
+      return nextFocus;
+    });
+    setMarketCoverageWindow((previous) => {
+      if (
+        previous !== null &&
+        previous.fromMs === nextFocus.fromMs &&
+        previous.toMs === nextFocus.toMs &&
+        previous.toOpenTimeMs === nextFocus.toOpenTimeMs
+      ) {
+        return previous;
+      }
+      return nextFocus;
     });
   }, [
     intendedRunMarketView,
@@ -854,14 +882,22 @@ export function WorkbenchProvider({
     reloadToken,
   ]);
 
-  const marketTargetWindowKey = useMemo(() => {
-    if (intendedRunMarketViewIdentity === null || marketTargetWindow === null) {
+  const marketFocusWindowKey = useMemo(() => {
+    if (intendedRunMarketViewIdentity === null || marketFocusWindow === null) {
       return null;
     }
-    return buildMarketTargetWindowKey(intendedRunMarketViewIdentity, marketTargetWindow);
-  }, [intendedRunMarketViewIdentity, marketTargetWindow]);
+    return buildMarketTargetWindowKey(intendedRunMarketViewIdentity, marketFocusWindow);
+  }, [intendedRunMarketViewIdentity, marketFocusWindow]);
 
-  marketTargetWindowRef.current = marketTargetWindow;
+  const marketCoverageWindowKey = useMemo(() => {
+    if (intendedRunMarketViewIdentity === null || marketCoverageWindow === null) {
+      return null;
+    }
+    return buildMarketTargetWindowKey(intendedRunMarketViewIdentity, marketCoverageWindow);
+  }, [intendedRunMarketViewIdentity, marketCoverageWindow]);
+
+  marketFocusWindowRef.current = marketFocusWindow;
+  marketCoverageWindowRef.current = marketCoverageWindow;
   intendedRunMarketViewRef.current = intendedRunMarketView;
 
   useEffect(() => {
@@ -874,7 +910,7 @@ export function WorkbenchProvider({
       });
       return;
     }
-    if (marketTargetWindow === null) {
+    if (marketFocusWindow === null || marketCoverageWindow === null) {
       return;
     }
 
@@ -902,21 +938,23 @@ export function WorkbenchProvider({
     }
 
     const viewIdentity = buildRunMarketViewIdentity(view);
-    const targetWindow = marketTargetWindow;
-    const targetKey = buildMarketTargetWindowKey(viewIdentity, targetWindow);
+    const focusWindow = marketFocusWindow;
+    const coverageWindow = marketCoverageWindow;
+    const focusKey = buildMarketTargetWindowKey(viewIdentity, focusWindow);
+    const coverageKey = buildMarketTargetWindowKey(viewIdentity, coverageWindow);
     const loadGen = ++marketLoadGenRef.current;
     intendedRunMarketViewIdentityRef.current = viewIdentity;
 
     async function loadMarket() {
       setMarketError(null);
 
-      const candlesReady = marketCandlesReadyForTarget(view, targetWindow);
-      if (candlesReady) {
+      const focusCandlesReady = marketCandlesReadyForTarget(view, focusWindow);
+      if (focusCandlesReady) {
         dbgMark(DBG.load.marketFetchCacheHit, {
           viewIdentity,
           candlesCached: true,
-          targetFromMs: targetWindow.fromMs,
-          targetToMs: targetWindow.toMs,
+          targetFromMs: coverageWindow.fromMs,
+          targetToMs: coverageWindow.toMs,
         });
         if (
           marketLoadGenRef.current !== loadGen &&
@@ -925,8 +963,8 @@ export function WorkbenchProvider({
           dbgMark(DBG.load.marketFetchStaleResponse, { key: viewIdentity, phase: "cache_hit" });
           return;
         }
-        if (marketReadyTargetKeyRef.current !== targetKey) {
-          marketReadyTargetKeyRef.current = targetKey;
+        if (marketReadyTargetKeyRef.current !== focusKey) {
+          marketReadyTargetKeyRef.current = focusKey;
           setRunMarketViewIdentity(viewIdentity);
           setMarketLoadStatus("ready");
         }
@@ -935,16 +973,16 @@ export function WorkbenchProvider({
       }
 
       dbgMark(DBG.load.marketFetchStart, {
-        key: targetKey,
-        candlesCached: candlesReady,
-        targetFromMs: targetWindow.fromMs,
-        targetToMs: targetWindow.toMs,
+        key: coverageKey,
+        candlesCached: focusCandlesReady,
+        targetFromMs: coverageWindow.fromMs,
+        targetToMs: coverageWindow.toMs,
       });
 
       try {
         const result = await executeMarketWindowLoad({
           view,
-          targetWindow,
+          targetWindow: coverageWindow,
           symbol: snapshot.symbol,
           timeframe: chartTimeframe,
           signal: abortController.signal,
@@ -953,10 +991,10 @@ export function WorkbenchProvider({
             if (kind === "candles") {
               bumpMarketCandlesRevision();
               if (
-                marketCandlesReadyForTarget(view, targetWindow) &&
-                marketReadyTargetKeyRef.current !== targetKey
+                marketCandlesReadyForTarget(view, focusWindow) &&
+                marketReadyTargetKeyRef.current !== focusKey
               ) {
-                marketReadyTargetKeyRef.current = targetKey;
+                marketReadyTargetKeyRef.current = focusKey;
                 setRunMarketViewIdentity(viewIdentity);
                 setMarketLoadStatus("ready");
               }
@@ -966,7 +1004,7 @@ export function WorkbenchProvider({
           },
         });
         dbgMark(DBG.load.marketFetchEnd, {
-          key: targetKey,
+          key: coverageKey,
           candlesFetched: result.candlesFetched,
           emaFetched: result.emaFetched,
         });
@@ -981,10 +1019,10 @@ export function WorkbenchProvider({
           return;
         }
         if (
-          marketCandlesReadyForTarget(view, targetWindow) &&
-          marketReadyTargetKeyRef.current !== targetKey
+          marketCandlesReadyForTarget(view, focusWindow) &&
+          marketReadyTargetKeyRef.current !== focusKey
         ) {
-          marketReadyTargetKeyRef.current = targetKey;
+          marketReadyTargetKeyRef.current = focusKey;
           setRunMarketViewIdentity(viewIdentity);
           setMarketLoadStatus("ready");
         }
@@ -1022,22 +1060,23 @@ export function WorkbenchProvider({
     reloadToken,
     selectedVariantKey,
     chartHeavyIoEnabled,
-    marketTargetWindowKey,
+    marketCoverageWindowKey,
   ]);
 
   const cachedBundle = useMemo(() => {
     if (
       intendedRunMarketView === null ||
-      marketTargetWindow === null ||
+      marketFocusWindow === null ||
+      marketCoverageWindow === null ||
       marketLoadStatus === "error"
     ) {
       return undefined;
     }
-    if (!marketCandlesReadyForTarget(intendedRunMarketView, marketTargetWindow)) {
+    if (!marketCandlesReadyForTarget(intendedRunMarketView, marketFocusWindow)) {
       return undefined;
     }
     return (
-      composePartialRunMarketWindowBundle(intendedRunMarketView, marketTargetWindow) ??
+      composePartialRunMarketWindowBundle(intendedRunMarketView, marketCoverageWindow) ??
       undefined
     );
   }, [
@@ -1047,48 +1086,53 @@ export function WorkbenchProvider({
     marketCandlesRevision,
     marketOverlayRevision,
     marketLoadStatus,
-    marketTargetWindowKey,
+    marketFocusWindowKey,
+    marketCoverageWindowKey,
   ]);
 
   const renderWindowFoundationKey = useMemo(() => {
     if (
       intendedRunMarketView === null ||
-      marketTargetWindow === null ||
+      marketFocusWindow === null ||
       marketLoadStatus !== "ready" ||
-      marketTargetWindowKey === null
+      marketFocusWindowKey === null
     ) {
       return null;
     }
     const candles = getCandles(
       intendedRunMarketView.candlesKey,
-      marketTargetWindow.fromMs,
-      marketTargetWindow.toMs,
+      marketFocusWindow.fromMs,
+      marketFocusWindow.toMs,
     );
     if (candles === undefined || candles.length === 0) {
       return null;
     }
-    return `${marketTargetWindowKey}:${candles.length}`;
+    return `${marketFocusWindowKey}:${candles.length}`;
   }, [
     intendedRunMarketView,
-    marketTargetWindow,
-    marketTargetWindowKey,
+    marketFocusWindow,
+    marketFocusWindowKey,
     marketLoadStatus,
     marketCandlesRevision,
   ]);
 
   useEffect(() => {
-    if (renderWindowFoundationKey === null || intendedRunMarketView === null || marketTargetWindow === null) {
+    if (
+      renderWindowFoundationKey === null ||
+      intendedRunMarketView === null ||
+      marketCoverageWindow === null
+    ) {
       return;
     }
     const candles = getCandles(
       intendedRunMarketView.candlesKey,
-      marketTargetWindow.fromMs,
-      marketTargetWindow.toMs,
+      marketCoverageWindow.fromMs,
+      marketCoverageWindow.toMs,
     );
     if (candles !== undefined) {
       cachedBundleCandlesRef.current = candles;
     }
-  }, [renderWindowFoundationKey, intendedRunMarketView, marketTargetWindow]);
+  }, [renderWindowFoundationKey, intendedRunMarketView, marketCoverageWindow, marketCandlesRevision]);
 
   useEffect(() => {
     if (marketLoadStatus === "ready" && cachedBundle !== undefined) {
@@ -1099,6 +1143,29 @@ export function WorkbenchProvider({
   const bumpRenderWindow = useCallback(() => {
     setRenderWindowRevision((r) => r + 1);
   }, []);
+
+  useEffect(() => {
+    if (
+      intendedRunMarketView === null ||
+      marketCoverageWindow === null ||
+      cachedBundle === undefined
+    ) {
+      return;
+    }
+    const prevFromMs = prevCoverageFromMsRef.current;
+    const nextFromMs = marketCoverageWindow.fromMs;
+    if (prevFromMs !== null && nextFromMs < prevFromMs) {
+      const prevFromSec = Math.floor(prevFromMs / 1000);
+      const delta = findBarIndexAtOrBefore(cachedBundle.candles, prevFromSec);
+      if (delta > 0) {
+        const changed = renderWindowManager().offsetWindowStart(delta);
+        if (changed !== null) {
+          bumpRenderWindow();
+        }
+      }
+    }
+    prevCoverageFromMsRef.current = nextFromMs;
+  }, [marketCandlesRevision, marketCoverageWindow, cachedBundle, bumpRenderWindow]);
 
   const emitChartViewportCommand = useCallback((command: ViewportCommand) => {
     if (command.type === "noViewportChange" || command.type === "preserveUserRange") {
@@ -1176,14 +1243,14 @@ export function WorkbenchProvider({
       }
       return;
     }
-    if (intendedRunMarketView === null || marketTargetWindow === null) {
+    if (intendedRunMarketView === null || marketFocusWindow === null) {
       return;
     }
     const bundleCandles =
       getCandles(
         intendedRunMarketView.candlesKey,
-        marketTargetWindow.fromMs,
-        marketTargetWindow.toMs,
+        marketFocusWindow.fromMs,
+        marketFocusWindow.toMs,
       ) ?? cachedBundleCandlesRef.current;
     if (bundleCandles.length === 0) {
       return;
@@ -1210,7 +1277,7 @@ export function WorkbenchProvider({
     runMarketViewIdentity,
     bumpRenderWindow,
     intendedRunMarketView,
-    marketTargetWindow,
+    marketFocusWindow,
   ]);
 
   useEffect(() => {
@@ -1236,8 +1303,8 @@ export function WorkbenchProvider({
   const attemptMarketPanPrefetch = useCallback(
     (visibleFromSec: number, visibleToSec: number, forceUserPan = false) => {
       const view = intendedRunMarketViewRef.current;
-      const targetWindow = marketTargetWindowRef.current;
-      if (view === null || targetWindow === null || !chartHeavyIoEnabled) {
+      const coverageWindow = marketCoverageWindowRef.current;
+      if (view === null || coverageWindow === null || !chartHeavyIoEnabled) {
         return;
       }
       const interactionState = chartRuntimeRef.current.renderWindow.getInteractionState();
@@ -1247,7 +1314,7 @@ export function WorkbenchProvider({
         interactionState === "pending_shift" ||
         interactionState === "applying_shift";
       const decision = evaluateMarketPanPrefetchExpansion({
-        targetWindow,
+        targetWindow: coverageWindow,
         visibleFromSec,
         visibleToSec,
         reportFromMs: view.fromOpenTimeMs,
@@ -1255,14 +1322,23 @@ export function WorkbenchProvider({
         timeframeMs: chartTimeframeMs,
         isUserPan,
       });
-      dbgMark(DBG.market.panPrefetchDecision, {
-        reason: decision.reason,
-        ...decision.meta,
-      });
+      const logKey = `${decision.reason}:${decision.meta.expanded_from_ms ?? "x"}:${decision.meta.expanded_to_ms ?? "x"}`;
+      if (logKey !== lastPanPrefetchLogKeyRef.current) {
+        lastPanPrefetchLogKeyRef.current = logKey;
+        dbgMark(DBG.market.panPrefetchDecision, {
+          reason: decision.reason,
+          ...decision.meta,
+        });
+      }
       if (decision.expanded === null) {
         return;
       }
-      setMarketTargetWindow((previous) => {
+      const expansionKey = `${decision.expanded.fromMs}:${decision.expanded.toMs}:${decision.expanded.toOpenTimeMs}`;
+      if (expansionKey === lastPanPrefetchExpansionKeyRef.current) {
+        return;
+      }
+      lastPanPrefetchExpansionKeyRef.current = expansionKey;
+      setMarketCoverageWindow((previous) => {
         if (
           previous !== null &&
           previous.fromMs === decision.expanded!.fromMs &&
@@ -1285,14 +1361,25 @@ export function WorkbenchProvider({
       }
       const command = chartRuntimeRef.current.dispatchInteraction(event);
       if (event.type === "visible_range_changed" && event.anchorTimeSec !== null) {
-        const candles = chartViewCandlesRef.current;
-        if (candles.length > 0) {
-          const fromIdx = Math.max(
-            0,
-            Math.min(candles.length - 1, Math.floor(event.visible.from)),
-          );
-          const toIdx = Math.max(0, Math.min(candles.length - 1, Math.floor(event.visible.to)));
-          attemptMarketPanPrefetch(candles[fromIdx]!.time, candles[toIdx]!.time);
+        const interactionState = chartRuntimeRef.current.renderWindow.getInteractionState();
+        if (
+          interactionState === "user_panning" ||
+          interactionState === "pending_shift" ||
+          interactionState === "applying_shift"
+        ) {
+          const candles = chartViewCandlesRef.current;
+          if (candles.length > 0) {
+            const fromIdx = Math.max(
+              0,
+              Math.min(candles.length - 1, Math.floor(event.visible.from)),
+            );
+            const toIdx = Math.max(0, Math.min(candles.length - 1, Math.floor(event.visible.to)));
+            const sampleKey = `${fromIdx}:${toIdx}:${candles[fromIdx]!.time}:${candles[toIdx]!.time}`;
+            if (sampleKey !== lastVisiblePrefetchSampleRef.current) {
+              lastVisiblePrefetchSampleRef.current = sampleKey;
+              attemptMarketPanPrefetch(candles[fromIdx]!.time, candles[toIdx]!.time);
+            }
+          }
         }
       }
       if (command !== null && command.type !== "restoreAfterWindowSwap") {
