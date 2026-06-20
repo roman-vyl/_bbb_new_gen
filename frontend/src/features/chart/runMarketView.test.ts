@@ -28,7 +28,7 @@ function makeReport(): RunReport {
     symbol: "BTCUSDT",
     timeframe: "5m",
     candles: 100,
-    data_range: { from_open_time_ms: 1_000_000, to_open_time_ms: 2_000_000 },
+    data_range: { from_open_time_ms: 1_000_000, to_open_time_ms: 1_900_000 },
     variants_count: 2,
     variants: [
       {
@@ -68,11 +68,39 @@ function makeReport(): RunReport {
 }
 
 const bundle = {
-  candles: [{ time: 1000, open: 1, high: 2, low: 0.5, close: 1.5 }],
+  candles: [
+    { time: 1000, open: 1, high: 2, low: 0.5, close: 1.5 },
+    { time: 1300, open: 1, high: 2, low: 0.5, close: 1.5 },
+    { time: 1600, open: 1, high: 2, low: 0.5, close: 1.5 },
+  ],
   ema_overlays: [
-    { role: "fast" as const, period: 200, points: [{ time: 1000, value: 1, kind: "chart_overlay_ema" as const }] },
-    { role: "anchor" as const, period: 500, points: [{ time: 1000, value: 2, kind: "chart_overlay_ema" as const }] },
-    { role: "slow" as const, period: 1000, points: [{ time: 1000, value: 3, kind: "chart_overlay_ema" as const }] },
+    {
+      role: "fast" as const,
+      period: 200,
+      points: [
+        { time: 1000, value: 1, kind: "chart_overlay_ema" as const },
+        { time: 1300, value: 1, kind: "chart_overlay_ema" as const },
+        { time: 1600, value: 1, kind: "chart_overlay_ema" as const },
+      ],
+    },
+    {
+      role: "anchor" as const,
+      period: 500,
+      points: [
+        { time: 1000, value: 2, kind: "chart_overlay_ema" as const },
+        { time: 1300, value: 2, kind: "chart_overlay_ema" as const },
+        { time: 1600, value: 2, kind: "chart_overlay_ema" as const },
+      ],
+    },
+    {
+      role: "slow" as const,
+      period: 1000,
+      points: [
+        { time: 1000, value: 3, kind: "chart_overlay_ema" as const },
+        { time: 1300, value: 3, kind: "chart_overlay_ema" as const },
+        { time: 1600, value: 3, kind: "chart_overlay_ema" as const },
+      ],
+    },
   ],
 };
 

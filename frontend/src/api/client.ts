@@ -1,8 +1,10 @@
 import { dbgTimed } from "@/shared/diagnostics/pipelineDebug";
 import {
   assertSupportedReportSchema,
+  type CandlesWindowBundle,
   type ChartBar,
   type ChartMarketBundle,
+  type EmaWindowBundle,
   type ComponentCatalog,
   type IndicatorPoint,
   type RunCompactSummaryReport,
@@ -157,6 +159,42 @@ function chartMarketQuery(params: {
     from: String(params.fromMs),
     to_open_time_ms: String(params.toOpenTimeMs),
   });
+}
+
+/** Windowed OHLC candles with coverage metadata (split cold-load path). */
+export async function fetchCandlesWindow(params: {
+  symbol: string;
+  timeframe: string;
+  fromMs: number;
+  toOpenTimeMs: number;
+  signal?: AbortSignal;
+}): Promise<CandlesWindowBundle> {
+  const qs = chartMarketQuery(params);
+  return dbgTimed("api.fetchCandlesWindow", () =>
+    requestJson<CandlesWindowBundle>(`/api/market/candles-window?${qs.toString()}`, {
+      signal: params.signal,
+    }),
+  );
+}
+
+/** Windowed canonical chart overlay EMA for one period (split cold-load path). */
+export async function fetchEmaWindow(params: {
+  symbol: string;
+  timeframe: string;
+  period: number;
+  fromMs: number;
+  toOpenTimeMs: number;
+  originPolicy?: string;
+  signal?: AbortSignal;
+}): Promise<EmaWindowBundle> {
+  const qs = chartMarketQuery(params);
+  qs.set("period", String(params.period));
+  qs.set("origin_policy", params.originPolicy ?? "canonical");
+  return dbgTimed("api.fetchEmaWindow", () =>
+    requestJson<EmaWindowBundle>(`/api/market/ema-window?${qs.toString()}`, {
+      signal: params.signal,
+    }),
+  );
 }
 
 /** Single request: OHLC + anchor-stack chart overlay EMAs (one BFF/SQLite read). */

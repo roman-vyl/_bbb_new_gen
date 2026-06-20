@@ -51,11 +51,10 @@ export function resolveRunMarketView(params: {
   const { report, chartTimeframe, variant, reloadToken } = params;
   const periods = anchorStackPeriodsFromStrategySpec(variant.strategy_spec);
   const { from_open_time_ms: fromOpenTimeMs, to_open_time_ms: toOpenTimeMs } = report.data_range;
-  const range = { fromOpenTimeMs, toOpenTimeMs, reloadToken };
   const candlesKey = buildCandlesCacheKey({
     symbol: report.symbol,
     timeframe: chartTimeframe,
-    ...range,
+    reloadToken,
   });
   const overlayRefs: OverlayResourceRef[] = (
     ["fast", "anchor", "slow"] as const
@@ -70,7 +69,7 @@ export function resolveRunMarketView(params: {
         source: "anchor_stack",
         role,
         period,
-        ...range,
+        reloadToken,
       }),
     };
   });
@@ -104,9 +103,12 @@ export type MissingMarketResources = {
 };
 
 export function getMissingMarketResources(view: RunMarketView): MissingMarketResources {
+  const { fromOpenTimeMs, toOpenTimeMs } = view;
   return {
-    candles: !hasCandles(view.candlesKey),
-    overlays: view.overlayRefs.filter((ref) => !hasOverlay(ref.key)),
+    candles: !hasCandles(view.candlesKey, fromOpenTimeMs, toOpenTimeMs),
+    overlays: view.overlayRefs.filter(
+      (ref) => !hasOverlay(ref.key, fromOpenTimeMs, toOpenTimeMs),
+    ),
   };
 }
 
@@ -127,13 +129,14 @@ export function buildMarketFetchKey(view: RunMarketView, missing: MissingMarketR
 }
 
 export function composeRunMarketBundle(view: RunMarketView): ChartMarketBundle | null {
-  const candles = getCandles(view.candlesKey);
+  const { fromOpenTimeMs, toOpenTimeMs } = view;
+  const candles = getCandles(view.candlesKey, fromOpenTimeMs, toOpenTimeMs);
   if (candles === undefined) {
     return null;
   }
   const emaOverlays: ChartEmaOverlay[] = [];
   for (const ref of view.overlayRefs) {
-    const overlay = getOverlay(ref.key);
+    const overlay = getOverlay(ref.key, fromOpenTimeMs, toOpenTimeMs);
     if (overlay === undefined) {
       return null;
     }
@@ -144,12 +147,13 @@ export function composeRunMarketBundle(view: RunMarketView): ChartMarketBundle |
 
 /** Candles when cached; anchor EMA overlays only for keys already present. */
 export function composePartialRunMarketBundle(view: RunMarketView): ChartMarketBundle | null {
-  const candles = getCandles(view.candlesKey);
+  const { fromOpenTimeMs, toOpenTimeMs } = view;
+  const candles = getCandles(view.candlesKey, fromOpenTimeMs, toOpenTimeMs);
   if (candles === undefined) {
     return null;
   }
   const emaOverlays = view.overlayRefs
-    .map((ref) => getOverlay(ref.key))
+    .map((ref) => getOverlay(ref.key, fromOpenTimeMs, toOpenTimeMs))
     .filter((overlay): overlay is ChartEmaOverlay => overlay !== undefined);
   return { candles, ema_overlays: emaOverlays };
 }

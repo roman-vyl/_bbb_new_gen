@@ -35,13 +35,13 @@ Review-gated implementation: **STOP after each phase** and wait for user approva
 
 ## 5. Phase 5 — Frontend cache / planner (no WorkbenchContext switch yet)
 
-- [ ] 5.1 Extend `marketResourceCache.ts`: interval/chunk storage, union `coversRange`/`missingRange`/`sliceForRange` per candles and per overlay
-- [ ] 5.2 Split readiness helpers: `marketCandlesReady`, `marketOverlaysReady`
-- [ ] 5.3 Add `fetchCandlesWindow` and `fetchEmaWindow` to `frontend/src/api/client.ts` with `dbgTimed`
-- [ ] 5.4 Create `marketWindowPlanner.ts`: `resolveTargetDisplayWindow`, `planCandlesWindowFetch`, `planEmaWindowFetches` (per period), `seedCandlesWindow`/`seedEmaWindow`, split in-flight dedupe
-- [ ] 5.5 Unit tests: dual-interval candles; independent overlay intervals; candles-ready before overlays-ready; distant-trade gap not loaded
-- [ ] 5.6 Add `wb.market_candles_decision` / `wb.market_ema_decision` debug marks
-- [ ] 5.7 **STOP FOR REVIEW:** report split planner tests and progressive readiness behavior; wait for approval before Phase 6
+- [x] 5.1 Extend `marketResourceCache.ts`: interval/chunk storage, union `coversRange`/`missingRange`/`sliceForRange` per candles and per overlay
+- [x] 5.2 Split readiness helpers: `marketCandlesReady`, `marketOverlaysReady`
+- [x] 5.3 Add `fetchCandlesWindow` and `fetchEmaWindow` to `frontend/src/api/client.ts` with `dbgTimed`
+- [x] 5.4 Create `marketWindowPlanner.ts`: `resolveTargetDisplayWindow`, `planCandlesWindowFetch`, `planEmaWindowFetches` (per period), `seedCandlesWindow`/`seedEmaWindow`, split in-flight dedupe
+- [x] 5.5 Unit tests: dual-interval candles; independent overlay intervals; candles-ready before overlays-ready; distant-trade gap not loaded
+- [x] 5.6 Add `wb.market_candles_decision` / `wb.market_ema_decision` debug marks
+- [x] 5.7 **STOP FOR REVIEW:** report split planner tests and progressive readiness behavior; wait for approval before Phase 6
 
 ## 6. Phase 6 — Workbench integration
 

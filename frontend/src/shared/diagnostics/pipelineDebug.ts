@@ -75,6 +75,10 @@ export const PIPELINE_DEBUG_STEPS = {
     fallback: "wb.chart_events_fallback",
     merge: "wb.chart_events_merge",
   },
+  market: {
+    candlesDecision: "wb.market_candles_decision",
+    emaDecision: "wb.market_ema_decision",
+  },
   lanesTrace: {
     skip: "wb.lanes_trace_skip",
     useLoaded: "wb.lanes_trace_use_loaded",
