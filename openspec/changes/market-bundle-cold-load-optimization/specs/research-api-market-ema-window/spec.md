@@ -26,7 +26,7 @@ Each point MUST have `kind: chart_overlay_ema`.
 The backend canonical EMA cache MUST store per entry:
 
 - `calculation_origin_ms` — earliest candle open used to seed the series
-- `coverage_to_ms` (or `computed_to_ms`) — extent through which EMA points are materialized
+- `coverage_to_ms` — exclusive end through which EMA points are materialized
 - `points` — sorted `IndicatorPoint[]` covering `[calculation_origin_ms, coverage_to_ms)`
 
 Cache key MUST include market data identity (symbol, timeframe, period, `origin_policy`, and a documented market-data revision token such as DB path/mtime) so entries invalidate on market DB refresh.
@@ -35,7 +35,7 @@ On **first request** (cache miss) for a key, the BFF MUST compute EMA from `calc
 
 On a **later request** whose `requested_to_ms` exceeds `coverage_to_ms`, the BFF MUST **extend** the cached series from the last computed EMA state and appended candles — NOT recompute from the display-window start.
 
-On a **later request** within `coverage_to_ms`, the BFF MUST slice cached points only.
+On a **later request** fully within existing `coverage_to_ms`, the BFF MUST slice cached points only.
 
 The frontend MUST NOT receive warmup bars or perform EMA computation.
 
@@ -48,20 +48,14 @@ The frontend MUST NOT receive warmup bars or perform EMA computation.
 - **AND** `coverage.coverage_to_ms` is at least `T`
 - **AND** returned points are a slice of the stored series for the display window only
 
-#### Scenario: Extension request continues from cached EMA state
+#### Scenario: Extension continues from cached EMA state
 
 - **GIVEN** cache entry for `EMA(500)` with `coverage_to_ms = T1`
 - **WHEN** `ema-window` is requested with `requested_to_ms = T2` where `T2 > T1`
 - **THEN** BFF extends computation from existing series terminus and new candles only
+- **AND** `coverage.cache_hit` is `false`
 - **AND** overlapping bar times match pre-extension cached values
 - **AND** response returns only the newly requested display window slice
-
-#### Scenario: In-coverage request slices without recompute
-
-- **GIVEN** cache entry covers through `coverage_to_ms = T2`
-- **WHEN** `ema-window` is requested for a window within `[origin, T2)`
-- **THEN** `coverage.cache_hit` is `true`
-- **AND** returned points match the cached series slice
 
 #### Scenario: Window EMA matches full-range chart-bundle EMA at same bars
 
@@ -70,6 +64,49 @@ The frontend MUST NOT receive warmup bars or perform EMA computation.
 - **WHEN** `ema-window` with `origin_policy=canonical` is called for a window containing `T`
 - **THEN** the EMA value at `T` matches the chart-bundle value within floating-point tolerance
 
+### Requirement: cache_hit is true only for pure cache slice
+
+`coverage.cache_hit` MUST be:
+
+- `true` **only** when the entire requested window `[from_ms, to_ms)` is satisfied by slicing existing canonical cache points with **no** fresh compute and **no** extension in that request.
+- `false` when a fresh canonical compute (cache miss) or an extension (`requested_to_ms > coverage_to_ms`) was performed.
+
+#### Scenario: Pure slice sets cache_hit true
+
+- **GIVEN** cache entry covers through `coverage_to_ms >= requested_to_ms`
+- **WHEN** `ema-window` is requested for `[from_ms, to_ms)` fully within cached extent
+- **THEN** `coverage.cache_hit` is `true`
+- **AND** no candle reads or EMA recomputation occur for that request
+
+#### Scenario: Extension sets cache_hit false
+
+- **GIVEN** cache entry for `EMA(500)` with `coverage_to_ms = T1`
+- **WHEN** `ema-window` is requested with `requested_to_ms = T2` where `T2 > T1`
+- **THEN** `coverage.cache_hit` is `false`
+
+### Requirement: EMA-window service reports honest coverage at data edges
+
+When the requested window is partially or fully outside available market data, `fetch_ema_window` MUST set `coverage.actual_from_ms`, `coverage.actual_to_ms`, and `coverage.truncated` to reflect the **returned** point set.
+
+When there is no overlap with available candles, the service MUST return `points=[]`, `truncated=true`, `actual_from_ms == actual_to_ms`, and `cache_hit=false`.
+
+#### Scenario: Partial overlap clips actual bounds
+
+- **GIVEN** database candles cover `[D0, D1)` and request is `[A, B)` where `A < D0 < B`
+- **WHEN** `fetch_ema_window` runs
+- **THEN** `truncated` is `true`
+- **AND** `actual_from_ms` reflects the earliest returned EMA point
+- **AND** returned points cover only the overlapping sub-window
+
+#### Scenario: Requested EMA window fully beyond available data
+
+- **GIVEN** requested `[from_ms, to_ms)` has no overlapping candles in the database
+- **WHEN** `fetch_ema_window` runs
+- **THEN** `points` is an empty array
+- **AND** `coverage.truncated` is `true`
+- **AND** `coverage.actual_from_ms` equals `coverage.actual_to_ms`
+- **AND** `coverage.cache_hit` is `false`
+
 ### Requirement: EMA-window response always includes coverage and calculation metadata
 
 The `EmaWindowBundle` response MUST always include a `coverage` object with at least:
@@ -77,9 +114,9 @@ The `EmaWindowBundle` response MUST always include a `coverage` object with at l
 - `requested_from_ms` / `requested_to_ms`
 - `actual_from_ms` / `actual_to_ms`
 - `calculation_origin_ms`
-- `coverage_to_ms` (or `computed_to_ms`)
-- `cache_hit` boolean (`true` = slice/extension from cache; `false` = fresh compute or extension compute)
-- `truncated` when requested bounds exceed available data
+- `coverage_to_ms`
+- `cache_hit` — `true` only on pure cache slice; `false` on compute or extend
+- `truncated`
 
 `cache_hit` and `calculation_origin_ms` MUST NOT be debug-only in v1 — they are always present in API responses.
 
@@ -95,6 +132,7 @@ The `EmaWindowBundle` response MUST always include a `coverage` object with at l
 - **GIVEN** a cached canonical EMA entry for symbol/timeframe/period
 - **WHEN** market data identity changes (documented DB refresh)
 - **THEN** subsequent `ema-window` requests miss cache and recompute from new `calculation_origin_ms`
+- **AND** `coverage.cache_hit` is `false`
 
 ### Requirement: EMA-window errors match existing market endpoints
 

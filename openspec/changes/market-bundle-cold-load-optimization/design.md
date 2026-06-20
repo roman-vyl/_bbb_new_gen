@@ -112,9 +112,34 @@ entry:
 
 **Response contract (v1):** `coverage.calculation_origin_ms` and `coverage.cache_hit` are **always present** in API responses (not debug-only).
 
-**Rejected:** Recompute from display-window start on each request. Recompute full series from origin on every window change when extension suffices.
+**`cache_hit` semantics (strict):**
+
+| Value | When |
+|-------|------|
+| `true` | Entire requested window `[from_ms, to_ms)` was satisfied by **slicing only** from existing canonical cache — no fresh compute, no extension |
+| `false` | Fresh canonical compute (cache miss) **or** extension (`requested_to_ms > coverage_to_ms`) was required |
+
+Extension and first compute are both `cache_hit=false`. Do not set `cache_hit=true` when any compute/extend work ran for this request.
+
+**Rejected:** Recompute from display-window start on each request. Recompute full series from origin on every window change when extension suffices. `cache_hit=true` after extension.
 
 **Trade-off:** First ema-window per period may compute a long series; extension amortizes distant-trade and pan-right navigation. Does not block candles.
+
+### 2a. Data-edge behavior (candles-window and ema-window services)
+
+When the requested window is **partially** or **fully** outside available market data, services MUST populate coverage honestly and return empty payload arrays when there is no overlap.
+
+**Rules (both resources):**
+
+- `coverage.requested_from_ms` / `coverage.requested_to_ms` — always echo resolved client request bounds.
+- `coverage.actual_from_ms` / `coverage.actual_to_ms` — half-open bounds of data **actually returned** in `candles` / `points`.
+- `coverage.truncated` — `true` when `actual` range ≠ `requested` range (partial clip) **or** when requested window has **no** overlapping bars (fully beyond edge).
+- **No overlap / fully beyond:** `candles=[]` or `points=[]`, `actual_from_ms == actual_to_ms` (empty half-open interval), `truncated=true`.
+- **Partial overlap:** return only overlapping bars/points; `actual_*` reflects returned subset; `truncated=true`.
+
+Services MUST NOT fabricate bars/points outside DB range. HTTP 200 with empty payload is valid for out-of-range windows (same as clipped edge semantics).
+
+**EMA-specific:** when window has no overlapping bars, return `points=[]` with `cache_hit=false` (no slice served) unless a prior in-range cache entry exists and the empty result is because requested window is wholly past `coverage_to_ms` with no data — still `cache_hit=false` if extend would be needed but no candles exist.
 
 ### 3. Frontend interval/chunk cache (unchanged model)
 

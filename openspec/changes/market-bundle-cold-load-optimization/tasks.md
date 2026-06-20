@@ -17,13 +17,13 @@ Review-gated implementation: **STOP after each phase** and wait for user approva
 
 ## 3. Phase 3 — Backend services (no router)
 
-**Prerequisite:** EMA canonical cache semantics documented in `design.md` §2 and `research-api-market-ema-window` spec (extendable entry, `coverage_to_ms`, market data identity invalidation).
+**Prerequisite:** EMA canonical cache semantics in `design.md` §2–§2a and delta specs (extendable entry, `coverage_to_ms`, market data identity, **data-edge coverage**, **strict cache_hit**).
 
-- [ ] 3.1 Implement `fetch_candles_window` in `research_api/services/market_reader.py` (display window only + coverage)
-- [ ] 3.2 Implement canonical EMA cache: entry stores `calculation_origin_ms`, `coverage_to_ms`, sorted points; key includes market data identity
-- [ ] 3.3 Implement `fetch_ema_window`: first request computes origin→`requested_to_ms`; extend when `requested_to_ms > coverage_to_ms`; slice when in-coverage; always return window slice only
-- [ ] 3.4 Service tests: candles-window; ema extension vs full recompute; cache_hit; parity vs chart-bundle; invalidation on market data identity change
-- [ ] 3.5 **STOP FOR REVIEW:** report EMA extension/parity and cache semantics; wait for approval before Phase 4
+- [x] 3.1 Implement `fetch_candles_window` in `research_api/services/market_reader.py` — display window only; honest `actual_*` / `truncated`; empty `candles` when no overlap
+- [x] 3.2 Implement canonical EMA cache: entry stores `calculation_origin_ms`, `coverage_to_ms`, sorted points; key includes market data identity
+- [x] 3.3 Implement `fetch_ema_window`: compute/extend vs pure slice; `cache_hit=true` only on pure slice; empty `points` + edge coverage when no overlap
+- [x] 3.4 Service tests: candles partial/full edge (empty array, `actual_from_ms == actual_to_ms`); ema extension (`cache_hit=false`); pure slice (`cache_hit=true`); parity vs chart-bundle; invalidation on market data identity change
+- [x] 3.5 **STOP FOR REVIEW:** report EMA extension/parity, edge coverage, and cache_hit semantics; wait for approval before Phase 4
 
 ## 4. Phase 4 — Backend endpoints
 

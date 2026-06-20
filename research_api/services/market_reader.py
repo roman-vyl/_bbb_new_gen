@@ -10,9 +10,12 @@ from data_engine.store.db import Db
 
 from research_api.contracts.chart import (
     AnchorStackEmaRole,
+    CandlesWindowBundle,
+    CandlesWindowCoverage,
     ChartBar,
     ChartEmaOverlay,
     ChartMarketBundle,
+    EmaWindowBundle,
     IndicatorPoint,
 )
 from research_api.services.indicators import compute_chart_overlay_ema
@@ -59,6 +62,96 @@ def fetch_chart_bars(
     window = TimeWindow(start_ms, end_ms)
     candles = db.range_get(sym, tf, window)
     return [candle_to_chart_bar(c) for c in candles]
+
+
+def _bars_exclusive_end_ms(bars: list[ChartBar], tf_ms: int) -> int:
+    if not bars:
+        return 0
+    return int(bars[-1].time * 1000) + tf_ms
+
+
+def _candles_window_coverage(
+    *,
+    requested_from_ms: int,
+    requested_to_ms: int,
+    candles: list[ChartBar],
+    tf_ms: int,
+) -> CandlesWindowCoverage:
+    if not candles:
+        return CandlesWindowCoverage(
+            requested_from_ms=requested_from_ms,
+            requested_to_ms=requested_to_ms,
+            actual_from_ms=requested_from_ms,
+            actual_to_ms=requested_from_ms,
+            truncated=True,
+        )
+
+    actual_from_ms = int(candles[0].time * 1000)
+    actual_to_ms = _bars_exclusive_end_ms(candles, tf_ms)
+    truncated = actual_from_ms > requested_from_ms or actual_to_ms < requested_to_ms
+    return CandlesWindowCoverage(
+        requested_from_ms=requested_from_ms,
+        requested_to_ms=requested_to_ms,
+        actual_from_ms=actual_from_ms,
+        actual_to_ms=actual_to_ms,
+        truncated=truncated,
+    )
+
+
+def fetch_candles_window(
+    *,
+    symbol: str,
+    timeframe: str,
+    from_ms: int,
+    to_ms: int,
+    db_path: Path | None = None,
+) -> CandlesWindowBundle:
+    """Load display-window candles only with honest coverage metadata."""
+
+    tf = validate_timeframe(timeframe.strip())
+    tf_ms = timeframe_ms(tf)
+    requested_from_ms, requested_to_ms = parse_time_range_ms(from_ms=from_ms, to_ms=to_ms)
+    candles = fetch_chart_bars(
+        symbol=symbol,
+        timeframe=timeframe,
+        from_ms=requested_from_ms,
+        to_ms=requested_to_ms,
+        db_path=db_path,
+    )
+    coverage = _candles_window_coverage(
+        requested_from_ms=requested_from_ms,
+        requested_to_ms=requested_to_ms,
+        candles=candles,
+        tf_ms=tf_ms,
+    )
+    return CandlesWindowBundle(candles=candles, coverage=coverage)
+
+
+def fetch_ema_window(
+    *,
+    symbol: str,
+    timeframe: str,
+    period: int,
+    from_ms: int,
+    to_ms: int,
+    db_path: Path | None = None,
+    origin_policy: str = "canonical",
+    cache=None,
+) -> EmaWindowBundle:
+    """Canonical EMA window slice via in-memory cache (see ``chart_ema_cache``)."""
+
+    from research_api.services.chart_ema_cache import ChartEmaCache, get_chart_ema_cache
+
+    ema_cache: ChartEmaCache = cache if cache is not None else get_chart_ema_cache()
+    return ema_cache.fetch_window(
+        symbol=symbol,
+        timeframe=timeframe,
+        period=period,
+        from_ms=from_ms,
+        to_ms=to_ms,
+        db_path=db_path,
+        origin_policy=origin_policy,
+    )
 
 
 def _validate_anchor_stack_periods(

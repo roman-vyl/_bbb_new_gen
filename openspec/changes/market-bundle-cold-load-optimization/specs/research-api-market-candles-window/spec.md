@@ -34,7 +34,32 @@ The `CandlesWindowBundle` response MUST include a `coverage` object with at leas
 - **GIVEN** requested `from_ms` precedes the earliest candle in the database
 - **WHEN** `candles-window` is requested
 - **THEN** `coverage.truncated` is `true`
-- **AND** `coverage.actual_from_ms` reflects the earliest available bar
+- **AND** `coverage.actual_from_ms` reflects the earliest available bar open time
+- **AND** `coverage.actual_to_ms` reflects the exclusive end of returned bars
+- **AND** returned `candles` contain only available overlapping bars
+
+#### Scenario: Requested window fully beyond available data
+
+- **GIVEN** requested `[from_ms, to_ms)` has no overlap with any candle in the database
+- **WHEN** `candles-window` is requested
+- **THEN** `coverage.truncated` is `true`
+- **AND** `candles` is an empty array
+- **AND** `coverage.actual_from_ms` equals `coverage.actual_to_ms` (empty half-open interval)
+- **AND** `coverage.requested_from_ms` and `coverage.requested_to_ms` still echo the client request
+
+### Requirement: Candles-window service reports honest coverage at data edges
+
+When the requested window is partially or fully outside available market data, `fetch_candles_window` MUST set `coverage.actual_from_ms`, `coverage.actual_to_ms`, and `coverage.truncated` to reflect the **returned** candle set — not the requested bounds.
+
+When there is no overlap with available data, the service MUST return `candles=[]`, `truncated=true`, and `actual_from_ms == actual_to_ms`.
+
+#### Scenario: Partial overlap clips actual bounds
+
+- **GIVEN** database candles cover `[D0, D1)` and request is `[A, B)` where `A < D0 < B`
+- **WHEN** `fetch_candles_window` runs
+- **THEN** `truncated` is `true`
+- **AND** `actual_from_ms` is `D0`
+- **AND** returned candles are only those in the overlapping sub-window
 
 ### Requirement: Candles-window errors match existing market endpoints
 
