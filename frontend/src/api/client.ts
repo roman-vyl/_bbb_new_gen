@@ -9,6 +9,7 @@ import {
   type RunReport,
   type RunSummary,
   type SignalTraceBundle,
+  type ChartEventsBundle,
   type BacktestResult,
   type ConfigStateResponse,
   type SaveConfigResult,
@@ -110,6 +111,31 @@ export async function fetchSignalTrace(params: {
   return dbgTimed("api.fetchSignalTrace", () =>
     requestJson<SignalTraceBundle>(
       `/api/research/runs/${encodeURIComponent(params.runId)}/signal-trace?${qs.toString()}`,
+      { signal: params.signal },
+    ),
+  );
+}
+
+/** Sparse chart display bundle (markers + HTF overlays). */
+export async function fetchChartEvents(params: {
+  runId: string;
+  variant: string;
+  fromMs: number;
+  toOpenTimeMs: number;
+  contextOverlayRef?: string | null;
+  signal?: AbortSignal;
+}): Promise<ChartEventsBundle> {
+  const qs = new URLSearchParams({
+    variant: params.variant,
+    from: String(params.fromMs),
+    to_open_time_ms: String(params.toOpenTimeMs),
+  });
+  if (params.contextOverlayRef) {
+    qs.set("context_overlay_ref", params.contextOverlayRef);
+  }
+  return dbgTimed("api.fetchChartEvents", () =>
+    requestJson<ChartEventsBundle>(
+      `/api/research/runs/${encodeURIComponent(params.runId)}/chart-events?${qs.toString()}`,
       { signal: params.signal },
     ),
   );

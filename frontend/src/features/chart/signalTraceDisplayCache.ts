@@ -1,4 +1,5 @@
 import type {
+  ChartEventsBundle,
   ComponentEvent,
   HtfContextTrace,
   SignalTraceBundle,
@@ -118,6 +119,62 @@ export function extractDisplayChunkFromResponse(
     times: [...bundle.times],
     htf_context: bundle.htf_context,
   };
+}
+
+/** Chunk bounds from chart-events response (times + events; coverage preferred in a follow-up). */
+export function computeChunkBoundsFromChartEvents(
+  bundle: ChartEventsBundle,
+): TimeBounds | null {
+  const samples: number[] = [];
+  if (bundle.times.length > 0) {
+    samples.push(bundle.times[0]!, bundle.times[bundle.times.length - 1]!);
+  }
+  for (const event of bundle.component_events ?? []) {
+    samples.push(event.time);
+  }
+  if (samples.length === 0) {
+    return null;
+  }
+  return {
+    fromSec: Math.min(...samples),
+    toSec: Math.max(...samples),
+  };
+}
+
+export function extractDisplayChunkFromChartEvents(
+  bundle: ChartEventsBundle,
+): TraceDisplayChunk | null {
+  const bounds = computeChunkBoundsFromChartEvents(bundle);
+  if (bounds === null) {
+    return null;
+  }
+  const htf = bundle.htf_context;
+  return {
+    fromSec: bounds.fromSec,
+    toSec: bounds.toSec,
+    component_events: bundle.component_events ?? [],
+    times: [...bundle.times],
+    htf_context: {
+      state: [],
+      fast: [...htf.fast],
+      anchor: [...htf.anchor],
+      slow: [...htf.slow],
+      meta: { ...htf.meta },
+    },
+  };
+}
+
+export function mergeDisplayChunkFromChartEvents(
+  cache: SignalTraceDisplayCache,
+  bundle: ChartEventsBundle,
+): TraceDisplayChunk | null {
+  const chunk = extractDisplayChunkFromChartEvents(bundle);
+  if (chunk === null) {
+    return null;
+  }
+  cache.setTraceMeta(bundle.meta);
+  cache.mergeDisplayChunk(chunk);
+  return chunk;
 }
 
 function mergeCoverageIntervals(intervals: TimeBounds[]): TimeBounds[] {

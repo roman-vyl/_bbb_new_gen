@@ -96,6 +96,9 @@ export function createViewportController(initial?: Partial<ViewportControllerSta
     },
 
     onTraceReady(): ViewportControllerCommand {
+      if (canEmitTradeFocus(state) && state.centerTimeSec !== null) {
+        return { type: "focusTrade", entryTimeSec: state.centerTimeSec };
+      }
       return { type: "noViewportChange" };
     },
 

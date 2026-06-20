@@ -1,11 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   buildSignalTraceUrlPath,
+  buildChartEventsRequestKey,
+  buildChartEventsUrlPath,
   buildTraceRequestKey,
   createSignalTraceRequestCoordinator,
   type TraceFetchParams,
 } from "@/features/chart/runtime/signalTraceRequestCoordinator";
+import { buildDisplayTraceRequestKey } from "@/features/chart/runtime/chartEventsLoad";
 
 const PARAMS: TraceFetchParams = {
   runId: "2026-06-01T171633Z_ema_pullback_BTCUSDT_1h",
@@ -36,6 +39,32 @@ describe("buildTraceRequestKey", () => {
     const withRef = { ...PARAMS, contextOverlayRef: "htf_regime_1" };
     expect(buildTraceRequestKey(withRef)).not.toBe(buildTraceRequestKey(PARAMS));
     expect(buildSignalTraceUrlPath(withRef)).toContain("context_overlay_ref=htf_regime_1");
+  });
+});
+
+describe("buildChartEventsRequestKey", () => {
+  it("matches fetchChartEvents URL resource and differs from signal-trace key", () => {
+    const key = buildChartEventsRequestKey(PARAMS);
+    const path = buildChartEventsUrlPath(PARAMS);
+    expect(path).toContain(`from=${PARAMS.fromMs}`);
+    expect(path).toContain(`to_open_time_ms=${PARAMS.toOpenTimeMs}`);
+    expect(path).toContain(`variant=${encodeURIComponent(PARAMS.variant)}`);
+    expect(path).toContain("/chart-events?");
+    expect(key).toBe(buildChartEventsRequestKey(PARAMS));
+    expect(buildChartEventsRequestKey({ ...PARAMS })).toBe(key);
+    expect(key).not.toBe(buildTraceRequestKey(PARAMS));
+  });
+
+  it("buildDisplayTraceRequestKey uses chart-events key when flag enabled", () => {
+    vi.stubEnv("VITE_CHART_EVENTS_API", "1");
+    expect(buildDisplayTraceRequestKey(PARAMS)).toBe(buildChartEventsRequestKey(PARAMS));
+    vi.unstubAllEnvs();
+  });
+
+  it("buildDisplayTraceRequestKey uses signal-trace key when flag disabled", () => {
+    vi.stubEnv("VITE_CHART_EVENTS_API", "0");
+    expect(buildDisplayTraceRequestKey(PARAMS)).toBe(buildTraceRequestKey(PARAMS));
+    vi.unstubAllEnvs();
   });
 });
 
