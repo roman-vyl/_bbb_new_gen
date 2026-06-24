@@ -1,5 +1,6 @@
 import { buildChartViewModel } from "@/features/chart/runtime/chartViewModel";
 
+import { resolveDisplayRenderViewportShadow } from "./displayRenderViewportHarness";
 import { createEmptyRuntimeDebugSnapshot } from "./runtimeDebug";
 import { resolveMarketBundleRuntime } from "./marketBundleRuntime";
 import {
@@ -44,21 +45,31 @@ export function createInitialChartRuntimeOutput(input: ChartRuntimeInput): Chart
           marketLoadStatus: "idle",
         })
       : null;
+  const displayRenderViewport = resolveDisplayRenderViewportShadow({
+    bundle: marketBundle?.bundle ?? null,
+    foundationKey: marketBundle?.foundationKey ?? null,
+    marketLoadStatus: "idle",
+    selectedTradeEntryTimeMs: input.selectedTradeEntryTimeMs,
+    marketIdentity: marketView.marketIdentity,
+  });
+
   const chartViewModel = buildChartViewModel({
-    candles: [],
-    emaOverlays: [],
-    auxEmaOverlays: [],
-    displayAuxEmaOverlays: [],
+    candles: displayRenderViewport.chartWindow.parts.candles,
+    emaOverlays: displayRenderViewport.chartWindow.parts.emaOverlays,
+    auxEmaOverlays: displayRenderViewport.chartWindow.parts.auxEmaOverlays,
+    displayAuxEmaOverlays: displayRenderViewport.chartWindow.parts.auxEmaOverlays,
     componentEvents: [],
     htfOverlayStale: false,
     componentEventsStale: false,
     traceDisplayStatus: "empty",
     traceDisplayMissingRange: null,
-    viewMode: "empty",
-    centerTimeSec: null,
-    firstTimeSec: null,
-    lastTimeSec: null,
-    count: 0,
+    viewMode: displayRenderViewport.chartWindow.count > 0 ? "tail" : "empty",
+    centerTimeSec: input.selectedTradeEntryTimeMs !== null
+      ? Math.floor(input.selectedTradeEntryTimeMs / 1000)
+      : null,
+    firstTimeSec: displayRenderViewport.chartWindow.firstTimeSec,
+    lastTimeSec: displayRenderViewport.chartWindow.lastTimeSec,
+    count: displayRenderViewport.chartWindow.count,
   });
 
   return {
@@ -111,6 +122,18 @@ export function createInitialChartRuntimeOutput(input: ChartRuntimeInput): Chart
         range: null,
         count: 0,
         source: null,
+      },
+      renderWindow: {
+        startIndex: displayRenderViewport.renderWindow.bounds?.windowStartIndex ?? null,
+        endIndex: displayRenderViewport.renderWindow.bounds?.windowEndIndex ?? null,
+        firstTimeSec: displayRenderViewport.renderWindow.firstTimeSec,
+        lastTimeSec: displayRenderViewport.renderWindow.lastTimeSec,
+      },
+      chartModel: {
+        firstTimeSec: displayRenderViewport.chartWindow.firstTimeSec,
+        lastTimeSec: displayRenderViewport.chartWindow.lastTimeSec,
+        count: displayRenderViewport.chartWindow.count,
+        seriesKey: displayRenderViewport.chartWindow.seriesKey,
       },
     },
   };

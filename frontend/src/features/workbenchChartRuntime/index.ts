@@ -2,6 +2,7 @@ export * from "./auxOverlayRuntime";
 export * from "./chartEventsRuntime";
 export * from "./chartModelRuntime";
 export * from "./chartWindowRuntime";
+export * from "./displayRenderViewportHarness";
 export * from "./interactionRuntime";
 export * from "./marketBundleRuntime";
 export * from "./marketFetchPlanRuntime";

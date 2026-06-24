@@ -77,17 +77,17 @@
 
 ## 5. Phase 4 - Display, Render, and Viewport Parity
 
-- [ ] 5.1 Implement `chartWindowRuntime.ts` slicing parity for candles, anchor EMA, aux overlays, stable keys, and render-window bounds.
-- [ ] 5.2 Implement `renderWindowRuntime.ts` parity for init, tail/trade-centered windows, boundary shifts, shift seq, and committed bounds.
-- [ ] 5.3 Implement `viewportRuntime.ts` parity for `focusTrade`, `restoreAfterWindowSwap`, command seq, acknowledge, cancellation, and settle.
-- [ ] 5.4 Implement `interactionRuntime.ts` and `panRuntime.ts` parity for pointer/wheel/programmatic/visible-range dispatch and coverage expansion intents without connecting runtime v2 to live `ChartPanel` interaction dispatch as an active owner before cutover.
-- [ ] 5.5 Keep production Chart tab on the current working runtime during this phase.
-- [ ] 5.6 Compare old-vs-new render ranges, chart ranges, shift seq, viewport command payloads, and pan expansion decisions; document any reviewed differences.
-- [ ] 5.7 Verify no empty chart gaps in candidate output built from snapshots or isolated seeded inputs.
-- [ ] 5.8 Verify viewport command contract is documented and tested.
-- [ ] 5.9 Run render-window, viewport, chart-window, pan, and adapter tests.
-- [ ] 5.10 Record Phase 4 complexity/ownership report: line count of every new runtime module, current `WorkbenchContext.tsx` line count, old owner symbols still present in `WorkbenchContext.tsx`, and new owner symbols introduced in runtime v2.
-- [ ] 5.11 STOP FOR REVIEW before trace/events/overlays parity.
+- [x] 5.1 Implement `chartWindowRuntime.ts` slicing parity for candles, anchor EMA, aux overlays, stable keys, and render-window bounds.
+- [x] 5.2 Implement `renderWindowRuntime.ts` parity for init, tail/trade-centered windows, boundary shifts, shift seq, and committed bounds.
+- [x] 5.3 Implement `viewportRuntime.ts` parity for `focusTrade`, `restoreAfterWindowSwap`, command seq, acknowledge, cancellation, and settle.
+- [x] 5.4 Implement `interactionRuntime.ts` and `panRuntime.ts` parity for pointer/wheel/programmatic/visible-range dispatch and coverage expansion intents without connecting runtime v2 to live `ChartPanel` interaction dispatch as an active owner before cutover.
+- [x] 5.5 Keep production Chart tab on the current working runtime during this phase.
+- [x] 5.6 Compare old-vs-new render ranges, chart ranges, shift seq, viewport command payloads, and pan expansion decisions; document any reviewed differences.
+- [x] 5.7 Verify no empty chart gaps in candidate output built from snapshots or isolated seeded inputs.
+- [x] 5.8 Verify viewport command contract is documented and tested.
+- [x] 5.9 Run render-window, viewport, chart-window, pan, and adapter tests.
+- [x] 5.10 Record Phase 4 complexity/ownership report: line count of every new runtime module, current `WorkbenchContext.tsx` line count, old owner symbols still present in `WorkbenchContext.tsx`, and new owner symbols introduced in runtime v2.
+- [x] 5.11 STOP FOR REVIEW before trace/events/overlays parity.
 
 ## 6. Phase 5 - Trace, Events, Overlays, and Chart-Model Parity
 
