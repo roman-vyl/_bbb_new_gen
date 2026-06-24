@@ -34,15 +34,15 @@
 
 ## 3. Phase 2 - Runtime Contracts and Skeleton
 
-- [ ] 3.1 Create `frontend/src/features/workbenchChartRuntime/`.
-- [ ] 3.2 Create `runtimeTypes.ts` with `ChartRuntimeInput`, `ChartRuntimeOutput`, debug snapshot, owner flags, and compatibility adapter types.
-- [ ] 3.3 Create `useWorkbenchChartRuntime.ts` as a minimal orchestrator shell without production wiring.
-- [ ] 3.4 Create `runtimeInputAdapter.ts` and `runtimeOutputAdapter.ts` with type-only or minimal mapping boundaries.
-- [ ] 3.5 Create empty/minimal module boundaries for market, pan, interaction, render-window, viewport, trace, chart-events, aux overlay, chart-window, chart-model, and debug runtime modules.
-- [ ] 3.6 Add contract tests for `ChartRuntimeInput`, `ChartRuntimeOutput`, and debug snapshot shape.
-- [ ] 3.7 Verify there are no production behavior changes, no `ChartPanel` changes, and no new chart runtime lifecycle inside `WorkbenchContext`.
-- [ ] 3.8 Record phase complexity/ownership report: line count of every new runtime module, current `WorkbenchContext.tsx` line count, old owner symbols still present in `WorkbenchContext.tsx`, and new owner symbols introduced in runtime v2.
-- [ ] 3.9 STOP FOR REVIEW before adding parity logic.
+- [x] 3.1 Create `frontend/src/features/workbenchChartRuntime/`.
+- [x] 3.2 Create `runtimeTypes.ts` with `ChartRuntimeInput`, `ChartRuntimeOutput`, debug snapshot, owner flags, and compatibility adapter types.
+- [x] 3.3 Create `useWorkbenchChartRuntime.ts` as a minimal orchestrator shell without production wiring.
+- [x] 3.4 Create `runtimeInputAdapter.ts` and `runtimeOutputAdapter.ts` with type-only or minimal mapping boundaries.
+- [x] 3.5 Create empty/minimal module boundaries for market, pan, interaction, render-window, viewport, trace, chart-events, aux overlay, chart-window, chart-model, and debug runtime modules.
+- [x] 3.6 Add contract tests for `ChartRuntimeInput`, `ChartRuntimeOutput`, and debug snapshot shape.
+- [x] 3.7 Verify there are no production behavior changes, no `ChartPanel` changes, and no new chart runtime lifecycle inside `WorkbenchContext`.
+- [x] 3.8 Record phase complexity/ownership report: line count of every new runtime module, current `WorkbenchContext.tsx` line count, old owner symbols still present in `WorkbenchContext.tsx`, and new owner symbols introduced in runtime v2.
+- [x] 3.9 STOP FOR REVIEW before adding parity logic.
 
 ## 4. Phase 3 - Market Runtime Parity
 
