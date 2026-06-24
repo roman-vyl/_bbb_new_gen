@@ -48,13 +48,13 @@
 
 ### Phase 3A - Market Identity and Windows Only, No Fetch
 
-- [ ] 4.1 Implement market view identity parity in `marketViewRuntime.ts` using existing helper identity semantics.
-- [ ] 4.2 Implement market focus and coverage window parity in `marketWindowRuntime.ts`, including trade-centered/tail reset behavior.
-- [ ] 4.3 Add old-vs-new debug comparison for market identity, focus window, coverage window, window keys, and reset reasons.
-- [ ] 4.4 Verify production-mounted runtime v2 performs no network fetches, no production `marketResourceCache` writes, and no bundle/cache mutation in Phase 3A.
-- [ ] 4.5 Run identity/window parity tests and document any reviewed differences.
-- [ ] 4.6 Record Phase 3A complexity/ownership report: line count of every new runtime module, current `WorkbenchContext.tsx` line count, old owner symbols still present in `WorkbenchContext.tsx`, and new owner symbols introduced in runtime v2.
-- [ ] 4.7 STOP FOR REVIEW before adding fetch plan or loader wrapper parity.
+- [x] 4.1 Implement market view identity parity in `marketViewRuntime.ts` using existing helper identity semantics.
+- [x] 4.2 Implement market focus and coverage window parity in `marketWindowRuntime.ts`, including trade-centered/tail reset behavior.
+- [x] 4.3 Add old-vs-new debug comparison for market identity, focus window, coverage window, window keys, and reset reasons.
+- [x] 4.4 Verify production-mounted runtime v2 performs no network fetches, no production `marketResourceCache` writes, and no bundle/cache mutation in Phase 3A.
+- [x] 4.5 Run identity/window parity tests and document any reviewed differences.
+- [x] 4.6 Record Phase 3A complexity/ownership report: line count of every new runtime module, current `WorkbenchContext.tsx` line count, old owner symbols still present in `WorkbenchContext.tsx`, and new owner symbols introduced in runtime v2.
+- [x] 4.7 STOP FOR REVIEW before adding fetch plan or loader wrapper parity.
 
 ### Phase 3B - Fetch Plan and Loader Wrapper in Isolated Test Harness
 

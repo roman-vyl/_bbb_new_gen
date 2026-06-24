@@ -1,6 +1,8 @@
 import { buildChartViewModel } from "@/features/chart/runtime/chartViewModel";
 
 import { createEmptyRuntimeDebugSnapshot } from "./runtimeDebug";
+import { resolveMarketViewRuntime } from "./marketViewRuntime";
+import { resolveMarketWindowRuntime } from "./marketWindowRuntime";
 import type { ChartRuntimeInput, ChartRuntimeOutput } from "./runtimeTypes";
 
 function noop(): void {
@@ -8,6 +10,13 @@ function noop(): void {
 }
 
 export function createInitialChartRuntimeOutput(input: ChartRuntimeInput): ChartRuntimeOutput {
+  const marketView = resolveMarketViewRuntime(input);
+  const marketWindow = resolveMarketWindowRuntime({
+    view: marketView.view,
+    marketIdentity: marketView.marketIdentity,
+    expectedMarketIdentity: marketView.expectedMarketIdentity,
+    selectedTradeEntryTimeMs: input.selectedTradeEntryTimeMs,
+  });
   const chartViewModel = buildChartViewModel({
     candles: [],
     emaOverlays: [],
@@ -49,13 +58,26 @@ export function createInitialChartRuntimeOutput(input: ChartRuntimeInput): Chart
       settleWindowSwapCommit: noop,
     },
     interaction: { dispatch: noop },
-    debug: createEmptyRuntimeDebugSnapshot({
-      runId: input.selectedRunId,
-      variantKey: input.selectedVariantKey,
-      selectedTradeId: input.selectedTradeId,
-      selectedTradeEntryTimeMs: input.selectedTradeEntryTimeMs,
-      chartHeavyIoEnabled: input.chartHeavyIoEnabled,
-    }),
+    debug: {
+      ...createEmptyRuntimeDebugSnapshot({
+        runId: input.selectedRunId,
+        variantKey: input.selectedVariantKey,
+        selectedTradeId: input.selectedTradeId,
+        selectedTradeEntryTimeMs: input.selectedTradeEntryTimeMs,
+        chartHeavyIoEnabled: input.chartHeavyIoEnabled,
+      }),
+      marketIdentity: marketView.marketIdentity,
+      expectedMarketIdentity: marketView.expectedMarketIdentity,
+      focusWindow: marketWindow.focusWindow,
+      coverageWindow: marketWindow.coverageWindow,
+      marketWindowKeys: {
+        focus: marketWindow.focusWindowKey,
+        coverage: marketWindow.coverageWindowKey,
+      },
+      marketWindowResetKey: marketWindow.resetKey,
+      marketWindowFocusMode: marketWindow.focusMode,
+      marketWindowResetReasons: marketWindow.resetReasons,
+    },
   };
 }
 

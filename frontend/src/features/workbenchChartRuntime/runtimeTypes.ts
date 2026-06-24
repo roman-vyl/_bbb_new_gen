@@ -74,6 +74,36 @@ export type ChartRuntimeOwnerFlags = {
   finalChartModel: boolean;
 };
 
+export type RuntimeMarketWindowResetReason =
+  | "view_unavailable"
+  | "initial_focus"
+  | "identity_changed"
+  | "selected_trade_changed"
+  | "focus_window_changed"
+  | "coverage_window_initialized"
+  | "coverage_window_reset_to_focus"
+  | "unchanged";
+
+export type RuntimeMarketWindowSnapshot = {
+  marketIdentity: string | null;
+  expectedMarketIdentity: string | null;
+  selectedTradeEntryTimeMs: number | null;
+  focusWindow: { fromMs: number; toMs: number; toOpenTimeMs: number } | null;
+  coverageWindow: { fromMs: number; toMs: number; toOpenTimeMs: number } | null;
+  focusWindowKey: string | null;
+  coverageWindowKey: string | null;
+  resetKey: string | null;
+  focusMode: "tail" | "around-trade" | null;
+  resetReasons: RuntimeMarketWindowResetReason[];
+};
+
+export type RuntimeMarketWindowComparison = {
+  matches: boolean;
+  differences: string[];
+  oldSnapshot: RuntimeMarketWindowSnapshot;
+  newSnapshot: RuntimeMarketWindowSnapshot;
+};
+
 export type ChartRuntimeDebugSnapshot = {
   runId: string | null;
   variantKey: string;
@@ -81,8 +111,14 @@ export type ChartRuntimeDebugSnapshot = {
   selectedTradeEntryTimeMs: number | null;
   chartHeavyIoEnabled: boolean;
   marketIdentity: string | null;
+  expectedMarketIdentity: string | null;
   focusWindow: { fromMs: number; toMs: number; toOpenTimeMs: number } | null;
   coverageWindow: { fromMs: number; toMs: number; toOpenTimeMs: number } | null;
+  marketWindowKeys: { focus: string | null; coverage: string | null };
+  marketWindowResetKey: string | null;
+  marketWindowFocusMode: "tail" | "around-trade" | null;
+  marketWindowResetReasons: RuntimeMarketWindowResetReason[];
+  marketWindowComparison: RuntimeMarketWindowComparison | null;
   fetchedCandles: { range: { min: number; max: number } | null; count: number };
   cachedCandles: { range: { min: number; max: number } | null; count: number };
   displayBundle: { range: { min: number; max: number } | null; count: number; source: string | null };
