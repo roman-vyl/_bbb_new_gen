@@ -142,7 +142,22 @@ Current `WorkbenchChartState` field disposition:
 | aux/HTF overlays | provider `auxEmaOverlays` and frozen refs | `auxOverlayRuntime` | two BFF aux fetchers or frozen HTF stores | duplicate aux series ids or stale flag mismatch |
 | final chart model | provider `buildChartViewModel()` memo | `chartModelRuntime` | model from old path and status from new path | model candle count disagrees with runtime market count/source |
 
-During build-beside phases, new runtime may compute shadow/debug output only when it does not write shared caches, dispatch ChartPanel events, emit production viewport commands, or mutate production context values.
+During build-beside phases, runtime v2 in the production-mounted Workbench may only:
+
+- compute market identity, focus/coverage windows, request keys, render ranges, chart model candidates, and debug snapshots;
+- read current working-pipeline snapshots for comparison;
+- run isolated test harnesses with mocks, stubs, or isolated cache instances.
+
+Before cutover, runtime v2 in the production-mounted Workbench must not:
+
+- write to production `marketResourceCache`;
+- perform production network fetches;
+- merge into production trace display cache or session trace cache;
+- emit production viewport commands;
+- receive live `ChartPanel` interaction dispatch as an active owner;
+- mutate production chart context values.
+
+If real market/trace loading parity is needed before cutover, it must run in an isolated test harness, not in production-mounted Workbench.
 
 ## 5. Build-Beside and Cutover Strategy
 
@@ -150,6 +165,8 @@ During build-beside phases, new runtime may compute shadow/debug output only whe
 - The new runtime is built under `frontend/src/features/workbenchChartRuntime/`.
 - Before cutover, production Chart tab remains controlled by the current `WorkbenchContext.tsx` pipeline.
 - Shadow/debug output is allowed only when it does not create a second active owner for mutable domains.
+- Before cutover, production-mounted runtime v2 may compute identity/windows/fetch plans and debug snapshots, but it must not write production market/trace caches, perform production network fetches, emit viewport commands, receive live `ChartPanel` interactions as an active owner, or mutate production chart context values.
+- Real loader parity before cutover must be proven in isolated test harnesses with mocks/stubs or isolated caches.
 - Parity is checked through debug snapshots, existing tests, new contract tests, and manual smoke gates.
 - Cutover is atomic: provider switches Chart context output to the new runtime output through `runtimeOutputAdapter`.
 - After cutover and review, old chart/runtime code in `WorkbenchContext.tsx` is deleted rather than retained as fallback.
@@ -226,6 +243,8 @@ The snapshot is required for parity review and smoke debugging. It must not muta
 - If new runtime grows but `WorkbenchContext.tsx` does not shrink after cutover, the phase failed.
 - After deleting old chart runtime code, `WorkbenchContext.tsx` should be at least 1000 lines smaller than the 3096-line baseline unless review approves a different target.
 - `runtimeOutputAdapter.ts` must remain a mapping layer, not a hidden orchestrator.
+- Each implementation phase review must include a complexity/ownership report with line count for every new runtime module, current `WorkbenchContext.tsx` line count, old owner symbols still present in `WorkbenchContext.tsx`, and new owner symbols introduced in runtime v2.
+- `useWorkbenchChartRuntime.ts` crossing 500 lines is an immediate split-before-continue blocker unless OpenSpec review approves a specific exception.
 
 ## 10. Testing Strategy
 
@@ -309,11 +328,13 @@ Gaps that cannot remain before switch:
 1. Lock baseline from `main`.
 2. Approve OpenSpec.
 3. Add runtime contracts and skeleton with no production wiring.
-4. Add market runtime parity in debug/shadow mode without duplicate active fetch ownership.
-5. Add render/display/viewport parity in debug/shadow mode.
-6. Add trace/events/overlays/chart-model parity and complete `ChartRuntimeOutput`.
-7. Atomically cut Chart tab to new runtime.
-8. Delete old chart/runtime pipeline from `WorkbenchContext.tsx`.
-9. Remove temporary shadow/comparison code and shrink compatibility API.
+4. Add market identity/window parity only, with no fetch or cache writes.
+5. Add market fetch plan and loader wrapper parity only in isolated test harnesses.
+6. Add market bundle/fallback/source/count parity without production-mounted writes.
+7. Add render/display/viewport parity in debug/shadow mode.
+8. Add trace/events/overlays/chart-model parity and complete `ChartRuntimeOutput`.
+9. Atomically cut Chart tab to new runtime.
+10. Delete old chart/runtime pipeline from `WorkbenchContext.tsx`.
+11. Remove temporary shadow/comparison code and shrink compatibility API.
 
 Rollback before cutover is simply to keep using the current working pipeline. After cutover, rollback is reverting the cutover commit, not keeping a permanent fallback.

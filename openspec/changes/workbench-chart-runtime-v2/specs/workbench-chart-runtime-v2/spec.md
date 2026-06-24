@@ -24,7 +24,9 @@ Temporary compatibility fields MAY be provided by an adapter, but they MUST be d
 
 Runtime v2 SHALL be built in `frontend/src/features/workbenchChartRuntime/` beside the current working pipeline. Before cutover, the current `main` pipeline SHALL remain the production owner for the Chart tab.
 
-Shadow/debug comparison output MAY be produced before cutover only when it does not write shared market or trace caches, does not emit production viewport commands, does not receive live `ChartPanel` interaction dispatch as an active owner, and does not mutate production chart context values.
+Before cutover, production-mounted runtime v2 MAY compute identity, windows, fetch plans, candidate ranges, and debug snapshots. It MAY read current working-pipeline snapshots for comparison. It MAY exercise real loader behavior only in isolated test harnesses that use mocks, stubs, or isolated cache instances.
+
+Before cutover, production-mounted runtime v2 MUST NOT write production `marketResourceCache`, perform production network fetches, merge into production trace display/session caches, emit production viewport commands, receive live `ChartPanel` interaction dispatch as an active owner, or mutate production chart context values.
 
 #### Scenario: Shadow runtime has no production ownership
 
@@ -32,6 +34,13 @@ Shadow/debug comparison output MAY be produced before cutover only when it does 
 - **WHEN** the user opens Chart and interacts with pan, trade selection, context overlays, or variant switching
 - **THEN** the current working pipeline remains the only production owner for Chart tab behavior
 - **AND** runtime v2 shadow output is limited to debug/parity data that cannot mutate production chart domains
+
+#### Scenario: Pre-cutover loader parity is isolated
+
+- **GIVEN** runtime v2 market loader parity is being tested before cutover
+- **WHEN** the test exercises fetch planning, loader lifecycle, cache writes, aborts, dedupe, status, and revisions
+- **THEN** the exercise runs in an isolated test harness with mocks, stubs, or isolated caches
+- **AND** production-mounted Workbench does not perform runtime v2 network fetches or production cache writes
 
 #### Scenario: Cutover is atomic
 
