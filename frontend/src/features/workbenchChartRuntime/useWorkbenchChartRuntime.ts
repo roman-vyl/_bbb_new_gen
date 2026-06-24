@@ -1,6 +1,7 @@
 import { buildChartViewModel } from "@/features/chart/runtime/chartViewModel";
 
 import { createEmptyRuntimeDebugSnapshot } from "./runtimeDebug";
+import { resolveMarketBundleRuntime } from "./marketBundleRuntime";
 import {
   resolveMarketFetchPlanRuntime,
   toRuntimeMarketFetchPlanDebug,
@@ -29,6 +30,18 @@ export function createInitialChartRuntimeOutput(input: ChartRuntimeInput): Chart
           view: marketView.view,
           focusWindow: marketWindow.focusWindow,
           coverageWindow: marketWindow.coverageWindow,
+        })
+      : null;
+  const marketBundle =
+    marketView.view !== null &&
+    marketWindow.focusWindow !== null &&
+    marketWindow.coverageWindow !== null
+      ? resolveMarketBundleRuntime({
+          view: marketView.view,
+          focusWindow: marketWindow.focusWindow,
+          coverageWindow: marketWindow.coverageWindow,
+          focusWindowKey: marketWindow.focusWindowKey,
+          marketLoadStatus: "idle",
         })
       : null;
   const chartViewModel = buildChartViewModel({
@@ -92,6 +105,13 @@ export function createInitialChartRuntimeOutput(input: ChartRuntimeInput): Chart
       marketWindowFocusMode: marketWindow.focusMode,
       marketWindowResetReasons: marketWindow.resetReasons,
       marketFetchPlan: toRuntimeMarketFetchPlanDebug(marketFetchPlan),
+      fetchedCandles: marketBundle?.debug.fetchedCandles ?? { range: null, count: 0 },
+      cachedCandles: marketBundle?.debug.cachedCandles ?? { range: null, count: 0 },
+      displayBundle: marketBundle?.debug.displayBundle ?? {
+        range: null,
+        count: 0,
+        source: null,
+      },
     },
   };
 }

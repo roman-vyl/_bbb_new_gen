@@ -67,13 +67,13 @@
 
 ### Phase 3C - Bundle, Fallback, Source, and Count Parity
 
-- [ ] 4.14 Implement display bundle composition parity in `marketBundleRuntime.ts` using snapshots or isolated seeded caches before cutover.
-- [ ] 4.15 Verify focus fallback behavior, candles source, candle count, full candle range, bundle range, and foundation key parity.
-- [ ] 4.16 Verify production-mounted runtime v2 reads comparison/debug data only and does not mutate production chart context values.
-- [ ] 4.17 Verify there is no duplicate active market fetch owner and no second `marketResourceCache` implementation.
-- [ ] 4.18 Run market helper, bundle, and runtime parity tests.
-- [ ] 4.19 Record Phase 3C complexity/ownership report: line count of every new runtime module, current `WorkbenchContext.tsx` line count, old owner symbols still present in `WorkbenchContext.tsx`, and new owner symbols introduced in runtime v2.
-- [ ] 4.20 STOP FOR REVIEW before display/render/viewport parity.
+- [x] 4.14 Implement display bundle composition parity in `marketBundleRuntime.ts` using snapshots or isolated seeded caches before cutover.
+- [x] 4.15 Verify focus fallback behavior, candles source, candle count, full candle range, bundle range, and foundation key parity.
+- [x] 4.16 Verify production-mounted runtime v2 reads comparison/debug data only and does not mutate production chart context values.
+- [x] 4.17 Verify there is no duplicate active market fetch owner and no second `marketResourceCache` implementation.
+- [x] 4.18 Run market helper, bundle, and runtime parity tests.
+- [x] 4.19 Record Phase 3C complexity/ownership report: line count of every new runtime module, current `WorkbenchContext.tsx` line count, old owner symbols still present in `WorkbenchContext.tsx`, and new owner symbols introduced in runtime v2.
+- [x] 4.20 STOP FOR REVIEW before display/render/viewport parity.
 
 ## 5. Phase 4 - Display, Render, and Viewport Parity
 
