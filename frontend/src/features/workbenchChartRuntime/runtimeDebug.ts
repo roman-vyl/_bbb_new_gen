@@ -42,6 +42,7 @@ export function createEmptyRuntimeDebugSnapshot(params: {
     marketWindowFocusMode: null,
     marketWindowResetReasons: [],
     marketWindowComparison: null,
+    marketFetchPlan: null,
     fetchedCandles: emptyRangeCount,
     cachedCandles: emptyRangeCount,
     displayBundle: { ...emptyRangeCount, source: null },

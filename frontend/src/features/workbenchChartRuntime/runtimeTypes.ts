@@ -104,6 +104,14 @@ export type RuntimeMarketWindowComparison = {
   newSnapshot: RuntimeMarketWindowSnapshot;
 };
 
+export type RuntimeMarketFetchPlanDebug = {
+  focusCandlesReady: boolean;
+  coverageCandlesReady: boolean;
+  candlesInFlightKey: string | null;
+  emaInFlightKeys: string[];
+  plannedFetchCount: number;
+};
+
 export type ChartRuntimeDebugSnapshot = {
   runId: string | null;
   variantKey: string;
@@ -119,6 +127,7 @@ export type ChartRuntimeDebugSnapshot = {
   marketWindowFocusMode: "tail" | "around-trade" | null;
   marketWindowResetReasons: RuntimeMarketWindowResetReason[];
   marketWindowComparison: RuntimeMarketWindowComparison | null;
+  marketFetchPlan: RuntimeMarketFetchPlanDebug | null;
   fetchedCandles: { range: { min: number; max: number } | null; count: number };
   cachedCandles: { range: { min: number; max: number } | null; count: number };
   displayBundle: { range: { min: number; max: number } | null; count: number; source: string | null };

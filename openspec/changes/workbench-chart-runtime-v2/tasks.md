@@ -58,12 +58,12 @@
 
 ### Phase 3B - Fetch Plan and Loader Wrapper in Isolated Test Harness
 
-- [ ] 4.8 Implement fetch plan parity for candles and EMA windows without production-mounted network calls.
-- [ ] 4.9 Implement loader wrapper parity in isolated test harnesses only, using mocks/stubs or isolated cache instances for abort, generation, in-flight dedupe, status/error, and revision semantics.
-- [ ] 4.10 Verify production-mounted runtime v2 still does not write production `marketResourceCache`, perform production network fetches, or become market load status owner.
-- [ ] 4.11 Verify isolated harness covers cold load, cache hit, missing range, abort/stale response, duplicate in-flight key, and EMA/candles independent readiness.
-- [ ] 4.12 Record Phase 3B complexity/ownership report: line count of every new runtime module, current `WorkbenchContext.tsx` line count, old owner symbols still present in `WorkbenchContext.tsx`, and new owner symbols introduced in runtime v2.
-- [ ] 4.13 STOP FOR REVIEW before bundle/fallback/source/count parity.
+- [x] 4.8 Implement fetch plan parity for candles and EMA windows without production-mounted network calls.
+- [x] 4.9 Implement loader wrapper parity in isolated test harnesses only, using mocks/stubs or isolated cache instances for abort, generation, in-flight dedupe, status/error, and revision semantics.
+- [x] 4.10 Verify production-mounted runtime v2 still does not write production `marketResourceCache`, perform production network fetches, or become market load status owner.
+- [x] 4.11 Verify isolated harness covers cold load, cache hit, missing range, abort/stale response, duplicate in-flight key, and EMA/candles independent readiness.
+- [x] 4.12 Record Phase 3B complexity/ownership report: line count of every new runtime module, current `WorkbenchContext.tsx` line count, old owner symbols still present in `WorkbenchContext.tsx`, and new owner symbols introduced in runtime v2.
+- [x] 4.13 STOP FOR REVIEW before bundle/fallback/source/count parity.
 
 ### Phase 3C - Bundle, Fallback, Source, and Count Parity
 

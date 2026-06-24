@@ -1,6 +1,10 @@
 import { buildChartViewModel } from "@/features/chart/runtime/chartViewModel";
 
 import { createEmptyRuntimeDebugSnapshot } from "./runtimeDebug";
+import {
+  resolveMarketFetchPlanRuntime,
+  toRuntimeMarketFetchPlanDebug,
+} from "./marketFetchPlanRuntime";
 import { resolveMarketViewRuntime } from "./marketViewRuntime";
 import { resolveMarketWindowRuntime } from "./marketWindowRuntime";
 import type { ChartRuntimeInput, ChartRuntimeOutput } from "./runtimeTypes";
@@ -17,6 +21,16 @@ export function createInitialChartRuntimeOutput(input: ChartRuntimeInput): Chart
     expectedMarketIdentity: marketView.expectedMarketIdentity,
     selectedTradeEntryTimeMs: input.selectedTradeEntryTimeMs,
   });
+  const marketFetchPlan =
+    marketView.view !== null &&
+    marketWindow.focusWindow !== null &&
+    marketWindow.coverageWindow !== null
+      ? resolveMarketFetchPlanRuntime({
+          view: marketView.view,
+          focusWindow: marketWindow.focusWindow,
+          coverageWindow: marketWindow.coverageWindow,
+        })
+      : null;
   const chartViewModel = buildChartViewModel({
     candles: [],
     emaOverlays: [],
@@ -77,6 +91,7 @@ export function createInitialChartRuntimeOutput(input: ChartRuntimeInput): Chart
       marketWindowResetKey: marketWindow.resetKey,
       marketWindowFocusMode: marketWindow.focusMode,
       marketWindowResetReasons: marketWindow.resetReasons,
+      marketFetchPlan: toRuntimeMarketFetchPlanDebug(marketFetchPlan),
     },
   };
 }

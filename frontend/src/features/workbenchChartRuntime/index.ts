@@ -4,6 +4,8 @@ export * from "./chartModelRuntime";
 export * from "./chartWindowRuntime";
 export * from "./interactionRuntime";
 export * from "./marketBundleRuntime";
+export * from "./marketFetchPlanRuntime";
+export * from "./marketLoadHarness";
 export * from "./marketLoadRuntime";
 export * from "./marketViewRuntime";
 export * from "./marketWindowRuntime";
