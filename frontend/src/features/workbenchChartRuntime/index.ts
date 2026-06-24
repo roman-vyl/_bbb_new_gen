@@ -16,7 +16,7 @@ export * from "./runtimeDebug";
 export * from "./runtimeInputAdapter";
 export * from "./runtimeOutputAdapter";
 export * from "./runtimeTypes";
-export * from "./traceDisplayRuntime";
+export * from "./traceEventsOverlaysHarness";
 export * from "./traceRuntime";
 export * from "./useWorkbenchChartRuntime";
 export * from "./viewportRuntime";

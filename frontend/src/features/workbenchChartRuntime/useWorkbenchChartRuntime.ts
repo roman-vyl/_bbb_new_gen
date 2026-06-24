@@ -9,6 +9,7 @@ import {
 } from "./marketFetchPlanRuntime";
 import { resolveMarketViewRuntime } from "./marketViewRuntime";
 import { resolveMarketWindowRuntime } from "./marketWindowRuntime";
+import { resolveTraceEventsOverlaysShadow } from "./traceEventsOverlaysHarness";
 import type { ChartRuntimeInput, ChartRuntimeOutput } from "./runtimeTypes";
 
 function noop(): void {
@@ -53,24 +54,55 @@ export function createInitialChartRuntimeOutput(input: ChartRuntimeInput): Chart
     marketIdentity: marketView.marketIdentity,
   });
 
-  const chartViewModel = buildChartViewModel({
-    candles: displayRenderViewport.chartWindow.parts.candles,
-    emaOverlays: displayRenderViewport.chartWindow.parts.emaOverlays,
-    auxEmaOverlays: displayRenderViewport.chartWindow.parts.auxEmaOverlays,
-    displayAuxEmaOverlays: displayRenderViewport.chartWindow.parts.auxEmaOverlays,
-    componentEvents: [],
-    htfOverlayStale: false,
-    componentEventsStale: false,
-    traceDisplayStatus: "empty",
-    traceDisplayMissingRange: null,
-    viewMode: displayRenderViewport.chartWindow.count > 0 ? "tail" : "empty",
-    centerTimeSec: input.selectedTradeEntryTimeMs !== null
-      ? Math.floor(input.selectedTradeEntryTimeMs / 1000)
-      : null,
-    firstTimeSec: displayRenderViewport.chartWindow.firstTimeSec,
-    lastTimeSec: displayRenderViewport.chartWindow.lastTimeSec,
-    count: displayRenderViewport.chartWindow.count,
-  });
+  const traceEventsOverlays =
+    marketView.view !== null &&
+    marketWindow.focusWindow !== null &&
+    marketWindow.coverageWindow !== null
+      ? resolveTraceEventsOverlaysShadow({
+          report: input.report,
+          variant: input.selectedVariant,
+          bundle: marketBundle?.bundle ?? null,
+          foundationKey: marketBundle?.foundationKey ?? null,
+          view: marketView.view,
+          focusWindow: marketWindow.focusWindow,
+          coverageWindow: marketWindow.coverageWindow,
+          marketIdentity: marketView.marketIdentity,
+          chartTimeframe: input.chartTimeframe,
+          effectiveContextOverlayRef: input.effectiveContextOverlayRef,
+          reloadToken: input.reloadToken,
+          marketLoadStatus: "idle",
+          selectedTradeEntryTimeMs: input.selectedTradeEntryTimeMs,
+        })
+      : null;
+
+  const chartViewModel =
+    traceEventsOverlays?.chartModel.implemented
+      ? traceEventsOverlays.chartModel.chartViewModel
+      : buildChartViewModel({
+          candles: displayRenderViewport.chartWindow.parts.candles,
+          emaOverlays: displayRenderViewport.chartWindow.parts.emaOverlays,
+          auxEmaOverlays: displayRenderViewport.chartWindow.parts.auxEmaOverlays,
+          displayAuxEmaOverlays: displayRenderViewport.chartWindow.parts.auxEmaOverlays,
+          componentEvents: [],
+          htfOverlayStale: false,
+          componentEventsStale: false,
+          traceDisplayStatus: "empty",
+          traceDisplayMissingRange: null,
+          viewMode: displayRenderViewport.chartWindow.count > 0 ? "tail" : "empty",
+          centerTimeSec:
+            input.selectedTradeEntryTimeMs !== null
+              ? Math.floor(input.selectedTradeEntryTimeMs / 1000)
+              : null,
+          firstTimeSec: displayRenderViewport.chartWindow.firstTimeSec,
+          lastTimeSec: displayRenderViewport.chartWindow.lastTimeSec,
+          count: displayRenderViewport.chartWindow.count,
+        });
+
+  const traceOutput = traceEventsOverlays?.trace.trace ?? {
+    lanesSignalTrace: null,
+    lanesSignalTraceStatus: "idle" as const,
+    lanesSignalTraceError: null,
+  };
 
   return {
     chartViewModel,
@@ -81,13 +113,15 @@ export function createInitialChartRuntimeOutput(input: ChartRuntimeInput): Chart
       candlesCount: 0,
       fullCandleRange: null,
     },
-    trace: {
-      lanesSignalTrace: null,
-      lanesSignalTraceStatus: "idle",
-      lanesSignalTraceError: null,
+    trace: traceOutput,
+    overlays: {
+      htfAuxEmaOverlayStale: traceEventsOverlays?.auxOverlay.htfAuxEmaOverlayStale ?? false,
     },
-    overlays: { htfAuxEmaOverlayStale: false },
-    display: { componentEventsStale: false, displayApplyRevision: 0, renderWindowShiftSeq: 0 },
+    display: {
+      componentEventsStale: traceEventsOverlays?.traceDisplay.componentEventsStale ?? false,
+      displayApplyRevision: traceEventsOverlays?.traceDisplay.displayApplyRevision ?? 0,
+      renderWindowShiftSeq: displayRenderViewport.renderWindow.shiftSeq,
+    },
     viewport: {
       command: null,
       commandSeq: 0,
@@ -103,6 +137,7 @@ export function createInitialChartRuntimeOutput(input: ChartRuntimeInput): Chart
         selectedTradeId: input.selectedTradeId,
         selectedTradeEntryTimeMs: input.selectedTradeEntryTimeMs,
         chartHeavyIoEnabled: input.chartHeavyIoEnabled,
+        traceStatus: traceOutput.lanesSignalTraceStatus,
       }),
       marketIdentity: marketView.marketIdentity,
       expectedMarketIdentity: marketView.expectedMarketIdentity,
@@ -130,10 +165,35 @@ export function createInitialChartRuntimeOutput(input: ChartRuntimeInput): Chart
         lastTimeSec: displayRenderViewport.renderWindow.lastTimeSec,
       },
       chartModel: {
-        firstTimeSec: displayRenderViewport.chartWindow.firstTimeSec,
-        lastTimeSec: displayRenderViewport.chartWindow.lastTimeSec,
-        count: displayRenderViewport.chartWindow.count,
-        seriesKey: displayRenderViewport.chartWindow.seriesKey,
+        firstTimeSec:
+          traceEventsOverlays?.chartModel.chartViewModel.firstTimeSec ??
+          displayRenderViewport.chartWindow.firstTimeSec,
+        lastTimeSec:
+          traceEventsOverlays?.chartModel.chartViewModel.lastTimeSec ??
+          displayRenderViewport.chartWindow.lastTimeSec,
+        count:
+          traceEventsOverlays?.chartModel.chartViewModel.count ??
+          displayRenderViewport.chartWindow.count,
+        seriesKey:
+          traceEventsOverlays?.chartModel.chartViewModel.seriesKey ??
+          displayRenderViewport.chartWindow.seriesKey,
+      },
+      traceRequests: {
+        displayKey: traceEventsOverlays?.trace.displayRequestKey ?? null,
+        denseKey: traceEventsOverlays?.trace.denseRequestKey ?? null,
+        status: traceOutput.lanesSignalTraceStatus,
+      },
+      counts: {
+        componentEvents: traceEventsOverlays?.traceDisplay.componentEvents.length ?? 0,
+        auxOverlays:
+          traceEventsOverlays?.auxOverlay.implemented
+            ? traceEventsOverlays.auxOverlay.auxOverlayCount
+            : traceEventsOverlays?.auxOverlay.auxEmaOverlays.length ?? 0,
+        htfOverlays:
+          traceEventsOverlays?.auxOverlay.implemented
+            ? traceEventsOverlays.auxOverlay.htfOverlayCount
+            : 0,
+        markers: null,
       },
     },
   };

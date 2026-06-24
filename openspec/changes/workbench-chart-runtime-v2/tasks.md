@@ -91,18 +91,18 @@
 
 ## 6. Phase 5 - Trace, Events, Overlays, and Chart-Model Parity
 
-- [ ] 6.1 Implement `traceDisplayRuntime.ts` parity for display cache reset, chunk scheduling, display apply, stale retention, missing range, and revisions.
-- [ ] 6.2 Implement `traceRuntime.ts` parity for bootstrap, request keys, coordinator, abort/generation, dense lanes state, session cache, and lanes-scoped status/error.
-- [ ] 6.3 Implement `chartEventsRuntime.ts` parity for chart-events enabled path, disabled path, fallback path, and display merge decisions.
-- [ ] 6.4 Implement `auxOverlayRuntime.ts` parity for BFF aux EMA, HTF trace overlays, frozen/stale behavior, context overlay invalidation, and display slicing.
-- [ ] 6.5 Implement `chartModelRuntime.ts` parity for complete `ChartRuntimeOutput.chartViewModel`.
-- [ ] 6.6 Add debug snapshot fields for trace request keys/status, chart-events/component event counts, aux/HTF overlay counts, marker/event counts, and owner flags.
-- [ ] 6.7 Verify new runtime can produce a complete candidate `ChartRuntimeOutput` from snapshots or isolated harness inputs without production cache writes, production trace cache merges, production network fetches, viewport commands, or production context mutation.
-- [ ] 6.8 Compare markers/events/overlays counts against the current working pipeline and document reviewed differences.
-- [ ] 6.9 Cover chart-events enabled and disabled/fallback paths with tests.
-- [ ] 6.10 Verify HTF context EMA overlays on a variant with `strategy.contexts`.
-- [ ] 6.11 Record Phase 5 complexity/ownership report: line count of every new runtime module, current `WorkbenchContext.tsx` line count, old owner symbols still present in `WorkbenchContext.tsx`, and new owner symbols introduced in runtime v2.
-- [ ] 6.12 STOP FOR REVIEW before atomic Chart tab cutover.
+- [x] 6.1 Implement `traceDisplayRuntime.ts` parity for display cache reset, chunk scheduling, display apply, stale retention, missing range, and revisions.
+- [x] 6.2 Implement `traceRuntime.ts` parity for bootstrap, request keys, coordinator, abort/generation, dense lanes state, session cache, and lanes-scoped status/error.
+- [x] 6.3 Implement `chartEventsRuntime.ts` parity for chart-events enabled path, disabled path, fallback path, and display merge decisions.
+- [x] 6.4 Implement `auxOverlayRuntime.ts` parity for BFF aux EMA, HTF trace overlays, frozen/stale behavior, context overlay invalidation, and display slicing.
+- [x] 6.5 Implement `chartModelRuntime.ts` parity for complete `ChartRuntimeOutput.chartViewModel`.
+- [x] 6.6 Add debug snapshot fields for trace request keys/status, chart-events/component event counts, aux/HTF overlay counts, marker/event counts, and owner flags.
+- [x] 6.7 Verify new runtime can produce a complete candidate `ChartRuntimeOutput` from snapshots or isolated harness inputs without production cache writes, production trace cache merges, production network fetches, viewport commands, or production context mutation.
+- [x] 6.8 Compare markers/events/overlays counts against the current working pipeline and document reviewed differences.
+- [x] 6.9 Cover chart-events enabled and disabled/fallback paths with tests.
+- [x] 6.10 Verify HTF context EMA overlays on a variant with `strategy.contexts`.
+- [x] 6.11 Record Phase 5 complexity/ownership report: line count of every new runtime module, current `WorkbenchContext.tsx` line count, old owner symbols still present in `WorkbenchContext.tsx`, and new owner symbols introduced in runtime v2.
+- [x] 6.12 STOP FOR REVIEW before atomic Chart tab cutover.
 
 ## 7. Phase 6 - Atomic Chart Tab Cutover
 
