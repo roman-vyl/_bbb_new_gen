@@ -62,7 +62,7 @@ function bumpRenderWindow(controller: RenderWindowRuntimeController): void {
   controller.revision += 1;
 }
 
-/** Mirrors WorkbenchContext render-window init effect. */
+/** Mirrors WorkbenchContext render-window init effect. Returns true when init ran. */
 export function initializeRenderWindowRuntime(
   controller: RenderWindowRuntimeController,
   input: {
@@ -71,7 +71,7 @@ export function initializeRenderWindowRuntime(
     bundleCandles: readonly ChartBar[];
     selectedTradeEntryTimeMs: number | null;
   },
-): void {
+): boolean {
   if (input.marketLoadStatus === "error" || input.foundationKey === null) {
     if (input.marketLoadStatus === "error") {
       controller.chartRuntime.reset();
@@ -79,11 +79,15 @@ export function initializeRenderWindowRuntime(
       bumpRenderWindow(controller);
     }
     controller.foundationKey = null;
-    return;
+    return input.marketLoadStatus === "error";
   }
 
   if (input.bundleCandles.length === 0) {
-    return;
+    return false;
+  }
+
+  if (controller.foundationKey === input.foundationKey) {
+    return false;
   }
 
   controller.foundationKey = input.foundationKey;
@@ -99,6 +103,7 @@ export function initializeRenderWindowRuntime(
     manager.buildTailWindow();
     bumpRenderWindow(controller);
   }
+  return true;
 }
 
 /** Mirrors WorkbenchContext applyRenderWindowForTrade. */

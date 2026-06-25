@@ -20,8 +20,10 @@ import {
 } from "./chartEventsRuntime";
 import {
   chartWindowKeyFromCandles,
+  createChartModelStabilizeCache,
   resolveChartModelRuntime,
   type ChartModelRuntimeBoundary,
+  type ChartModelStabilizeCache,
 } from "./chartModelRuntime";
 import {
   createDisplayRenderViewportHarness,
@@ -62,6 +64,7 @@ export type TraceEventsOverlaysHarnessContext = {
   reloadToken: number;
   marketIdentity: string;
   marketLoadStatus: RuntimeLoadStatus;
+  chartModelCache: ChartModelStabilizeCache;
 };
 
 export type TraceEventsOverlaysSnapshot = {
@@ -163,6 +166,7 @@ export function createTraceEventsOverlaysHarness(input: {
     reloadToken,
     marketIdentity: input.marketIdentity,
     marketLoadStatus,
+    chartModelCache: createChartModelStabilizeCache(),
   };
 
   function resolveSnapshot(): TraceEventsOverlaysSnapshot {
@@ -176,13 +180,13 @@ export function createTraceEventsOverlaysHarness(input: {
     );
     const renderWindowBounds = candleTimeBounds(candles);
 
-    const traceDisplay = resolveTraceDisplayRuntimeSnapshot(
+    applyTraceDisplayForWindow(
       context.traceDisplayController,
       candles,
       context.traceController.lanesStatus,
     );
 
-    applyTraceDisplayForWindow(
+    const traceDisplay = resolveTraceDisplayRuntimeSnapshot(
       context.traceDisplayController,
       candles,
       context.traceController.lanesStatus,
@@ -255,6 +259,7 @@ export function createTraceEventsOverlaysHarness(input: {
       firstTimeSec: displayRender.chartWindow.firstTimeSec,
       lastTimeSec: displayRender.chartWindow.lastTimeSec,
       count: displayRender.chartWindow.count,
+      stabilizeCache: context.chartModelCache,
     });
 
     const chartEvents = resolveChartEventsRuntimeSnapshot({

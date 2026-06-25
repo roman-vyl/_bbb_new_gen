@@ -48,6 +48,7 @@ export type DisplayRenderViewportHarnessContext = {
   auxEmaOverlays: ChartAuxEmaOverlay[];
   stabilizeCaches: ReturnType<typeof createChartWindowStabilizeCaches>;
   previousBundleFirstTimeSec: number | null;
+  selectedTradeEntryTimeMs: number | null;
 };
 
 export type DisplayRenderViewportSnapshot = {
@@ -112,11 +113,13 @@ export function createDisplayRenderViewportHarness(input: {
     auxEmaOverlays: input.auxEmaOverlays ?? [],
     stabilizeCaches: createChartWindowStabilizeCaches(),
     previousBundleFirstTimeSec: null,
+    selectedTradeEntryTimeMs: null,
   };
 
   const harness: DisplayRenderViewportHarness = {
     context,
     initialize(selectedTradeEntryTimeMs) {
+      context.selectedTradeEntryTimeMs = selectedTradeEntryTimeMs;
       initializeRenderWindowRuntime(context.renderController, {
         foundationKey: context.foundationKey,
         marketLoadStatus: context.marketLoadStatus,
@@ -126,6 +129,7 @@ export function createDisplayRenderViewportHarness(input: {
       return harness.resolveSnapshot();
     },
     applyTradeFocus(selectedTradeEntryTimeMs, forceRebuild = false) {
+      context.selectedTradeEntryTimeMs = selectedTradeEntryTimeMs;
       applyRenderWindowForTradeRuntime(context.renderController, {
         bundleCandles: context.bundle.candles,
         selectedTradeEntryTimeMs,
@@ -168,12 +172,16 @@ export function createDisplayRenderViewportHarness(input: {
         chartWindow.count === 0
           ? emptyChartViewWindow()
           : {
-              mode: (context.renderController.chartRuntime.viewport.getState().mode ??
-                "tail") as ChartViewMode,
+              mode: (context.selectedTradeEntryTimeMs !== null
+                ? "around-trade"
+                : "tail") as ChartViewMode,
               candles: chartWindow.parts.candles,
               emaOverlays: chartWindow.parts.emaOverlays,
               auxEmaOverlays: chartWindow.parts.auxEmaOverlays,
-              centerTimeSec: context.renderController.chartRuntime.viewport.getState().centerTimeSec,
+              centerTimeSec:
+                context.selectedTradeEntryTimeMs !== null
+                  ? Math.floor(context.selectedTradeEntryTimeMs / 1000)
+                  : null,
               firstTimeSec: chartWindow.firstTimeSec,
               lastTimeSec: chartWindow.lastTimeSec,
               count: chartWindow.count,

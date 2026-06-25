@@ -61,6 +61,12 @@ export type TraceDisplayRuntimeController = {
   componentEventsStale: boolean;
   lastSlicedHtfOverlayPointCount: number;
   displayCacheVersion: number;
+  lastApplyInputKey: string | null;
+};
+
+export type TraceDisplayApplyResult = {
+  state: TraceDisplayState;
+  changed: boolean;
 };
 
 export function createTraceDisplayRuntimeController(): TraceDisplayRuntimeController {
@@ -73,7 +79,21 @@ export function createTraceDisplayRuntimeController(): TraceDisplayRuntimeContro
     componentEventsStale: false,
     lastSlicedHtfOverlayPointCount: 0,
     displayCacheVersion: 0,
+    lastApplyInputKey: null,
   };
+}
+
+export function buildTraceDisplayApplyInputKey(
+  controller: TraceDisplayRuntimeController,
+  candles: readonly ChartBar[],
+  traceLoadStatus: SignalTraceLoadStatus,
+): string {
+  if (candles.length === 0) {
+    return `${controller.cacheKey ?? "none"}:${controller.displayCacheVersion}:empty:${traceLoadStatus}`;
+  }
+  const first = candles[0]!.time;
+  const last = candles[candles.length - 1]!.time;
+  return `${controller.cacheKey ?? "none"}:${controller.displayCacheVersion}:${traceLoadStatus}:${first}:${last}`;
 }
 
 export function buildTraceDisplayCacheKeyForRuntime(input: {
@@ -100,6 +120,7 @@ export function resetTraceDisplayRuntimeCache(
   controller.componentEventsStale = false;
   controller.lastSlicedHtfOverlayPointCount = 0;
   controller.displayCacheVersion += 1;
+  controller.lastApplyInputKey = null;
 }
 
 export function bumpTraceDisplayCacheVersion(controller: TraceDisplayRuntimeController): void {
@@ -134,7 +155,12 @@ export function applyTraceDisplayForWindow(
   controller: TraceDisplayRuntimeController,
   candles: readonly ChartBar[],
   traceLoadStatus: SignalTraceLoadStatus,
-): TraceDisplayState {
+): TraceDisplayApplyResult {
+  const applyInputKey = buildTraceDisplayApplyInputKey(controller, candles, traceLoadStatus);
+  if (controller.lastApplyInputKey === applyInputKey) {
+    return { state: controller.traceDisplayState, changed: false };
+  }
+
   const nextDisplayState = deriveTraceDisplayStateForCandles(
     controller.cache,
     candles,
@@ -161,7 +187,8 @@ export function applyTraceDisplayForWindow(
     controller.componentEvents = [];
     controller.displayApplyRevision += 1;
     controller.componentEventsStale = false;
-    return appliedState;
+    controller.lastApplyInputKey = applyInputKey;
+    return { state: appliedState, changed: true };
   }
 
   if (!shouldRetainPreviousDisplay) {
@@ -174,7 +201,8 @@ export function applyTraceDisplayForWindow(
     appliedState.status !== "empty" &&
     controller.componentEvents.length > 0;
 
-  return appliedState;
+  controller.lastApplyInputKey = applyInputKey;
+  return { state: appliedState, changed: true };
 }
 
 export function planTraceDisplayChunkFetch(

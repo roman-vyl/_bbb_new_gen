@@ -43,6 +43,48 @@ export function createEmptyChartViewModel(): ChartViewModel {
   });
 }
 
+export type ChartModelStabilizeCache = {
+  key: string | null;
+  boundary: ChartModelRuntimeBoundary;
+};
+
+export function createChartModelStabilizeCache(): ChartModelStabilizeCache {
+  return {
+    key: null,
+    boundary: { implemented: false, chartViewModel: createEmptyChartViewModel() },
+  };
+}
+
+export function buildChartModelStabilityKey(input: {
+  chartWindowParts: ChartRuntimeModelParts;
+  displayAuxEmaOverlays: ChartAuxEmaOverlay[];
+  traceDisplay: TraceDisplayRuntimeBoundary;
+  auxOverlay: AuxOverlayRuntimeBoundary;
+  viewMode: ChartViewMode;
+  centerTimeSec: number | null;
+  firstTimeSec: number | null;
+  lastTimeSec: number | null;
+  count: number;
+}): string {
+  const traceRevision = input.traceDisplay.displayApplyRevision;
+  const traceStatus = input.traceDisplay.implemented
+    ? input.traceDisplay.traceDisplayState.status
+    : "empty";
+  const windowKey =
+    input.count === 0 ? "empty" : `${input.firstTimeSec}:${input.lastTimeSec}:${input.count}`;
+  return [
+    windowKey,
+    input.viewMode,
+    input.centerTimeSec ?? "",
+    traceRevision,
+    traceStatus,
+    input.traceDisplay.componentEvents.length,
+    input.displayAuxEmaOverlays.length,
+    input.auxOverlay.htfAuxEmaOverlayStale ? "1" : "0",
+    input.traceDisplay.componentEventsStale ? "1" : "0",
+  ].join(":");
+}
+
 export function resolveChartModelRuntime(input: {
   chartWindowParts: ChartRuntimeModelParts;
   displayAuxEmaOverlays: ChartAuxEmaOverlay[];
@@ -53,7 +95,13 @@ export function resolveChartModelRuntime(input: {
   firstTimeSec: number | null;
   lastTimeSec: number | null;
   count: number;
+  stabilizeCache?: ChartModelStabilizeCache;
 }): ChartModelRuntimeBoundary {
+  const stabilityKey = buildChartModelStabilityKey(input);
+  if (input.stabilizeCache !== undefined && input.stabilizeCache.key === stabilityKey) {
+    return input.stabilizeCache.boundary;
+  }
+
   const traceDisplayStatus: TraceDisplayStatus =
     input.traceDisplay.implemented
       ? input.traceDisplay.traceDisplayState.status
@@ -80,10 +128,20 @@ export function resolveChartModelRuntime(input: {
   });
 
   if (input.count === 0) {
-    return { implemented: false, chartViewModel };
+    const boundary = { implemented: false as const, chartViewModel };
+    if (input.stabilizeCache !== undefined) {
+      input.stabilizeCache.key = stabilityKey;
+      input.stabilizeCache.boundary = boundary;
+    }
+    return boundary;
   }
 
-  return { implemented: true, chartViewModel };
+  const boundary = { implemented: true as const, chartViewModel };
+  if (input.stabilizeCache !== undefined) {
+    input.stabilizeCache.key = stabilityKey;
+    input.stabilizeCache.boundary = boundary;
+  }
+  return boundary;
 }
 
 export function chartWindowKeyFromCandles(

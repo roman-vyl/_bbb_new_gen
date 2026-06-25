@@ -39,6 +39,31 @@ export function createViewportRuntimeState(): ViewportRuntimeState {
   };
 }
 
+function viewportCommandsEqual(
+  left: ViewportCommand | null,
+  right: ViewportCommand | null,
+): boolean {
+  if (left === null || right === null) {
+    return left === right;
+  }
+  if (left.type !== right.type) {
+    return false;
+  }
+  switch (left.type) {
+    case "focusTrade":
+      return right.type === "focusTrade" && left.entryTimeSec === right.entryTimeSec;
+    case "restoreAfterWindowSwap":
+      return (
+        right.type === "restoreAfterWindowSwap" &&
+        left.anchorTimeSec === right.anchorTimeSec &&
+        left.shiftSeq === right.shiftSeq &&
+        left.swapTransactionId === right.swapTransactionId
+      );
+    default:
+      return true;
+  }
+}
+
 /** Mirrors WorkbenchContext emitChartViewportCommand filtering — candidate only, not production emit. */
 export function filterViewportCommandCandidate(
   state: ViewportRuntimeState,
@@ -62,6 +87,9 @@ export function recordViewportCommandCandidate(
 ): ViewportCommand | null {
   const filtered = filterViewportCommandCandidate(state, command);
   if (filtered === null) {
+    return null;
+  }
+  if (viewportCommandsEqual(filtered, state.lastCommand)) {
     return null;
   }
   state.commandSeq += 1;

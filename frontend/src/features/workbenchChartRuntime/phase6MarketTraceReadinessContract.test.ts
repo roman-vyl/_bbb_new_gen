@@ -120,7 +120,7 @@ describe("Phase 6.1 market/trace readiness contract guards", () => {
     applyTraceDisplayForWindow(controller, candles, "loading");
 
     expect(controller.componentEvents).toBe(retainedEvents);
-    expect(controller.displayApplyRevision).toBeGreaterThan(revisionAfterFirstApply);
+    expect(controller.displayApplyRevision).toBe(revisionAfterFirstApply);
     expect(controller.displayCacheVersion).toBe(1);
   });
 });
