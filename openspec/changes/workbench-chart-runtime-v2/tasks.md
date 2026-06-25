@@ -104,18 +104,14 @@
 - [x] 6.11 Record Phase 5 complexity/ownership report: line count of every new runtime module, current `WorkbenchContext.tsx` line count, old owner symbols still present in `WorkbenchContext.tsx`, and new owner symbols introduced in runtime v2.
 - [x] 6.12 STOP FOR REVIEW before atomic Chart tab cutover.
 
-## 7. Phase 6 - Atomic Chart Tab Cutover
+## 7. Phase 6 - Staged Live Contract and Atomic Chart Tab Cutover
 
-- [ ] 7.1 Switch Chart context production output to runtime v2 through `runtimeOutputAdapter.ts`.
-- [ ] 7.2 Ensure old chart runtime is not an active owner for market windows, market load, cache writes, render-window, viewport commands, trace display cache, dense lanes trace, chart events, aux/HTF overlays, or final model.
-- [ ] 7.3 Keep compatibility adapter only as output mapping; do not hide runtime lifecycle inside adapter.
-- [ ] 7.4 Run all required smoke scenarios: cold open, tab activation, distant trade, pan left, pan right, variant switch, context overlay switch, chart-events enabled, chart-events disabled/fallback, markers/events/trace, no empty gaps, no fetch storm, and programmatic viewport suppression.
-- [ ] 7.5 Capture runtime debug snapshot evidence for critical smoke scenarios.
-- [ ] 7.6 Verify no dual-owner debug/static violations.
-- [ ] 7.7 Verify no market or trace fetch storms.
-- [ ] 7.8 Verify no empty chart gaps after market status ready.
-- [ ] 7.9 Record Phase 6 complexity/ownership report: line count of every new runtime module, current `WorkbenchContext.tsx` line count, old owner symbols still present in `WorkbenchContext.tsx`, and new owner symbols introduced in runtime v2.
-- [ ] 7.10 STOP FOR REVIEW before deleting old provider runtime.
+- [x] 6.0 Create `phase6-live-contract-map.md` with the live contract map for ChartPanel, provider upstream shell/report/composer, selection/focus intent, chart IO gate, market identity/window/reset, market loader lifecycle, bundle/fallback/source/count, render-window transactions, interaction/pan/coverage expansion, viewport command stream, trace/bootstrap/display/cache, chart-events/dense fallback, aux/HTF overlays/context overlay, chart view-model/reference stability, and single-owner cutover. Do not change runtime behavior, `WorkbenchContext.tsx`, `ChartPanel`, or runtime wiring.
+- [ ] 6.1 Add contract tests and static guards for the Phase 6.0 map before production cutover. Cover adapter field derivation, no dual owner for market/trace/viewport/model domains, and no runtime v2 production network/cache/viewport ownership while still pre-cutover.
+- [ ] 6.2 Stabilize runtime v2 output under isolated harness/debug inputs only. Prove unchanged inputs do not churn identities, array references, `seriesKey`, command seq, display revisions, or debug owner flags.
+- [ ] 6.3 Switch Chart context production output to runtime v2 through `runtimeOutputAdapter.ts` in one reviewed adapter-only cutover slice. Keep compatibility adapter only as output mapping and ensure old chart runtime is not an active owner for market windows, market load, cache writes, render-window, viewport commands, trace display cache, dense lanes trace, chart events, aux/HTF overlays, or final model.
+- [ ] 6.4 Run all required browser smoke scenarios and capture debug snapshot evidence: cold open, tab activation, distant trade, pan left, pan right, variant switch, context overlay switch, chart-events enabled, chart-events disabled/fallback, markers/events/trace, no empty gaps, no fetch storm, and programmatic viewport suppression.
+- [ ] 6.5 Record Phase 6 complexity/ownership report: line count of every new runtime module, current `WorkbenchContext.tsx` line count, old owner symbols still present in `WorkbenchContext.tsx`, new owner symbols introduced in runtime v2, no dual-owner debug/static violations, no market or trace fetch storms, and no empty chart gaps after market status ready. STOP FOR REVIEW before deleting old provider runtime.
 
 ## 8. Phase 7 - Delete Old Chart Runtime Pipeline From WorkbenchContext
 
