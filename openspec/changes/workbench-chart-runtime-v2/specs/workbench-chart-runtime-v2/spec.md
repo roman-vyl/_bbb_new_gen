@@ -42,12 +42,21 @@ Before cutover, production-mounted runtime v2 MUST NOT write production `marketR
 - **THEN** the exercise runs in an isolated test harness with mocks, stubs, or isolated caches
 - **AND** production-mounted Workbench does not perform runtime v2 network fetches or production cache writes
 
-#### Scenario: Cutover is atomic
+#### Scenario: Cutover is staged by owner domain
 
-- **GIVEN** runtime v2 has passed parity and smoke gates
-- **WHEN** the Chart tab is switched to runtime v2
-- **THEN** the chart context uses runtime v2 output as the production source in one reviewed cutover step
-- **AND** the old provider-owned chart runtime is not left active as a second production path
+- **GIVEN** runtime v2 has passed parity and per-slice smoke gates for the current stage
+- **WHEN** a cutover slice (6.3A through 6.3F) is applied
+- **THEN** exactly one new mutable chart domain switches to `runtime_v2_production` owner in that slice
+- **AND** domains not yet cut over remain owned by the old production pipeline
+- **AND** the old provider-owned chart runtime is not left active as a second production path for the same domain
+- **AND** market/load/cache ownership transfers only in slice 6.3F, after model, render-window, viewport, trace, and aux overlays are already v2
+
+#### Scenario: Big-bang multi-owner cutover is forbidden
+
+- **GIVEN** a cutover is proposed
+- **WHEN** more than one new `runtime_v2_production` owner would be enabled across market, render-window, viewport, trace, aux overlay, and model in a single slice
+- **THEN** the cutover is not accepted
+- **AND** implementation must follow `phase6-staged-owner-cutover-plan.md`
 
 ### Requirement: Runtime v2 SHALL enforce single ownership for mutable chart domains
 
@@ -64,7 +73,7 @@ Runtime v2 SHALL have one active owner for each mutable chart domain after cutov
 - aux and HTF overlays
 - final chart model
 
-Each domain MUST expose debug owner flags or equivalent static/runtime evidence sufficient to detect dual ownership during cutover review.
+Runtime v2 SHALL expose debug owner metadata per domain (`model`, `render_window`, `viewport`, `trace`, `aux_overlay`, `market`) with values `old_production` or `runtime_v2_production`, plus the active cutover `phase` tag (`6.3A` … `6.3F`).
 
 #### Scenario: Duplicate market fetch owner is rejected
 

@@ -38,14 +38,22 @@ Primary sources:
 
 ## Staged Rollout
 
+Revised after failed full Phase 6.3 cutover. Authoritative plan: `phase6-staged-owner-cutover-plan.md`.
+
 | Stage | Name | Scope | Required stop condition |
 |---|---|---|---|
 | 6.0 | Live Contract Specification | Produce this contract map and staged rollout plan only. | Stop for review after validation, commit, and push. |
 | 6.1 | Contract Tests And Static Guards | Add tests/guards that encode this document before any production cutover. Runtime v2 remains shadow/isolated. | Stop if any contract cannot be expressed without production wiring. |
 | 6.2 | Runtime Output Stabilization | Make v2 output stable under isolated harnesses and debug snapshots, including no-op callbacks and stable identities. | Stop if output still churns for unchanged inputs. |
-| 6.3 | Adapter-Only Cutover Candidate | Switch Chart context output through `runtimeOutputAdapter.ts` in one reviewed slice after 6.1-6.2 pass. | Stop if old and new owners are both active for any mutable domain. |
-| 6.4 | Browser Smoke And Debug Evidence | Run all required browser smoke scenarios with debug snapshots and network/fetch-storm checks. | Stop on lag, duplicate fetch/apply loops, broken trade navigation, or broken pan. |
-| 6.5 | Cutover Review Gate | Record complexity/ownership report and decide whether old provider runtime can be deleted in Phase 7. | Stop for review before deleting old `WorkbenchContext` chart runtime. |
+| 6.3-reset | Baseline Reset | Confirm baseline `5c992b1`; no v2 production owners; old pipeline works. | Stop before any cutover slice. |
+| 6.3A | Model/Adapter Cutover | Final chart model + `runtimeOutputAdapter` only; all other domains old. | Stop if cold chart empty or dual model owner. |
+| 6.3B | Render-Window Cutover | `renderWindowRuntime` + `chartWindowRuntime`; market still old. | Stop if render slice empty or dual render owner. |
+| 6.3C | Viewport Command Cutover | `viewportRuntime`; no market expansion yet. | Stop if trade focus broken or dual viewport owner. |
+| 6.3D | Trace/Events Cutover | Trace display + chart-events output; market still old. | Stop if trace failure clears candles or dual trace owner. |
+| 6.3E | Aux/HTF Overlay Cutover | `auxOverlayRuntime`; context selector stays provider. | Stop if stale aux blanks chart or dual aux owner. |
+| 6.3F | Market/Load/Cache Cutover LAST | Full market owner transfer. | Stop on cold-start empty chart, fetch storm, or dual market owner. |
+| 6.4 | Browser Smoke Matrix | Full smoke pack after 6.3A–6.3F approved. | Stop on any smoke failure. |
+| 6.5 | Ownership Report | Final matrix, dead code list, Phase 7 deletion plan. No deletion in 6.5. | Stop for review before Phase 7. |
 
 ## Contract Map Index
 
@@ -289,7 +297,7 @@ Primary sources:
 | Old outputs consumed by `ChartPanel` | The entire current `useWorkbenchChart()` renderer contract. |
 | Runtime v2 target owner module | After cutover, one owner per domain: `marketWindowRuntime`, `marketLoadRuntime`, `marketBundleRuntime`, `interactionRuntime`, `panRuntime`, `renderWindowRuntime`, `viewportRuntime`, `traceRuntime`, `traceDisplayRuntime`, `chartEventsRuntime`, `auxOverlayRuntime`, `chartWindowRuntime`, `chartModelRuntime`. Provider remains shell/report/Composer/selection glue plus adapters only. |
 | Adapter compatibility field | `runtimeOutputAdapter.ts` maps one `ChartRuntimeOutput` plus provider UI/selection glue into the existing chart context shape. It must not own lifecycle, fetch, cache, or controller state. |
-| Exact no-op/stability rule | Before cutover, all runtime v2 production owner flags are false and live callbacks are no-op. At cutover, each mutable domain switches to one v2 owner in one reviewed slice. Old provider owner code must not stay active as fallback or parallel source. |
+| Exact no-op/stability rule | Before cutover, all runtime v2 production owner flags are false and live callbacks are no-op. During staged cutover (6.3A–6.3F), each slice enables exactly one new `runtime_v2_production` domain; prior slices remain v2; not-yet-cut domains stay `old_production`. Market owner transfers last in 6.3F. Old provider owner code must not stay active as fallback or parallel source for the same domain. |
 | Tests before switch | Static no-dual-owner guards, adapter side-effect/import guards, duplicate market/trace fetch tests, command stream single-owner tests, full runtime targeted test suite, provider integration suite. |
 | Browser smoke proof | Full Phase 6.4 smoke pack: cold open, tab activation, distant trade, pan left/right, variant switch, context overlay switch, chart-events enabled/disabled, markers/events/trace, no empty gaps, no fetch storm, no programmatic viewport pan. |
 | Forbidden implementation shortcuts | Do not wire v2 behind a fallback to old provider data. Do not let `ChartPanel` choose owner by field availability. Do not leave old owner effects dormant but still imported/callable after cutover. Do not call the provider "glue" until old chart runtime ownership is physically removed. |
@@ -297,7 +305,7 @@ Primary sources:
 ## Phase 6.0 Acceptance
 
 - This document is the complete contract map for live cutover planning.
-- Phase 6.1-6.5 are staged and unstarted.
+- Phase 6.3-reset and 6.3A–6.3F are defined in `phase6-staged-owner-cutover-plan.md`; 6.4–6.5 follow after all owner slices are approved.
 - Each contract names the old owner, old helpers/refs/effects, old inputs,
   ChartPanel-consumed outputs, v2 target module, compatibility field,
   no-op/stability rule, required tests, browser smoke proof, and forbidden shortcuts.

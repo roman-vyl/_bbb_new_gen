@@ -30,7 +30,7 @@ Global forbidden rules for this change:
 - Preserve current behavior for market loading, sliding render windows, viewport commands, trace/chart-events display, HTF overlays, markers/events, and pan/edge loading.
 - Define a minimal authoritative `ChartRuntimeInput` and `ChartRuntimeOutput`.
 - Keep the current pipeline as the working reference until parity gates pass.
-- Atomically cut the Chart tab over to the new runtime.
+- Cut the Chart tab over to the new runtime through staged owner-domain slices (6.3A–6.3F), one mutable domain at a time.
 - Delete old chart/runtime code from `WorkbenchContext.tsx` after cutover.
 - Enforce single-owner rules for mutable chart domains.
 
@@ -168,8 +168,10 @@ If real market/trace loading parity is needed before cutover, it must run in an 
 - Before cutover, production-mounted runtime v2 may compute identity/windows/fetch plans and debug snapshots, but it must not write production market/trace caches, perform production network fetches, emit viewport commands, receive live `ChartPanel` interactions as an active owner, or mutate production chart context values.
 - Real loader parity before cutover must be proven in isolated test harnesses with mocks/stubs or isolated caches.
 - Parity is checked through debug snapshots, existing tests, new contract tests, and manual smoke gates.
-- Cutover is atomic: provider switches Chart context output to the new runtime output through `runtimeOutputAdapter`.
-- After cutover and review, old chart/runtime code in `WorkbenchContext.tsx` is deleted rather than retained as fallback.
+- Cutover is staged by owner domain — see `phase6-staged-owner-cutover-plan.md`. Order: 6.3A model/adapter → 6.3B render-window → 6.3C viewport → 6.3D trace/events → 6.3E aux/HTF → 6.3F market/load/cache last.
+- Each slice enables exactly one new `runtime_v2_production` owner; prior slices remain v2; not-yet-cut domains stay `old_production`.
+- No big-bang `chartRuntimeV2ProductionEnabled` for all domains.
+- After all slices and Phase 6.4 smoke pass, old chart/runtime code in `WorkbenchContext.tsx` is deleted in Phase 7 — not retained as fallback.
 
 The old pipeline is the working reference before cutover. It is not a permanent fallback.
 
@@ -213,7 +215,9 @@ The old pipeline is the working reference before cutover. It is not a permanent 
 - chart-events/component-event counts.
 - aux/HTF overlay counts.
 - marker/event counts if available from runtime data.
-- active owner flags for market windows, market cache writes, render-window indices, viewport command stream, trace display cache, dense lanes trace, aux overlays, and final chart model.
+- active owner flags per domain (`model`, `render_window`, `viewport`, `trace`, `aux_overlay`, `market`) with values `old_production` or `runtime_v2_production`.
+- `phase` tag for the active cutover slice (`6.3A` … `6.3F`).
+- legacy aggregate flags for market windows, cache writes, render-window, viewport stream, trace display, dense lanes, aux overlays, and final chart model (for parity with Phase 6.1 guards).
 
 The snapshot is required for parity review and smoke debugging. It must not mutate runtime state.
 
@@ -333,8 +337,10 @@ Gaps that cannot remain before switch:
 6. Add market bundle/fallback/source/count parity without production-mounted writes.
 7. Add render/display/viewport parity in debug/shadow mode.
 8. Add trace/events/overlays/chart-model parity and complete `ChartRuntimeOutput`.
-9. Atomically cut Chart tab to new runtime.
-10. Delete old chart/runtime pipeline from `WorkbenchContext.tsx`.
-11. Remove temporary shadow/comparison code and shrink compatibility API.
+9. Phase 6.3-reset — confirm baseline at `5c992b1`; no v2 production owners enabled.
+10. Staged cutover 6.3A (model/adapter) through 6.3F (market last); STOP FOR REVIEW after each slice.
+11. Phase 6.4 full browser smoke matrix; Phase 6.5 ownership report before deletion.
+12. Phase 7 — delete old chart/runtime pipeline from `WorkbenchContext.tsx`.
+13. Phase 8 — remove temporary shadow/comparison code and shrink compatibility API.
 
 Rollback before cutover is simply to keep using the current working pipeline. After cutover, rollback is reverting the cutover commit, not keeping a permanent fallback.

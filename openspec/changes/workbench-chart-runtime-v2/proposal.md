@@ -9,7 +9,7 @@ This proposal is grounded in `docs/workbench-chart-runtime-analysis.md`, which m
 - Introduce a new modular Workbench chart runtime pipeline in the frontend layer, built beside the current working pipeline.
 - Define explicit `ChartRuntimeInput`, `ChartRuntimeOutput`, and runtime debug snapshot contracts.
 - Keep the current `main` chart pipeline as the working reference until parity and smoke gates pass.
-- Switch the Chart tab atomically to the new runtime only after parity is demonstrated.
+- Switch the Chart tab through staged owner-domain cutover slices (6.3A–6.3F) only after parity and per-slice smoke gates pass — not a single atomic multi-owner cutover.
 - Remove the old chart/runtime state, refs, effects, callbacks, and compatibility fields from `WorkbenchContext.tsx` after cutover.
 - Keep `ChartPanel` as the imperative Lightweight Charts renderer; the new runtime supplies data, commands, and dispatch contracts but does not own chart library calls.
 - Preserve current frontend behavior for market loading, render windows, viewport commands, trace/chart-events display, HTF context overlays, markers, and pan/edge behavior.
@@ -39,13 +39,14 @@ This proposal is grounded in `docs/workbench-chart-runtime-analysis.md`, which m
   - Do not change trading logic.
   - Do not change backend/data APIs.
   - Do not implement a permanent dual-pipeline fallback.
+  - Do not perform a big-bang cutover that enables all runtime v2 production owners at once.
   - Do not start runtime implementation before this OpenSpec is approved.
 
 Success criteria:
 
 - The new runtime produces a complete authoritative `ChartRuntimeOutput`.
 - Smoke scenarios from `docs/workbench-chart-runtime-analysis.md` pass.
-- The Chart tab works through the new runtime after atomic cutover.
+- The Chart tab works through the new runtime after staged owner-domain cutover (6.3A–6.3F) and Phase 6.4 smoke matrix.
 - Old chart/runtime code is physically removed from `WorkbenchContext.tsx`.
 - `WorkbenchContext.tsx` is materially smaller, targeting at least 1000 fewer lines from the 3096-line baseline unless review approves a different target.
 - No mutable chart domain has two active owners after cutover.
