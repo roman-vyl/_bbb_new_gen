@@ -1,9 +1,9 @@
 import { ApiError } from "@/api/client";
 import type { ChartBar, SignalTraceBundle } from "@/api/types";
 import {
-  buildTraceDisplayChunkKey,
   mergeDisplayChunkFromResponse,
 } from "@/features/chart/signalTraceDisplayCache";
+import { buildTraceDisplayChunkKey } from "@/features/chart/runtime/traceDisplayChunkScheduling";
 import {
   buildSessionCacheIdentity,
   createSignalTraceBundleSessionCache,
@@ -44,7 +44,6 @@ import {
   applyTraceDisplayForWindow,
   bumpTraceDisplayCacheVersion,
   planTraceDisplayChunkFetch,
-  resolveDisplayCacheCoverage,
   type TraceDisplayRuntimeController,
 } from "./traceDisplayRuntime";
 import type { ChartRuntimeTraceOutput } from "./runtimeTypes";
@@ -128,14 +127,6 @@ export function resetTraceCoordinator(controller: TraceRuntimeController): void 
   controller.previousWindowKey = null;
   controller.displayRequestKey = null;
   controller.denseRequestKey = null;
-}
-
-function lanesTraceOutput(controller: TraceRuntimeController): ChartRuntimeTraceOutput {
-  return {
-    lanesSignalTrace: controller.lanesBundle,
-    lanesSignalTraceStatus: controller.lanesStatus,
-    lanesSignalTraceError: controller.lanesError,
-  };
 }
 
 export function resolveTraceRuntimeSnapshot(

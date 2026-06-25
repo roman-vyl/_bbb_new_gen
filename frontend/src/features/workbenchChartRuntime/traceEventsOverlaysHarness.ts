@@ -91,7 +91,7 @@ export type TraceEventsOverlaysHarness = {
     chartHeavyIoEnabled?: boolean;
     fetchOverlayEma?: Parameters<typeof loadBffAuxOverlaysRuntime>[1]["fetchOverlayEma"];
     signal?: AbortSignal;
-  }): Promise<ReturnType<typeof loadBffAuxOverlaysRuntime>>;
+  }): Promise<Awaited<ReturnType<typeof loadBffAuxOverlaysRuntime>>>;
   resolveSnapshot(): TraceEventsOverlaysSnapshot;
 };
 

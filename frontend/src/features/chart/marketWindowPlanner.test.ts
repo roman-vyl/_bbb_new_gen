@@ -1,11 +1,8 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
 import {
-  buildCandlesCacheKey,
   buildOverlayCacheKey,
   clearMarketResourceCache,
-  mergeCandlesWindowBundle,
-  mergeEmaWindowBundle,
 } from "@/features/chart/marketResourceCache";
 import {
   isMarketCandlesReadyForWindow,

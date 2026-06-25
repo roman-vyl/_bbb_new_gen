@@ -20,7 +20,6 @@ import {
 } from "@/api/client";
 import {
   CHART_MARKET_TIMEFRAME,
-  type AnchorStackPeriods,
   type ChartAuxEmaOverlay,
   type ChartBar,
   type ChartEmaOverlay,
@@ -137,7 +136,6 @@ import { hasTradeManagementEvents } from "@/features/chart/tradeManagementChartE
 import {
   buildRunMarketViewIdentity,
   composeDisplayMarketWindowBundle,
-  composePartialRunMarketWindowBundle,
   resolveRunMarketView,
   type RunMarketView,
   type RunMarketViewIdentity,

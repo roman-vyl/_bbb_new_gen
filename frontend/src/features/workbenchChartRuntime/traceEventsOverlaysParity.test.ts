@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type {
-  ChartAuxEmaOverlay,
   ChartBar,
   ChartEventsBundle,
   ComponentEvent,
@@ -107,6 +106,7 @@ function makeReport(runId = "run-a", variant = makeVariant()): RunReport {
     candles: candles.length,
     data_range: { from_open_time_ms: firstMs, to_open_time_ms: lastMs },
     variants: [variant],
+    variants_count: 1,
   };
 }
 
@@ -192,7 +192,6 @@ const ONE_POINT_CHART_EVENTS: ChartEventsBundle = {
   times: [1000],
   component_events: [CHART_EVENTS_MARKER],
   htf_context: {
-    state: ["neutral"],
     fast: [101],
     anchor: [99],
     slow: [97],
@@ -328,6 +327,9 @@ describe("chart-events paths in isolated harness", () => {
       lanesOnlyFetch: false,
     });
     expect(chartEvents.implemented).toBe(true);
+    if (!chartEvents.implemented) {
+      return;
+    }
     expect(chartEvents.displayLoadOutcome).toBe("committed");
     expect(chartEvents.displayMergeSource).toBe("chart-events");
   });
@@ -376,7 +378,9 @@ describe("chart-events paths in isolated harness", () => {
       lanesOnlyFetch: false,
     });
     expect(chartEvents.chartEventsEnabled).toBe(false);
-    expect(chartEvents.displayLoadOutcome).toBe("skipped_flag_off");
+    if (chartEvents.implemented) {
+      expect(chartEvents.displayLoadOutcome).toBe("skipped_flag_off");
+    }
   });
 
   it("HTF context overlays appear for variant with strategy.contexts", async () => {

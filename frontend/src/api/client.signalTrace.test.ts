@@ -197,7 +197,7 @@ describe("fetchChartEvents query params", () => {
 
   it("passes AbortSignal to fetchChartEvents", async () => {
     const controller = new AbortController();
-    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => ({
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => ({
       ok: true,
       json: async () => ({
         times: [],

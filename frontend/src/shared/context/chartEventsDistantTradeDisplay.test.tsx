@@ -10,7 +10,6 @@ import type {
   RunReport,
   RunSummary,
   SideMetrics,
-  SignalTraceBundle,
   VariantMetrics,
 } from "@/api/types";
 import { selectedTradeEntryMarkerInView } from "@/features/chart/chartMarkers";

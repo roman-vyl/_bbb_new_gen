@@ -92,9 +92,10 @@ export function resolveChartEventsRuntimeSnapshot(input: {
   }
 
   const displayMergeSource =
-    input.displayResult !== null && input.displayResult.outcome === "committed"
+    input.displayResult !== null &&
+    (input.displayResult.outcome === "committed" || input.displayResult.outcome === "continue")
       ? input.displayResult.mergeSource
-      : input.displayResult?.mergeSource ?? null;
+      : null;
 
   return {
     implemented: true,

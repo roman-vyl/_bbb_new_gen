@@ -195,7 +195,6 @@ function createDeferred<T>() {
 }
 
 let chartSliceRef: ReturnType<typeof useWorkbenchChart> | null = null;
-let shellSliceRef: ReturnType<typeof useWorkbenchShell> | null = null;
 
 function ChartSliceCapture() {
   chartSliceRef = useWorkbenchChart();
@@ -203,7 +202,7 @@ function ChartSliceCapture() {
 }
 
 function ShellSliceCapture() {
-  shellSliceRef = useWorkbenchShell();
+  useWorkbenchShell();
   return null;
 }
 
@@ -215,14 +214,12 @@ describe("chart-events display load (5A)", () => {
   afterEach(() => {
     cleanup();
     chartSliceRef = null;
-    shellSliceRef = null;
     vi.unstubAllEnvs();
     resetChartEventsFlagDisabledNoteForTests();
   });
 
   beforeEach(() => {
     chartSliceRef = null;
-    shellSliceRef = null;
     vi.clearAllMocks();
     clearMarketResourceCache();
     dbgReset();
@@ -339,14 +336,12 @@ describe("lazy dense lanes (5B)", () => {
   afterEach(() => {
     cleanup();
     chartSliceRef = null;
-    shellSliceRef = null;
     vi.unstubAllEnvs();
     resetChartEventsFlagDisabledNoteForTests();
   });
 
   beforeEach(() => {
     chartSliceRef = null;
-    shellSliceRef = null;
     vi.clearAllMocks();
     clearMarketResourceCache();
     dbgReset();

@@ -9,7 +9,6 @@ import type {
 import { fetchChartOverlayEma } from "@/api/client";
 import { anchorStackPeriodsFromStrategySpec } from "@/features/chart/anchorStackFromSpec";
 import { mergeAuxOverlayPoints } from "@/features/chart/chartAuxEmaOverlays";
-import { candleTimeBounds } from "@/features/chart/chartRenderWindowDisplay";
 import {
   displayAuxOverlaysForRenderWindow,
   frozenHtfOverlaysForStorage,
