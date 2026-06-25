@@ -152,12 +152,28 @@ Runtime v2 SHALL expose a debug snapshot containing at minimum run id, variant k
 - **THEN** the snapshot identifies the run, variant, context ref, market identity, display bundle, render window, chart model range, and trace request identities used to build that model
 - **AND** the snapshot can be compared with the current working pipeline during parity review
 
-#### Scenario: Debug snapshot exposes owner flags
+#### Scenario: Debug snapshot exposes per-domain owner during staged cutover
 
-- **GIVEN** the Chart tab has been cut over to runtime v2
+- **GIVEN** a cutover slice from 6.3A through 6.3E is active
+- **WHEN** the runtime debug snapshot or `wb.cutover.domain_owners` console mark is captured
+- **THEN** each transferred domain shows `owner: runtime_v2_production`
+- **AND** each not-yet-transferred domain shows `owner: old_production`
+- **AND** no domain shows two active owners
+- **AND** `phase` matches the active slice (e.g. `6.3A` during model cutover)
+
+#### Scenario: Debug snapshot exposes full v2 ownership after 6.3F
+
+- **GIVEN** market/load/cache cutover slice 6.3F is complete
 - **WHEN** the runtime debug snapshot is captured after cold open, pan, or trade navigation
-- **THEN** owner flags show runtime v2 as the active owner for critical chart domains
-- **AND** no old provider chart runtime owner is flagged as active
+- **THEN** all chart-runtime domains (`model`, `render_window`, `viewport`, `trace`, `aux_overlay`, `market`) show `runtime_v2_production`
+- **AND** no old provider chart-runtime owner is active for those domains
+
+#### Scenario: Owner telemetry exists before first cutover slice
+
+- **GIVEN** Phase 6.3-debug telemetry is complete and 6.3A has not started
+- **WHEN** the user opens Chart with debug enabled
+- **THEN** console or `__pipelineDebugExport()` shows `domainOwners` with all domains `old_production` and `phase: 6.3-debug`
+- **AND** domain-relevant pipeline marks include `owner`, `domain`, and `phase` fields
 
 ### Requirement: Old WorkbenchContext chart runtime SHALL be deleted after cutover
 

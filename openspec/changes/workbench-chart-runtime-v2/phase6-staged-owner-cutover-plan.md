@@ -31,27 +31,31 @@ Debug output for every stage MUST include:
 |---|---|
 | `owner` | `old_production` \| `runtime_v2_production` |
 | `domain` | `model` \| `render_window` \| `viewport` \| `trace` \| `aux_overlay` \| `market` |
-| `phase` | `6.3A` \| `6.3B` \| `6.3C` \| `6.3D` \| `6.3E` \| `6.3F` |
+| `phase` | `6.3-debug` \| `6.3A` \| `6.3B` \| `6.3C` \| `6.3D` \| `6.3E` \| `6.3F` |
+
+**6.3-debug telemetry is mandatory before any owner cutover.** See `phase6-3-debug-telemetry.md`.
 
 Every stage MUST keep cold Chart open working before moving to the next stage.
 
 ## Owner matrix by stage
 
-| Domain | 6.3-reset … 6.2 | 6.3A | 6.3B | 6.3C | 6.3D | 6.3E | 6.3F |
-|---|---|---|---|---|---|---|---|
-| final model/adapter | old | **v2** | v2 | v2 | v2 | v2 | v2 |
-| render-window | old | old | **v2** | v2 | v2 | v2 | v2 |
-| viewport commands | old | old | old | **v2** | v2 | v2 | v2 |
-| trace/events display | old | old | old | old | **v2** | v2 | v2 |
-| aux/HTF overlays | old | old | old | old | old | **v2** | v2 |
-| market/load/cache | old | old | old | old | old | old | **v2** |
+| Domain | 6.3-reset … 6.2 | 6.3-debug | 6.3A | 6.3B | 6.3C | 6.3D | 6.3E | 6.3F |
+|---|---|---|---|---|---|---|---|---|
+| telemetry (`domainOwners`) | — | **wired** (all `old_production`) | active | active | active | active | active | active |
+| final model/adapter | old | old | **v2** | v2 | v2 | v2 | v2 | v2 |
+| render-window | old | old | old | **v2** | v2 | v2 | v2 | v2 |
+| viewport commands | old | old | old | old | **v2** | v2 | v2 | v2 |
+| trace/events display | old | old | old | old | old | **v2** | v2 | v2 |
+| aux/HTF overlays | old | old | old | old | old | old | **v2** | v2 |
+| market/load/cache | old | old | old | old | old | old | old | **v2** |
 
 ## Stage index
 
 | Stage | Document | Status |
 |---|---|---|
 | 6.3-reset | This section + `tasks.md` §7.0 | Baseline `5c992b130e38971b3b7c9c8b0ba9c30727a48374` |
-| 6.3A | `phase6-3A-model-adapter-cutover.md` | Not started |
+| 6.3-debug | `phase6-3-debug-telemetry.md` | **Mandatory before 6.3A** |
+| 6.3A | `phase6-3A-model-adapter-cutover.md` | Blocked on 6.3-debug; field map frozen in doc |
 | 6.3B | `phase6-3B-render-window-cutover.md` | Not started |
 | 6.3C | `phase6-3C-viewport-command-cutover.md` | Not started |
 | 6.3D | `phase6-3D-trace-events-cutover.md` | Not started |
@@ -89,6 +93,24 @@ Return to clean baseline:
 - No runtime v2 production owner is enabled.
 - Phase 6.2 stabilization code remains available.
 - Failed debug/log artifacts are not committed.
+
+**STOP FOR REVIEW** before 6.3-debug.
+
+---
+
+## Phase 6.3-debug — owner/domain/phase telemetry (before any cutover)
+
+### Goal
+
+Teach console and `__pipelineDebugExport()` to show `domainOwners` and `cutoverPhase` before any production owner moves. Without this, `wb.chart_window_slice`, `chart.setData.*`, and `wb.trace_display.*` cannot be attributed to old vs v2 vs adapter.
+
+### Acceptance
+
+- All domains `old_production`, `phase: 6.3-debug` on cold Chart open
+- Domain-relevant `dbgMark` payloads include `owner`, `domain`, `phase`
+- No production data-path cutover; build green; old pipeline unchanged
+
+See `phase6-3-debug-telemetry.md`.
 
 **STOP FOR REVIEW** before 6.3A.
 
@@ -129,7 +151,7 @@ Runtime v2 receives already-prepared old production chart data as input and retu
 
 ### Report
 
-`phase6-3A-model-adapter-cutover.md` — exact old fields consumed and adapter fields produced.
+`phase6-3A-model-adapter-cutover.md` — **frozen field map** (§2): old field → source owner → runtime input → adapter output → ChartPanel consumer. Implementation blocked until map is reviewed.
 
 **STOP FOR REVIEW.**
 

@@ -168,7 +168,7 @@ If real market/trace loading parity is needed before cutover, it must run in an 
 - Before cutover, production-mounted runtime v2 may compute identity/windows/fetch plans and debug snapshots, but it must not write production market/trace caches, perform production network fetches, emit viewport commands, receive live `ChartPanel` interactions as an active owner, or mutate production chart context values.
 - Real loader parity before cutover must be proven in isolated test harnesses with mocks/stubs or isolated caches.
 - Parity is checked through debug snapshots, existing tests, new contract tests, and manual smoke gates.
-- Cutover is staged by owner domain — see `phase6-staged-owner-cutover-plan.md`. Order: 6.3A model/adapter → 6.3B render-window → 6.3C viewport → 6.3D trace/events → 6.3E aux/HTF → 6.3F market/load/cache last.
+- Cutover is staged by owner domain — see `phase6-staged-owner-cutover-plan.md`. Order: **6.3-debug telemetry** → 6.3A model/adapter → 6.3B render-window → 6.3C viewport → 6.3D trace/events → 6.3E aux/HTF → 6.3F market/load/cache last.
 - Each slice enables exactly one new `runtime_v2_production` owner; prior slices remain v2; not-yet-cut domains stay `old_production`.
 - No big-bang `chartRuntimeV2ProductionEnabled` for all domains.
 - After all slices and Phase 6.4 smoke pass, old chart/runtime code in `WorkbenchContext.tsx` is deleted in Phase 7 — not retained as fallback.
@@ -216,8 +216,8 @@ The old pipeline is the working reference before cutover. It is not a permanent 
 - aux/HTF overlay counts.
 - marker/event counts if available from runtime data.
 - active owner flags per domain (`model`, `render_window`, `viewport`, `trace`, `aux_overlay`, `market`) with values `old_production` or `runtime_v2_production`.
-- `phase` tag for the active cutover slice (`6.3A` … `6.3F`).
-- legacy aggregate flags for market windows, cache writes, render-window, viewport stream, trace display, dense lanes, aux overlays, and final chart model (for parity with Phase 6.1 guards).
+- `cutoverPhase` tag (`6.3-debug`, `6.3A` … `6.3F`).
+- legacy boolean `ownerFlags` on snapshot (maps to domains; kept for Phase 6.1 static guards).
 
 The snapshot is required for parity review and smoke debugging. It must not mutate runtime state.
 
@@ -338,9 +338,10 @@ Gaps that cannot remain before switch:
 7. Add render/display/viewport parity in debug/shadow mode.
 8. Add trace/events/overlays/chart-model parity and complete `ChartRuntimeOutput`.
 9. Phase 6.3-reset — confirm baseline at `5c992b1`; no v2 production owners enabled.
-10. Staged cutover 6.3A (model/adapter) through 6.3F (market last); STOP FOR REVIEW after each slice.
-11. Phase 6.4 full browser smoke matrix; Phase 6.5 ownership report before deletion.
-12. Phase 7 — delete old chart/runtime pipeline from `WorkbenchContext.tsx`.
-13. Phase 8 — remove temporary shadow/comparison code and shrink compatibility API.
+10. Phase 6.3-debug — wire `domainOwners` / `cutoverPhase` console telemetry; no owner transfer.
+11. Staged cutover 6.3A (model/adapter) through 6.3F (market last); field map frozen before 6.3A code; STOP FOR REVIEW after each slice.
+12. Phase 6.4 full browser smoke matrix; Phase 6.5 ownership report before deletion.
+13. Phase 7 — delete old chart/runtime pipeline from `WorkbenchContext.tsx`.
+14. Phase 8 — remove temporary shadow/comparison code and shrink compatibility API.
 
 Rollback before cutover is simply to keep using the current working pipeline. After cutover, rollback is reverting the cutover commit, not keeping a permanent fallback.

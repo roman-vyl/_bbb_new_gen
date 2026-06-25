@@ -45,8 +45,9 @@ Revised after failed full Phase 6.3 cutover. Authoritative plan: `phase6-staged-
 | 6.0 | Live Contract Specification | Produce this contract map and staged rollout plan only. | Stop for review after validation, commit, and push. |
 | 6.1 | Contract Tests And Static Guards | Add tests/guards that encode this document before any production cutover. Runtime v2 remains shadow/isolated. | Stop if any contract cannot be expressed without production wiring. |
 | 6.2 | Runtime Output Stabilization | Make v2 output stable under isolated harnesses and debug snapshots, including no-op callbacks and stable identities. | Stop if output still churns for unchanged inputs. |
-| 6.3-reset | Baseline Reset | Confirm baseline `5c992b1`; no v2 production owners; old pipeline works. | Stop before any cutover slice. |
-| 6.3A | Model/Adapter Cutover | Final chart model + `runtimeOutputAdapter` only; all other domains old. | Stop if cold chart empty or dual model owner. |
+| 6.3-reset | Baseline Reset | Confirm baseline `5c992b1`; no v2 production owners; old pipeline works. | Stop before telemetry or cutover. |
+| 6.3-debug | Owner/Domain/Phase Telemetry | Wire `domainOwners`, `cutoverPhase`, tagged `dbgMark` payloads; no owner transfer. | Stop if console cannot attribute marks to old vs v2. |
+| 6.3A | Model/Adapter Cutover | Final chart model + adapter only; field map frozen in report §2 before code. | Stop if cold chart empty or dual model owner. |
 | 6.3B | Render-Window Cutover | `renderWindowRuntime` + `chartWindowRuntime`; market still old. | Stop if render slice empty or dual render owner. |
 | 6.3C | Viewport Command Cutover | `viewportRuntime`; no market expansion yet. | Stop if trade focus broken or dual viewport owner. |
 | 6.3D | Trace/Events Cutover | Trace display + chart-events output; market still old. | Stop if trace failure clears candles or dual trace owner. |
@@ -305,6 +306,7 @@ Revised after failed full Phase 6.3 cutover. Authoritative plan: `phase6-staged-
 ## Phase 6.0 Acceptance
 
 - This document is the complete contract map for live cutover planning.
+- Phase 6.3-debug telemetry is mandatory before 6.3A; see `phase6-3-debug-telemetry.md`.
 - Phase 6.3-reset and 6.3A–6.3F are defined in `phase6-staged-owner-cutover-plan.md`; 6.4–6.5 follow after all owner slices are approved.
 - Each contract names the old owner, old helpers/refs/effects, old inputs,
   ChartPanel-consumed outputs, v2 target module, compatibility field,
