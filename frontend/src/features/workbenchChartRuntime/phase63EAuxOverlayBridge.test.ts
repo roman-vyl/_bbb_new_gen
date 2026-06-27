@@ -3,11 +3,9 @@ import { describe, expect, it } from "vitest";
 import {
   chartRuntimeCutoverConfig,
   PHASE_63E_DOMAIN_OWNERS,
+  PHASE_63F_DOMAIN_OWNERS,
 } from "./chartRuntimeCutoverConfig";
-import {
-  hasRuntimeV2ProductionOwner,
-  runtimeV2ProductionDomains,
-} from "./chartRuntimeCutoverTelemetry";
+import { runtimeV2ProductionDomains } from "./chartRuntimeCutoverTelemetry";
 import { makePhase6Candles } from "./phase6ContractFixtures";
 import {
   collectForbiddenImportViolations,
@@ -24,25 +22,16 @@ import {
 import { findForbiddenAdapterFallbackPatterns } from "./runtimeOutputAdapter.contract";
 
 describe("Phase 6.3E aux/HTF overlay cutover", () => {
-  it("sets cutover config to phase 6.3E with aux_overlay on runtime_v2_production", () => {
-    expect(chartRuntimeCutoverConfig.cutoverPhase).toBe("6.3E");
-    expect(chartRuntimeCutoverConfig.domainOwners).toEqual(PHASE_63E_DOMAIN_OWNERS);
-    expect(runtimeV2ProductionDomains(chartRuntimeCutoverConfig)).toEqual([
-      "model",
-      "render_window",
-      "viewport",
-      "trace",
-      "aux_overlay",
-    ]);
-    expect(hasRuntimeV2ProductionOwner(chartRuntimeCutoverConfig)).toBe(true);
-    expect(chartRuntimeCutoverConfig.domainOwners.market).toBe("old_production");
+  it("sets cutover config to phase 6.3F with aux_overlay on runtime_v2_production and market last", () => {
+    expect(chartRuntimeCutoverConfig.cutoverPhase).toBe("6.3F");
+    expect(chartRuntimeCutoverConfig.domainOwners).toEqual(PHASE_63F_DOMAIN_OWNERS);
+    expect(chartRuntimeCutoverConfig.domainOwners.market).toBe("runtime_v2_production");
+    expect(PHASE_63E_DOMAIN_OWNERS.market).toBe("old_production");
   });
 
-  it("has no runtime_v2_production owner outside model, render_window, viewport, trace, and aux_overlay", () => {
-    const unexpectedV2 = (["market"] as const).filter(
-      (domain) => chartRuntimeCutoverConfig.domainOwners[domain] === "runtime_v2_production",
-    );
-    expect(unexpectedV2).toEqual([]);
+  it("has all six domains on runtime_v2_production at 6.3F", () => {
+    expect(runtimeV2ProductionDomains(chartRuntimeCutoverConfig)).toHaveLength(6);
+    expect(Object.values(chartRuntimeCutoverConfig.domainOwners).every((o) => o === "runtime_v2_production")).toBe(true);
   });
 
   it("does not include market fetch helpers in aux bridge", () => {
@@ -117,7 +106,6 @@ describe("Phase 6.3E aux/HTF overlay cutover", () => {
     expect(workbenchSource).toContain("phase63EAuxOverlayBridge");
     expect(workbenchSource).toContain("phase63EAuxOverlayOwner");
     expect(workbenchSource).toContain("resolvePhase63EModelRuntimeSlice");
-    expect(workbenchSource).toContain("executeMarketWindowLoad");
     expect(workbenchSource).not.toContain("useWorkbenchChartRuntime");
     expect(findForbiddenAdapterFallbackPatterns(workbenchSource)).toEqual([]);
   });

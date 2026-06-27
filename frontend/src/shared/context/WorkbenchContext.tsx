@@ -36,14 +36,8 @@ import {
 import { COMPOSER_DEFAULT_FAMILY, createBlankConfigDraft } from "@/features/composer/composerDraft";
 import { resolveChartTimeframeMs } from "@/features/chart/chartTimeframeMs";
 import {
-  AnchorStackParseError,
-} from "@/features/chart/anchorStackFromSpec";
-import {
-  executeMarketWindowLoad,
   buildMarketTargetWindowKey,
-  evaluateMarketPanPrefetchExpansion,
   marketCandlesReadyForTarget,
-  resolveMarketTargetWindow,
   type MarketDisplayWindowMs,
 } from "@/features/chart/workbenchMarketLoad";
 import { getCandles } from "@/features/chart/marketResourceCache";
@@ -91,7 +85,6 @@ import {
 import { hasTradeManagementEvents } from "@/features/chart/tradeManagementChartEvents";
 import {
   buildRunMarketViewIdentity,
-  composeDisplayMarketWindowBundle,
   resolveRunMarketView,
   type RunMarketView,
   type RunMarketViewIdentity,
@@ -125,6 +118,20 @@ import {
   syncPhase63EAuxOverlaySpecs,
   type Phase63EAuxOverlayOwnerState,
 } from "@/features/workbenchChartRuntime/phase63EAuxOverlayBridge";
+import {
+  cancelPhase63FMarketLoad,
+  createPhase63FMarketLoadOwnerState,
+  evaluatePhase63FPanPrefetch,
+  logPhase63FComposeFocusFallback,
+  marketBundleFromSnapshot,
+  resetPhase63FMarketLoadOwner,
+  resolvePhase63FMarketBundleSnapshot,
+  resolvePhase63FMarketReactSync,
+  resolvePhase63FMarketView,
+  runPhase63FMarketLoad,
+  syncPhase63FMarketFocusWindows,
+  type Phase63FMarketLoadOwnerState,
+} from "@/features/workbenchChartRuntime/phase63FMarketLoadBridge";
 import {
   buildChartViewWindowFromPhase63BSlice,
   createPhase63BRenderWindowOwnerState,
@@ -374,23 +381,6 @@ function pickDefaultRunId(runs: RunSummary[]): string | null {
   return runs[0].run_id;
 }
 
-function marketErrorMessage(err: unknown): string {
-  if (err instanceof ApiError) {
-    if (err.status === 404) {
-      return `${err.detail} — перезапустите BFF (uvicorn) после обновления кода; нужны /api/market/candles-window и /api/market/ema-window`;
-    }
-    return err.detail;
-  }
-  if (err instanceof Error) {
-    return err.message;
-  }
-  return "Failed to load market data.";
-}
-
-function isAbortError(err: unknown): boolean {
-  return err instanceof Error && err.name === "AbortError";
-}
-
 export function WorkbenchProvider({
   children,
   initialActiveTab = "chart",
@@ -415,17 +405,16 @@ export function WorkbenchProvider({
   );
   const [marketCandlesRevision, setMarketCandlesRevision] = useState(0);
   const [marketOverlayRevision, setMarketOverlayRevision] = useState(0);
-  const marketReadyTargetKeyRef = useRef<string | null>(null);
   const cachedBundleCandlesRef = useRef<ChartBar[]>([]);
+  const phase63FMarketLoadOwnerRef = useRef<Phase63FMarketLoadOwnerState | null>(null);
+  if (phase63FMarketLoadOwnerRef.current === null) {
+    phase63FMarketLoadOwnerRef.current = createPhase63FMarketLoadOwnerState();
+  }
+  const phase63FMarketLoadOwner = (): Phase63FMarketLoadOwnerState =>
+    phase63FMarketLoadOwnerRef.current!;
   const marketFocusWindowRef = useRef<MarketDisplayWindowMs | null>(null);
   const marketCoverageWindowRef = useRef<MarketDisplayWindowMs | null>(null);
   const intendedRunMarketViewRef = useRef<RunMarketView | null>(null);
-  const lastPanPrefetchLogKeyRef = useRef<string | null>(null);
-  const lastPanPrefetchExpansionKeyRef = useRef<string | null>(null);
-  const lastVisiblePrefetchSampleRef = useRef<string | null>(null);
-  const prevBundleFirstTimeSecRef = useRef<number | null>(null);
-  const lastComposeFallbackKeyRef = useRef<string | null>(null);
-  const marketComposeSourceRef = useRef<"coverage" | "focus" | null>(null);
   const [marketFocusWindow, setMarketFocusWindow] = useState<MarketDisplayWindowMs | null>(null);
   const [marketCoverageWindow, setMarketCoverageWindow] = useState<MarketDisplayWindowMs | null>(
     null,
@@ -480,9 +469,6 @@ export function WorkbenchProvider({
   const prevVariantKeyRef = useRef("");
   const prevRunIdForTradeBootstrapRef = useRef<string | null>(null);
   const selectedVariantKeyRef = useRef("");
-  const marketLoadGenRef = useRef(0);
-  const intendedRunMarketViewIdentityRef = useRef<RunMarketViewIdentity | null>(null);
-  const marketFetchInFlightKeysRef = useRef<Set<string>>(new Set());
   const applyWindowCommitRef = useRef<(commit: WindowCommitResult) => void>(() => {});
   const phase63BRenderWindowOwnerRef = useRef<Phase63BRenderWindowOwnerState | null>(null);
   if (phase63BRenderWindowOwnerRef.current === null) {
@@ -617,7 +603,7 @@ export function WorkbenchProvider({
       setMarketError(null);
       setMarketLoadStatus("idle");
       setRunMarketViewIdentity(null);
-      marketReadyTargetKeyRef.current = null;
+      resetPhase63FMarketLoadOwner(phase63FMarketLoadOwner());
       setMarketCandlesRevision(0);
       setMarketOverlayRevision(0);
       try {
@@ -855,45 +841,35 @@ export function WorkbenchProvider({
     if (intendedRunMarketView === null) {
       setMarketFocusWindow(null);
       setMarketCoverageWindow(null);
-      marketReadyTargetKeyRef.current = null;
-      lastPanPrefetchExpansionKeyRef.current = null;
-      lastPanPrefetchLogKeyRef.current = null;
-      lastVisiblePrefetchSampleRef.current = null;
-      prevBundleFirstTimeSecRef.current = null;
-      lastComposeFallbackKeyRef.current = null;
+      resetPhase63FMarketLoadOwner(phase63FMarketLoadOwner());
       return;
     }
-    const nextFocus = resolveMarketTargetWindow(
-      intendedRunMarketView,
-      selectedTradeEntryTimeMs,
-    );
+    const owner = phase63FMarketLoadOwner();
     setMarketFocusWindow((previous) => {
-      if (
-        previous !== null &&
-        previous.fromMs === nextFocus.fromMs &&
-        previous.toMs === nextFocus.toMs &&
-        previous.toOpenTimeMs === nextFocus.toOpenTimeMs
-      ) {
+      const synced = syncPhase63FMarketFocusWindows({
+        view: intendedRunMarketView,
+        selectedTradeEntryTimeMs,
+        previousFocus: previous,
+        previousCoverage: marketCoverageWindowRef.current,
+        owner,
+      });
+      if (!synced.focusChanged && previous !== null) {
         return previous;
       }
-      marketReadyTargetKeyRef.current = null;
-      lastPanPrefetchExpansionKeyRef.current = null;
-      lastPanPrefetchLogKeyRef.current = null;
-      lastVisiblePrefetchSampleRef.current = null;
-      prevBundleFirstTimeSecRef.current = null;
-      lastComposeFallbackKeyRef.current = null;
-      return nextFocus;
+      return synced.focusWindow;
     });
     setMarketCoverageWindow((previous) => {
-      if (
-        previous !== null &&
-        previous.fromMs === nextFocus.fromMs &&
-        previous.toMs === nextFocus.toMs &&
-        previous.toOpenTimeMs === nextFocus.toOpenTimeMs
-      ) {
+      const synced = syncPhase63FMarketFocusWindows({
+        view: intendedRunMarketView,
+        selectedTradeEntryTimeMs,
+        previousFocus: marketFocusWindowRef.current,
+        previousCoverage: previous,
+        owner,
+      });
+      if (!synced.coverageChanged && previous !== null) {
         return previous;
       }
-      return nextFocus;
+      return synced.coverageWindow;
     });
   }, [
     intendedRunMarketView,
@@ -935,143 +911,73 @@ export function WorkbenchProvider({
     }
 
     const snapshot: RunReport = report;
-    const variant = selectedVariant;
     const abortController = new AbortController();
-
-    let view: RunMarketView;
-    try {
-      view = resolveRunMarketView({
-        report: snapshot,
-        chartTimeframe,
-        variant,
-        reloadToken,
-      });
-    } catch (err) {
-      const message =
-        err instanceof AnchorStackParseError
-          ? err.message
-          : "Invalid strategy_spec.anchor_stack in run report";
-      setMarketError(message);
+    const owner = phase63FMarketLoadOwner();
+    const resolvedView = resolvePhase63FMarketView({
+      report: snapshot,
+      chartTimeframe,
+      variant: selectedVariant,
+      reloadToken,
+    });
+    if (resolvedView.outcome === "error") {
+      setMarketError(resolvedView.message);
       setRunMarketViewIdentity(null);
       setMarketLoadStatus("error");
       return;
     }
 
-    const viewIdentity = buildRunMarketViewIdentity(view);
+    const { view, viewIdentity } = resolvedView;
     const focusWindow = marketFocusWindow;
     const coverageWindow = marketCoverageWindow;
-    const focusKey = buildMarketTargetWindowKey(viewIdentity, focusWindow);
-    const coverageKey = buildMarketTargetWindowKey(viewIdentity, coverageWindow);
-    const loadGen = ++marketLoadGenRef.current;
-    intendedRunMarketViewIdentityRef.current = viewIdentity;
 
-    async function loadMarket() {
+    const syncMarketReactState = () => {
+      const sync = resolvePhase63FMarketReactSync(owner);
+      setMarketLoadStatus(sync.marketLoadStatus);
+      setMarketError(sync.marketError);
+      setRunMarketViewIdentity(sync.runMarketViewIdentity);
+    };
+
+    void (async () => {
       setMarketError(null);
-
-      const focusCandlesReady = marketCandlesReadyForTarget(view, focusWindow);
-      if (focusCandlesReady) {
-        dbgMarkCutover(DBG.load.marketFetchCacheHit, "market", {
-          viewIdentity,
-          candlesCached: true,
-          targetFromMs: coverageWindow.fromMs,
-          targetToMs: coverageWindow.toMs,
-        });
-        if (
-          marketLoadGenRef.current !== loadGen &&
-          intendedRunMarketViewIdentityRef.current !== viewIdentity
-        ) {
-          dbgMark(DBG.load.marketFetchStaleResponse, { key: viewIdentity, phase: "cache_hit" });
-          return;
-        }
-        if (marketReadyTargetKeyRef.current !== focusKey) {
-          marketReadyTargetKeyRef.current = focusKey;
-          setRunMarketViewIdentity(viewIdentity);
-          setMarketLoadStatus("ready");
-        }
-      } else if (marketReadyTargetKeyRef.current === null) {
+      if (owner.controller.readyTargetKey === null && !marketCandlesReadyForTarget(view, focusWindow)) {
         setMarketLoadStatus("loading");
       }
 
-      dbgMarkCutover(DBG.load.marketFetchStart, "market", {
-        key: coverageKey,
-        candlesCached: focusCandlesReady,
-        targetFromMs: coverageWindow.fromMs,
-        targetToMs: coverageWindow.toMs,
+      const result = await runPhase63FMarketLoad(owner, {
+        view,
+        viewIdentity,
+        focusWindow,
+        coverageWindow,
+        symbol: snapshot.symbol,
+        timeframe: chartTimeframe,
+        signal: abortController.signal,
+        onChunkSeeded: (kind) => {
+          if (kind === "candles") {
+            bumpMarketCandlesRevision();
+          } else {
+            bumpMarketOverlayRevision();
+          }
+          syncMarketReactState();
+        },
       });
 
-      try {
-        const result = await executeMarketWindowLoad({
-          view,
-          targetWindow: coverageWindow,
-          symbol: snapshot.symbol,
-          timeframe: chartTimeframe,
-          signal: abortController.signal,
-          inFlightKeys: marketFetchInFlightKeysRef.current,
-          onChunkSeeded: (kind) => {
-            if (kind === "candles") {
-              bumpMarketCandlesRevision();
-              if (
-                marketCandlesReadyForTarget(view, focusWindow) &&
-                marketReadyTargetKeyRef.current !== focusKey
-              ) {
-                marketReadyTargetKeyRef.current = focusKey;
-                setRunMarketViewIdentity(viewIdentity);
-                setMarketLoadStatus("ready");
-              }
-            } else {
-              bumpMarketOverlayRevision();
-            }
-          },
+      if (result.outcome === "aborted") {
+        dbgMark(DBG.load.marketFetchAbort, {
+          key: viewIdentity,
+          note: "frontend abort/stale-response protection; backend CPU work may continue",
         });
-        dbgMarkCutover(DBG.load.marketFetchEnd, "market", {
-          key: coverageKey,
-          candlesFetched: result.candlesFetched,
-          emaFetched: result.emaFetched,
-        });
-        const applyToUi =
-          marketLoadGenRef.current === loadGen ||
-          intendedRunMarketViewIdentityRef.current === viewIdentity;
-        if (!applyToUi) {
-          dbgMark(DBG.load.marketFetchStaleResponse, {
-            key: viewIdentity,
-            phase: "network",
-          });
-          return;
-        }
-        if (
-          marketCandlesReadyForTarget(view, focusWindow) &&
-          marketReadyTargetKeyRef.current !== focusKey
-        ) {
-          marketReadyTargetKeyRef.current = focusKey;
-          setRunMarketViewIdentity(viewIdentity);
-          setMarketLoadStatus("ready");
-        }
-      } catch (err) {
-        if (isAbortError(err)) {
-          dbgMark(DBG.load.marketFetchAbort, {
-            key: viewIdentity,
-            note: "frontend abort/stale-response protection; backend CPU work may continue",
-          });
-          return;
-        }
-        if (
-          marketLoadGenRef.current !== loadGen &&
-          intendedRunMarketViewIdentityRef.current !== viewIdentity
-        ) {
-          dbgMark(DBG.load.marketFetchStaleResponse, { key: viewIdentity, phase: "error" });
-          return;
-        }
-        setMarketError(marketErrorMessage(err));
-        setRunMarketViewIdentity(null);
-        marketReadyTargetKeyRef.current = null;
-        setMarketLoadStatus("error");
+        return;
       }
-    }
+      if (result.outcome === "stale_response") {
+        dbgMark(DBG.load.marketFetchStaleResponse, { key: viewIdentity, phase: "network" });
+        return;
+      }
+      syncMarketReactState();
+    })();
 
-    void loadMarket();
     return () => {
       abortController.abort();
-      marketLoadGenRef.current += 1;
+      cancelPhase63FMarketLoad(owner);
     };
   }, [
     report,
@@ -1083,61 +989,32 @@ export function WorkbenchProvider({
     marketCoverageWindowKey,
   ]);
 
-  const cachedBundle = useMemo(() => {
-    if (
-      intendedRunMarketView === null ||
-      marketFocusWindow === null ||
-      marketCoverageWindow === null ||
-      marketLoadStatus === "error"
-    ) {
-      return undefined;
-    }
-    if (!marketCandlesReadyForTarget(intendedRunMarketView, marketFocusWindow)) {
-      return undefined;
-    }
-    const composed = composeDisplayMarketWindowBundle(
+  const marketBundleSnapshot = useMemo(
+    () =>
+      resolvePhase63FMarketBundleSnapshot({
+        owner: phase63FMarketLoadOwner(),
+        view: intendedRunMarketView,
+        focusWindow: marketFocusWindow,
+        coverageWindow: marketCoverageWindow,
+        focusWindowKey: marketFocusWindowKey,
+        marketLoadStatus,
+        marketLoadError: marketError,
+      }),
+    [
       intendedRunMarketView,
-      marketFocusWindow,
-      marketCoverageWindow,
-    );
-    marketComposeSourceRef.current = composed?.source ?? null;
-    return composed?.bundle;
-  }, [
-    intendedRunMarketView,
-    intendedRunMarketViewIdentity,
-    runMarketViewIdentity,
-    marketCandlesRevision,
-    marketOverlayRevision,
-    marketLoadStatus,
-    marketFocusWindowKey,
-    marketCoverageWindowKey,
-  ]);
+      intendedRunMarketViewIdentity,
+      runMarketViewIdentity,
+      marketCandlesRevision,
+      marketOverlayRevision,
+      marketLoadStatus,
+      marketError,
+      marketFocusWindowKey,
+      marketCoverageWindowKey,
+    ],
+  );
 
-  const renderWindowFoundationKey = useMemo(() => {
-    if (
-      intendedRunMarketView === null ||
-      marketFocusWindow === null ||
-      marketLoadStatus !== "ready" ||
-      marketFocusWindowKey === null
-    ) {
-      return null;
-    }
-    const candles = getCandles(
-      intendedRunMarketView.candlesKey,
-      marketFocusWindow.fromMs,
-      marketFocusWindow.toMs,
-    );
-    if (candles === undefined || candles.length === 0) {
-      return null;
-    }
-    return `${marketFocusWindowKey}:${candles.length}`;
-  }, [
-    intendedRunMarketView,
-    marketFocusWindow,
-    marketFocusWindowKey,
-    marketLoadStatus,
-    marketCandlesRevision,
-  ]);
+  const cachedBundle = marketBundleFromSnapshot(marketBundleSnapshot);
+  const renderWindowFoundationKey = marketBundleSnapshot.foundationKey;
 
   useEffect(() => {
     if (
@@ -1159,26 +1036,20 @@ export function WorkbenchProvider({
 
   useEffect(() => {
     if (
-      marketComposeSourceRef.current === "focus" &&
-      marketFocusWindow !== null &&
-      marketCoverageWindow !== null &&
-      marketCoverageWindowKey !== null &&
-      marketFocusWindowKey !== null &&
-      marketCoverageWindowKey !== marketFocusWindowKey
+      marketFocusWindow === null ||
+      marketCoverageWindow === null ||
+      marketCoverageWindowKey === null ||
+      marketFocusWindowKey === null
     ) {
-      const fallbackKey = `${marketCoverageWindowKey}:${marketCandlesRevision}`;
-      if (fallbackKey !== lastComposeFallbackKeyRef.current) {
-        lastComposeFallbackKeyRef.current = fallbackKey;
-        dbgMark(DBG.market.composeFocusFallback, {
-          focusFromMs: marketFocusWindow.fromMs,
-          focusToMs: marketFocusWindow.toMs,
-          coverageFromMs: marketCoverageWindow.fromMs,
-          coverageToMs: marketCoverageWindow.toMs,
-        });
-      }
-    } else if (marketComposeSourceRef.current === "coverage") {
-      lastComposeFallbackKeyRef.current = null;
+      return;
     }
+    logPhase63FComposeFocusFallback(phase63FMarketLoadOwner(), {
+      focusWindow: marketFocusWindow,
+      coverageWindow: marketCoverageWindow,
+      focusWindowKey: marketFocusWindowKey,
+      coverageWindowKey: marketCoverageWindowKey,
+      candlesRevision: marketCandlesRevision,
+    });
   }, [
     marketFocusWindow,
     marketCoverageWindow,
@@ -1187,12 +1058,6 @@ export function WorkbenchProvider({
     marketCandlesRevision,
     cachedBundle,
   ]);
-
-  useEffect(() => {
-    if (marketLoadStatus === "ready" && cachedBundle !== undefined) {
-      dbgMarkCutover(DBG.load.marketBundleReady, "market", { barCount: cachedBundle.candles.length });
-    }
-  }, [marketLoadStatus, cachedBundle]);
 
   const bumpRenderWindow = useCallback(() => {
     setRenderWindowRevision((r) => r + 1);
@@ -1207,7 +1072,8 @@ export function WorkbenchProvider({
       return;
     }
     const firstTimeSec = cachedBundle.candles[0]!.time;
-    const prevFirstTimeSec = prevBundleFirstTimeSecRef.current;
+    const owner = phase63FMarketLoadOwner();
+    const prevFirstTimeSec = owner.prevBundleFirstTimeSec;
     if (prevFirstTimeSec !== null && firstTimeSec < prevFirstTimeSec) {
       const changed = runPhase63BOffsetPrepend(phase63BRenderWindowOwner(), {
         bundleCandles: cachedBundle.candles,
@@ -1217,7 +1083,7 @@ export function WorkbenchProvider({
         bumpRenderWindow();
       }
     }
-    prevBundleFirstTimeSecRef.current = firstTimeSec;
+    owner.prevBundleFirstTimeSec = firstTimeSec;
   }, [marketCandlesRevision, cachedBundle, intendedRunMarketView, bumpRenderWindow]);
 
   const emitChartViewportCommand = useCallback((command: ViewportCommand) => {
@@ -1321,7 +1187,7 @@ export function WorkbenchProvider({
   }, []);
 
   const attemptMarketPanPrefetch = useCallback(
-    (visibleFromSec: number, visibleToSec: number, forceUserPan = false) => {
+    (visibleFromSec: number, visibleToSec: number, forceUserPan = false, visibleSample?: string) => {
       const view = intendedRunMarketViewRef.current;
       const coverageWindow = marketCoverageWindowRef.current;
       if (view === null || coverageWindow === null || !chartHeavyIoEnabled) {
@@ -1333,31 +1199,19 @@ export function WorkbenchProvider({
         interactionState === "user_panning" ||
         interactionState === "pending_shift" ||
         interactionState === "applying_shift";
-      const decision = evaluateMarketPanPrefetchExpansion({
-        targetWindow: coverageWindow,
+      const decision = evaluatePhase63FPanPrefetch(phase63FMarketLoadOwner(), {
+        view,
+        coverageWindow,
         visibleFromSec,
         visibleToSec,
-        reportFromMs: view.fromOpenTimeMs,
-        reportToMs: view.toOpenTimeMs,
-        timeframeMs: chartTimeframeMs,
+        chartTimeframeMs,
+        forceUserPan,
         isUserPan,
+        visibleSample: visibleSample ?? `${visibleFromSec}:${visibleToSec}`,
       });
-      const logKey = `${decision.reason}:${decision.meta.expanded_from_ms ?? "x"}:${decision.meta.expanded_to_ms ?? "x"}`;
-      if (logKey !== lastPanPrefetchLogKeyRef.current) {
-        lastPanPrefetchLogKeyRef.current = logKey;
-        dbgMarkCutover(DBG.market.panPrefetchDecision, "market", {
-          reason: decision.reason,
-          ...decision.meta,
-        });
-      }
-      if (decision.expanded === null) {
+      if (!decision.shouldApply || decision.expanded === null) {
         return;
       }
-      const expansionKey = `${decision.expanded.fromMs}:${decision.expanded.toMs}:${decision.expanded.toOpenTimeMs}`;
-      if (expansionKey === lastPanPrefetchExpansionKeyRef.current) {
-        return;
-      }
-      lastPanPrefetchExpansionKeyRef.current = expansionKey;
       setMarketCoverageWindow((previous) => {
         if (
           previous !== null &&
@@ -1402,9 +1256,8 @@ export function WorkbenchProvider({
             );
             const toIdx = Math.max(0, Math.min(candles.length - 1, Math.floor(event.visible.to)));
             const sampleKey = `${fromIdx}:${toIdx}:${candles[fromIdx]!.time}:${candles[toIdx]!.time}`;
-            if (sampleKey !== lastVisiblePrefetchSampleRef.current) {
-              lastVisiblePrefetchSampleRef.current = sampleKey;
-              attemptMarketPanPrefetch(candles[fromIdx]!.time, candles[toIdx]!.time);
+            if (sampleKey !== phase63FMarketLoadOwner().visiblePrefetchSample) {
+              attemptMarketPanPrefetch(candles[fromIdx]!.time, candles[toIdx]!.time, false, sampleKey);
             }
           }
         }
@@ -1452,10 +1305,6 @@ export function WorkbenchProvider({
       chartView.centerTimeSec,
     );
   }, [chartView.mode, chartView.centerTimeSec]);
-
-  useEffect(() => {
-    intendedRunMarketViewIdentityRef.current = intendedRunMarketViewIdentity;
-  }, [intendedRunMarketViewIdentity]);
 
   const contextOverlayRefOptions = useMemo(() => {
     if (!selectedVariant) return [];

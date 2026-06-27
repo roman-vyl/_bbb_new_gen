@@ -26,14 +26,14 @@ import {
 import { findForbiddenAdapterFallbackPatterns } from "./runtimeOutputAdapter.contract";
 
 describe("Phase 6.3D trace/events cutover", () => {
-  it("keeps trace domain on runtime_v2_production at phase 6.3E", () => {
+  it("keeps trace domain on runtime_v2_production at phase 6.3F", () => {
     expect(chartRuntimeCutoverConfig.domainOwners.trace).toBe("runtime_v2_production");
     expect(PHASE_63D_DOMAIN_OWNERS.trace).toBe("runtime_v2_production");
     expect(PHASE_63D_DOMAIN_OWNERS.aux_overlay).toBe("old_production");
   });
 
-  it("has no runtime_v2_production owner for market at 6.3E", () => {
-    expect(chartRuntimeCutoverConfig.domainOwners.market).toBe("old_production");
+  it("has market on runtime_v2_production at 6.3F", () => {
+    expect(chartRuntimeCutoverConfig.domainOwners.market).toBe("runtime_v2_production");
   });
 
   it("blocks trace bootstrap until market and render-window are ready", () => {

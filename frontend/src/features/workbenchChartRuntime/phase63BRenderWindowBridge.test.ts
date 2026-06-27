@@ -26,12 +26,12 @@ function makeBundle(candleCount: number): ChartMarketBundle {
 }
 
 describe("Phase 6.3B render-window cutover", () => {
-  it("sets cutover config to phase 6.3E with v2 domains including aux_overlay", () => {
-    expect(chartRuntimeCutoverConfig.cutoverPhase).toBe("6.3E");
+  it("sets cutover config to phase 6.3F with all domains on runtime_v2_production", () => {
+    expect(chartRuntimeCutoverConfig.cutoverPhase).toBe("6.3F");
     expect(chartRuntimeCutoverConfig.domainOwners.render_window).toBe("runtime_v2_production");
     expect(chartRuntimeCutoverConfig.domainOwners.trace).toBe("runtime_v2_production");
     expect(chartRuntimeCutoverConfig.domainOwners.aux_overlay).toBe("runtime_v2_production");
-    expect(chartRuntimeCutoverConfig.domainOwners.market).toBe("old_production");
+    expect(chartRuntimeCutoverConfig.domainOwners.market).toBe("runtime_v2_production");
   });
 
   it("initializes render-window from old market bundle without market fetch helpers", () => {

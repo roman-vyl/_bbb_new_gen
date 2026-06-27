@@ -21,11 +21,10 @@ const RUNTIME_FORBIDDEN_DIRECT_CACHE_MUTATION_PATTERNS = [
 ];
 
 const WORKBENCH_CHART_RUNTIME_OWNER_SYMBOLS = [
-  "executeMarketWindowLoad",
-  "composeDisplayMarketWindowBundle",
   "dispatchChartInteraction",
   "phase63DTraceOwner",
   "phase63EAuxOverlayOwner",
+  "phase63FMarketLoadOwner",
   "emitChartViewportCommand",
 ];
 
@@ -94,6 +93,9 @@ describe("Phase 6.1 static import and ownership guards", () => {
     );
     expect(workbenchSource).toContain(
       'from "@/features/workbenchChartRuntime/phase63EAuxOverlayBridge"',
+    );
+    expect(workbenchSource).toContain(
+      'from "@/features/workbenchChartRuntime/phase63FMarketLoadBridge"',
     );
     expect(workbenchSource).not.toContain("buildChartViewModel");
     expect(workbenchSource).not.toContain("useWorkbenchChartRuntime");

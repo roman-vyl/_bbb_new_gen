@@ -21,8 +21,8 @@ import {
 } from "./phase6StaticGuardUtils";
 
 describe("Phase 6.3A model + adapter cutover", () => {
-  it("keeps model bridge compatible when cutover config is at phase 6.3E", () => {
-    expect(chartRuntimeCutoverConfig.cutoverPhase).toBe("6.3E");
+  it("keeps model bridge compatible when cutover config is at phase 6.3F", () => {
+    expect(chartRuntimeCutoverConfig.cutoverPhase).toBe("6.3F");
     expect(chartRuntimeCutoverConfig.domainOwners.model).toBe("runtime_v2_production");
     expect(runtimeV2ProductionDomains(chartRuntimeCutoverConfig)).toContain("model");
     expect(chartRuntimeCutoverConfig.domainOwners.trace).toBe("runtime_v2_production");
