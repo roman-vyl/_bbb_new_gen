@@ -7,6 +7,12 @@
  * 3. Manual save — copy(__pipelineDebugExport()) into debug/reports/ (no auto file I/O).
  */
 
+import { getCutoverDebugExportFields } from "@/features/workbenchChartRuntime/chartRuntimeCutoverTelemetry";
+import type {
+  ChartRuntimeCutoverPhase,
+  ChartRuntimeDomainOwners,
+} from "@/features/workbenchChartRuntime/runtimeTypes";
+
 type Row = {
   count: number;
   totalMs: number;
@@ -81,6 +87,9 @@ export const PIPELINE_DEBUG_STEPS = {
     panPrefetchDecision: "wb.market_pan_prefetch_decision",
     composeFocusFallback: "wb.market_compose_focus_fallback",
   },
+  cutover: {
+    domainOwners: "wb.cutover.domain_owners",
+  },
   lanesTrace: {
     skip: "wb.lanes_trace_skip",
     useLoaded: "wb.lanes_trace_use_loaded",
@@ -111,6 +120,14 @@ export type PipelineDebugExportRow = {
   max_ms: number;
   avg_ms: number;
   last_meta?: Record<string, unknown>;
+};
+
+export type PipelineDebugExport = {
+  steps: PipelineDebugExportRow[];
+  debug: {
+    cutoverPhase: ChartRuntimeCutoverPhase;
+    domainOwners: ChartRuntimeDomainOwners;
+  };
 };
 
 export function pipelineDebugEnabled(): boolean {
@@ -179,8 +196,8 @@ export async function dbgTimed<T>(
   }
 }
 
-export function dbgExport(): PipelineDebugExportRow[] {
-  return [...stats.entries()]
+export function dbgExport(): PipelineDebugExport {
+  const steps = [...stats.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([step, row]) => ({
       step,
@@ -190,6 +207,11 @@ export function dbgExport(): PipelineDebugExportRow[] {
       avg_ms: row.count > 0 ? Number((row.totalMs / row.count).toFixed(1)) : 0,
       ...(row.lastMeta !== undefined ? { last_meta: row.lastMeta } : {}),
     }));
+
+  return {
+    steps,
+    debug: getCutoverDebugExportFields(),
+  };
 }
 
 export function dbgReset(): void {
@@ -198,7 +220,7 @@ export function dbgReset(): void {
 
 export function dbgFlush(label = "workbench"): void {
   if (!pipelineDebugEnabled()) return;
-  const rows = dbgExport();
+  const { steps: rows } = dbgExport();
   console.group(`=== PIPELINE_DEBUG [${label}] ===`);
   console.table(
     rows.map((row) => ({
@@ -262,7 +284,7 @@ export function dbgPrintConsoleFaq(force = false): void {
 
 type PipelineDebugWindow = {
   __pipelineDebugFlush?: (label?: string) => void;
-  __pipelineDebugExport?: () => PipelineDebugExportRow[];
+  __pipelineDebugExport?: () => PipelineDebugExport;
   __pipelineDebugReset?: () => void;
   __pipelineDebugHelp?: () => void;
 };

@@ -2,6 +2,7 @@ import type { ChartBar, RunReport, RunVariant } from "@/api/types";
 import { buildChartViewModel } from "@/features/chart/runtime/chartViewModel";
 
 import type { ChartRuntimeCompatibilityInput, ChartRuntimeOutput } from "./runtimeTypes";
+import { chartRuntimeCutoverConfig } from "./chartRuntimeCutoverConfig";
 
 const EMPTY_METRICS = {
   long: { trades: 0, pnl: 0, return_pct: 0, profit_factor: null, win_rate: null },
@@ -164,6 +165,8 @@ export function makeSampleChartRuntimeOutput(
         auxOverlays: false,
         finalChartModel: false,
       },
+      cutoverPhase: chartRuntimeCutoverConfig.cutoverPhase,
+      domainOwners: { ...chartRuntimeCutoverConfig.domainOwners },
     },
   };
 

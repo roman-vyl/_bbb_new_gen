@@ -1,6 +1,6 @@
 # Phase 6.3-debug — Owner/Domain/Phase Telemetry (before any cutover)
 
-**Status:** Not started — **mandatory gate before 6.3A**
+**Status:** Complete — STOP FOR REVIEW
 
 **Phase debug tag:** `phase: 6.3-debug`
 

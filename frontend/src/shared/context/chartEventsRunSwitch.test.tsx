@@ -336,7 +336,7 @@ describe("chart-events run switch bootstrap", () => {
     expect(fetchChartEvents).not.toHaveBeenCalled();
     expect(fetchSignalTrace).not.toHaveBeenCalled();
     expect(
-      dbgExport().some(
+      dbgExport().steps.some(
         (row) =>
           row.step === DBG.signalTrace.bootstrapBlocked &&
           (row.last_meta?.reason === "report_run_mismatch" ||
@@ -396,8 +396,8 @@ describe("chart-events run switch bootstrap", () => {
       deferredChartEvents.reject(new ApiError(404, "run not found"));
     });
 
-    expect(dbgExport().some((row) => row.step === DBG.chartEvents.fetchFail)).toBe(false);
-    expect(dbgExport().some((row) => row.step === DBG.chartEvents.fallback)).toBe(false);
+    expect(dbgExport().steps.some((row) => row.step === DBG.chartEvents.fetchFail)).toBe(false);
+    expect(dbgExport().steps.some((row) => row.step === DBG.chartEvents.fallback)).toBe(false);
 
     await act(async () => {
       deferredRunBReport.resolve(makeReport("run-b"));

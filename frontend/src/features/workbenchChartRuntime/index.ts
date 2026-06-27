@@ -1,4 +1,6 @@
 export * from "./auxOverlayRuntime";
+export * from "./chartRuntimeCutoverConfig";
+export * from "./chartRuntimeCutoverTelemetry";
 export * from "./chartEventsRuntime";
 export * from "./chartModelRuntime";
 export * from "./chartWindowRuntime";

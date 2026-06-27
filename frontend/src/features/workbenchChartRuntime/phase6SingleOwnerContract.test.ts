@@ -9,10 +9,12 @@ import {
 } from "./phase6StaticGuardUtils";
 
 const PRE_CUTOVER_FORBIDDEN_WORKBENCH_IMPORTS = [
-  /from\s+["']@\/features\/workbenchChartRuntime/,
   /useWorkbenchChartRuntime/,
   /createChartRuntimeCompatibilityOutput/,
   /createWorkbenchChartRuntimeSlice/,
+  /from\s+["']@\/features\/workbenchChartRuntime\/useWorkbenchChartRuntime/,
+  /from\s+["']@\/features\/workbenchChartRuntime\/runtimeOutputAdapter/,
+  /from\s+["']@\/features\/workbenchChartRuntime["']/,
 ];
 
 const PRE_CUTOVER_FORBIDDEN_FALLBACK_PATTERNS = [
@@ -83,6 +85,9 @@ describe("Phase 6.1 single-owner contract guards", () => {
       PRE_CUTOVER_FORBIDDEN_WORKBENCH_IMPORTS,
     );
     expect(violations).toEqual([]);
+    expect(workbenchSource).toContain(
+      'from "@/features/workbenchChartRuntime/chartRuntimeCutoverTelemetry"',
+    );
   });
 
   it("forbids old-pipeline fallback wiring patterns in WorkbenchContext", () => {

@@ -72,6 +72,12 @@ describe("Phase 6.1 static import and ownership guards", () => {
 
   it("does not wire runtime v2 hook into production WorkbenchContext exports", () => {
     const workbenchSource = readWorkspaceSource("src/shared/context/WorkbenchContext.tsx");
-    expect(workbenchSource).not.toMatch(/from\s+["']@\/features\/workbenchChartRuntime/);
+    expect(workbenchSource).not.toContain("useWorkbenchChartRuntime");
+    expect(workbenchSource).not.toMatch(
+      /from\s+["']@\/features\/workbenchChartRuntime\/useWorkbenchChartRuntime/,
+    );
+    expect(workbenchSource).toContain(
+      'from "@/features/workbenchChartRuntime/chartRuntimeCutoverTelemetry"',
+    );
   });
 });

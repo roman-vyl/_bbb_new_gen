@@ -20,7 +20,11 @@ import {
   signalTraceMatchesChartWindow,
   type SignalTraceLoadStatus,
 } from "@/shared/context/signalTraceLoadPolicy";
-import { dbgFlush, dbgMark, dbgTimedSync, PIPELINE_DEBUG_STEPS as DBG } from "@/shared/diagnostics/pipelineDebug";
+import { dbgFlush, dbgMark, PIPELINE_DEBUG_STEPS as DBG } from "@/shared/diagnostics/pipelineDebug";
+import {
+  dbgMarkCutover,
+  dbgTimedSyncCutover,
+} from "@/features/workbenchChartRuntime/chartRuntimeCutoverTelemetry";
 
 export type DisplayLoadOutcome =
   | "committed"
@@ -284,8 +288,9 @@ export async function loadDisplayTraceChunk(
     const actualBounds = computeChunkBoundsFromChartEvents(chartBundle);
     const truncated =
       chartBundle.coverage.truncated || isTraceResponseTruncated(requestedBounds, actualBounds);
-    dbgTimedSync(
+    dbgTimedSyncCutover(
       DBG.traceDisplay.mergeChunk,
+      "trace",
       () => {
         mergeDisplayChunkFromChartEvents(cache, chartBundle);
       },
@@ -296,7 +301,7 @@ export async function loadDisplayTraceChunk(
       }),
     );
     mergeSource = "chart-events";
-    dbgMark(DBG.chartEvents.merge, {
+    dbgMarkCutover(DBG.chartEvents.merge, "trace", {
       windowKey,
       traceRequestKey: displayRequestKey,
       source: mergeSource,
@@ -355,8 +360,9 @@ export function mergeDisplayFromDenseFallback(ctx: WorkbenchTraceNetworkLoadCont
 
   const actualBounds = computeChunkBoundsFromResponse(bundle);
   const truncated = isTraceResponseTruncated(requestedBounds, actualBounds);
-  dbgTimedSync(
+  dbgTimedSyncCutover(
     DBG.traceDisplay.mergeChunk,
+    "trace",
     () => {
       mergeDisplayChunkFromResponse(cache, bundle);
     },
@@ -367,7 +373,7 @@ export function mergeDisplayFromDenseFallback(ctx: WorkbenchTraceNetworkLoadCont
     }),
   );
   if (chartEventsEnabled) {
-    dbgMark(DBG.chartEvents.merge, {
+    dbgMarkCutover(DBG.chartEvents.merge, "trace", {
       windowKey,
       traceRequestKey: displayRequestKey,
       source: mergeSource,
@@ -420,7 +426,7 @@ export async function loadDenseLanesTrace(ctx: WorkbenchTraceNetworkLoadContext)
       });
       return { outcome: "stale", phase: "response" };
     }
-    dbgMark(DBG.signalTrace.fetchEnd, {
+    dbgMarkCutover(DBG.signalTrace.fetchEnd, "trace", {
       windowKey,
       traceRequestKey: networkCoordinatorKey,
       timeCount: bundle.times.length,

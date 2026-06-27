@@ -63,6 +63,32 @@ export type ChartRuntimeInteractionOutput = {
   dispatch(event: ChartInteractionEvent): void;
 };
 
+export type ChartRuntimeOwner = "old_production" | "runtime_v2_production";
+
+export type ChartRuntimeDomain =
+  | "model"
+  | "render_window"
+  | "viewport"
+  | "trace"
+  | "aux_overlay"
+  | "market";
+
+export type ChartRuntimeCutoverPhase =
+  | "6.3-debug"
+  | "6.3A"
+  | "6.3B"
+  | "6.3C"
+  | "6.3D"
+  | "6.3E"
+  | "6.3F";
+
+export type ChartRuntimeDomainOwners = Record<ChartRuntimeDomain, ChartRuntimeOwner>;
+
+export type ChartRuntimeCutoverConfig = {
+  cutoverPhase: ChartRuntimeCutoverPhase;
+  domainOwners: ChartRuntimeDomainOwners;
+};
+
 export type ChartRuntimeOwnerFlags = {
   marketWindows: boolean;
   marketCacheWrites: boolean;
@@ -137,6 +163,8 @@ export type ChartRuntimeDebugSnapshot = {
   traceRequests: { displayKey: string | null; denseKey: string | null; status: RuntimeTraceStatus };
   counts: { componentEvents: number; auxOverlays: number; htfOverlays: number; markers: number | null };
   ownerFlags: ChartRuntimeOwnerFlags;
+  cutoverPhase: ChartRuntimeCutoverPhase;
+  domainOwners: ChartRuntimeDomainOwners;
 };
 
 export type ChartRuntimeOutput = {

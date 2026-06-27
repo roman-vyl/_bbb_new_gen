@@ -809,11 +809,11 @@ describe("Workbench split market resource cache", () => {
     await waitFor(() => {
       expect(workbenchRef?.marketLoadStatus).toBe("ready");
       expect(
-        dbgExport().find((row) => row.step === DBG.load.renderWindowInit)?.count,
+        dbgExport().steps.find((row) => row.step === DBG.load.renderWindowInit)?.count,
       ).toBe(1);
     });
 
-    const initCountAfterCandles = dbgExport().find(
+    const initCountAfterCandles = dbgExport().steps.find(
       (row) => row.step === DBG.load.renderWindowInit,
     )?.count;
     expect(initCountAfterCandles).toBe(1);
@@ -830,7 +830,7 @@ describe("Workbench split market resource cache", () => {
       expect(chartSliceRef?.chartEmaOverlays).toHaveLength(3);
     });
 
-    const initCountAfterEma = dbgExport().find(
+    const initCountAfterEma = dbgExport().steps.find(
       (row) => row.step === DBG.load.renderWindowInit,
     )?.count;
     expect(initCountAfterEma).toBe(1);
@@ -1070,7 +1070,7 @@ describe("Workbench market pan prefetch", () => {
       chartSliceRef!.dispatchChartInteraction({ type: "programmatic_viewport_end" });
     });
 
-    const prefetchMarks = dbgExport().filter(
+    const prefetchMarks = dbgExport().steps.filter(
       (row) => row.step === DBG.market.panPrefetchDecision,
     );
     expect(prefetchMarks).toHaveLength(0);
@@ -1101,7 +1101,7 @@ describe("Workbench market pan prefetch", () => {
       chartSliceRef!.dispatchChartInteraction({ type: "pointerup" });
     });
 
-    const prefetchMark = dbgExport()
+    const prefetchMark = dbgExport().steps
       .filter((row) => row.step === DBG.market.panPrefetchDecision)
       .at(-1);
     expect(prefetchMark?.last_meta?.reason).not.toBe("not_user_pan");
@@ -1133,7 +1133,7 @@ describe("Workbench market pan prefetch", () => {
       chartSliceRef!.dispatchChartInteraction({ type: "pointerup" });
     });
 
-    const prefetchMarks = dbgExport().filter(
+    const prefetchMarks = dbgExport().steps.filter(
       (row) => row.step === DBG.market.panPrefetchDecision,
     );
     expect(prefetchMarks.length).toBeLessThanOrEqual(1);
@@ -1190,7 +1190,7 @@ describe("Workbench market pan prefetch", () => {
     await waitFor(() => {
       expect(workbenchRef?.marketLoadStatus).toBe("ready");
       expect(
-        dbgExport().find((row) => row.step === DBG.load.renderWindowInit)?.count,
+        dbgExport().steps.find((row) => row.step === DBG.load.renderWindowInit)?.count,
       ).toBe(1);
     });
 
@@ -1209,9 +1209,9 @@ describe("Workbench market pan prefetch", () => {
       expect(fetchCandlesWindow.mock.calls.length).toBeGreaterThan(1);
     });
 
-    const initCount = dbgExport().find((row) => row.step === DBG.load.renderWindowInit)?.count;
+    const initCount = dbgExport().steps.find((row) => row.step === DBG.load.renderWindowInit)?.count;
     expect(initCount).toBe(1);
-    const prefetchMark = dbgExport()
+    const prefetchMark = dbgExport().steps
       .filter((row) => row.step === DBG.market.panPrefetchDecision)
       .find((row) => row.last_meta?.reason === "near_left_edge");
     expect(prefetchMark).toBeDefined();
@@ -1275,7 +1275,7 @@ describe("Workbench market pan prefetch", () => {
     });
 
     const seriesKeyBefore = chartSliceRef!.chartViewModel.seriesKey;
-    const setDataBefore = dbgExport().find((row) => row.step === DBG.chart.setDataCandles)?.count ?? 0;
+    const setDataBefore = dbgExport().steps.find((row) => row.step === DBG.chart.setDataCandles)?.count ?? 0;
 
     const leftEdgeTimeSec = Math.floor((chunkMs * 3) / 1000);
     act(() => {
@@ -1294,8 +1294,8 @@ describe("Workbench market pan prefetch", () => {
 
     expect(chartSliceRef?.chartViewCount).toBeGreaterThan(0);
     expect(chartSliceRef?.chartViewModel.seriesKey).toBe(seriesKeyBefore);
-    expect(dbgExport().find((row) => row.step === DBG.market.composeFocusFallback)).toBeDefined();
-    expect(dbgExport().find((row) => row.step === DBG.chart.setDataCandles)?.count ?? 0).toBe(
+    expect(dbgExport().steps.find((row) => row.step === DBG.market.composeFocusFallback)).toBeDefined();
+    expect(dbgExport().steps.find((row) => row.step === DBG.chart.setDataCandles)?.count ?? 0).toBe(
       setDataBefore,
     );
 
@@ -1311,7 +1311,7 @@ describe("Workbench market pan prefetch", () => {
 
     await waitFor(() => {
       expect(
-        dbgExport().find((row) => row.step === DBG.load.renderWindowInit)?.count,
+        dbgExport().steps.find((row) => row.step === DBG.load.renderWindowInit)?.count,
       ).toBe(1);
     });
   });

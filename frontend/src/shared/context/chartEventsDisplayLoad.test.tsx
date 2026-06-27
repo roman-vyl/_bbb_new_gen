@@ -267,7 +267,7 @@ describe("chart-events display load (5A)", () => {
     expect(chartSliceRef?.lanesSignalTraceError).toContain("dense trace unavailable");
     expect(chartSliceRef?.chartViewModel.componentEvents).toEqual([CHART_EVENTS_MARKER]);
 
-    const mergeMark = dbgExport().find((row) => row.step === DBG.chartEvents.merge);
+    const mergeMark = dbgExport().steps.find((row) => row.step === DBG.chartEvents.merge);
     expect(mergeMark?.last_meta?.source).toBe("chart-events");
   });
 
@@ -392,7 +392,7 @@ describe("lazy dense lanes (5B)", () => {
     expect(chartSliceRef?.lanesSignalTraceStatus).toBe("error");
     expect(chartSliceRef?.lanesSignalTraceError).toContain("dense trace unavailable");
 
-    const skipMark = dbgExport().find((row) => row.step === DBG.lanesTrace.skip);
+    const skipMark = dbgExport().steps.find((row) => row.step === DBG.lanesTrace.skip);
     expect(skipMark?.last_meta?.reason).toBe("lanes_ready");
   });
 

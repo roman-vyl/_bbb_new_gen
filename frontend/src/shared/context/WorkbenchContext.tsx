@@ -151,9 +151,13 @@ import { evaluateSignalTraceBootstrap } from "@/shared/context/signalTraceBootst
 import {
   dbgMark,
   dbgScheduleShiftFlush,
-  dbgTimedSync,
   PIPELINE_DEBUG_STEPS as DBG,
 } from "@/shared/diagnostics/pipelineDebug";
+import {
+  dbgMarkCutover,
+  dbgTimedSyncCutover,
+  emitCutoverDomainOwnersSnapshot,
+} from "@/features/workbenchChartRuntime/chartRuntimeCutoverTelemetry";
 export type ReportLoadStatus = "loading" | "ready" | "error";
 export type ConfigLoadStatus = "loading" | "ready" | "empty" | "error";
 export type MarketLoadStatus = "idle" | "loading" | "ready" | "error";
@@ -642,9 +646,15 @@ export function WorkbenchProvider({
 
   useEffect(() => {
     if (reportLoadStatus === "ready" && selectedRunId !== null) {
-      dbgMark(DBG.load.reportReady, { runId: selectedRunId });
+      dbgMarkCutover(DBG.load.reportReady, "market", { runId: selectedRunId });
     }
   }, [reportLoadStatus, selectedRunId]);
+
+  useEffect(() => {
+    if (chartHeavyIoEnabled) {
+      emitCutoverDomainOwnersSnapshot();
+    }
+  }, [chartHeavyIoEnabled]);
 
   useEffect(() => {
     let cancelled = false;
@@ -953,7 +963,7 @@ export function WorkbenchProvider({
 
       const focusCandlesReady = marketCandlesReadyForTarget(view, focusWindow);
       if (focusCandlesReady) {
-        dbgMark(DBG.load.marketFetchCacheHit, {
+        dbgMarkCutover(DBG.load.marketFetchCacheHit, "market", {
           viewIdentity,
           candlesCached: true,
           targetFromMs: coverageWindow.fromMs,
@@ -975,7 +985,7 @@ export function WorkbenchProvider({
         setMarketLoadStatus("loading");
       }
 
-      dbgMark(DBG.load.marketFetchStart, {
+      dbgMarkCutover(DBG.load.marketFetchStart, "market", {
         key: coverageKey,
         candlesCached: focusCandlesReady,
         targetFromMs: coverageWindow.fromMs,
@@ -1006,7 +1016,7 @@ export function WorkbenchProvider({
             }
           },
         });
-        dbgMark(DBG.load.marketFetchEnd, {
+        dbgMarkCutover(DBG.load.marketFetchEnd, "market", {
           key: coverageKey,
           candlesFetched: result.candlesFetched,
           emaFetched: result.emaFetched,
@@ -1173,7 +1183,7 @@ export function WorkbenchProvider({
 
   useEffect(() => {
     if (marketLoadStatus === "ready" && cachedBundle !== undefined) {
-      dbgMark(DBG.load.marketBundleReady, { barCount: cachedBundle.candles.length });
+      dbgMarkCutover(DBG.load.marketBundleReady, "market", { barCount: cachedBundle.candles.length });
     }
   }, [marketLoadStatus, cachedBundle]);
 
@@ -1234,8 +1244,9 @@ export function WorkbenchProvider({
       }
       let rebuilt = false;
       let skipped = false;
-      const didRebuild = dbgTimedSync(
+      const didRebuild = dbgTimedSyncCutover(
         DBG.renderWindow.tradeSelect,
+        "render_window",
         () => {
           const manager = renderWindowManager();
           if (entryTimeMs === null) {
@@ -1300,7 +1311,7 @@ export function WorkbenchProvider({
       manager.buildTailWindow();
       bumpRenderWindow();
     }
-    dbgMark(DBG.load.renderWindowInit, {
+    dbgMarkCutover(DBG.load.renderWindowInit, "render_window", {
       fullLength: bundleCandles.length,
       variant: selectedVariantKey,
     });
@@ -1361,7 +1372,7 @@ export function WorkbenchProvider({
       const logKey = `${decision.reason}:${decision.meta.expanded_from_ms ?? "x"}:${decision.meta.expanded_to_ms ?? "x"}`;
       if (logKey !== lastPanPrefetchLogKeyRef.current) {
         lastPanPrefetchLogKeyRef.current = logKey;
-        dbgMark(DBG.market.panPrefetchDecision, {
+        dbgMarkCutover(DBG.market.panPrefetchDecision, "market", {
           reason: decision.reason,
           ...decision.meta,
         });
@@ -1438,8 +1449,9 @@ export function WorkbenchProvider({
     }
     let barCount = 0;
     let overlayCount = 0;
-    const slice = dbgTimedSync(
+    const slice = dbgTimedSyncCutover(
       DBG.chartWindow.slice,
+      "render_window",
       () => {
         const manager = renderWindowManager();
         manager.setFullLength(cachedBundle.candles.length);
@@ -1695,7 +1707,7 @@ export function WorkbenchProvider({
           })()
         : null;
 
-    dbgMark(DBG.traceDisplay.applyCurrentWindow, {
+    dbgMarkCutover(DBG.traceDisplay.applyCurrentWindow, "trace", {
       fromSec: nextDisplayState.fromSec,
       toSec: nextDisplayState.toSec,
       status: shouldRetainPreviousDisplay ? retainedDisplayStatus : nextDisplayState.status,
@@ -2023,13 +2035,15 @@ export function WorkbenchProvider({
     }
     const { fromSec, toSec } = renderWindowBounds;
     const cache = signalTraceDisplayCacheRef.current;
-    const eventCount = dbgTimedSync(
+    const eventCount = dbgTimedSyncCutover(
       DBG.traceDisplay.sliceEvents,
+      "trace",
       () => cache.sliceEventsForWindow(fromSec, toSec).length,
       () => ({ fromSec, toSec }),
     );
-    const htfTimes = dbgTimedSync(
+    const htfTimes = dbgTimedSyncCutover(
       DBG.traceDisplay.sliceHtf,
+      "aux_overlay",
       () => cache.sliceHtfContextForWindow(fromSec, toSec).times.length,
       () => ({ fromSec, toSec }),
     );
@@ -2204,7 +2218,7 @@ export function WorkbenchProvider({
         : null;
 
     if (renderWindowBounds !== null) {
-      dbgMark(DBG.traceDisplay.coverage, {
+      dbgMarkCutover(DBG.traceDisplay.coverage, "trace", {
         fromSec: renderWindowBounds.fromSec,
         toSec: renderWindowBounds.toSec,
         coversWindow: displayCacheCoversWindow,
@@ -2227,7 +2241,7 @@ export function WorkbenchProvider({
     });
 
     if (!bootstrap.ready) {
-      dbgMark(DBG.signalTrace.bootstrapBlocked, { reason: bootstrap.reason });
+      dbgMarkCutover(DBG.signalTrace.bootstrapBlocked, "trace", { reason: bootstrap.reason });
       setSignalTrace(null);
       setSignalTraceStatus("idle");
       setLoadedSignalTraceWindowKey(null);
@@ -2247,7 +2261,7 @@ export function WorkbenchProvider({
     });
     const coordinator = signalTraceRequestCoordinatorRef.current;
 
-    dbgMark(DBG.signalTrace.bootstrapReady, {
+    dbgMarkCutover(DBG.signalTrace.bootstrapReady, "trace", {
       windowKey: committedWindowKey,
       traceRequestKey: windowTraceRequestKey,
       renderWindowRevision,
@@ -2285,7 +2299,7 @@ export function WorkbenchProvider({
       extra?: Record<string, unknown>,
     ) => {
       const ledger = coordinator.ledgerSnapshotForKey(requestKey);
-      dbgMark(DBG.signalTrace.decision, {
+      dbgMarkCutover(DBG.signalTrace.decision, "trace", {
         traceRequestKey: requestKey,
         decisionReason: coordDecision.action === "fetch" ? "fetch" : coordDecision.reason,
         skipReason: coordDecision.action === "skip" ? coordDecision.reason : undefined,
@@ -2378,13 +2392,14 @@ export function WorkbenchProvider({
       }
 
       coordinator.markMerged(windowTraceRequestKey, "session_restore");
-      dbgMark(DBG.signalTrace.fetchStart, {
+      dbgMarkCutover(DBG.signalTrace.fetchStart, "trace", {
         source: "session_restore",
         windowKey: committedWindowKey,
         traceRequestKey: windowTraceRequestKey,
       });
-      dbgTimedSync(
+      dbgTimedSyncCutover(
         DBG.traceDisplay.mergeChunk,
+        "trace",
         () => {
           mergeDisplayChunkFromResponse(signalTraceDisplayCacheRef.current, sessionBundle);
         },
@@ -2419,7 +2434,7 @@ export function WorkbenchProvider({
 
     if (plan.action === "defer") {
       if (!displayCacheCoversWindow) {
-        dbgMark(DBG.traceDisplay.cacheMiss, {
+        dbgMarkCutover(DBG.traceDisplay.cacheMiss, "trace", {
           windowKey: committedWindowKey,
           traceRequestKey: windowTraceRequestKey,
         });
@@ -2529,7 +2544,7 @@ export function WorkbenchProvider({
       return;
     }
 
-    dbgMark(DBG.traceDisplay.cacheMiss, {
+    dbgMarkCutover(DBG.traceDisplay.cacheMiss, "trace", {
       windowKey: committedWindowKey,
       traceRequestKey: displayRequestKey,
       traceDisplayChunkKey,
@@ -2583,7 +2598,7 @@ export function WorkbenchProvider({
         setSignalTraceStatus("loading");
         signalTraceStatusRef.current = "loading";
         setSignalTraceError(null);
-        dbgMark(DBG.signalTrace.fetchStart, {
+        dbgMarkCutover(DBG.signalTrace.fetchStart, "trace", {
           source: fetchSource,
           windowKey,
           traceRequestKey: denseCoordinatorKey,
@@ -2594,7 +2609,7 @@ export function WorkbenchProvider({
       };
 
       if (!lanesOnlyFetch) {
-        dbgMark(DBG.signalTrace.fetchStart, {
+        dbgMarkCutover(DBG.signalTrace.fetchStart, "trace", {
           source: fetchSource,
           windowKey,
           traceRequestKey: displayRequestKey,

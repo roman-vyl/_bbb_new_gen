@@ -5,6 +5,7 @@ import type {
   RuntimeMarketWindowSnapshot,
   RuntimeTraceStatus,
 } from "./runtimeTypes";
+import { chartRuntimeCutoverConfig } from "./chartRuntimeCutoverConfig";
 
 export const inactiveChartRuntimeOwnerFlags: ChartRuntimeOwnerFlags = {
   marketWindows: false,
@@ -52,6 +53,8 @@ export function createEmptyRuntimeDebugSnapshot(params: {
     traceRequests: { displayKey: null, denseKey: null, status: params.traceStatus ?? "idle" },
     counts: { componentEvents: 0, auxOverlays: 0, htfOverlays: 0, markers: null },
     ownerFlags: inactiveChartRuntimeOwnerFlags,
+    cutoverPhase: chartRuntimeCutoverConfig.cutoverPhase,
+    domainOwners: { ...chartRuntimeCutoverConfig.domainOwners },
   };
 }
 
