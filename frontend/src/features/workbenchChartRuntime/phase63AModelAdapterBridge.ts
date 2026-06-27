@@ -3,7 +3,6 @@ import type { ChartViewWindow } from "@/features/chart/chartViewWindow";
 import type { TraceDisplayState } from "@/features/chart/traceDisplayApply";
 import { dbgMarkCutover } from "./chartRuntimeCutoverTelemetry";
 import {
-  createChartModelStabilizeCache,
   resolveChartModelRuntime,
   type ChartModelStabilizeCache,
 } from "./chartModelRuntime";

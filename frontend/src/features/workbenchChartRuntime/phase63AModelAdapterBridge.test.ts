@@ -24,14 +24,15 @@ import {
 } from "./phase6StaticGuardUtils";
 
 describe("Phase 6.3A model + adapter cutover", () => {
-  it("sets cutover config to phase 6.3A with model on runtime_v2_production only", () => {
-    expect(chartRuntimeCutoverConfig.cutoverPhase).toBe("6.3A");
-    expect(chartRuntimeCutoverConfig.domainOwners).toEqual(PHASE_63A_DOMAIN_OWNERS);
-    expect(runtimeV2ProductionDomains(chartRuntimeCutoverConfig)).toEqual(["model"]);
+  it("keeps model bridge compatible when cutover config is at phase 6.3B", () => {
+    expect(chartRuntimeCutoverConfig.cutoverPhase).toBe("6.3B");
+    expect(chartRuntimeCutoverConfig.domainOwners.model).toBe("runtime_v2_production");
+    expect(runtimeV2ProductionDomains(chartRuntimeCutoverConfig)).toContain("model");
     expect(hasRuntimeV2ProductionOwner(chartRuntimeCutoverConfig)).toBe(true);
-    for (const domain of ["render_window", "viewport", "trace", "aux_overlay", "market"] as const) {
-      expect(chartRuntimeCutoverConfig.domainOwners[domain]).toBe("old_production");
-    }
+    expect(chartRuntimeCutoverConfig.domainOwners).toEqual({
+      ...PHASE_63A_DOMAIN_OWNERS,
+      render_window: "runtime_v2_production",
+    });
   });
 
   it("builds model bridge input as read-only passthrough from old pipeline fields", () => {

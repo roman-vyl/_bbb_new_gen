@@ -51,7 +51,6 @@ import {
 } from "@/features/chart/workbenchMarketLoad";
 import { getCandles } from "@/features/chart/marketResourceCache";
 import { mergeAuxOverlayPoints } from "@/features/chart/chartAuxEmaOverlays";
-import type { ChartDataWindowManager } from "@/features/chart/chartDataWindowManager";
 import { createChartRuntime, type WindowCommitResult } from "@/features/chart/runtime/chartRuntime";
 import type { ChartViewModel } from "@/features/chart/runtime/chartViewModel";
 import {
@@ -83,8 +82,6 @@ import {
 import { canEmitTradeFocus } from "@/features/chart/runtime/viewportController";
 import type { ChartInteractionEvent, ViewportCommand } from "@/features/chart/runtime/types";
 import {
-  emptyChartViewWindow,
-  findBarIndexAtOrBefore,
   type ChartViewMode,
   type ChartViewWindow,
 } from "@/features/chart/chartViewWindow";
@@ -99,13 +96,10 @@ import {
 } from "@/features/chart/strategyContexts";
 import { candleRangeMs, selectedTradeEntryMarkerInView } from "@/features/chart/chartMarkers";
 import {
-  buildAuxOverlaysStabilizeKey,
-  buildEmaOverlaysStabilizeKey,
   buildRenderWindowBoundsKey,
   candleTimeBounds,
   displayAuxOverlaysForRenderWindow,
   frozenHtfOverlaysForStorage,
-  stabilizeByWindowBoundsKey,
 } from "@/features/chart/chartRenderWindowDisplay";
 import {
   buildSessionCacheIdentity,
@@ -159,6 +153,16 @@ import {
   emitCutoverDomainOwnersSnapshot,
 } from "@/features/workbenchChartRuntime/chartRuntimeCutoverTelemetry";
 import { resolvePhase63AModelRuntimeSlice } from "@/features/workbenchChartRuntime/phase63AModelAdapterBridge";
+import {
+  buildChartViewWindowFromPhase63BSlice,
+  createPhase63BRenderWindowOwnerState,
+  resolvePhase63BChartWindowSlice,
+  runPhase63BApplyTrade,
+  runPhase63BOffsetPrepend,
+  runPhase63BRenderWindowInit,
+  type Phase63BRenderWindowOwnerState,
+} from "@/features/workbenchChartRuntime/phase63BRenderWindowBridge";
+import { applyRenderWindowShiftCommit } from "@/features/workbenchChartRuntime/renderWindowRuntime";
 import { derivePhase63AModelDomainFieldsFromRuntime } from "@/features/workbenchChartRuntime/runtimeOutputAdapter.contract";
 export type ReportLoadStatus = "loading" | "ready" | "error";
 export type ConfigLoadStatus = "loading" | "ready" | "empty" | "error";
@@ -480,25 +484,19 @@ export function WorkbenchProvider({
   const applyWindowCommitRef = useRef<(commit: WindowCommitResult) => void>(() => {});
   const windowSwapTransactionIdRef = useRef(0);
   const windowSwapCancelledThroughIdRef = useRef(0);
-  const chartRuntimeRef = useRef(
-    createChartRuntime({
-      renderWindow: {
-        onCommit: (commit) => applyWindowCommitRef.current(commit),
-      },
-    }),
-  );
-  const renderWindowManager = (): ChartDataWindowManager =>
-    chartRuntimeRef.current.renderWindow.getManager();
-  const chartCandlesCacheRef = useRef<{ key: string; value: ChartBar[] }>({ key: "", value: [] });
-  const chartEmaCacheRef = useRef<{ key: string; value: ChartEmaOverlay[] }>({ key: "", value: [] });
-  const chartAuxEmaCacheRef = useRef<{ key: string; value: ChartAuxEmaOverlay[] }>({
-    key: "",
-    value: [],
-  });
+  const chartRuntimeRef = useRef(createChartRuntime());
+  const phase63BRenderWindowOwnerRef = useRef<Phase63BRenderWindowOwnerState | null>(null);
+  if (phase63BRenderWindowOwnerRef.current === null) {
+    phase63BRenderWindowOwnerRef.current = createPhase63BRenderWindowOwnerState((commit) =>
+      applyWindowCommitRef.current(commit),
+    );
+  }
+  const phase63BRenderWindowOwner = (): Phase63BRenderWindowOwnerState =>
+    phase63BRenderWindowOwnerRef.current!;
+  const v2RenderWindow = () => phase63BRenderWindowOwner().controller.chartRuntime.renderWindow;
   const [renderWindowRevision, setRenderWindowRevision] = useState(0);
   const [chartViewportCommand, setChartViewportCommand] = useState<ViewportCommand | null>(null);
   const [chartViewportCommandSeq, setChartViewportCommandSeq] = useState(0);
-  const skipTradeWindowRebuildRef = useRef(false);
   const renderWindowShiftSeqRef = useRef(0);
   const chartViewCandlesRef = useRef<ChartBar[]>([]);
 
@@ -1204,12 +1202,12 @@ export function WorkbenchProvider({
     const firstTimeSec = cachedBundle.candles[0]!.time;
     const prevFirstTimeSec = prevBundleFirstTimeSecRef.current;
     if (prevFirstTimeSec !== null && firstTimeSec < prevFirstTimeSec) {
-      const delta = findBarIndexAtOrBefore(cachedBundle.candles, prevFirstTimeSec);
-      if (delta > 0) {
-        const changed = renderWindowManager().offsetWindowStart(delta);
-        if (changed !== null) {
-          bumpRenderWindow();
-        }
+      const changed = runPhase63BOffsetPrepend(phase63BRenderWindowOwner(), {
+        bundleCandles: cachedBundle.candles,
+        previousFirstTimeSec: prevFirstTimeSec,
+      });
+      if (changed) {
+        bumpRenderWindow();
       }
     }
     prevBundleFirstTimeSecRef.current = firstTimeSec;
@@ -1244,41 +1242,15 @@ export function WorkbenchProvider({
       if (bundleCandles.length === 0) {
         return false;
       }
-      let rebuilt = false;
-      let skipped = false;
-      const didRebuild = dbgTimedSyncCutover(
-        DBG.renderWindow.tradeSelect,
-        "render_window",
-        () => {
-          const manager = renderWindowManager();
-          if (entryTimeMs === null) {
-            const changed = manager.buildTailWindow();
-            if (changed !== null) {
-              bumpRenderWindow();
-            }
-            rebuilt = changed !== null;
-            return rebuilt;
-          }
-          const entryIndex = findBarIndexAtOrBefore(
-            bundleCandles,
-            Math.floor(entryTimeMs / 1000),
-          );
-          if (!forceRebuild && !manager.shouldRebuildForTrade(entryIndex)) {
-            skipTradeWindowRebuildRef.current = true;
-            skipped = true;
-            return false;
-          }
-          skipTradeWindowRebuildRef.current = false;
-          const changed = manager.buildWindowAroundIndex(entryIndex);
-          if (changed !== null) {
-            bumpRenderWindow();
-          }
-          rebuilt = changed !== null;
-          return rebuilt;
-        },
-        () => ({ rebuilt, skipped }),
-      );
-      return didRebuild;
+      const changed = runPhase63BApplyTrade(phase63BRenderWindowOwner(), {
+        bundleCandles,
+        selectedTradeEntryTimeMs: entryTimeMs,
+        forceRebuild,
+      });
+      if (changed) {
+        bumpRenderWindow();
+      }
+      return changed;
     },
     [bumpRenderWindow],
   );
@@ -1287,9 +1259,15 @@ export function WorkbenchProvider({
     if (marketLoadStatus === "error" || renderWindowFoundationKey === null) {
       if (marketLoadStatus === "error") {
         chartRuntimeRef.current.reset();
-        renderWindowManager().reset(0);
         bumpRenderWindow();
       }
+      runPhase63BRenderWindowInit(phase63BRenderWindowOwner(), {
+        foundationKey: renderWindowFoundationKey,
+        marketLoadStatus,
+        bundleCandles: cachedBundleCandlesRef.current,
+        selectedTradeEntryTimeMs: null,
+        variantKey: selectedVariantKey,
+      });
       return;
     }
     if (intendedRunMarketView === null || marketFocusWindow === null) {
@@ -1305,18 +1283,16 @@ export function WorkbenchProvider({
       return;
     }
     cachedBundleCandlesRef.current = bundleCandles;
-    const manager = renderWindowManager();
-    manager.reset(bundleCandles.length);
-    if (selectedTradeEntryTimeMs !== null) {
-      applyRenderWindowForTrade(selectedTradeEntryTimeMs, true);
-    } else {
-      manager.buildTailWindow();
+    const initialized = runPhase63BRenderWindowInit(phase63BRenderWindowOwner(), {
+      foundationKey: renderWindowFoundationKey,
+      marketLoadStatus,
+      bundleCandles,
+      selectedTradeEntryTimeMs: selectedTradeEntryTimeMs,
+      variantKey: selectedVariantKey,
+    });
+    if (initialized) {
       bumpRenderWindow();
     }
-    dbgMarkCutover(DBG.load.renderWindowInit, "render_window", {
-      fullLength: bundleCandles.length,
-      variant: selectedVariantKey,
-    });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- trade changes handled by dedicated effect
   }, [
     renderWindowFoundationKey,
@@ -1345,7 +1321,7 @@ export function WorkbenchProvider({
       dbgMark(DBG.renderWindow.shiftRestoreCancelled, { shiftSeq, swapTransactionId });
       return;
     }
-    chartRuntimeRef.current.renderWindow.settleWindowSwap(shiftSeq);
+    v2RenderWindow().settleWindowSwap(shiftSeq);
     dbgMark(DBG.renderWindow.shiftSettled, { shiftSeq, swapTransactionId });
   }, []);
 
@@ -1356,7 +1332,7 @@ export function WorkbenchProvider({
       if (view === null || coverageWindow === null || !chartHeavyIoEnabled) {
         return;
       }
-      const interactionState = chartRuntimeRef.current.renderWindow.getInteractionState();
+      const interactionState = v2RenderWindow().getInteractionState();
       const isUserPan =
         forceUserPan ||
         interactionState === "user_panning" ||
@@ -1408,9 +1384,12 @@ export function WorkbenchProvider({
         windowSwapCancelledThroughIdRef.current = windowSwapTransactionIdRef.current;
         setChartViewportCommand(null);
       }
-      const command = chartRuntimeRef.current.dispatchInteraction(event);
+      const v2ChartRuntime = phase63BRenderWindowOwner().controller.chartRuntime;
+      v2ChartRuntime.renderWindow.dispatch(event);
+      const command = chartRuntimeRef.current.viewport.dispatch(event);
       if (event.type === "visible_range_changed" && event.anchorTimeSec !== null) {
-        const interactionState = chartRuntimeRef.current.renderWindow.getInteractionState();
+        v2ChartRuntime.renderWindow.recordBoundaryIntent(event.visible, event.anchorTimeSec);
+        const interactionState = v2RenderWindow().getInteractionState();
         if (
           interactionState === "user_panning" ||
           interactionState === "pending_shift" ||
@@ -1438,83 +1417,32 @@ export function WorkbenchProvider({
     [emitChartViewportCommand, attemptMarketPanPrefetch],
   );
 
-  const chartWindowSlice = useMemo(() => {
-    if (!cachedBundle || marketLoadStatus === "error") {
-      return {
-        candles: [] as ChartBar[],
-        emaOverlays: [] as ChartEmaOverlay[],
-        auxEmaOverlays: [] as ChartAuxEmaOverlay[],
-        firstTimeSec: null as number | null,
-        lastTimeSec: null as number | null,
-        count: 0,
-      };
-    }
-    let barCount = 0;
-    let overlayCount = 0;
-    const slice = dbgTimedSyncCutover(
-      DBG.chartWindow.slice,
-      "render_window",
-      () => {
-        const manager = renderWindowManager();
-        manager.setFullLength(cachedBundle.candles.length);
-        const anchorEmaOverlays = cachedBundle.ema_overlays;
-        const rawCandles = manager.sliceCandles(cachedBundle.candles);
-        const rawEma = manager.sliceEmaOverlays(anchorEmaOverlays, cachedBundle.candles);
-        const rawAux = manager.sliceAuxOverlays(auxEmaOverlays, cachedBundle.candles);
-        const count = rawCandles.length;
-        barCount = count;
-        overlayCount = rawEma.length + rawAux.length;
-        const firstTimeSec = count > 0 ? rawCandles[0]!.time : null;
-        const lastTimeSec = count > 0 ? rawCandles[count - 1]!.time : null;
-        const boundsKey = buildRenderWindowBoundsKey(firstTimeSec, lastTimeSec, count);
-        const emaStabilizeKey = buildEmaOverlaysStabilizeKey(
-          boundsKey,
-          rawEma,
-          intendedRunMarketViewIdentity ?? "",
-        );
-        const auxStabilizeKey = buildAuxOverlaysStabilizeKey(boundsKey, rawAux);
-        return {
-          candles: stabilizeByWindowBoundsKey(chartCandlesCacheRef, boundsKey, rawCandles),
-          emaOverlays: stabilizeByWindowBoundsKey(chartEmaCacheRef, emaStabilizeKey, rawEma),
-          auxEmaOverlays: stabilizeByWindowBoundsKey(chartAuxEmaCacheRef, auxStabilizeKey, rawAux),
-          firstTimeSec,
-          lastTimeSec,
-          count,
-        };
-      },
-      () => ({ barCount, overlayCount }),
-    );
-    return slice;
-  }, [
-    cachedBundle,
-    marketLoadStatus,
-    auxEmaOverlays,
-    intendedRunMarketViewIdentity,
-    runMarketViewIdentity,
-    renderWindowRevision,
-  ]);
+  const chartWindowSlice = useMemo(
+    () =>
+      resolvePhase63BChartWindowSlice(phase63BRenderWindowOwner(), {
+        bundle: cachedBundle ?? null,
+        marketLoadStatus,
+        auxEmaOverlays,
+        marketIdentity: intendedRunMarketViewIdentity ?? "",
+      }),
+    [
+      cachedBundle,
+      marketLoadStatus,
+      auxEmaOverlays,
+      intendedRunMarketViewIdentity,
+      runMarketViewIdentity,
+      renderWindowRevision,
+    ],
+  );
 
-  const chartView = useMemo((): ChartViewWindow => {
-    if (chartWindowSlice.count === 0) {
-      return emptyChartViewWindow();
-    }
-    const mode: ChartViewMode =
-      selectedTradeEntryTimeMs !== null ? "around-trade" : "tail";
-    const centerTimeSec =
-      selectedTradeEntryTimeMs !== null
-        ? Math.floor(selectedTradeEntryTimeMs / 1000)
-        : null;
-    return {
-      mode,
-      candles: chartWindowSlice.candles,
-      emaOverlays: chartWindowSlice.emaOverlays,
-      auxEmaOverlays: chartWindowSlice.auxEmaOverlays,
-      centerTimeSec,
-      firstTimeSec: chartWindowSlice.firstTimeSec,
-      lastTimeSec: chartWindowSlice.lastTimeSec,
-      count: chartWindowSlice.count,
-    };
-  }, [chartWindowSlice, selectedTradeEntryTimeMs]);
+  const chartView = useMemo(
+    (): ChartViewWindow =>
+      buildChartViewWindowFromPhase63BSlice({
+        chartWindow: chartWindowSlice,
+        selectedTradeEntryTimeMs,
+      }),
+    [chartWindowSlice, selectedTradeEntryTimeMs],
+  );
 
   chartViewCandlesRef.current = chartView.candles;
 
@@ -1544,7 +1472,8 @@ export function WorkbenchProvider({
       if (!cachedBundle || cachedBundle.candles.length === 0) {
         return;
       }
-      dbgMark(DBG.renderWindow.shiftApplied, {
+      applyRenderWindowShiftCommit(phase63BRenderWindowOwner().controller, commit);
+      dbgMarkCutover(DBG.renderWindow.shiftApplied, "render_window", {
         windowStartIndex: commit.bounds.windowStartIndex,
         windowEndIndex: commit.bounds.windowEndIndex,
       });
@@ -1962,9 +1891,12 @@ export function WorkbenchProvider({
   }, [sessionCacheIdentity]);
 
   useEffect(() => {
-    chartCandlesCacheRef.current = { key: "", value: [] };
-    chartEmaCacheRef.current = { key: "", value: [] };
-    chartAuxEmaCacheRef.current = { key: "", value: [] };
+    const caches = phase63BRenderWindowOwnerRef.current?.stabilizeCaches;
+    if (caches) {
+      caches.candles.current = { key: "", value: [] };
+      caches.ema.current = { key: "", value: [] };
+      caches.aux.current = { key: "", value: [] };
+    }
     lastSlicedHtfOverlaysRef.current = [];
   }, [selectedRunId, selectedVariantKey]);
 
@@ -2267,7 +2199,7 @@ export function WorkbenchProvider({
     });
 
     const coalescedFetchKey = takeCommittedTraceFetchIntent();
-    const runtime = chartRuntimeRef.current.renderWindow;
+    const runtime = v2RenderWindow();
     const sessionCacheHasWindow = signalTraceBundleSessionCacheRef.current.has(committedWindowKey);
     const loadDecision = decideSignalTraceLoad({
       chartWindowKey: committedWindowKey,

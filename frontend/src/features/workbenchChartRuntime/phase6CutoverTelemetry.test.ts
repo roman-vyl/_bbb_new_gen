@@ -23,24 +23,29 @@ describe("Phase 6.3-debug cutover telemetry", () => {
     vi.unstubAllEnvs();
   });
 
-  it("defaults cutover config to phase 6.3A with model on runtime_v2_production", () => {
-    expect(chartRuntimeCutoverConfig.cutoverPhase).toBe("6.3A");
+  it("defaults cutover config to phase 6.3B with model and render_window on runtime_v2_production", () => {
+    expect(chartRuntimeCutoverConfig.cutoverPhase).toBe("6.3B");
     expect(chartRuntimeCutoverConfig.domainOwners.model).toBe("runtime_v2_production");
+    expect(chartRuntimeCutoverConfig.domainOwners.render_window).toBe("runtime_v2_production");
     for (const domain of CHART_RUNTIME_DOMAINS) {
-      if (domain === "model") continue;
+      if (domain === "model" || domain === "render_window") continue;
       expect(chartRuntimeCutoverConfig.domainOwners[domain]).toBe("old_production");
     }
     expect(hasRuntimeV2ProductionOwner(chartRuntimeCutoverConfig)).toBe(true);
-    expect(runtimeV2ProductionDomains(chartRuntimeCutoverConfig)).toEqual(["model"]);
+    expect(runtimeV2ProductionDomains(chartRuntimeCutoverConfig)).toEqual([
+      "model",
+      "render_window",
+    ]);
   });
 
-  it("has no runtime_v2_production owner outside model in 6.3A", () => {
-    const nonModelV2 = CHART_RUNTIME_DOMAINS.filter(
+  it("has no runtime_v2_production owner outside model and render_window in 6.3B", () => {
+    const unexpectedV2 = CHART_RUNTIME_DOMAINS.filter(
       (domain) =>
         domain !== "model" &&
+        domain !== "render_window" &&
         chartRuntimeCutoverConfig.domainOwners[domain] === "runtime_v2_production",
     );
-    expect(nonModelV2).toEqual([]);
+    expect(unexpectedV2).toEqual([]);
   });
 
   it("cutoverDebugMeta returns owner, domain, and phase from config", () => {
@@ -48,14 +53,20 @@ describe("Phase 6.3-debug cutover telemetry", () => {
     expect(meta).toMatchObject({
       owner: "old_production",
       domain: "market",
-      phase: "6.3A",
+      phase: "6.3B",
       barCount: 12,
     });
     const modelMeta = cutoverDebugMeta("model", { seriesKey: "x" });
     expect(modelMeta).toMatchObject({
       owner: "runtime_v2_production",
       domain: "model",
-      phase: "6.3A",
+      phase: "6.3B",
+    });
+    const renderWindowMeta = cutoverDebugMeta("render_window", { barCount: 8 });
+    expect(renderWindowMeta).toMatchObject({
+      owner: "runtime_v2_production",
+      domain: "render_window",
+      phase: "6.3B",
     });
   });
 
@@ -93,7 +104,7 @@ describe("Phase 6.3-debug cutover telemetry", () => {
     const row = dbgExport().steps.find((entry) => entry.step === CUTOVER_DOMAIN_OWNERS_STEP);
     expect(row).toBeDefined();
     expect(row?.last_meta).toMatchObject({
-      phase: "6.3A",
+      phase: "6.3B",
       owners: chartRuntimeCutoverConfig.domainOwners,
     });
     expect(Object.keys((row?.last_meta as { owners: Record<string, string> }).owners)).toHaveLength(6);
@@ -103,7 +114,7 @@ describe("Phase 6.3-debug cutover telemetry", () => {
     const { dbgExport } = await import("@/shared/diagnostics/pipelineDebug");
     expect(dbgExport().debug).toEqual(getCutoverDebugExportFields());
     expect(dbgExport().debug.domainOwners).toEqual(chartRuntimeCutoverConfig.domainOwners);
-    expect(dbgExport().debug.cutoverPhase).toBe("6.3A");
+    expect(dbgExport().debug.cutoverPhase).toBe("6.3B");
   });
 
   it("keeps exactly one owner per domain in the config record", () => {
