@@ -24,14 +24,15 @@ import {
 } from "./phase6StaticGuardUtils";
 
 describe("Phase 6.3A model + adapter cutover", () => {
-  it("keeps model bridge compatible when cutover config is at phase 6.3B", () => {
-    expect(chartRuntimeCutoverConfig.cutoverPhase).toBe("6.3B");
+  it("keeps model bridge compatible when cutover config is at phase 6.3C", () => {
+    expect(chartRuntimeCutoverConfig.cutoverPhase).toBe("6.3C");
     expect(chartRuntimeCutoverConfig.domainOwners.model).toBe("runtime_v2_production");
     expect(runtimeV2ProductionDomains(chartRuntimeCutoverConfig)).toContain("model");
     expect(hasRuntimeV2ProductionOwner(chartRuntimeCutoverConfig)).toBe(true);
     expect(chartRuntimeCutoverConfig.domainOwners).toEqual({
       ...PHASE_63A_DOMAIN_OWNERS,
       render_window: "runtime_v2_production",
+      viewport: "runtime_v2_production",
     });
   });
 

@@ -25,7 +25,7 @@ const WORKBENCH_CHART_RUNTIME_OWNER_SYMBOLS = [
   "composeDisplayMarketWindowBundle",
   "dispatchChartInteraction",
   "signalTraceDisplayCacheRef",
-  "chartRuntimeRef",
+  "phase63CViewportOwner",
   "emitChartViewportCommand",
 ];
 
@@ -84,6 +84,9 @@ describe("Phase 6.1 static import and ownership guards", () => {
     );
     expect(workbenchSource).toContain(
       'from "@/features/workbenchChartRuntime/phase63BRenderWindowBridge"',
+    );
+    expect(workbenchSource).toContain(
+      'from "@/features/workbenchChartRuntime/phase63CViewportCommandBridge"',
     );
     expect(workbenchSource).not.toContain("buildChartViewModel");
     expect(workbenchSource).not.toContain("useWorkbenchChartRuntime");

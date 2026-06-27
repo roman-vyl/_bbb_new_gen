@@ -51,7 +51,7 @@ import {
 } from "@/features/chart/workbenchMarketLoad";
 import { getCandles } from "@/features/chart/marketResourceCache";
 import { mergeAuxOverlayPoints } from "@/features/chart/chartAuxEmaOverlays";
-import { createChartRuntime, type WindowCommitResult } from "@/features/chart/runtime/chartRuntime";
+import type { WindowCommitResult } from "@/features/chart/runtime/chartRuntime";
 import type { ChartViewModel } from "@/features/chart/runtime/chartViewModel";
 import {
   planTraceDisplayLoad,
@@ -79,7 +79,6 @@ import {
   mapDisplayLoadOutcome,
   mergeDisplayFromDenseFallback,
 } from "@/features/chart/runtime/workbenchTraceNetworkLoad";
-import { canEmitTradeFocus } from "@/features/chart/runtime/viewportController";
 import type { ChartInteractionEvent, ViewportCommand } from "@/features/chart/runtime/types";
 import {
   type ChartViewMode,
@@ -163,6 +162,19 @@ import {
   type Phase63BRenderWindowOwnerState,
 } from "@/features/workbenchChartRuntime/phase63BRenderWindowBridge";
 import { applyRenderWindowShiftCommit } from "@/features/workbenchChartRuntime/renderWindowRuntime";
+import {
+  createPhase63CViewportOwnerState,
+  runPhase63CAcknowledgeViewportCommand,
+  runPhase63CCancelViewportOnPointerDown,
+  runPhase63CDispatchViewportInteraction,
+  runPhase63CIsWindowSwapTransactionCancelled,
+  runPhase63COnTraceReady,
+  runPhase63COnWindowSwapCommitted,
+  runPhase63CSelectTradeFocusCommand,
+  runPhase63CSettleWindowSwapCommit,
+  runPhase63CSetViewportPlan,
+  type Phase63CViewportOwnerState,
+} from "@/features/workbenchChartRuntime/phase63CViewportCommandBridge";
 import { derivePhase63AModelDomainFieldsFromRuntime } from "@/features/workbenchChartRuntime/runtimeOutputAdapter.contract";
 export type ReportLoadStatus = "loading" | "ready" | "error";
 export type ConfigLoadStatus = "loading" | "ready" | "empty" | "error";
@@ -482,18 +494,23 @@ export function WorkbenchProvider({
   const intendedRunMarketViewIdentityRef = useRef<RunMarketViewIdentity | null>(null);
   const marketFetchInFlightKeysRef = useRef<Set<string>>(new Set());
   const applyWindowCommitRef = useRef<(commit: WindowCommitResult) => void>(() => {});
-  const windowSwapTransactionIdRef = useRef(0);
-  const windowSwapCancelledThroughIdRef = useRef(0);
-  const chartRuntimeRef = useRef(createChartRuntime());
   const phase63BRenderWindowOwnerRef = useRef<Phase63BRenderWindowOwnerState | null>(null);
   if (phase63BRenderWindowOwnerRef.current === null) {
     phase63BRenderWindowOwnerRef.current = createPhase63BRenderWindowOwnerState((commit) =>
       applyWindowCommitRef.current(commit),
     );
   }
+  const phase63CViewportOwnerRef = useRef<Phase63CViewportOwnerState | null>(null);
+  if (phase63CViewportOwnerRef.current === null) {
+    phase63CViewportOwnerRef.current = createPhase63CViewportOwnerState(
+      phase63BRenderWindowOwnerRef.current!,
+    );
+  }
   const phase63BRenderWindowOwner = (): Phase63BRenderWindowOwnerState =>
     phase63BRenderWindowOwnerRef.current!;
-  const v2RenderWindow = () => phase63BRenderWindowOwner().controller.chartRuntime.renderWindow;
+  const phase63CViewportOwner = (): Phase63CViewportOwnerState => phase63CViewportOwnerRef.current!;
+  const v2ChartRuntime = () => phase63BRenderWindowOwner().controller.chartRuntime;
+  const v2RenderWindow = () => v2ChartRuntime().renderWindow;
   const [renderWindowRevision, setRenderWindowRevision] = useState(0);
   const [chartViewportCommand, setChartViewportCommand] = useState<ViewportCommand | null>(null);
   const [chartViewportCommandSeq, setChartViewportCommandSeq] = useState(0);
@@ -1214,25 +1231,12 @@ export function WorkbenchProvider({
   }, [marketCandlesRevision, cachedBundle, intendedRunMarketView, bumpRenderWindow]);
 
   const emitChartViewportCommand = useCallback((command: ViewportCommand) => {
-    if (command.type === "noViewportChange" || command.type === "preserveUserRange") {
-      return;
-    }
-    if (
-      command.type === "focusTrade" &&
-      !canEmitTradeFocus(chartRuntimeRef.current.viewport.getState())
-    ) {
-      dbgMark(DBG.chart.viewportApplySkippedNoFocusIntent, {
-        mode: chartRuntimeRef.current.viewport.getState().mode,
-        viewportOwner: chartRuntimeRef.current.viewport.getState().viewportOwner,
-        activeFocusIntent: chartRuntimeRef.current.viewport.getState().activeFocusIntent,
-      });
-      return;
-    }
     setChartViewportCommand(command);
-    setChartViewportCommandSeq((seq) => seq + 1);
+    setChartViewportCommandSeq(phase63CViewportOwner().viewportState.commandSeq);
   }, []);
 
   const acknowledgeChartViewportCommand = useCallback(() => {
+    runPhase63CAcknowledgeViewportCommand(phase63CViewportOwner());
     setChartViewportCommand(null);
   }, []);
 
@@ -1258,7 +1262,7 @@ export function WorkbenchProvider({
   useEffect(() => {
     if (marketLoadStatus === "error" || renderWindowFoundationKey === null) {
       if (marketLoadStatus === "error") {
-        chartRuntimeRef.current.reset();
+        v2ChartRuntime().reset();
         bumpRenderWindow();
       }
       runPhase63BRenderWindowInit(phase63BRenderWindowOwner(), {
@@ -1313,15 +1317,16 @@ export function WorkbenchProvider({
   }, [selectedTradeEntryTimeMs, renderWindowFoundationKey, marketLoadStatus, applyRenderWindowForTrade]);
 
   const isWindowSwapTransactionCancelled = useCallback((swapTransactionId: number) => {
-    return swapTransactionId <= windowSwapCancelledThroughIdRef.current;
+    return runPhase63CIsWindowSwapTransactionCancelled(phase63CViewportOwner(), swapTransactionId);
   }, []);
 
   const settleWindowSwapCommit = useCallback((shiftSeq: number, swapTransactionId: number) => {
-    if (swapTransactionId <= windowSwapCancelledThroughIdRef.current) {
-      dbgMark(DBG.renderWindow.shiftRestoreCancelled, { shiftSeq, swapTransactionId });
-      return;
-    }
-    v2RenderWindow().settleWindowSwap(shiftSeq);
+    runPhase63CSettleWindowSwapCommit(
+      phase63CViewportOwner(),
+      phase63BRenderWindowOwner(),
+      shiftSeq,
+      swapTransactionId,
+    );
     dbgMark(DBG.renderWindow.shiftSettled, { shiftSeq, swapTransactionId });
   }, []);
 
@@ -1381,14 +1386,18 @@ export function WorkbenchProvider({
   const dispatchChartInteraction = useCallback(
     (event: ChartInteractionEvent) => {
       if (event.type === "pointerdown") {
-        windowSwapCancelledThroughIdRef.current = windowSwapTransactionIdRef.current;
+        runPhase63CCancelViewportOnPointerDown(phase63CViewportOwner());
         setChartViewportCommand(null);
       }
-      const v2ChartRuntime = phase63BRenderWindowOwner().controller.chartRuntime;
-      v2ChartRuntime.renderWindow.dispatch(event);
-      const command = chartRuntimeRef.current.viewport.dispatch(event);
+      const chartRuntime = v2ChartRuntime();
+      chartRuntime.renderWindow.dispatch(event);
+      const viewportCommand = runPhase63CDispatchViewportInteraction(
+        phase63CViewportOwner(),
+        phase63BRenderWindowOwner(),
+        event,
+      );
       if (event.type === "visible_range_changed" && event.anchorTimeSec !== null) {
-        v2ChartRuntime.renderWindow.recordBoundaryIntent(event.visible, event.anchorTimeSec);
+        chartRuntime.renderWindow.recordBoundaryIntent(event.visible, event.anchorTimeSec);
         const interactionState = v2RenderWindow().getInteractionState();
         if (
           interactionState === "user_panning" ||
@@ -1410,8 +1419,8 @@ export function WorkbenchProvider({
           }
         }
       }
-      if (command !== null && command.type !== "restoreAfterWindowSwap") {
-        emitChartViewportCommand(command);
+      if (viewportCommand !== null) {
+        emitChartViewportCommand(viewportCommand);
       }
     },
     [emitChartViewportCommand, attemptMarketPanPrefetch],
@@ -1447,7 +1456,11 @@ export function WorkbenchProvider({
   chartViewCandlesRef.current = chartView.candles;
 
   useEffect(() => {
-    chartRuntimeRef.current.setViewportPlan(chartView.mode, chartView.centerTimeSec);
+    runPhase63CSetViewportPlan(
+      phase63CViewportOwner(),
+      chartView.mode,
+      chartView.centerTimeSec,
+    );
   }, [chartView.mode, chartView.centerTimeSec]);
 
   useEffect(() => {
@@ -1480,17 +1493,15 @@ export function WorkbenchProvider({
       renderWindowShiftSeqRef.current = commit.shiftSeq;
       setRenderWindowShiftSeq(commit.shiftSeq);
 
-      const swapTransactionId = ++windowSwapTransactionIdRef.current;
-      const viewportCmd = chartRuntimeRef.current.viewport.onWindowSwapCommitted({
-        anchorTimeSec: commit.anchorTimeSec,
-        previousVisible: commit.previousVisible,
-        shiftSeq: commit.shiftSeq,
-        windowStartIndex: commit.boundsBefore.windowStartIndex,
-        fullLength: cachedBundle.candles.length,
-      });
-      if (viewportCmd.type === "restoreAfterWindowSwap") {
-        emitChartViewportCommand({ ...viewportCmd, swapTransactionId });
-      } else {
+      const viewportCmd = runPhase63COnWindowSwapCommitted(
+        phase63CViewportOwner(),
+        phase63BRenderWindowOwner(),
+        {
+          commit,
+          bundleCandleCount: cachedBundle.candles.length,
+        },
+      );
+      if (viewportCmd !== null) {
         emitChartViewportCommand(viewportCmd);
       }
 
@@ -1557,8 +1568,11 @@ export function WorkbenchProvider({
 
   const finalizeTraceDisplayUpdate = useCallback(() => {
     applyTraceDisplayRef.current();
-    const traceViewportCmd = chartRuntimeRef.current.viewport.onTraceReady();
-    if (traceViewportCmd.type !== "noViewportChange" && traceViewportCmd.type !== "restoreAfterWindowSwap") {
+    const traceViewportCmd = runPhase63COnTraceReady(
+      phase63CViewportOwner(),
+      phase63BRenderWindowOwner(),
+    );
+    if (traceViewportCmd !== null) {
       emitChartViewportCommand(traceViewportCmd);
     }
   }, [emitChartViewportCommand]);
@@ -2085,14 +2099,14 @@ export function WorkbenchProvider({
         }
       }
       if (entryTimeSec !== null) {
-        chartRuntimeRef.current.setViewportPlan("around-trade", entryTimeSec);
-      }
-      const command = chartRuntimeRef.current.dispatchInteraction({
-        type: "trade_selected",
-        entryTimeSec,
-      });
-      if (command !== null && command.type !== "restoreAfterWindowSwap") {
-        emitChartViewportCommand(command);
+        const command = runPhase63CSelectTradeFocusCommand(
+          phase63CViewportOwner(),
+          phase63BRenderWindowOwner(),
+          entryTimeSec,
+        );
+        if (command !== null) {
+          emitChartViewportCommand(command);
+        }
       }
       setSelectedTradeId(tradeId);
       if (
