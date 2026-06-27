@@ -7,6 +7,7 @@ import {
 import {
   createWorkbenchChartRuntimeSlice,
   deriveLegacyWorkbenchChartFieldsFromRuntime,
+  derivePhase63AModelDomainFieldsFromRuntime,
   findForbiddenAdapterFallbackPatterns,
 } from "./runtimeOutputAdapter.contract";
 import {
@@ -126,6 +127,17 @@ describe("Phase 6.1 runtime output adapter contract", () => {
         expect(output[key as keyof typeof output]).toBeDefined();
       }
     }
+  });
+
+  it("derives Phase 6.3A model-domain fields from runtime slice", () => {
+    const runtime = makeSampleChartRuntimeOutput();
+    const derived = derivePhase63AModelDomainFieldsFromRuntime({
+      chartViewModel: runtime.chartViewModel,
+    });
+
+    expect(derived.chartCandles).toBe(runtime.chartViewModel.candles);
+    expect(derived.chartViewCount).toBe(runtime.chartViewModel.count);
+    expect(derived.htfAuxEmaOverlayStale).toBe(runtime.chartViewModel.htfOverlayStale);
   });
 
   it("forbids old-pipeline fallback patterns in runtimeOutputAdapter", () => {

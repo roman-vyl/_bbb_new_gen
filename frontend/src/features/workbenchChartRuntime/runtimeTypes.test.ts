@@ -32,9 +32,9 @@ describe("workbenchChartRuntime Phase 2 contracts", () => {
     expect(output.trace.lanesSignalTraceStatus).toBe("idle");
     expect(output.viewport.command).toBeNull();
     expect(output.debug.runId).toBe("run-1");
-    expect(output.debug.cutoverPhase).toBe("6.3-debug");
+    expect(output.debug.cutoverPhase).toBe("6.3A");
     expect(output.debug.domainOwners).toEqual({
-      model: "old_production",
+      model: "runtime_v2_production",
       render_window: "old_production",
       viewport: "old_production",
       trace: "old_production",

@@ -53,7 +53,7 @@ import { getCandles } from "@/features/chart/marketResourceCache";
 import { mergeAuxOverlayPoints } from "@/features/chart/chartAuxEmaOverlays";
 import type { ChartDataWindowManager } from "@/features/chart/chartDataWindowManager";
 import { createChartRuntime, type WindowCommitResult } from "@/features/chart/runtime/chartRuntime";
-import { buildChartViewModel, type ChartViewModel } from "@/features/chart/runtime/chartViewModel";
+import type { ChartViewModel } from "@/features/chart/runtime/chartViewModel";
 import {
   planTraceDisplayLoad,
   queueTraceFetchIntent,
@@ -158,6 +158,8 @@ import {
   dbgTimedSyncCutover,
   emitCutoverDomainOwnersSnapshot,
 } from "@/features/workbenchChartRuntime/chartRuntimeCutoverTelemetry";
+import { resolvePhase63AModelRuntimeSlice } from "@/features/workbenchChartRuntime/phase63AModelAdapterBridge";
+import { derivePhase63AModelDomainFieldsFromRuntime } from "@/features/workbenchChartRuntime/runtimeOutputAdapter.contract";
 export type ReportLoadStatus = "loading" | "ready" | "error";
 export type ConfigLoadStatus = "loading" | "ready" | "empty" | "error";
 export type MarketLoadStatus = "idle" | "loading" | "ready" | "error";
@@ -2106,23 +2108,15 @@ export function WorkbenchProvider({
     return true;
   }, [chartDisplayComponentEvents.length, traceDisplayState.status]);
 
-  const chartViewModel = useMemo(
+  const phase63AModelSlice = useMemo(
     () =>
-      buildChartViewModel({
-        candles: chartView.candles,
-        emaOverlays: chartView.emaOverlays,
-        auxEmaOverlays: chartView.auxEmaOverlays,
-        displayAuxEmaOverlays: chartDisplayAuxEmaOverlays,
-        componentEvents: chartDisplayComponentEvents,
-        htfOverlayStale: htfAuxEmaOverlayStale,
+      resolvePhase63AModelRuntimeSlice({
+        chartView,
+        chartDisplayAuxEmaOverlays,
+        chartDisplayComponentEvents,
+        htfAuxEmaOverlayStale,
         componentEventsStale,
-        traceDisplayStatus: traceDisplayState.status,
-        traceDisplayMissingRange: traceDisplayState.missingRange,
-        viewMode: chartView.mode,
-        centerTimeSec: chartView.centerTimeSec,
-        firstTimeSec: chartView.firstTimeSec,
-        lastTimeSec: chartView.lastTimeSec,
-        count: chartView.count,
+        traceDisplayState,
       }),
     [
       chartView,
@@ -2130,9 +2124,13 @@ export function WorkbenchProvider({
       chartDisplayComponentEvents,
       htfAuxEmaOverlayStale,
       componentEventsStale,
-      traceDisplayState.status,
-      traceDisplayState.missingRange,
+      traceDisplayState,
     ],
+  );
+
+  const modelDomainFields = useMemo(
+    () => derivePhase63AModelDomainFieldsFromRuntime(phase63AModelSlice),
+    [phase63AModelSlice],
   );
 
   const fullCandleRange = useMemo(
@@ -2928,14 +2926,14 @@ export function WorkbenchProvider({
     () => ({
       marketLoadStatus,
       marketError,
-      chartViewModel,
-      chartCandles: chartView.candles,
-      chartEmaOverlays: chartView.emaOverlays,
-      chartAuxEmaOverlays: chartView.auxEmaOverlays,
-      chartDisplayAuxEmaOverlays,
-      htfAuxEmaOverlayStale,
-      chartDisplayComponentEvents,
-      componentEventsStale,
+      chartViewModel: modelDomainFields.chartViewModel,
+      chartCandles: modelDomainFields.chartCandles,
+      chartEmaOverlays: modelDomainFields.chartEmaOverlays,
+      chartAuxEmaOverlays: modelDomainFields.chartAuxEmaOverlays,
+      chartDisplayAuxEmaOverlays: modelDomainFields.chartDisplayAuxEmaOverlays,
+      htfAuxEmaOverlayStale: modelDomainFields.htfAuxEmaOverlayStale,
+      chartDisplayComponentEvents: modelDomainFields.chartDisplayComponentEvents,
+      componentEventsStale: modelDomainFields.componentEventsStale,
       displayApplyRevision,
       renderWindowShiftSeq,
       chartShowEntryBlockMarkers,
@@ -2951,11 +2949,11 @@ export function WorkbenchProvider({
       chartTimeframe,
       reportTimeframe,
       timeframeMismatch,
-      chartViewMode: chartView.mode,
-      chartViewCenterTimeSec: chartView.centerTimeSec,
-      chartViewFirstTimeSec: chartView.firstTimeSec,
-      chartViewLastTimeSec: chartView.lastTimeSec,
-      chartViewCount: chartView.count,
+      chartViewMode: modelDomainFields.chartViewMode,
+      chartViewCenterTimeSec: modelDomainFields.chartViewCenterTimeSec,
+      chartViewFirstTimeSec: modelDomainFields.chartViewFirstTimeSec,
+      chartViewLastTimeSec: modelDomainFields.chartViewLastTimeSec,
+      chartViewCount: modelDomainFields.chartViewCount,
       chartTradeFocusWarning,
       marketCandlesCount,
       fullCandleRange,
@@ -2988,14 +2986,7 @@ export function WorkbenchProvider({
       timeframeMismatch,
       marketLoadStatus,
       marketError,
-      chartViewModel,
-      chartView.candles,
-      chartView.emaOverlays,
-      chartView.auxEmaOverlays,
-      chartDisplayAuxEmaOverlays,
-      htfAuxEmaOverlayStale,
-      chartDisplayComponentEvents,
-      componentEventsStale,
+      modelDomainFields,
       displayApplyRevision,
       renderWindowShiftSeq,
       chartShowEntryBlockMarkers,
@@ -3003,11 +2994,6 @@ export function WorkbenchProvider({
       chartShowSetupMarkers,
       chartShowTradeManagementPhaseMarkers,
       chartShowTradeManagementExitMarkers,
-      chartView.mode,
-      chartView.centerTimeSec,
-      chartView.firstTimeSec,
-      chartView.lastTimeSec,
-      chartView.count,
       chartTradeFocusWarning,
       marketCandlesCount,
       fullCandleRange,

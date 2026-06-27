@@ -79,5 +79,10 @@ describe("Phase 6.1 static import and ownership guards", () => {
     expect(workbenchSource).toContain(
       'from "@/features/workbenchChartRuntime/chartRuntimeCutoverTelemetry"',
     );
+    expect(workbenchSource).toContain(
+      'from "@/features/workbenchChartRuntime/phase63AModelAdapterBridge"',
+    );
+    expect(workbenchSource).not.toContain("buildChartViewModel");
+    expect(workbenchSource).not.toContain("useWorkbenchChartRuntime");
   });
 });

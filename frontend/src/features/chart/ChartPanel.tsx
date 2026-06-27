@@ -25,8 +25,9 @@ import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import {
   dbgMark,
   dbgTimedSync,
+  dbgTimedSyncChartModel,
   PIPELINE_DEBUG_STEPS as DBG,
-} from "@/shared/diagnostics/pipelineDebug";
+} from "@/shared/diagnostics/cutoverPipelineDebug";
 
 
 
@@ -617,7 +618,7 @@ export function ChartPanel() {
       return;
     }
 
-    dbgTimedSync(
+    dbgTimedSyncChartModel(
       DBG.chart.setDataCandles,
       () => {
         series.setData(toCandlestickSeriesData(chartCandles));
@@ -638,7 +639,7 @@ export function ChartPanel() {
       return;
     }
 
-    dbgTimedSync(
+    dbgTimedSyncChartModel(
       DBG.chart.setDataAnchorEma,
       () => {
         for (const role of ["fast", "anchor", "slow"] as const) {
@@ -661,7 +662,7 @@ export function ChartPanel() {
       () => ({ overlayCount: chartEmaOverlays.length }),
     );
 
-    dbgTimedSync(
+    dbgTimedSyncChartModel(
       DBG.chart.setDataAuxHtf,
       () => {
         const seriesMap = auxEmaSeriesRef.current;

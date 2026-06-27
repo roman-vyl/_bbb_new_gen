@@ -1,4 +1,5 @@
 export * from "./auxOverlayRuntime";
+export * from "./phase63AModelAdapterBridge";
 export * from "./chartRuntimeCutoverConfig";
 export * from "./chartRuntimeCutoverTelemetry";
 export * from "./chartEventsRuntime";
