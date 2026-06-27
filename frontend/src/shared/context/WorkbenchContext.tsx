@@ -54,31 +54,10 @@ import { mergeAuxOverlayPoints } from "@/features/chart/chartAuxEmaOverlays";
 import type { WindowCommitResult } from "@/features/chart/runtime/chartRuntime";
 import type { ChartViewModel } from "@/features/chart/runtime/chartViewModel";
 import {
-  planTraceDisplayLoad,
   queueTraceFetchIntent,
   takeCommittedTraceFetchIntent,
 } from "@/features/chart/runtime/traceDisplayOrchestrator";
-import {
-  buildDisplayTraceRequestKey,
-  isChartEventsApiEnabled,
-} from "@/features/chart/runtime/chartEventsLoad";
-import {
-  buildTraceRequestKey,
-  createSignalTraceRequestCoordinator,
-} from "@/features/chart/runtime/signalTraceRequestCoordinator";
-import {
-  buildTraceDisplayChunkKey,
-  planMissingTraceDisplayChunkFetch,
-} from "@/features/chart/runtime/traceDisplayChunkScheduling";
-import {
-  applyLanesFromSessionBundle,
-  decideDenseLanesNetworkLoad,
-  flushLanesLoadDebug,
-  loadDenseLanesTrace,
-  loadDisplayTraceChunk,
-  mapDisplayLoadOutcome,
-  mergeDisplayFromDenseFallback,
-} from "@/features/chart/runtime/workbenchTraceNetworkLoad";
+import { flushLanesLoadDebug } from "@/features/chart/runtime/workbenchTraceNetworkLoad";
 import type { ChartInteractionEvent, ViewportCommand } from "@/features/chart/runtime/types";
 import {
   type ChartViewMode,
@@ -102,16 +81,11 @@ import {
 } from "@/features/chart/chartRenderWindowDisplay";
 import {
   buildSessionCacheIdentity,
-  createSignalTraceBundleSessionCache,
 } from "@/features/chart/signalTraceBundleSessionCache";
 import {
   buildTraceDisplayCacheKey,
-  createSignalTraceDisplayCache,
-  mergeDisplayChunkFromResponse,
 } from "@/features/chart/signalTraceDisplayCache";
 import {
-  deriveTraceDisplayStateForCandles,
-  shouldRetainPreviousTraceDisplay,
   type TraceDisplayState,
 } from "@/features/chart/traceDisplayApply";
 import {
@@ -134,7 +108,6 @@ import {
   type RunMarketViewIdentity,
 } from "@/features/chart/runMarketView";
 import {
-  decideSignalTraceLoad,
   lanesSignalTraceError as deriveLanesSignalTraceError,
   lanesSignalTraceStatus as deriveLanesSignalTraceStatus,
   signalTraceMatchesChartWindow,
@@ -175,6 +148,18 @@ import {
   runPhase63CSetViewportPlan,
   type Phase63CViewportOwnerState,
 } from "@/features/workbenchChartRuntime/phase63CViewportCommandBridge";
+import { resetTraceCoordinator } from "@/features/workbenchChartRuntime/traceRuntime";
+import {
+  createPhase63DTraceEventsOwnerState,
+  logPhase63DTraceCoverage,
+  resetPhase63DTraceDisplayCache,
+  resetPhase63DTraceSessionCache,
+  resolvePhase63DLanesSnapshot,
+  runPhase63DApplyTraceDisplayForWindow,
+  runPhase63DTraceLoadCycle,
+  shouldPhase63DFinalizeTraceDisplay,
+  type Phase63DTraceEventsOwnerState,
+} from "@/features/workbenchChartRuntime/phase63DTraceEventsBridge";
 import { derivePhase63AModelDomainFieldsFromRuntime } from "@/features/workbenchChartRuntime/runtimeOutputAdapter.contract";
 export type ReportLoadStatus = "loading" | "ready" | "error";
 export type ConfigLoadStatus = "loading" | "ready" | "empty" | "error";
@@ -446,8 +431,12 @@ export function WorkbenchProvider({
     null,
   );
   const [auxEmaOverlays, setAuxEmaOverlays] = useState<ChartAuxEmaOverlay[]>([]);
-  const signalTraceDisplayCacheRef = useRef(createSignalTraceDisplayCache());
-  const signalTraceBundleSessionCacheRef = useRef(createSignalTraceBundleSessionCache());
+  const phase63DTraceOwnerRef = useRef<Phase63DTraceEventsOwnerState | null>(null);
+  if (phase63DTraceOwnerRef.current === null) {
+    phase63DTraceOwnerRef.current = createPhase63DTraceEventsOwnerState();
+  }
+  const phase63DTraceOwner = (): Phase63DTraceEventsOwnerState => phase63DTraceOwnerRef.current!;
+  const traceDisplayCache = () => phase63DTraceOwner().traceDisplayController.cache;
   const [displayCacheVersion, setDisplayCacheVersion] = useState(0);
   const [traceSchedulingTick, setTraceSchedulingTick] = useState(0);
   const [displayApplyRevision, setDisplayApplyRevision] = useState(0);
@@ -475,16 +464,13 @@ export function WorkbenchProvider({
   const [loadedSignalTraceWindowKey, setLoadedSignalTraceWindowKey] = useState<string | null>(null);
   const [signalTraceError, setSignalTraceError] = useState<string | null>(null);
   const [contextOverlayRef, setContextOverlayRef] = useState<string | null>(null);
-  const signalTraceRequestCoordinatorRef = useRef(createSignalTraceRequestCoordinator());
   const signalTraceStatusRef = useRef<SignalTraceLoadStatus>("idle");
   const signalTraceRef = useRef<SignalTraceBundle | null>(null);
   const signalTraceErrorRef = useRef<string | null>(null);
   const selectedTradeIdRef = useRef<number | string | null>(null);
   const loadedSignalTraceWindowKeyRef = useRef<string | null>(null);
-  const previousChartWindowKeyRef = useRef<string | null>(null);
   /** Last HTF aux overlays for current trace coverage; re-sliced when render window moves before trace key catches up. */
   const lastSlicedHtfOverlaysRef = useRef<ChartAuxEmaOverlay[]>([]);
-  const traceLoadGenerationRef = useRef(0);
   const applyTraceDisplayRef = useRef<() => void>(() => {});
   const [reloadToken, setReloadToken] = useState(0);
   const prevVariantKeyRef = useRef("");
@@ -656,9 +642,9 @@ export function WorkbenchProvider({
   }, [selectedRunId, reloadToken]);
 
   useEffect(() => {
-    traceLoadGenerationRef.current += 1;
-    signalTraceRequestCoordinatorRef.current.reset();
-    previousChartWindowKeyRef.current = null;
+    phase63DTraceOwner().traceController.loadGeneration += 1;
+    resetTraceCoordinator(phase63DTraceOwner().traceController);
+    phase63DTraceOwner().traceController.previousWindowKey = null;
   }, [selectedRunId]);
 
   useEffect(() => {
@@ -1603,45 +1589,6 @@ export function WorkbenchProvider({
 
   const applyTraceDisplayForCurrentWindow = useCallback(() => {
     const candles = chartViewCandlesRef.current;
-    const nextDisplayState = deriveTraceDisplayStateForCandles(
-      signalTraceDisplayCacheRef.current,
-      candles,
-      signalTraceStatusRef.current,
-    );
-    const shouldRetainPreviousDisplay = shouldRetainPreviousTraceDisplay(nextDisplayState, {
-      eventCount: chartDisplayComponentEventsRef.current.length,
-      htfOverlayPointCount: lastSlicedHtfOverlaysRef.current.reduce(
-        (total, overlay) => total + overlay.points.length,
-        0,
-      ),
-    });
-    const retainedDisplayStatus =
-      signalTraceStatusRef.current === "loading" ? "loading_missing" : nextDisplayState.status;
-
-    setTraceDisplayState(
-      shouldRetainPreviousDisplay
-        ? {
-            ...nextDisplayState,
-            status: retainedDisplayStatus,
-            events: chartDisplayComponentEventsRef.current,
-          }
-        : nextDisplayState,
-    );
-
-    if (nextDisplayState.status === "empty") {
-      chartDisplayComponentEventsRef.current = [];
-      setChartDisplayComponentEvents([]);
-      setDisplayApplyRevision((revision) => revision + 1);
-      return;
-    }
-
-    if (!shouldRetainPreviousDisplay) {
-      chartDisplayComponentEventsRef.current = nextDisplayState.events;
-      setChartDisplayComponentEvents(nextDisplayState.events);
-    }
-    setDisplayApplyRevision((revision) => revision + 1);
-
-    const bounds = candleTimeBounds(candles);
     const selectedTradeIdSnapshot = selectedTradeIdRef.current;
     const selectedTradeEntryTimeSec =
       selectedTradeIdSnapshot !== null && selectedVariant
@@ -1652,21 +1599,11 @@ export function WorkbenchProvider({
           })()
         : null;
 
-    dbgMarkCutover(DBG.traceDisplay.applyCurrentWindow, "trace", {
-      fromSec: nextDisplayState.fromSec,
-      toSec: nextDisplayState.toSec,
-      status: shouldRetainPreviousDisplay ? retainedDisplayStatus : nextDisplayState.status,
-      eventCount: shouldRetainPreviousDisplay
-        ? chartDisplayComponentEventsRef.current.length
-        : nextDisplayState.events.length,
-      htfTimeCount: nextDisplayState.htfSlice.times.length,
-      coveredRanges: nextDisplayState.coveredRanges,
-      missingRange: nextDisplayState.missingRange,
-      retainedPreviousDisplay: shouldRetainPreviousDisplay,
+    const applyResult = runPhase63DApplyTraceDisplayForWindow(phase63DTraceOwner(), {
+      candles,
+      traceLoadStatus: signalTraceStatusRef.current,
       selectedTradeId: selectedTradeIdSnapshot,
       selectedTradeEntryTimeSec,
-      renderWindowFromSec: bounds?.fromSec,
-      renderWindowToSec: bounds?.toSec,
       selectedTradeEntryMarkerInView:
         selectedVariant !== null && selectedTradeIdSnapshot !== null
           ? selectedTradeEntryMarkerInView(
@@ -1677,8 +1614,13 @@ export function WorkbenchProvider({
           : false,
     });
 
-    if (!shouldRetainPreviousDisplay || nextDisplayState.htfSlice.times.length > 0) {
-      applyHtfOverlaysFromDisplaySlice(nextDisplayState.htfSlice);
+    setTraceDisplayState(applyResult.state);
+    chartDisplayComponentEventsRef.current = applyResult.componentEvents;
+    setChartDisplayComponentEvents(applyResult.componentEvents);
+    setDisplayApplyRevision(applyResult.displayApplyRevision);
+
+    if (applyResult.htfSlice.times.length > 0) {
+      applyHtfOverlaysFromDisplaySlice(applyResult.htfSlice);
     }
   }, [applyHtfOverlaysFromDisplaySlice, selectedVariant]);
 
@@ -1797,7 +1739,7 @@ export function WorkbenchProvider({
       return;
     }
 
-    const htfSlice = signalTraceDisplayCacheRef.current.sliceHtfContextForWindow(
+    const htfSlice = traceDisplayCache().sliceHtfContextForWindow(
       bounds.fromSec,
       bounds.toSec,
     );
@@ -1851,9 +1793,7 @@ export function WorkbenchProvider({
     if (traceDisplayCacheKey === null) {
       return;
     }
-    signalTraceDisplayCacheRef.current.reset(traceDisplayCacheKey);
-    signalTraceRequestCoordinatorRef.current.reset();
-    traceLoadGenerationRef.current += 1;
+    resetPhase63DTraceDisplayCache(phase63DTraceOwner(), traceDisplayCacheKey);
     lastSlicedHtfOverlaysRef.current = [];
     chartDisplayComponentEventsRef.current = [];
     setChartDisplayComponentEvents([]);
@@ -1866,9 +1806,7 @@ export function WorkbenchProvider({
       if (traceDisplayCacheKey === null) {
         return;
       }
-      signalTraceDisplayCacheRef.current.reset(traceDisplayCacheKey);
-      signalTraceRequestCoordinatorRef.current.reset();
-      traceLoadGenerationRef.current += 1;
+      resetPhase63DTraceDisplayCache(phase63DTraceOwner(), traceDisplayCacheKey);
       setDisplayCacheVersion((version) => version + 1);
       setTraceSchedulingTick((tick) => tick + 1);
     });
@@ -1901,7 +1839,7 @@ export function WorkbenchProvider({
     if (sessionCacheIdentity === null) {
       return;
     }
-    signalTraceBundleSessionCacheRef.current.reset(sessionCacheIdentity);
+    resetPhase63DTraceSessionCache(phase63DTraceOwner(), sessionCacheIdentity);
   }, [sessionCacheIdentity]);
 
   useEffect(() => {
@@ -1971,7 +1909,7 @@ export function WorkbenchProvider({
     if (renderWindowBounds === null) {
       return false;
     }
-    return signalTraceDisplayCacheRef.current.coversRange(
+    return traceDisplayCache().coversRange(
       renderWindowBounds.fromSec,
       renderWindowBounds.toSec,
     );
@@ -1982,7 +1920,7 @@ export function WorkbenchProvider({
       return false;
     }
     const { fromSec, toSec } = renderWindowBounds;
-    const cache = signalTraceDisplayCacheRef.current;
+    const cache = traceDisplayCache();
     const eventCount = dbgTimedSyncCutover(
       DBG.traceDisplay.sliceEvents,
       "trace",
@@ -2135,42 +2073,30 @@ export function WorkbenchProvider({
   }, []);
 
   useEffect(() => {
+    const owner = phase63DTraceOwner();
+
     if (!chartHeavyIoEnabled) {
       dbgMark(DBG.load.chartHeavyIoBlocked, {
         source: "signal_trace",
       });
+      resetTraceCoordinator(owner.traceController);
+      owner.traceController.previousWindowKey = null;
       setSignalTrace(null);
       setSignalTraceStatus("idle");
       setLoadedSignalTraceWindowKey(null);
       setSignalTraceError(null);
-      previousChartWindowKeyRef.current = null;
+      signalTraceStatusRef.current = "idle";
+      signalTraceRef.current = null;
+      signalTraceErrorRef.current = null;
+      loadedSignalTraceWindowKeyRef.current = null;
       return;
     }
 
-    const displayCacheCoversWindow =
-      renderWindowBounds !== null &&
-      signalTraceDisplayCacheRef.current.coversRange(
-        renderWindowBounds.fromSec,
-        renderWindowBounds.toSec,
-      );
-    const displayCacheMissingRange =
-      renderWindowBounds !== null
-        ? signalTraceDisplayCacheRef.current.missingRange(
-            renderWindowBounds.fromSec,
-            renderWindowBounds.toSec,
-          )
-        : null;
-
     if (renderWindowBounds !== null) {
-      dbgMarkCutover(DBG.traceDisplay.coverage, "trace", {
-        fromSec: renderWindowBounds.fromSec,
-        toSec: renderWindowBounds.toSec,
-        coversWindow: displayCacheCoversWindow,
-        missingRange: displayCacheMissingRange,
-      });
+      logPhase63DTraceCoverage(owner, renderWindowBounds);
     }
 
-    const bootstrap = evaluateSignalTraceBootstrap({
+    const bootstrapPreview = evaluateSignalTraceBootstrap({
       report,
       reportLoadStatus,
       selectedRunId,
@@ -2181,604 +2107,88 @@ export function WorkbenchProvider({
       chartWindowKey,
       candles: chartView.candles,
       renderWindowBounds,
-      previousWindowKey: previousChartWindowKeyRef.current,
+      previousWindowKey: owner.traceController.previousWindowKey,
     });
+    const fetchSource = bootstrapPreview.ready ? bootstrapPreview.fetchSource : undefined;
 
-    if (!bootstrap.ready) {
-      dbgMarkCutover(DBG.signalTrace.bootstrapBlocked, "trace", { reason: bootstrap.reason });
-      setSignalTrace(null);
-      setSignalTraceStatus("idle");
-      setLoadedSignalTraceWindowKey(null);
-      setSignalTraceError(null);
-      previousChartWindowKeyRef.current = null;
-      return;
-    }
-
-    const { windowKey, request, fetchSource } = bootstrap;
-    const committedWindowKey = windowKey;
-    const windowTraceRequestKey = buildDisplayTraceRequestKey({
-      runId: request.runId,
-      variant: request.variant,
-      fromMs: request.fromMs,
-      toOpenTimeMs: request.toOpenTimeMs,
-      contextOverlayRef: effectiveContextOverlayRef,
-    });
-    const coordinator = signalTraceRequestCoordinatorRef.current;
-
-    dbgMarkCutover(DBG.signalTrace.bootstrapReady, "trace", {
-      windowKey: committedWindowKey,
-      traceRequestKey: windowTraceRequestKey,
-      renderWindowRevision,
-      boundsKey: renderWindowBoundsKey,
-    });
-
-    const coalescedFetchKey = takeCommittedTraceFetchIntent();
-    const runtime = v2RenderWindow();
-    const sessionCacheHasWindow = signalTraceBundleSessionCacheRef.current.has(committedWindowKey);
-    const loadDecision = decideSignalTraceLoad({
-      chartWindowKey: committedWindowKey,
-      sessionCacheHasWindow,
-      loadedSignalTraceWindowKey: loadedSignalTraceWindowKeyRef.current,
-      request,
-    });
-
-    const plan = planTraceDisplayLoad({
-      bootstrap,
-      coalescedWindowKey: coalescedFetchKey,
-      committedWindowKey,
-      panScheduling: {
-        interactionState: runtime.getInteractionState(),
-        hasPendingShift: runtime.getPendingShift() !== null,
-        displayCacheCoversWindow,
-        committedWindowKey,
-        loadedWindowKey: loadedSignalTraceWindowKeyRef.current,
-        status: signalTraceStatusRef.current,
-      },
-      loadDecision,
-    });
-
-    const logCoordinatorDecision = (
-      coordDecision: ReturnType<typeof coordinator.evaluate>,
-      requestKey: string,
-      extra?: Record<string, unknown>,
-    ) => {
-      const ledger = coordinator.ledgerSnapshotForKey(requestKey);
-      dbgMarkCutover(DBG.signalTrace.decision, "trace", {
-        traceRequestKey: requestKey,
-        decisionReason: coordDecision.action === "fetch" ? "fetch" : coordDecision.reason,
-        skipReason: coordDecision.action === "skip" ? coordDecision.reason : undefined,
-        plan: plan.action,
-        policyAction: loadDecision.action,
-        cacheCoverage: displayCacheCoversWindow ? "hit" : "miss",
-        missingRange: displayCacheMissingRange,
-        requestedFrom: request.fromMs,
-        requestedTo: request.toOpenTimeMs,
-        coverageFrom: renderWindowBounds?.fromSec,
-        coverageTo: renderWindowBounds?.toSec,
-        inFlightKeysCount: ledger.inFlightKeysCount,
-        inFlightKey: ledger.inFlightKey,
-        mergedKeysHit: ledger.mergedKeysHit,
-        failedKeysHit: ledger.failedKeysHit,
-        windowKey: committedWindowKey,
-        sessionCacheHasWindow,
-        fetchSource,
-        ...extra,
-      });
-    };
-
-    if (plan.action === "bootstrap_blocked") {
-      return;
-    }
-
-    if (plan.action === "fetch_superseded") {
-      dbgMark(DBG.traceDisplay.fetchSuperseded, {
-        coalesced: coalescedFetchKey,
-        windowKey: committedWindowKey,
-        traceRequestKey: windowTraceRequestKey,
-      });
-      return;
-    }
-
-    if (plan.action === "pan_block") {
-      if (plan.applyDisplayFromCache) {
-        dbgMark(DBG.traceDisplay.cacheHit, {
-          windowKey: committedWindowKey,
-          source: "active_pan_block",
-        });
-        finalizeTraceDisplayUpdate();
-      }
-      return;
-    }
-
-    previousChartWindowKeyRef.current = committedWindowKey;
-
-    if (plan.action === "restore_session") {
-      const sessionBundle = signalTraceBundleSessionCacheRef.current.get(committedWindowKey);
-      if (sessionBundle === null) {
-        return;
-      }
-      const lanesRequestKeyForRestore = buildTraceRequestKey({
-        runId: request.runId,
-        variant: request.variant,
-        fromMs: request.fromMs,
-        toOpenTimeMs: request.toOpenTimeMs,
-        contextOverlayRef: effectiveContextOverlayRef,
-      });
-      const chartEventsEnabledForRestore = isChartEventsApiEnabled();
-      const lanesOnlySessionRestore = chartEventsEnabledForRestore && displayCacheCoversWindow;
-
-      if (lanesOnlySessionRestore) {
-        applyLanesFromSessionBundle({
-          sessionBundle,
-          windowKey: committedWindowKey,
-          lanesRequestKey: lanesRequestKeyForRestore,
-          coordinator,
-          applyLanesState: (bundle) => {
-            setSignalTrace(bundle);
-            setLoadedSignalTraceWindowKey(committedWindowKey);
-            loadedSignalTraceWindowKeyRef.current = committedWindowKey;
-            setSignalTraceStatus("ready");
-            signalTraceStatusRef.current = "ready";
-            setSignalTraceError(null);
-          },
-        });
-        logCoordinatorDecision(
-          coordinator.evaluate({
-            key: lanesRequestKeyForRestore,
-            generation: traceLoadGenerationRef.current,
-            displayCacheCoversWindow,
-          }),
-          lanesRequestKeyForRestore,
-          { afterSessionRestore: true, lanesOnly: true },
-        );
-        finalizeTraceDisplayUpdate();
-        return;
-      }
-
-      coordinator.markMerged(windowTraceRequestKey, "session_restore");
-      dbgMarkCutover(DBG.signalTrace.fetchStart, "trace", {
-        source: "session_restore",
-        windowKey: committedWindowKey,
-        traceRequestKey: windowTraceRequestKey,
-      });
-      dbgTimedSyncCutover(
-        DBG.traceDisplay.mergeChunk,
-        "trace",
-        () => {
-          mergeDisplayChunkFromResponse(signalTraceDisplayCacheRef.current, sessionBundle);
-        },
-        () => ({
-          eventCount: sessionBundle.component_events?.length ?? 0,
-          timeCount: sessionBundle.times.length,
-        }),
-      );
-      setDisplayCacheVersion((version) => version + 1);
-      setSignalTrace(sessionBundle);
-      setLoadedSignalTraceWindowKey(committedWindowKey);
-      loadedSignalTraceWindowKeyRef.current = committedWindowKey;
-      setSignalTraceStatus("ready");
-      signalTraceStatusRef.current = "ready";
-      setSignalTraceError(null);
-      dbgMark(DBG.traceDisplay.sessionHit, {
-        windowKey: committedWindowKey,
-        traceRequestKey: windowTraceRequestKey,
-      });
-      logCoordinatorDecision(
-        coordinator.evaluate({
-          key: windowTraceRequestKey,
-          generation: traceLoadGenerationRef.current,
-          displayCacheCoversWindow,
-        }),
-        windowTraceRequestKey,
-        { afterSessionRestore: true },
-      );
-      finalizeTraceDisplayUpdate();
-      return;
-    }
-
-    if (plan.action === "defer") {
-      if (!displayCacheCoversWindow) {
-        dbgMarkCutover(DBG.traceDisplay.cacheMiss, "trace", {
-          windowKey: committedWindowKey,
-          traceRequestKey: windowTraceRequestKey,
-        });
-      }
-      return;
-    }
-
-    if (plan.action !== "evaluate_network") {
-      return;
-    }
-
-    const lanesReadyForWindow =
-      signalTraceMatchesChartWindow(committedWindowKey, loadedSignalTraceWindowKeyRef.current) &&
-      (signalTraceStatusRef.current === "ready" || signalTraceStatusRef.current === "error");
-    const chartEventsEnabled = isChartEventsApiEnabled();
-    const lanesOnlyFetch = chartEventsEnabled && displayCacheCoversWindow && !lanesReadyForWindow;
-
-    if (displayCacheCoversWindow && !lanesOnlyFetch) {
-      dbgMark(DBG.traceDisplay.cacheHit, {
-        windowKey: committedWindowKey,
-        source: "display_cache_covers_window",
-      });
-      finalizeTraceDisplayUpdate();
-      return;
-    }
-
-    if (displayCacheCoversWindow && lanesOnlyFetch) {
-      dbgMark(DBG.traceDisplay.cacheHit, {
-        windowKey: committedWindowKey,
-        source: "display_cache_covers_window_lanes_pending",
-      });
-      finalizeTraceDisplayUpdate();
-    }
-
-    let chunkPlan = planMissingTraceDisplayChunkFetch({
-      cache: signalTraceDisplayCacheRef.current,
-      candles: chartView.candles,
-      runId: request.runId,
-      variant: request.variant,
-      contextOverlayRef: effectiveContextOverlayRef,
-      chartTimeframe,
-    });
-
-    if (
-      chunkPlan === null &&
-      lanesOnlyFetch &&
-      renderWindowBounds !== null
-    ) {
-      chunkPlan = {
-        traceDisplayChunkKey: buildTraceDisplayChunkKey({
-          runId: request.runId,
-          variant: request.variant,
-          contextOverlayRef: effectiveContextOverlayRef,
-          chartTimeframe,
-          fromSec: renderWindowBounds.fromSec,
-          toSec: renderWindowBounds.toSec,
-        }),
-        fromSec: renderWindowBounds.fromSec,
-        toSec: renderWindowBounds.toSec,
-        fromMs: request.fromMs,
-        toOpenTimeMs: request.toOpenTimeMs,
-        missingRange: {
-          fromSec: renderWindowBounds.fromSec,
-          toSec: renderWindowBounds.toSec,
-        },
-      };
-    }
-
-    if (chunkPlan === null) {
-      finalizeTraceDisplayUpdate();
-      return;
-    }
-
-    const traceDisplayChunkKey = chunkPlan.traceDisplayChunkKey;
-    const fetchParams = {
-      runId: request.runId,
-      variant: request.variant,
-      fromMs: chunkPlan.fromMs,
-      toOpenTimeMs: chunkPlan.toOpenTimeMs,
-      contextOverlayRef: effectiveContextOverlayRef,
-    };
-    const displayRequestKey = buildDisplayTraceRequestKey(fetchParams);
-    const lanesRequestKey = buildTraceRequestKey(fetchParams);
-    const networkCoordinatorKey = lanesOnlyFetch ? lanesRequestKey : displayRequestKey;
-
-    const coordDecision = coordinator.evaluate({
-      key: networkCoordinatorKey,
-      generation: traceLoadGenerationRef.current,
-      displayCacheCoversWindow: lanesOnlyFetch,
-    });
-    logCoordinatorDecision(coordDecision, networkCoordinatorKey, { traceDisplayChunkKey, chunkPlan });
-
-    if (coordDecision.action !== "fetch") {
-      if (
-        coordDecision.reason === "already_merged" ||
-        coordDecision.reason === "cache_hit"
-      ) {
-        dbgMark(DBG.traceDisplay.cacheHit, {
-          windowKey: committedWindowKey,
-          traceRequestKey: displayRequestKey,
-          traceDisplayChunkKey,
-          source: "coordinator_skip",
-          reason: coordDecision.reason,
-        });
-        finalizeTraceDisplayUpdate();
-      }
-      return;
-    }
-
-    dbgMarkCutover(DBG.traceDisplay.cacheMiss, "trace", {
-      windowKey: committedWindowKey,
-      traceRequestKey: displayRequestKey,
-      traceDisplayChunkKey,
-      missingRange: chunkPlan.missingRange,
-      chunkFromSec: chunkPlan.fromSec,
-      chunkToSec: chunkPlan.toSec,
-    });
-
-    const fetchGeneration = ++traceLoadGenerationRef.current;
     const abortController = new AbortController();
-    const runId = request.runId;
-    const variantKey = request.variant;
-    const { fromMs, toOpenTimeMs } = chunkPlan;
+    let cancelled = false;
 
-    const lanesPolicySnapshot = {
-      committedWindowKey: windowKey,
-      loadedSignalTraceWindowKey: loadedSignalTraceWindowKeyRef.current,
-      signalTraceStatus: signalTraceStatusRef.current,
-      signalTraceError: signalTraceErrorRef.current,
-      loadedSignalTrace: signalTraceRef.current,
-      lanesReadyAtFetchStart: lanesReadyForWindow,
-    };
-
-    coordinator.markInFlight(networkCoordinatorKey, fetchGeneration);
-    if (chartEventsEnabled && !lanesOnlyFetch) {
-      coordinator.markInFlight(displayRequestKey, fetchGeneration);
-    }
-
-    async function loadTrace() {
-      const requestedBounds = {
-        fromSec: Math.floor(fromMs / 1000),
-        toSec: Math.floor(toOpenTimeMs / 1000),
-      };
-
-      const commitDisplayAfterMerge = () => {
-        coordinator.markMerged(displayRequestKey, "network");
-        setDisplayCacheVersion((version) => version + 1);
-        finalizeTraceDisplayUpdate();
-      };
-
-      const denseCoordinatorKey = chartEventsEnabled ? lanesRequestKey : networkCoordinatorKey;
-
-      const restoreLanesStatusFromSnapshot = () => {
-        setSignalTraceStatus(lanesPolicySnapshot.signalTraceStatus);
-        signalTraceStatusRef.current = lanesPolicySnapshot.signalTraceStatus;
-        setSignalTraceError(lanesPolicySnapshot.signalTraceError);
-      };
-
-      const beginDenseLanesFetch = () => {
-        coordinator.markInFlight(denseCoordinatorKey, fetchGeneration);
-        setSignalTraceStatus("loading");
-        signalTraceStatusRef.current = "loading";
-        setSignalTraceError(null);
-        dbgMarkCutover(DBG.signalTrace.fetchStart, "trace", {
-          source: fetchSource,
-          windowKey,
-          traceRequestKey: denseCoordinatorKey,
-          traceDisplayChunkKey,
-          chartEventsEnabled,
-          denseFetch: true,
-        });
-      };
-
-      if (!lanesOnlyFetch) {
-        dbgMarkCutover(DBG.signalTrace.fetchStart, "trace", {
-          source: fetchSource,
-          windowKey,
-          traceRequestKey: displayRequestKey,
-          traceDisplayChunkKey,
-          chartEventsEnabled,
-          displayFetch: true,
-        });
-      }
-
-      const networkCtx = {
-        params: {
-          runId,
-          variant: variantKey,
-          fromMs,
-          toOpenTimeMs,
-          contextOverlayRef: effectiveContextOverlayRef,
-          windowKey,
-          displayRequestKey,
-          networkCoordinatorKey: denseCoordinatorKey,
-          fetchGeneration,
-          signal: abortController.signal,
-          lanesOnlyFetch,
+    void (async () => {
+      const result = await runPhase63DTraceLoadCycle(owner, {
+        chartHeavyIoEnabled,
+        reportLoadStatus,
+        report,
+        selectedRunId: selectedRunId ?? "",
+        selectedVariantKey: selectedVariantKey || "",
+        marketLoadStatus,
+        runMarketViewIdentity,
+        expectedRunMarketViewIdentity,
+        effectiveContextOverlayRef,
+        chartTimeframe,
+        chartWindowKey,
+        candles: chartView.candles,
+        renderWindowBounds,
+        interactionState: v2RenderWindow().getInteractionState(),
+        hasPendingShift: v2RenderWindow().getPendingShift() !== null,
+        coalescedWindowKey: takeCommittedTraceFetchIntent(),
+        signal: abortController.signal,
+        telemetryMeta: {
+          renderWindowRevision,
+          boundsKey: renderWindowBoundsKey,
+          fetchSource,
         },
-        cache: signalTraceDisplayCacheRef.current,
-        coordinator,
-        requestedBounds,
-        onCommitDisplay: commitDisplayAfterMerge,
-      };
-
-      const displayResult = lanesOnlyFetch
-        ? null
-        : await loadDisplayTraceChunk(networkCtx);
-      if (
-        displayResult !== null &&
-        (displayResult.outcome === "aborted" || displayResult.outcome === "stale")
-      ) {
-        return;
-      }
-
-      const displayLoadOutcome = mapDisplayLoadOutcome(
-        lanesOnlyFetch,
-        chartEventsEnabled,
-        displayResult,
-      );
-      if (displayLoadOutcome === null) {
-        return;
-      }
-
-      let displayMerged =
-        displayResult !== null && displayResult.outcome === "committed"
-          ? true
-          : (displayResult?.displayMerged ?? lanesOnlyFetch);
-      let mergeSource =
-        displayResult !== null && displayResult.outcome === "committed"
-          ? displayResult.mergeSource
-          : (displayResult?.mergeSource ?? "signal-trace-fallback");
-
-      const markDensePathComplete = () => {
-        coordinator.markMerged(denseCoordinatorKey, "network");
-      };
-
-      let lanesDecision = decideDenseLanesNetworkLoad({
-        chartEventsEnabled,
-        committedWindowKey: windowKey,
-        loadedSignalTraceWindowKey: lanesPolicySnapshot.loadedSignalTraceWindowKey,
-        signalTraceStatus: lanesPolicySnapshot.signalTraceStatus,
-        loadedSignalTrace: lanesPolicySnapshot.loadedSignalTrace,
-        sessionCacheHasWindow,
-        displayCacheCoversWindow,
-        displayLoadOutcome,
-        lanesRequestKey,
-        fromMs,
-        toOpenTimeMs,
       });
 
-      try {
-        if (lanesDecision.action === "skip") {
-          dbgMark(DBG.lanesTrace.skip, {
-            windowKey,
-            reason: lanesDecision.reason,
-            displayLoadOutcome,
-          });
-          restoreLanesStatusFromSnapshot();
-          if (chartEventsEnabled) {
-            markDensePathComplete();
-          }
-          return;
-        }
+      if (cancelled) {
+        return;
+      }
 
-        if (lanesDecision.action === "use_loaded_bundle") {
-          const bundle = lanesPolicySnapshot.loadedSignalTrace;
-          if (bundle !== null) {
-            mergeDisplayFromDenseFallback({
-              ...networkCtx,
-              bundle,
-              mergeSource: "signal-trace-fallback",
-            });
-            displayMerged = true;
-          }
-          dbgMark(DBG.lanesTrace.useLoaded, {
-            windowKey,
-            reason: lanesDecision.reason,
-            displayLoadOutcome,
-          });
-          markDensePathComplete();
-          return;
-        }
+      const snapshot = resolvePhase63DLanesSnapshot(owner);
+      setSignalTrace(snapshot.signalTrace);
+      setSignalTraceStatus(snapshot.signalTraceStatus);
+      setSignalTraceError(snapshot.signalTraceError);
+      setLoadedSignalTraceWindowKey(snapshot.loadedSignalTraceWindowKey);
+      signalTraceStatusRef.current = snapshot.signalTraceStatus;
+      signalTraceRef.current = snapshot.signalTrace;
+      signalTraceErrorRef.current = snapshot.signalTraceError;
+      loadedSignalTraceWindowKeyRef.current = snapshot.loadedSignalTraceWindowKey;
 
-        if (lanesDecision.action === "restore_session") {
-          const sessionBundle = signalTraceBundleSessionCacheRef.current.get(
-            lanesDecision.windowKey,
-          );
-          if (sessionBundle !== null) {
-            applyLanesFromSessionBundle({
-              sessionBundle,
-              windowKey: lanesDecision.windowKey,
-              lanesRequestKey,
-              coordinator,
-              applyLanesState: (bundle) => {
-                setSignalTrace(bundle);
-                setLoadedSignalTraceWindowKey(windowKey);
-                loadedSignalTraceWindowKeyRef.current = windowKey;
-                setSignalTraceStatus("ready");
-                signalTraceStatusRef.current = "ready";
-                setSignalTraceError(null);
-              },
-            });
-            flushLanesLoadDebug();
-            return;
-          }
-          lanesDecision = {
-            action: "fetch",
-            lanesRequestKey,
-            fromMs,
-            toOpenTimeMs,
-            reason: "lanes_pending",
-          };
-        }
+      if (result.outcome === "fetch_superseded") {
+        dbgMark(DBG.traceDisplay.fetchSuperseded, {
+          windowKey: chartWindowKey,
+        });
+        return;
+      }
 
-        beginDenseLanesFetch();
+      if (result.outcome === "bootstrap_blocked") {
+        return;
+      }
 
-        const lanesResult = await loadDenseLanesTrace(networkCtx);
-        if (lanesResult.outcome === "aborted" || lanesResult.outcome === "stale") {
-          restoreLanesStatusFromSnapshot();
-          return;
-        }
+      if (
+        result.displayLoadOutcome === "committed" ||
+        result.outcome === "session_restored"
+      ) {
+        setDisplayCacheVersion((version) => version + 1);
+      }
 
-        if (lanesResult.outcome === "error") {
-          const err = lanesResult.error;
-          if (displayMerged) {
-            setSignalTrace(null);
-            setLoadedSignalTraceWindowKey(windowKey);
-            loadedSignalTraceWindowKeyRef.current = windowKey;
-            setSignalTraceStatus("error");
-            signalTraceStatusRef.current = "error";
-            setSignalTraceError(
-              err instanceof ApiError
-                ? err.detail
-                : err instanceof Error
-                  ? err.message
-                  : "Failed to load signal trace.",
-            );
-            finalizeTraceDisplayUpdate();
-            return;
-          }
+      if (shouldPhase63DFinalizeTraceDisplay(result.outcome)) {
+        finalizeTraceDisplayUpdate();
+      }
 
-          coordinator.markFailed(denseCoordinatorKey);
-          setSignalTrace(null);
-          setLoadedSignalTraceWindowKey(windowKey);
-          loadedSignalTraceWindowKeyRef.current = windowKey;
-          setSignalTraceStatus("error");
-          signalTraceStatusRef.current = "error";
-          setSignalTraceError(
-            err instanceof ApiError
-              ? err.detail
-              : err instanceof Error
-                ? err.message
-                : "Failed to load signal trace.",
-          );
-          return;
-        }
-
-        const bundle = lanesResult.bundle;
-        const needsDisplayMergeFromDense =
-          lanesDecision.reason === "flag_off_combined" ||
-          lanesDecision.reason === "display_fallback_needed";
-        if (!displayMerged && needsDisplayMergeFromDense) {
-          mergeDisplayFromDenseFallback({
-            ...networkCtx,
-            bundle,
-            mergeSource,
-          });
-          displayMerged = true;
-        }
-
-        markDensePathComplete();
-        setSignalTrace(bundle);
-        setLoadedSignalTraceWindowKey(windowKey);
-        loadedSignalTraceWindowKeyRef.current = windowKey;
-        setSignalTraceStatus("ready");
-        signalTraceStatusRef.current = "ready";
-        signalTraceBundleSessionCacheRef.current.set(windowKey, bundle);
+      if (
+        result.outcome === "completed" ||
+        result.outcome === "display_committed" ||
+        result.outcome === "session_restored"
+      ) {
         flushLanesLoadDebug();
-      } finally {
-        coordinator.clearInFlight(networkCoordinatorKey, fetchGeneration);
-        if (chartEventsEnabled) {
-          coordinator.clearInFlight(lanesRequestKey, fetchGeneration);
-        }
-        if (chartEventsEnabled && !lanesOnlyFetch) {
-          coordinator.clearInFlight(displayRequestKey, fetchGeneration);
-        }
       }
-    }
+    })();
 
-    void loadTrace();
     return () => {
+      cancelled = true;
       abortController.abort();
-      coordinator.clearInFlight(networkCoordinatorKey, fetchGeneration);
-      if (chartEventsEnabled) {
-        coordinator.clearInFlight(lanesRequestKey, fetchGeneration);
-      }
-      if (chartEventsEnabled && !lanesOnlyFetch) {
-        coordinator.clearInFlight(displayRequestKey, fetchGeneration);
-      }
-      traceLoadGenerationRef.current += 1;
+      owner.traceController.loadGeneration += 1;
     };
   }, [
     reportLoadStatus,
@@ -2796,6 +2206,8 @@ export function WorkbenchProvider({
     chartHeavyIoEnabled,
     chartTimeframe,
     traceSchedulingTick,
+    chartView.candles,
+    renderWindowBounds,
   ]);
 
   const symbol = report?.symbol ?? "—";

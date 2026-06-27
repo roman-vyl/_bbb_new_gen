@@ -44,13 +44,23 @@ export const PHASE_63C_DOMAIN_OWNERS: ChartRuntimeDomainOwners = {
   market: "old_production",
 };
 
+/** Phase 6.3D: model/render_window/viewport/trace on runtime v2; aux/market remain old. */
+export const PHASE_63D_DOMAIN_OWNERS: ChartRuntimeDomainOwners = {
+  model: "runtime_v2_production",
+  render_window: "runtime_v2_production",
+  viewport: "runtime_v2_production",
+  trace: "runtime_v2_production",
+  aux_overlay: "old_production",
+  market: "old_production",
+};
+
 /**
  * Single source of truth for staged owner-domain cutover.
- * Phase 6.3C transfers viewport command ownership; model/render-window stay v2 from 6.3A/6.3B.
+ * Phase 6.3D transfers trace/events lifecycle; aux/market remain old passthrough.
  */
 export const chartRuntimeCutoverConfig: ChartRuntimeCutoverConfig = {
-  cutoverPhase: "6.3C",
-  domainOwners: PHASE_63C_DOMAIN_OWNERS,
+  cutoverPhase: "6.3D",
+  domainOwners: PHASE_63D_DOMAIN_OWNERS,
 };
 
 export function domainOwnerFor(
@@ -76,4 +86,10 @@ export function isViewportDomainRuntimeV2Production(
   config: ChartRuntimeCutoverConfig = chartRuntimeCutoverConfig,
 ): boolean {
   return config.domainOwners.viewport === "runtime_v2_production";
+}
+
+export function isTraceDomainRuntimeV2Production(
+  config: ChartRuntimeCutoverConfig = chartRuntimeCutoverConfig,
+): boolean {
+  return config.domainOwners.trace === "runtime_v2_production";
 }

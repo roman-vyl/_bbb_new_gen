@@ -1,13 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  chartRuntimeCutoverConfig,
-  PHASE_63C_DOMAIN_OWNERS,
-} from "./chartRuntimeCutoverConfig";
-import {
-  hasRuntimeV2ProductionOwner,
-  runtimeV2ProductionDomains,
-} from "./chartRuntimeCutoverTelemetry";
+import { chartRuntimeCutoverConfig } from "./chartRuntimeCutoverConfig";
 import { makePhase6Candles } from "./phase6ContractFixtures";
 import { createPhase63BRenderWindowOwnerState } from "./phase63BRenderWindowBridge";
 import {
@@ -40,25 +33,10 @@ function makeWindowSwapCommit(): WindowCommitResult {
 }
 
 describe("Phase 6.3C viewport command cutover", () => {
-  it("sets cutover config to phase 6.3C with model, render_window, and viewport on runtime_v2_production", () => {
-    expect(chartRuntimeCutoverConfig.cutoverPhase).toBe("6.3C");
-    expect(chartRuntimeCutoverConfig.domainOwners).toEqual(PHASE_63C_DOMAIN_OWNERS);
-    expect(runtimeV2ProductionDomains(chartRuntimeCutoverConfig)).toEqual([
-      "model",
-      "render_window",
-      "viewport",
-    ]);
-    expect(hasRuntimeV2ProductionOwner(chartRuntimeCutoverConfig)).toBe(true);
-    for (const domain of ["trace", "aux_overlay", "market"] as const) {
-      expect(chartRuntimeCutoverConfig.domainOwners[domain]).toBe("old_production");
-    }
-  });
-
-  it("has no runtime_v2_production owner outside model, render_window, and viewport", () => {
-    const unexpectedV2 = (["trace", "aux_overlay", "market"] as const).filter(
-      (domain) => chartRuntimeCutoverConfig.domainOwners[domain] === "runtime_v2_production",
-    );
-    expect(unexpectedV2).toEqual([]);
+  it("sets cutover config to phase 6.3D with viewport on runtime_v2_production", () => {
+    expect(chartRuntimeCutoverConfig.cutoverPhase).toBe("6.3D");
+    expect(chartRuntimeCutoverConfig.domainOwners.viewport).toBe("runtime_v2_production");
+    expect(chartRuntimeCutoverConfig.domainOwners.trace).toBe("runtime_v2_production");
   });
 
   it("emits selected-trade focus command through v2 viewport controller", () => {

@@ -13,7 +13,7 @@ const PRE_CUTOVER_ALLOWED_WORKBENCH_RUNTIME_IMPORTS = [
   /from\s+["']@\/features\/workbenchChartRuntime\/phase63AModelAdapterBridge["']/,
   /from\s+["']@\/features\/workbenchChartRuntime\/phase63BRenderWindowBridge["']/,
   /from\s+["']@\/features\/workbenchChartRuntime\/phase63CViewportCommandBridge["']/,
-  /from\s+["']@\/features\/workbenchChartRuntime\/renderWindowRuntime["']/,
+  /from\s+["']@\/features\/workbenchChartRuntime\/phase63DTraceEventsBridge["']/,
   /from\s+["']@\/features\/workbenchChartRuntime\/runtimeOutputAdapter\.contract["']/,
 ];
 
@@ -112,12 +112,12 @@ describe("Phase 6.1 single-owner contract guards", () => {
 
   it("documents that old chart runtime owners remain in WorkbenchContext until Phase 7 deletion", () => {
     const workbenchSource = readWorkspaceSource("src/shared/context/WorkbenchContext.tsx");
-    expect(workbenchSource).toContain("runPhase63CSelectTradeFocusCommand");
+    expect(workbenchSource).toContain("runPhase63DTraceLoadCycle");
     expect(workbenchSource).toContain("v2ChartRuntime");
     expect(workbenchSource).toContain("executeMarketWindowLoad");
     expect(workbenchSource).toContain("composeDisplayMarketWindowBundle");
     expect(workbenchSource).toContain("dispatchChartInteraction");
-    expect(workbenchSource).toContain("signalTraceDisplayCacheRef");
+    expect(workbenchSource).toContain("phase63DTraceOwner");
   });
 });
 

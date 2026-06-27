@@ -2,13 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { ChartMarketBundle } from "@/api/types";
 
-import {
-  chartRuntimeCutoverConfig,
-} from "./chartRuntimeCutoverConfig";
-import {
-  hasRuntimeV2ProductionOwner,
-  runtimeV2ProductionDomains,
-} from "./chartRuntimeCutoverTelemetry";
+import { chartRuntimeCutoverConfig } from "./chartRuntimeCutoverConfig";
 import { makePhase6Candles } from "./phase6ContractFixtures";
 import {
   collectForbiddenImportViolations,
@@ -32,27 +26,13 @@ function makeBundle(candleCount: number): ChartMarketBundle {
 }
 
 describe("Phase 6.3B render-window cutover", () => {
-  it("sets cutover config to phase 6.3C with model and render_window on runtime_v2_production", () => {
-    expect(chartRuntimeCutoverConfig.cutoverPhase).toBe("6.3C");
-    expect(chartRuntimeCutoverConfig.domainOwners.model).toBe("runtime_v2_production");
+  it("sets cutover config to phase 6.3D with v2 domains including trace", () => {
+    expect(chartRuntimeCutoverConfig.cutoverPhase).toBe("6.3D");
     expect(chartRuntimeCutoverConfig.domainOwners.render_window).toBe("runtime_v2_production");
-    expect(chartRuntimeCutoverConfig.domainOwners.viewport).toBe("runtime_v2_production");
-    expect(runtimeV2ProductionDomains(chartRuntimeCutoverConfig)).toEqual([
-      "model",
-      "render_window",
-      "viewport",
-    ]);
-    expect(hasRuntimeV2ProductionOwner(chartRuntimeCutoverConfig)).toBe(true);
-    for (const domain of ["trace", "aux_overlay", "market"] as const) {
+    expect(chartRuntimeCutoverConfig.domainOwners.trace).toBe("runtime_v2_production");
+    for (const domain of ["aux_overlay", "market"] as const) {
       expect(chartRuntimeCutoverConfig.domainOwners[domain]).toBe("old_production");
     }
-  });
-
-  it("has no runtime_v2_production owner outside model, render_window, and viewport", () => {
-    const unexpectedV2 = (["trace", "aux_overlay", "market"] as const).filter(
-      (domain) => chartRuntimeCutoverConfig.domainOwners[domain] === "runtime_v2_production",
-    );
-    expect(unexpectedV2).toEqual([]);
   });
 
   it("initializes render-window from old market bundle without market fetch helpers", () => {
