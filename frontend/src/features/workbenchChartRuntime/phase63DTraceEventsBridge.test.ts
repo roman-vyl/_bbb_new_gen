@@ -7,10 +7,6 @@ import {
   PHASE_63D_DOMAIN_OWNERS,
 } from "./chartRuntimeCutoverConfig";
 import { chartWindowKeyFromCandles } from "./chartModelRuntime";
-import {
-  hasRuntimeV2ProductionOwner,
-  runtimeV2ProductionDomains,
-} from "./chartRuntimeCutoverTelemetry";
 import { makePhase6Candles, makePhase6Report } from "./phase6ContractFixtures";
 import {
   collectForbiddenImportViolations,
@@ -30,26 +26,14 @@ import {
 import { findForbiddenAdapterFallbackPatterns } from "./runtimeOutputAdapter.contract";
 
 describe("Phase 6.3D trace/events cutover", () => {
-  it("sets cutover config to phase 6.3D with trace on runtime_v2_production", () => {
-    expect(chartRuntimeCutoverConfig.cutoverPhase).toBe("6.3D");
-    expect(chartRuntimeCutoverConfig.domainOwners).toEqual(PHASE_63D_DOMAIN_OWNERS);
-    expect(runtimeV2ProductionDomains(chartRuntimeCutoverConfig)).toEqual([
-      "model",
-      "render_window",
-      "viewport",
-      "trace",
-    ]);
-    expect(hasRuntimeV2ProductionOwner(chartRuntimeCutoverConfig)).toBe(true);
-    for (const domain of ["aux_overlay", "market"] as const) {
-      expect(chartRuntimeCutoverConfig.domainOwners[domain]).toBe("old_production");
-    }
+  it("keeps trace domain on runtime_v2_production at phase 6.3E", () => {
+    expect(chartRuntimeCutoverConfig.domainOwners.trace).toBe("runtime_v2_production");
+    expect(PHASE_63D_DOMAIN_OWNERS.trace).toBe("runtime_v2_production");
+    expect(PHASE_63D_DOMAIN_OWNERS.aux_overlay).toBe("old_production");
   });
 
-  it("has no runtime_v2_production owner outside model, render_window, viewport, and trace", () => {
-    const unexpectedV2 = (["aux_overlay", "market"] as const).filter(
-      (domain) => chartRuntimeCutoverConfig.domainOwners[domain] === "runtime_v2_production",
-    );
-    expect(unexpectedV2).toEqual([]);
+  it("has no runtime_v2_production owner for market at 6.3E", () => {
+    expect(chartRuntimeCutoverConfig.domainOwners.market).toBe("old_production");
   });
 
   it("blocks trace bootstrap until market and render-window are ready", () => {

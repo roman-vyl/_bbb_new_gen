@@ -10,10 +10,10 @@ import {
 
 const PRE_CUTOVER_ALLOWED_WORKBENCH_RUNTIME_IMPORTS = [
   /from\s+["']@\/features\/workbenchChartRuntime\/chartRuntimeCutoverTelemetry["']/,
-  /from\s+["']@\/features\/workbenchChartRuntime\/phase63AModelAdapterBridge["']/,
   /from\s+["']@\/features\/workbenchChartRuntime\/phase63BRenderWindowBridge["']/,
   /from\s+["']@\/features\/workbenchChartRuntime\/phase63CViewportCommandBridge["']/,
   /from\s+["']@\/features\/workbenchChartRuntime\/phase63DTraceEventsBridge["']/,
+  /from\s+["']@\/features\/workbenchChartRuntime\/phase63EAuxOverlayBridge["']/,
   /from\s+["']@\/features\/workbenchChartRuntime\/runtimeOutputAdapter\.contract["']/,
 ];
 
@@ -118,6 +118,7 @@ describe("Phase 6.1 single-owner contract guards", () => {
     expect(workbenchSource).toContain("composeDisplayMarketWindowBundle");
     expect(workbenchSource).toContain("dispatchChartInteraction");
     expect(workbenchSource).toContain("phase63DTraceOwner");
+    expect(workbenchSource).toContain("phase63EAuxOverlayOwner");
   });
 });
 

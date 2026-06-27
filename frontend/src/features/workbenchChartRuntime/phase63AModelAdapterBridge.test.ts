@@ -21,8 +21,8 @@ import {
 } from "./phase6StaticGuardUtils";
 
 describe("Phase 6.3A model + adapter cutover", () => {
-  it("keeps model bridge compatible when cutover config is at phase 6.3D", () => {
-    expect(chartRuntimeCutoverConfig.cutoverPhase).toBe("6.3D");
+  it("keeps model bridge compatible when cutover config is at phase 6.3E", () => {
+    expect(chartRuntimeCutoverConfig.cutoverPhase).toBe("6.3E");
     expect(chartRuntimeCutoverConfig.domainOwners.model).toBe("runtime_v2_production");
     expect(runtimeV2ProductionDomains(chartRuntimeCutoverConfig)).toContain("model");
     expect(chartRuntimeCutoverConfig.domainOwners.trace).toBe("runtime_v2_production");
@@ -114,7 +114,7 @@ describe("Phase 6.3A model + adapter cutover", () => {
     expect(findForbiddenAdapterFallbackPatterns(contractSource)).toEqual([]);
     expect(findForbiddenAdapterFallbackPatterns(bridgeSource)).toEqual([]);
     expect(workbenchSource).not.toContain("buildChartViewModel");
-    expect(workbenchSource).toContain("resolvePhase63AModelRuntimeSlice");
+    expect(workbenchSource).toContain("resolvePhase63EModelRuntimeSlice");
     expect(workbenchSource).toContain("derivePhase63AModelDomainFieldsFromRuntime");
     expect(workbenchSource).not.toContain("useWorkbenchChartRuntime");
   });

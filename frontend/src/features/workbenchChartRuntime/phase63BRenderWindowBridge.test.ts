@@ -26,13 +26,12 @@ function makeBundle(candleCount: number): ChartMarketBundle {
 }
 
 describe("Phase 6.3B render-window cutover", () => {
-  it("sets cutover config to phase 6.3D with v2 domains including trace", () => {
-    expect(chartRuntimeCutoverConfig.cutoverPhase).toBe("6.3D");
+  it("sets cutover config to phase 6.3E with v2 domains including aux_overlay", () => {
+    expect(chartRuntimeCutoverConfig.cutoverPhase).toBe("6.3E");
     expect(chartRuntimeCutoverConfig.domainOwners.render_window).toBe("runtime_v2_production");
     expect(chartRuntimeCutoverConfig.domainOwners.trace).toBe("runtime_v2_production");
-    for (const domain of ["aux_overlay", "market"] as const) {
-      expect(chartRuntimeCutoverConfig.domainOwners[domain]).toBe("old_production");
-    }
+    expect(chartRuntimeCutoverConfig.domainOwners.aux_overlay).toBe("runtime_v2_production");
+    expect(chartRuntimeCutoverConfig.domainOwners.market).toBe("old_production");
   });
 
   it("initializes render-window from old market bundle without market fetch helpers", () => {
@@ -118,7 +117,7 @@ describe("Phase 6.3B render-window cutover", () => {
     expect(workbenchSource).toContain("phase63BRenderWindowBridge");
     expect(workbenchSource).toContain("resolvePhase63BChartWindowSlice");
     expect(workbenchSource).toContain("buildChartViewWindowFromPhase63BSlice");
-    expect(workbenchSource).toContain("resolvePhase63AModelRuntimeSlice");
+    expect(workbenchSource).toContain("resolvePhase63EModelRuntimeSlice");
     expect(workbenchSource).not.toContain("useWorkbenchChartRuntime");
     expect(workbenchSource).not.toContain("buildChartViewModel");
     expect(findForbiddenAdapterFallbackPatterns(workbenchSource)).toEqual([]);
@@ -136,7 +135,7 @@ describe("Phase 6.3B render-window cutover", () => {
   it("documents that model consumes v2 render-window sliced chartView", () => {
     const workbenchSource = readWorkspaceSource("src/shared/context/WorkbenchContext.tsx");
     expect(workbenchSource).toMatch(
-      /buildChartViewWindowFromPhase63BSlice[\s\S]*resolvePhase63AModelRuntimeSlice/,
+      /buildChartViewWindowFromPhase63BSlice[\s\S]*resolvePhase63EModelRuntimeSlice/,
     );
   });
 });

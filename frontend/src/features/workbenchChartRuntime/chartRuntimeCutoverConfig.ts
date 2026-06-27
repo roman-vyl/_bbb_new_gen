@@ -54,13 +54,23 @@ export const PHASE_63D_DOMAIN_OWNERS: ChartRuntimeDomainOwners = {
   market: "old_production",
 };
 
+/** Phase 6.3E: all domains except market on runtime v2; market remains old. */
+export const PHASE_63E_DOMAIN_OWNERS: ChartRuntimeDomainOwners = {
+  model: "runtime_v2_production",
+  render_window: "runtime_v2_production",
+  viewport: "runtime_v2_production",
+  trace: "runtime_v2_production",
+  aux_overlay: "runtime_v2_production",
+  market: "old_production",
+};
+
 /**
  * Single source of truth for staged owner-domain cutover.
- * Phase 6.3D transfers trace/events lifecycle; aux/market remain old passthrough.
+ * Phase 6.3E transfers aux/HTF overlay display; market remains old passthrough.
  */
 export const chartRuntimeCutoverConfig: ChartRuntimeCutoverConfig = {
-  cutoverPhase: "6.3D",
-  domainOwners: PHASE_63D_DOMAIN_OWNERS,
+  cutoverPhase: "6.3E",
+  domainOwners: PHASE_63E_DOMAIN_OWNERS,
 };
 
 export function domainOwnerFor(
@@ -92,4 +102,10 @@ export function isTraceDomainRuntimeV2Production(
   config: ChartRuntimeCutoverConfig = chartRuntimeCutoverConfig,
 ): boolean {
   return config.domainOwners.trace === "runtime_v2_production";
+}
+
+export function isAuxOverlayDomainRuntimeV2Production(
+  config: ChartRuntimeCutoverConfig = chartRuntimeCutoverConfig,
+): boolean {
+  return config.domainOwners.aux_overlay === "runtime_v2_production";
 }

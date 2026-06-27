@@ -33,10 +33,11 @@ function makeWindowSwapCommit(): WindowCommitResult {
 }
 
 describe("Phase 6.3C viewport command cutover", () => {
-  it("sets cutover config to phase 6.3D with viewport on runtime_v2_production", () => {
-    expect(chartRuntimeCutoverConfig.cutoverPhase).toBe("6.3D");
+  it("sets cutover config to phase 6.3E with viewport on runtime_v2_production", () => {
+    expect(chartRuntimeCutoverConfig.cutoverPhase).toBe("6.3E");
     expect(chartRuntimeCutoverConfig.domainOwners.viewport).toBe("runtime_v2_production");
     expect(chartRuntimeCutoverConfig.domainOwners.trace).toBe("runtime_v2_production");
+    expect(chartRuntimeCutoverConfig.domainOwners.aux_overlay).toBe("runtime_v2_production");
   });
 
   it("emits selected-trade focus command through v2 viewport controller", () => {

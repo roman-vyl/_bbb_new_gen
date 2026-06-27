@@ -25,6 +25,7 @@ const WORKBENCH_CHART_RUNTIME_OWNER_SYMBOLS = [
   "composeDisplayMarketWindowBundle",
   "dispatchChartInteraction",
   "phase63DTraceOwner",
+  "phase63EAuxOverlayOwner",
   "emitChartViewportCommand",
 ];
 
@@ -79,8 +80,9 @@ describe("Phase 6.1 static import and ownership guards", () => {
       'from "@/features/workbenchChartRuntime/chartRuntimeCutoverTelemetry"',
     );
     expect(workbenchSource).toContain(
-      'from "@/features/workbenchChartRuntime/phase63AModelAdapterBridge"',
+      'from "@/features/workbenchChartRuntime/phase63EAuxOverlayBridge"',
     );
+    expect(workbenchSource).toContain("resolvePhase63EModelRuntimeSlice");
     expect(workbenchSource).toContain(
       'from "@/features/workbenchChartRuntime/phase63BRenderWindowBridge"',
     );
@@ -89,6 +91,9 @@ describe("Phase 6.1 static import and ownership guards", () => {
     );
     expect(workbenchSource).toContain(
       'from "@/features/workbenchChartRuntime/phase63DTraceEventsBridge"',
+    );
+    expect(workbenchSource).toContain(
+      'from "@/features/workbenchChartRuntime/phase63EAuxOverlayBridge"',
     );
     expect(workbenchSource).not.toContain("buildChartViewModel");
     expect(workbenchSource).not.toContain("useWorkbenchChartRuntime");

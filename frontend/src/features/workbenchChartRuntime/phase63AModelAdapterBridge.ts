@@ -38,6 +38,7 @@ export type Phase63AModelRuntimeSlice = {
 
 export function buildChartModelRuntimeInputFromOldPipeline(
   input: OldPipelineModelBridgeInput,
+  v2AuxOverlay?: AuxOverlayRuntimeBoundary,
 ): {
   chartWindowParts: ChartRuntimeModelParts;
   displayAuxEmaOverlays: ChartAuxEmaOverlay[];
@@ -66,7 +67,8 @@ export function buildChartModelRuntimeInputFromOldPipeline(
       auxEmaOverlays: input.chartView.auxEmaOverlays,
       componentEvents: input.chartDisplayComponentEvents,
     },
-    displayAuxEmaOverlays: input.chartDisplayAuxEmaOverlays,
+    displayAuxEmaOverlays:
+      v2AuxOverlay?.displayAuxEmaOverlays ?? input.chartDisplayAuxEmaOverlays,
     traceDisplay: {
       implemented: true,
       status: "idle",
@@ -78,7 +80,7 @@ export function buildChartModelRuntimeInputFromOldPipeline(
       displayCacheCoversWindow: false,
       displayCacheHasWindowData: false,
     },
-    auxOverlay: {
+    auxOverlay: v2AuxOverlay ?? {
       implemented: false,
       auxEmaOverlays: input.chartView.auxEmaOverlays,
       displayAuxEmaOverlays: input.chartDisplayAuxEmaOverlays,

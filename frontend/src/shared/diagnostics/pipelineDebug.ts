@@ -76,6 +76,12 @@ export const PIPELINE_DEBUG_STEPS = {
     fetchSuperseded: "wb.trace_display.fetch_superseded",
     coverage: "wb.trace_display.coverage",
   },
+  auxOverlay: {
+    applyCurrentWindow: "wb.aux_overlay.apply_current_window",
+    slice: "wb.aux_overlay.slice",
+    stale: "wb.aux_overlay.stale",
+    merge: "wb.aux_overlay.merge",
+  },
   chartEvents: {
     fetchFail: "wb.chart_events_fetch_fail",
     fallback: "wb.chart_events_fallback",

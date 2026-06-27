@@ -12,7 +12,6 @@ import {
 
 import {
   ApiError,
-  fetchChartOverlayEma,
   fetchConfigState,
   fetchRunReport,
   fetchRunSummaries,
@@ -30,7 +29,6 @@ import {
   type RunVariant,
   type TradeRecord,
   type SignalTraceBundle,
-  type HtfContextTrace,
   type ComponentEvent,
   type StrategyConfigDraft,
   type WorkbenchTab,
@@ -39,7 +37,6 @@ import { COMPOSER_DEFAULT_FAMILY, createBlankConfigDraft } from "@/features/comp
 import { resolveChartTimeframeMs } from "@/features/chart/chartTimeframeMs";
 import {
   AnchorStackParseError,
-  anchorStackPeriodsFromStrategySpec,
 } from "@/features/chart/anchorStackFromSpec";
 import {
   executeMarketWindowLoad,
@@ -50,7 +47,6 @@ import {
   type MarketDisplayWindowMs,
 } from "@/features/chart/workbenchMarketLoad";
 import { getCandles } from "@/features/chart/marketResourceCache";
-import { mergeAuxOverlayPoints } from "@/features/chart/chartAuxEmaOverlays";
 import type { WindowCommitResult } from "@/features/chart/runtime/chartRuntime";
 import type { ChartViewModel } from "@/features/chart/runtime/chartViewModel";
 import {
@@ -64,11 +60,6 @@ import {
   type ChartViewWindow,
 } from "@/features/chart/chartViewWindow";
 import {
-  auxOverlayFromHtfSlice,
-  auxOverlayFromHtfTrace,
-  collectAuxEmaSpecs,
-} from "@/features/chart/strategySpecAuxEma";
-import {
   defaultChartContextOverlayRef,
   strategyContextRefOptions,
 } from "@/features/chart/strategyContexts";
@@ -76,8 +67,6 @@ import { candleRangeMs, selectedTradeEntryMarkerInView } from "@/features/chart/
 import {
   buildRenderWindowBoundsKey,
   candleTimeBounds,
-  displayAuxOverlaysForRenderWindow,
-  frozenHtfOverlaysForStorage,
 } from "@/features/chart/chartRenderWindowDisplay";
 import {
   buildSessionCacheIdentity,
@@ -124,7 +113,18 @@ import {
   dbgTimedSyncCutover,
   emitCutoverDomainOwnersSnapshot,
 } from "@/features/workbenchChartRuntime/chartRuntimeCutoverTelemetry";
-import { resolvePhase63AModelRuntimeSlice } from "@/features/workbenchChartRuntime/phase63AModelAdapterBridge";
+import {
+  createPhase63EAuxOverlayOwnerState,
+  resetPhase63EAuxOverlayOwner,
+  resolvePhase63EDisplayCacheHasWindowData,
+  resolvePhase63EAuxOverlaySnapshot,
+  resolvePhase63EModelRuntimeSlice,
+  runPhase63EApplyHtfFromDisplaySlice,
+  runPhase63ELoadBffAuxOverlays,
+  runPhase63ESyncHtfOverlaysFromTraceFallback,
+  syncPhase63EAuxOverlaySpecs,
+  type Phase63EAuxOverlayOwnerState,
+} from "@/features/workbenchChartRuntime/phase63EAuxOverlayBridge";
 import {
   buildChartViewWindowFromPhase63BSlice,
   createPhase63BRenderWindowOwnerState,
@@ -430,7 +430,13 @@ export function WorkbenchProvider({
   const [marketCoverageWindow, setMarketCoverageWindow] = useState<MarketDisplayWindowMs | null>(
     null,
   );
-  const [auxEmaOverlays, setAuxEmaOverlays] = useState<ChartAuxEmaOverlay[]>([]);
+  const phase63EAuxOverlayOwnerRef = useRef<Phase63EAuxOverlayOwnerState | null>(null);
+  if (phase63EAuxOverlayOwnerRef.current === null) {
+    phase63EAuxOverlayOwnerRef.current = createPhase63EAuxOverlayOwnerState();
+  }
+  const phase63EAuxOverlayOwner = (): Phase63EAuxOverlayOwnerState =>
+    phase63EAuxOverlayOwnerRef.current!;
+  const [auxOverlayRevision, setAuxOverlayRevision] = useState(0);
   const phase63DTraceOwnerRef = useRef<Phase63DTraceEventsOwnerState | null>(null);
   if (phase63DTraceOwnerRef.current === null) {
     phase63DTraceOwnerRef.current = createPhase63DTraceEventsOwnerState();
@@ -469,8 +475,6 @@ export function WorkbenchProvider({
   const signalTraceErrorRef = useRef<string | null>(null);
   const selectedTradeIdRef = useRef<number | string | null>(null);
   const loadedSignalTraceWindowKeyRef = useRef<string | null>(null);
-  /** Last HTF aux overlays for current trace coverage; re-sliced when render window moves before trace key catches up. */
-  const lastSlicedHtfOverlaysRef = useRef<ChartAuxEmaOverlay[]>([]);
   const applyTraceDisplayRef = useRef<() => void>(() => {});
   const [reloadToken, setReloadToken] = useState(0);
   const prevVariantKeyRef = useRef("");
@@ -1417,13 +1421,13 @@ export function WorkbenchProvider({
       resolvePhase63BChartWindowSlice(phase63BRenderWindowOwner(), {
         bundle: cachedBundle ?? null,
         marketLoadStatus,
-        auxEmaOverlays,
+        auxEmaOverlays: phase63EAuxOverlayOwner().controller.auxEmaOverlays,
         marketIdentity: intendedRunMarketViewIdentity ?? "",
       }),
     [
       cachedBundle,
       marketLoadStatus,
-      auxEmaOverlays,
+      auxOverlayRevision,
       intendedRunMarketViewIdentity,
       runMarketViewIdentity,
       renderWindowRevision,
@@ -1537,19 +1541,13 @@ export function WorkbenchProvider({
     setContextOverlayRef(defaultChartContextOverlayRef(selectedVariant.strategy_spec));
   }, [selectedRunId, selectedVariantKey, selectedVariant]);
 
-  const auxEmaSpecs = useMemo(() => {
-    if (!selectedVariant) return [];
-    try {
-      const periods = anchorStackPeriodsFromStrategySpec(selectedVariant.strategy_spec);
-      return collectAuxEmaSpecs(
-        selectedVariant.strategy_spec,
-        chartTimeframe,
-        periods,
-        effectiveContextOverlayRef,
-      );
-    } catch {
-      return [];
-    }
+  useEffect(() => {
+    syncPhase63EAuxOverlaySpecs(phase63EAuxOverlayOwner(), {
+      selectedVariant,
+      chartTimeframe,
+      effectiveContextOverlayRef,
+    });
+    setAuxOverlayRevision((revision) => revision + 1);
   }, [selectedVariant, chartTimeframe, effectiveContextOverlayRef]);
 
   const finalizeTraceDisplayUpdate = useCallback(() => {
@@ -1562,30 +1560,6 @@ export function WorkbenchProvider({
       emitChartViewportCommand(traceViewportCmd);
     }
   }, [emitChartViewportCommand]);
-
-  const applyHtfOverlaysFromDisplaySlice = useCallback(
-    (htfSlice: { times: number[]; htf_context?: HtfContextTrace }) => {
-      const htfSpecCount = auxEmaSpecs.filter((spec) => spec.source === "htf_trace").length;
-      if (htfSpecCount === 0 || htfSlice.times.length === 0 || !htfSlice.htf_context) {
-        return;
-      }
-      const htfOverlays = auxEmaSpecs
-        .filter((spec) => spec.source === "htf_trace")
-        .map((spec) =>
-          auxOverlayFromHtfSlice(spec, htfSlice.times, htfSlice.htf_context!),
-        )
-        .filter((overlay): overlay is ChartAuxEmaOverlay => overlay !== null);
-      if (htfOverlays.length === 0) {
-        return;
-      }
-      lastSlicedHtfOverlaysRef.current = htfOverlays;
-      setAuxEmaOverlays((prev) => {
-        const nonHtf = prev.filter((overlay) => !overlay.id.startsWith("htf_"));
-        return mergeAuxOverlayPoints(nonHtf, htfOverlays);
-      });
-    },
-    [auxEmaSpecs],
-  );
 
   const applyTraceDisplayForCurrentWindow = useCallback(() => {
     const candles = chartViewCandlesRef.current;
@@ -1620,9 +1594,11 @@ export function WorkbenchProvider({
     setDisplayApplyRevision(applyResult.displayApplyRevision);
 
     if (applyResult.htfSlice.times.length > 0) {
-      applyHtfOverlaysFromDisplaySlice(applyResult.htfSlice);
+      if (runPhase63EApplyHtfFromDisplaySlice(phase63EAuxOverlayOwner(), applyResult.htfSlice)) {
+        setAuxOverlayRevision((revision) => revision + 1);
+      }
     }
-  }, [applyHtfOverlaysFromDisplaySlice, selectedVariant]);
+  }, [selectedVariant]);
 
   applyTraceDisplayRef.current = applyTraceDisplayForCurrentWindow;
 
@@ -1657,122 +1633,61 @@ export function WorkbenchProvider({
       });
       return;
     }
-    if (marketLoadStatus !== "ready" || report === null || auxEmaSpecs.length === 0) {
-      setAuxEmaOverlays([]);
+
+    const owner = phase63EAuxOverlayOwner();
+    if (
+      marketLoadStatus !== "ready" ||
+      report === null ||
+      owner.controller.auxEmaSpecs.length === 0
+    ) {
+      resetPhase63EAuxOverlayOwner(owner);
+      setAuxOverlayRevision((revision) => revision + 1);
       return;
     }
 
-    const bffSpecs = auxEmaSpecs.filter((spec) => spec.source === "bff");
-    if (bffSpecs.length === 0) {
-      setAuxEmaOverlays((prev) => prev.filter((overlay) => overlay.id.startsWith("htf_")));
-      return;
-    }
-
-    let cancelled = false;
     const abortController = new AbortController();
-    const snapshot = report;
-    const fromMs = snapshot.data_range.from_open_time_ms;
-    const toOpenTimeMs = snapshot.data_range.to_open_time_ms;
+    let cancelled = false;
 
-    async function loadBffAuxEma() {
-      try {
-        const loaded = await Promise.all(
-          bffSpecs.map(async (spec) => {
-            const points = await fetchChartOverlayEma({
-              symbol: snapshot.symbol,
-              timeframe: chartTimeframe,
-              period: spec.period,
-              fromMs,
-              toOpenTimeMs,
-              signal: abortController.signal,
-            });
-            return {
-              id: spec.id,
-              label: spec.label,
-              period: spec.period,
-              timeframe: spec.timeframe,
-              points,
-              dashed: false,
-            } satisfies ChartAuxEmaOverlay;
-          }),
-        );
-        if (cancelled) return;
-        setAuxEmaOverlays((prev) => {
-          const htfOnly = prev.filter((overlay) => overlay.id.startsWith("htf_"));
-          return mergeAuxOverlayPoints(htfOnly, loaded);
-        });
-      } catch (err) {
-        if (isAbortError(err)) {
-          dbgMark(DBG.load.marketFetchAbort, {
-            source: "aux_ema",
-            note: "frontend abort/stale-response protection; backend CPU work may continue",
-          });
-          return;
-        }
-        if (!cancelled) {
-          setAuxEmaOverlays((prev) => prev.filter((overlay) => overlay.id.startsWith("htf_")));
-        }
+    void (async () => {
+      const result = await runPhase63ELoadBffAuxOverlays(owner, {
+        chartHeavyIoEnabled,
+        marketLoadStatus,
+        report,
+        chartTimeframe,
+        signal: abortController.signal,
+      });
+      if (cancelled) {
+        return;
       }
-    }
+      if (result.outcome === "aborted") {
+        dbgMark(DBG.load.marketFetchAbort, {
+          source: "aux_ema",
+          note: "frontend abort/stale-response protection; backend CPU work may continue",
+        });
+        return;
+      }
+      setAuxOverlayRevision((revision) => revision + 1);
+    })();
 
-    void loadBffAuxEma();
     return () => {
       cancelled = true;
       abortController.abort();
     };
-  }, [
-    marketLoadStatus,
-    report,
-    chartTimeframe,
-    auxEmaSpecs,
-    chartHeavyIoEnabled,
-  ]);
+  }, [marketLoadStatus, report, chartTimeframe, chartHeavyIoEnabled, selectedVariant, effectiveContextOverlayRef]);
 
   useEffect(() => {
-    const htfSpecCount = auxEmaSpecs.filter((spec) => spec.source === "htf_trace").length;
-    if (htfSpecCount === 0) {
-      return;
-    }
-
-    const bounds = candleTimeBounds(chartView.candles);
-    if (!bounds) {
-      return;
-    }
-
-    const htfSlice = traceDisplayCache().sliceHtfContextForWindow(
-      bounds.fromSec,
-      bounds.toSec,
-    );
-
-    if (htfSlice.times.length > 0 && htfSlice.htf_context) {
-      return;
-    }
-
-    if (signalTraceStatus === "ready" && signalTrace !== null) {
-      const htfOverlays = auxEmaSpecs
-        .filter((spec) => spec.source === "htf_trace")
-        .map((spec) => auxOverlayFromHtfTrace(spec, signalTrace))
-        .filter((overlay): overlay is ChartAuxEmaOverlay => overlay !== null);
-
-      lastSlicedHtfOverlaysRef.current = htfOverlays;
-      setAuxEmaOverlays((prev) => {
-        const nonHtf = prev.filter((overlay) => !overlay.id.startsWith("htf_"));
-        return mergeAuxOverlayPoints(nonHtf, htfOverlays);
-      });
-      return;
-    }
-
-    if (signalTraceStatus === "loading" || signalTraceStatus === "error") {
-      return;
-    }
-
-    if (signalTraceStatus === "idle" && htfSpecCount > 0) {
-      setAuxEmaOverlays((prev) => prev.filter((overlay) => !overlay.id.startsWith("htf_")));
+    const changed = runPhase63ESyncHtfOverlaysFromTraceFallback(phase63EAuxOverlayOwner(), {
+      renderWindowCandles: chartView.candles,
+      traceDisplayCache: traceDisplayCache(),
+      signalTraceStatus,
+      signalTrace,
+    });
+    if (changed) {
+      setAuxOverlayRevision((revision) => revision + 1);
     }
   }, [
     signalTrace,
     signalTraceStatus,
-    auxEmaSpecs,
     chartView.candles,
     displayCacheVersion,
     displayApplyRevision,
@@ -1794,7 +1709,7 @@ export function WorkbenchProvider({
       return;
     }
     resetPhase63DTraceDisplayCache(phase63DTraceOwner(), traceDisplayCacheKey);
-    lastSlicedHtfOverlaysRef.current = [];
+    resetPhase63EAuxOverlayOwner(phase63EAuxOverlayOwner());
     chartDisplayComponentEventsRef.current = [];
     setChartDisplayComponentEvents([]);
     setTraceDisplayState(EMPTY_TRACE_DISPLAY_STATE);
@@ -1849,7 +1764,8 @@ export function WorkbenchProvider({
       caches.ema.current = { key: "", value: [] };
       caches.aux.current = { key: "", value: [] };
     }
-    lastSlicedHtfOverlaysRef.current = [];
+    resetPhase63EAuxOverlayOwner(phase63EAuxOverlayOwner());
+    setAuxOverlayRevision((revision) => revision + 1);
   }, [selectedRunId, selectedVariantKey]);
 
   const chartWindowKey = useMemo(() => {
@@ -1920,62 +1836,43 @@ export function WorkbenchProvider({
       return false;
     }
     const { fromSec, toSec } = renderWindowBounds;
-    const cache = traceDisplayCache();
-    const eventCount = dbgTimedSyncCutover(
+    dbgTimedSyncCutover(
       DBG.traceDisplay.sliceEvents,
       "trace",
-      () => cache.sliceEventsForWindow(fromSec, toSec).length,
+      () => traceDisplayCache().sliceEventsForWindow(fromSec, toSec).length,
       () => ({ fromSec, toSec }),
     );
-    const htfTimes = dbgTimedSyncCutover(
-      DBG.traceDisplay.sliceHtf,
-      "aux_overlay",
-      () => cache.sliceHtfContextForWindow(fromSec, toSec).times.length,
-      () => ({ fromSec, toSec }),
-    );
-    return eventCount > 0 || htfTimes > 0;
+    return resolvePhase63EDisplayCacheHasWindowData({
+      traceDisplayCache: traceDisplayCache(),
+      renderWindowBounds,
+    });
   }, [renderWindowBounds, displayCacheVersion]);
 
-  const htfAuxEmaOverlayStale = useMemo(() => {
-    const hasHtfSpecs = auxEmaSpecs.some((spec) => spec.source === "htf_trace");
-    if (!hasHtfSpecs) return false;
-    if (displayCacheCoversWindow) return false;
-    if (signalTraceStatus === "loading") {
-      return displayCacheHasWindowData || auxEmaOverlays.some((overlay) => overlay.id.startsWith("htf_"));
-    }
-    return displayCacheHasWindowData || auxEmaOverlays.some((overlay) => overlay.id.startsWith("htf_"));
-  }, [
-    auxEmaSpecs,
-    auxEmaOverlays,
-    displayCacheCoversWindow,
-    displayCacheHasWindowData,
-    signalTraceStatus,
-  ]);
-
-  const chartDisplayAuxEmaOverlays = useMemo(() => {
-    const sliced = chartView.auxEmaOverlays;
-    const frozenHtf = lastSlicedHtfOverlaysRef.current;
-    const display = displayAuxOverlaysForRenderWindow(
-      sliced,
-      frozenHtf,
-      signalTraceMatchesWindow,
+  const auxOverlaySnapshot = useMemo(
+    () =>
+      resolvePhase63EAuxOverlaySnapshot(phase63EAuxOverlayOwner(), {
+        slicedAuxOverlays: chartView.auxEmaOverlays,
+        renderWindowCandles: chartView.candles,
+        chartWindowKey,
+        loadedSignalTraceWindowKey,
+        displayCacheCoversWindow,
+        displayCacheHasWindowData,
+        signalTraceStatus,
+        htfSlice: traceDisplayState.htfSlice,
+      }),
+    [
+      chartView.auxEmaOverlays,
       chartView.candles,
-    );
-
-    if (signalTraceMatchesWindow) {
-      const htfForStorage = frozenHtfOverlaysForStorage(sliced);
-      if (htfForStorage.some((overlay) => overlay.points.length > 0)) {
-        lastSlicedHtfOverlaysRef.current = htfForStorage;
-      }
-    }
-
-    return display;
-  }, [
-    chartView.auxEmaOverlays,
-    chartView.candles,
-    signalTraceMatchesWindow,
-    displayApplyRevision,
-  ]);
+      chartWindowKey,
+      loadedSignalTraceWindowKey,
+      displayCacheCoversWindow,
+      displayCacheHasWindowData,
+      signalTraceStatus,
+      traceDisplayState.htfSlice,
+      displayApplyRevision,
+      auxOverlayRevision,
+    ],
+  );
 
   useEffect(() => {
     applyTraceDisplayForCurrentWindow();
@@ -1994,21 +1891,23 @@ export function WorkbenchProvider({
 
   const phase63AModelSlice = useMemo(
     () =>
-      resolvePhase63AModelRuntimeSlice({
-        chartView,
-        chartDisplayAuxEmaOverlays,
-        chartDisplayComponentEvents,
-        htfAuxEmaOverlayStale,
-        componentEventsStale,
-        traceDisplayState,
-      }),
+      resolvePhase63EModelRuntimeSlice(
+        {
+          chartView,
+          chartDisplayAuxEmaOverlays: [],
+          chartDisplayComponentEvents,
+          htfAuxEmaOverlayStale: false,
+          componentEventsStale,
+          traceDisplayState,
+        },
+        auxOverlaySnapshot,
+      ),
     [
       chartView,
-      chartDisplayAuxEmaOverlays,
       chartDisplayComponentEvents,
-      htfAuxEmaOverlayStale,
       componentEventsStale,
       traceDisplayState,
+      auxOverlaySnapshot,
     ],
   );
 

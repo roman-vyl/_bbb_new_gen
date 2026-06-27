@@ -117,7 +117,7 @@ See `phase6-staged-owner-cutover-plan.md` for the full staged rollout (6.3-reset
 - [x] 6.3B Render-window owner cutover (`renderWindowRuntime`, `chartWindowRuntime`). Old market owner supplies bundle; no market fetch from v2. Report: `phase6-3B-render-window-cutover-report.md`. STOP FOR REVIEW.
 - [x] 6.3C Viewport command owner cutover (`viewportRuntime`). No market expansion yet. Report: `phase6-3C-viewport-command-cutover-report.md`. STOP FOR REVIEW.
 - [x] 6.3D Trace/events display owner cutover (`traceDisplayRuntime`, `chartEventsRuntime`). No market transfer. Report: `phase6-3D-trace-events-cutover-report.md`. STOP FOR REVIEW.
-- [ ] 6.3E Aux/HTF overlay owner cutover (`auxOverlayRuntime`). Context selector stays provider glue. Report: `phase6-3E-aux-overlay-cutover.md`. STOP FOR REVIEW.
+- [x] 6.3E Aux/HTF overlay owner cutover (`auxOverlayRuntime`). Context selector stays provider glue. Report: `phase6-3E-aux-overlay-cutover-report.md`. STOP FOR REVIEW.
 - [ ] 6.3F Market/load/cache owner cutover LAST (`marketViewRuntime`, `marketWindowRuntime`, `marketLoadRuntime`, `marketBundleRuntime`, `panRuntime`). Report: `phase6-3F-market-owner-cutover.md`. STOP FOR REVIEW.
 - [ ] 6.4 Run full browser smoke matrix after 6.3A–6.3F approved: cold open, Reports→Chart, trade focus, next/prev, distant trade, pan left/right, chart-events enabled/disabled, context overlay switch, variant switch, reload. Capture debug evidence with `owner`, `domain`, `phase` tags. STOP FOR REVIEW.
 - [ ] 6.5 Record final ownership report: owner matrix, old `WorkbenchContext` dead code list, Phase 7 deletion plan, proof of single owner per domain. No deletion in 6.5. STOP FOR REVIEW before Phase 7.
