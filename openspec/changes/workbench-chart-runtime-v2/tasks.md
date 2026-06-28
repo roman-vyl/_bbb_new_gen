@@ -124,7 +124,9 @@ See `phase6-staged-owner-cutover-plan.md` for the full staged rollout (6.3-reset
 
 ## 8. Phase 7 - Delete Old Chart Runtime Pipeline From WorkbenchContext
 
-- [ ] 8.1 Delete old market identity/window state, refs, keys, and effects from `WorkbenchContext.tsx`.
+OpenSpec slices (one reviewed PR each): `phase7-a1-market-load-provider.md` (A1: market) → A2–A6 per `phase6-5-ownership-report.md` §8.
+
+- [ ] 8.1 Delete old market identity/window state, refs, keys, and effects from `WorkbenchContext.tsx`. Spec: `phase7-a1-market-load-provider.md`.
 - [ ] 8.2 Delete old market load status/effect, generation refs, in-flight refs, and direct `executeMarketWindowLoad()` ownership.
 - [ ] 8.3 Delete old market cache/bundle composition, focus fallback refs, market count/range/source derivations, and direct `composeDisplayMarketWindowBundle()` ownership.
 - [ ] 8.4 Delete old pan/edge refs/functions and direct `evaluateMarketPanPrefetchExpansion()` ownership.
