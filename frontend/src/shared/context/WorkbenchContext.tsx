@@ -121,7 +121,6 @@ import {
   cancelPhase63FMarketLoad,
   createPhase63FMarketLoadOwnerState,
   evaluatePhase63FPanPrefetch,
-  logPhase63FComposeFocusFallback,
   marketBundleFromSnapshot,
   resetPhase63FMarketLoadOwner,
   resolvePhase63FMarketBundleSnapshot,
@@ -450,10 +449,7 @@ export function WorkbenchProvider({
   const [signalTraceError, setSignalTraceError] = useState<string | null>(null);
   const [contextOverlayRef, setContextOverlayRef] = useState<string | null>(null);
   const signalTraceStatusRef = useRef<SignalTraceLoadStatus>("idle");
-  const signalTraceRef = useRef<SignalTraceBundle | null>(null);
-  const signalTraceErrorRef = useRef<string | null>(null);
   const selectedTradeIdRef = useRef<number | string | null>(null);
-  const loadedSignalTraceWindowKeyRef = useRef<string | null>(null);
   const applyTraceDisplayRef = useRef<() => void>(() => {});
   const [reloadToken, setReloadToken] = useState(0);
   const prevVariantKeyRef = useRef("");
@@ -480,7 +476,6 @@ export function WorkbenchProvider({
   const [renderWindowRevision, setRenderWindowRevision] = useState(0);
   const [chartViewportCommand, setChartViewportCommand] = useState<ViewportCommand | null>(null);
   const [chartViewportCommandSeq, setChartViewportCommandSeq] = useState(0);
-  const renderWindowShiftSeqRef = useRef(0);
   const chartViewCandlesRef = useRef<ChartBar[]>([]);
 
   useEffect(() => {
@@ -951,31 +946,6 @@ export function WorkbenchProvider({
     }
   }, [renderWindowFoundationKey, intendedRunMarketView, marketCoverageWindow, marketCandlesRevision]);
 
-  useEffect(() => {
-    if (
-      marketFocusWindow === null ||
-      marketCoverageWindow === null ||
-      marketCoverageWindowKey === null ||
-      marketFocusWindowKey === null
-    ) {
-      return;
-    }
-    logPhase63FComposeFocusFallback(phase63FMarketLoadOwner(), {
-      focusWindow: marketFocusWindow,
-      coverageWindow: marketCoverageWindow,
-      focusWindowKey: marketFocusWindowKey,
-      coverageWindowKey: marketCoverageWindowKey,
-      candlesRevision: marketCandlesRevision,
-    });
-  }, [
-    marketFocusWindow,
-    marketCoverageWindow,
-    marketFocusWindowKey,
-    marketCoverageWindowKey,
-    marketCandlesRevision,
-    cachedBundle,
-  ]);
-
   const bumpRenderWindow = useCallback(() => {
     setRenderWindowRevision((r) => r + 1);
   }, []);
@@ -1235,7 +1205,6 @@ export function WorkbenchProvider({
         windowStartIndex: commit.bounds.windowStartIndex,
         windowEndIndex: commit.bounds.windowEndIndex,
       });
-      renderWindowShiftSeqRef.current = commit.shiftSeq;
       setRenderWindowShiftSeq(commit.shiftSeq);
 
       const viewportCmd = runPhase63COnWindowSwapCommitted(
@@ -1366,20 +1335,8 @@ export function WorkbenchProvider({
   }, [signalTraceStatus]);
 
   useEffect(() => {
-    signalTraceRef.current = signalTrace;
-  }, [signalTrace]);
-
-  useEffect(() => {
-    signalTraceErrorRef.current = signalTraceError;
-  }, [signalTraceError]);
-
-  useEffect(() => {
     selectedTradeIdRef.current = selectedTradeId;
   }, [selectedTradeId]);
-
-  useEffect(() => {
-    loadedSignalTraceWindowKeyRef.current = loadedSignalTraceWindowKey;
-  }, [loadedSignalTraceWindowKey]);
 
   useEffect(() => {
     if (!chartHeavyIoEnabled) {
@@ -1511,17 +1468,6 @@ export function WorkbenchProvider({
     }
     resetPhase63DTraceSessionCache(phase63DTraceOwner(), sessionCacheIdentity);
   }, [sessionCacheIdentity]);
-
-  useEffect(() => {
-    const caches = phase63BRenderWindowOwnerRef.current?.stabilizeCaches;
-    if (caches) {
-      caches.candles.current = { key: "", value: [] };
-      caches.ema.current = { key: "", value: [] };
-      caches.aux.current = { key: "", value: [] };
-    }
-    resetPhase63EAuxOverlayOwner(phase63EAuxOverlayOwner());
-    setAuxOverlayRevision((revision) => revision + 1);
-  }, [selectedRunId, selectedVariantKey]);
 
   const chartWindowKey = useMemo(() => {
     if (chartView.candles.length === 0) {
@@ -1740,9 +1686,6 @@ export function WorkbenchProvider({
       setLoadedSignalTraceWindowKey(null);
       setSignalTraceError(null);
       signalTraceStatusRef.current = "idle";
-      signalTraceRef.current = null;
-      signalTraceErrorRef.current = null;
-      loadedSignalTraceWindowKeyRef.current = null;
       return;
     }
 
@@ -1804,9 +1747,6 @@ export function WorkbenchProvider({
       setSignalTraceError(snapshot.signalTraceError);
       setLoadedSignalTraceWindowKey(snapshot.loadedSignalTraceWindowKey);
       signalTraceStatusRef.current = snapshot.signalTraceStatus;
-      signalTraceRef.current = snapshot.signalTrace;
-      signalTraceErrorRef.current = snapshot.signalTraceError;
-      loadedSignalTraceWindowKeyRef.current = snapshot.loadedSignalTraceWindowKey;
 
       if (result.outcome === "fetch_superseded") {
         dbgMark(DBG.traceDisplay.fetchSuperseded, {
