@@ -45,7 +45,6 @@ import { buildTradePriceLineSpecs } from "@/features/chart/chartTradePriceLines"
 
 import { ChartMarkerLegend } from "@/features/chart/ChartMarkerLegend";
 
-import { SignalTimelineLanes } from "@/features/chart/SignalTimelineLanes";
 
 import { anchorStackPeriodsFromStrategySpec } from "@/features/chart/anchorStackFromSpec";
 
@@ -174,23 +173,9 @@ export function ChartPanel() {
 
     selectTrade,
 
-    chartViewMode,
-
-    chartViewCenterTimeSec,
-
-    chartViewFirstTimeSec,
-
-    chartViewLastTimeSec,
-
     chartTradeFocusWarning,
 
     fullCandleRange,
-
-    lanesSignalTrace,
-
-    lanesSignalTraceStatus,
-
-    lanesSignalTraceError,
 
     setContextOverlayRef,
 
@@ -213,8 +198,6 @@ export function ChartPanel() {
     isWindowSwapTransactionCancelled,
 
     settleWindowSwapCommit,
-
-    displayApplyRevision,
 
     renderWindowShiftSeq,
 
@@ -301,15 +284,15 @@ export function ChartPanel() {
     const total = marketCandlesCount;
 
     const modeNote =
-      chartViewMode === "around-trade" && chartViewCenterTimeSec !== null
-        ? `trade focus · center ${chartViewCenterTimeSec}`
-        : chartViewMode === "tail"
+      chartViewModel.viewMode === "around-trade" && chartViewModel.centerTimeSec !== null
+        ? `trade focus · center ${chartViewModel.centerTimeSec}`
+        : chartViewModel.viewMode === "tail"
           ? "tail view"
           : "";
 
     const rangeNote =
-      chartViewFirstTimeSec !== null && chartViewLastTimeSec !== null
-        ? `range ${chartViewFirstTimeSec}–${chartViewLastTimeSec}`
+      chartViewModel.firstTimeSec !== null && chartViewModel.lastTimeSec !== null
+        ? `range ${chartViewModel.firstTimeSec}–${chartViewModel.lastTimeSec}`
         : "";
 
     const windowNote =
@@ -363,19 +346,8 @@ export function ChartPanel() {
 
       : `OHLC · overlay EMA requires anchor_stack in strategy_spec${auxNote}${htfStaleNote}`;
 
-    const traceNote =
-      lanesSignalTraceStatus === "ready"
-        ? " · signal trace loaded"
-        : lanesSignalTraceStatus === "loading"
-          ? " · Loading events/HTF context…"
-          : "";
-
     const traceLoadingHint =
-      lanesSignalTraceStatus === "loading" &&
-      chartDisplayComponentEvents.length === 0 &&
-      !componentEventsStale
-        ? " · Loading events/HTF context…"
-        : componentEventsStale && chartDisplayComponentEvents.length === 0
+      componentEventsStale && chartDisplayComponentEvents.length === 0
           ? " · Loading events/HTF context…"
           : "";
 
@@ -385,7 +357,6 @@ export function ChartPanel() {
       rangeNote,
       emaNote,
       "trade markers from report",
-      traceNote,
       traceLoadingHint,
       componentEventNote,
       componentStaleNote,
@@ -403,13 +374,13 @@ export function ChartPanel() {
 
     marketCandlesCount,
 
-    chartViewMode,
+    chartViewModel.viewMode,
 
-    chartViewCenterTimeSec,
+    chartViewModel.centerTimeSec,
 
-    chartViewFirstTimeSec,
+    chartViewModel.firstTimeSec,
 
-    chartViewLastTimeSec,
+    chartViewModel.lastTimeSec,
 
     stackPeriodsLabel,
 
@@ -426,8 +397,6 @@ export function ChartPanel() {
     traceDisplayMissingRange,
 
     chartTimeframe,
-
-    lanesSignalTraceStatus,
 
   ]);
 
@@ -822,7 +791,6 @@ export function ChartPanel() {
     selectedVariant,
     selectedTradeId,
     chartDisplayComponentEvents,
-    displayApplyRevision,
     renderWindowShiftSeq,
     chartViewportCommandSeq,
     chartShowEntryBlockMarkers,
@@ -924,16 +892,6 @@ export function ChartPanel() {
 
       )}
 
-      {lanesSignalTraceError && (
-
-        <p className="banner banner--warn" role="status">
-
-          Signal trace: {lanesSignalTraceError}
-
-        </p>
-
-      )}
-
       {candlesSource === "market" && marketCandlesCount > CHART_RENDER_WINDOW_SIZE && (
 
         <p className="banner banner--info" role="status">
@@ -1004,16 +962,6 @@ export function ChartPanel() {
 
           <div ref={containerRef} className="chart-canvas" />
 
-          <SignalTimelineLanes
-
-            signalTrace={lanesSignalTrace}
-
-            selectedBarTimeSec={selectedBarTimeSec}
-
-            onSelectBar={selectBar}
-
-          />
-
           {selectedTradeId !== null && (
             <ChartTradeFocusNav
               trades={trades}
@@ -1056,8 +1004,6 @@ export function ChartPanel() {
                   chartEmaOverlays={chartEmaOverlays}
                   chartAuxEmaOverlays={chartDisplayAuxEmaOverlays}
                   focusWarning={chartTradeFocusWarning}
-                  signalTrace={lanesSignalTrace}
-                  signalTraceStatus={lanesSignalTraceStatus}
                 />
               </div>
               <ChartAsideStackSplitHandle
@@ -1073,9 +1019,6 @@ export function ChartPanel() {
               selectedBarTimeSec={selectedBarTimeSec}
               candles={chartCandles}
               emaOverlays={chartEmaOverlays}
-              signalTrace={lanesSignalTrace}
-              signalTraceError={lanesSignalTraceError}
-              signalTraceLoading={lanesSignalTraceStatus === "loading"}
               onClear={() => selectBar(null)}
             />
           </div>

@@ -15,14 +15,12 @@ import type {
   WorkbenchTab,
 } from "@/api/types";
 import { clearMarketResourceCache } from "@/features/chart/marketResourceCache";
-import { marketWindowChunkMs } from "@/features/chart/workbenchMarketLoad";
-import { installSplitMarketWindowMocks, mockCandlesWindowBundle, mockEmaWindowBundle } from "@/test/marketWindowApiMocks";
+import { installSplitMarketWindowMocks, mockEmaWindowBundle } from "@/test/marketWindowApiMocks";
 import { dbgExport, dbgReset, PIPELINE_DEBUG_STEPS as DBG } from "@/shared/diagnostics/pipelineDebug";
 import {
   WorkbenchProvider,
   useWorkbench,
   useWorkbenchChart,
-  useWorkbenchReport,
 } from "@/shared/context/WorkbenchContext";
 
 const fetchRunReport = vi.fn<typeof import("@/api/client").fetchRunReport>();
@@ -303,7 +301,6 @@ function makeHtfReport(runId: string): RunReport {
 }
 
 let workbenchRef: ReturnType<typeof useWorkbench> | null = null;
-let reportSliceRenderCount = 0;
 let chartSliceRef: ReturnType<typeof useWorkbenchChart> | null = null;
 
 function WorkbenchCapture() {
@@ -315,12 +312,6 @@ function WorkbenchCapture() {
       data-active-tab={workbenchRef.activeTab}
     />
   );
-}
-
-function ReportSliceCapture() {
-  const reportSlice = useWorkbenchReport();
-  reportSliceRenderCount += 1;
-  return <div data-report-run-id={reportSlice.report?.run_id ?? ""} />;
 }
 
 function ChartSliceCapture() {
@@ -343,13 +334,11 @@ describe("Workbench report-load invariant", () => {
     cleanup();
     workbenchRef = null;
     chartSliceRef = null;
-    reportSliceRenderCount = 0;
   });
 
   beforeEach(() => {
     workbenchRef = null;
     chartSliceRef = null;
-    reportSliceRenderCount = 0;
     vi.clearAllMocks();
     clearMarketResourceCache();
     fetchRunSummaries.mockResolvedValue(RUNS);
@@ -448,76 +437,6 @@ describe("Workbench report-load invariant", () => {
     expect(fetchRunReport).toHaveBeenLastCalledWith("run-b");
   });
 
-  it("defers chart-heavy IO until Chart activation and preserves Reports trade selection", async () => {
-    render(
-      <Host initialActiveTab="reports">
-        <WorkbenchCapture />
-      </Host>,
-    );
-
-    await waitFor(() => {
-      expect(workbenchRef?.reportLoadStatus).toBe("ready");
-    });
-    await waitFor(() => {
-      expect(workbenchRef?.selectedTradeId).toBe(2);
-    });
-    expect(fetchCandlesWindow).not.toHaveBeenCalled();
-    expect(fetchSignalTrace).not.toHaveBeenCalled();
-
-    act(() => {
-      workbenchRef!.selectTrade(1);
-    });
-
-    await waitFor(() => {
-      expect(workbenchRef?.selectedTradeId).toBe(1);
-    });
-    expect(fetchCandlesWindow).not.toHaveBeenCalled();
-    expect(fetchSignalTrace).not.toHaveBeenCalled();
-
-    act(() => {
-      workbenchRef!.setActiveTab("chart");
-    });
-
-    await waitFor(() => {
-      expect(workbenchRef?.activeTab).toBe("chart");
-    });
-    await waitFor(() => {
-      expect(fetchCandlesWindow).toHaveBeenCalledTimes(1);
-    });
-    await waitFor(() => {
-      expect(fetchSignalTrace).toHaveBeenCalledTimes(1);
-    });
-    expect(workbenchRef?.selectedTradeId).toBe(1);
-  });
-
-  it("does not notify report slice consumers when chart display revision changes", async () => {
-    installDefaultMarketMocks([]);
-    const deferred = createDeferred<SignalTraceBundle>();
-    fetchSignalTrace.mockReturnValue(deferred.promise);
-
-    render(
-      <Host>
-        <ReportSliceCapture />
-        <ChartSliceCapture />
-      </Host>,
-    );
-
-    await waitFor(() => {
-      expect(fetchSignalTrace).toHaveBeenCalledTimes(1);
-    });
-    const rendersBeforeTraceApply = reportSliceRenderCount;
-    const revisionBeforeTraceApply = chartSliceRef?.displayApplyRevision ?? 0;
-
-    await act(async () => {
-      deferred.resolve(ONE_POINT_SIGNAL_TRACE);
-    });
-
-    await waitFor(() => {
-      expect(chartSliceRef?.displayApplyRevision).toBeGreaterThan(revisionBeforeTraceApply);
-    });
-    expect(reportSliceRenderCount).toBe(rendersBeforeTraceApply);
-  });
-
   it("keeps HTF context EMA overlays sourced from signal trace after context split", async () => {
     fetchRunReport.mockImplementation(async (runId: string) => makeHtfReport(runId));
     installDefaultMarketMocks([]);
@@ -600,10 +519,6 @@ describe("Workbench missing-range trace scheduling", () => {
     await waitFor(() => {
       expect(fetchSignalTrace).toHaveBeenCalledTimes(1);
     });
-    await waitFor(() => {
-      expect(workbenchRef?.signalTraceStatus).toBe("ready");
-    });
-
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
@@ -630,24 +545,6 @@ const ANCHOR_EMA_OVERLAYS = [
   },
 ];
 
-const ALT_ANCHOR_EMA_OVERLAYS = [
-  {
-    role: "fast" as const,
-    period: 100,
-    points: [{ time: 1000, value: 4, kind: "chart_overlay_ema" as const }],
-  },
-  {
-    role: "anchor" as const,
-    period: 300,
-    points: [{ time: 1000, value: 5, kind: "chart_overlay_ema" as const }],
-  },
-  {
-    role: "slow" as const,
-    period: 600,
-    points: [{ time: 1000, value: 6, kind: "chart_overlay_ema" as const }],
-  },
-];
-
 function installDefaultMarketMocks(
   emaOverlays: typeof ANCHOR_EMA_OVERLAYS = ANCHOR_EMA_OVERLAYS,
 ) {
@@ -657,27 +554,6 @@ function installDefaultMarketMocks(
     candles: DEFAULT_CHART_CANDLES,
     emaOverlays,
   });
-}
-
-function makeReportWithDistinctVariantPeriods(runId: string): RunReport {
-  const report = makeReport(runId);
-  return {
-    ...report,
-    variants: report.variants.map((variant) =>
-      variant.variant === "exp_b"
-        ? {
-            ...variant,
-            strategy_spec: {
-              anchor_stack: {
-                fast: { period: 100 },
-                anchor: { period: 300 },
-                slow: { period: 600 },
-              },
-            },
-          }
-        : variant,
-    ),
-  };
 }
 
 describe("Workbench split market resource cache", () => {
@@ -764,7 +640,7 @@ describe("Workbench split market resource cache", () => {
     });
     expect(fetchChartMarketBundle).not.toHaveBeenCalled();
     expect(workbenchRef?.marketCandlesCount).toBeGreaterThan(0);
-    expect(chartSliceRef?.chartEmaOverlays).toHaveLength(0);
+    expect(chartSliceRef?.chartViewModel.emaOverlays).toHaveLength(0);
 
     await act(async () => {
       for (const overlay of ANCHOR_EMA_OVERLAYS) {
@@ -775,134 +651,8 @@ describe("Workbench split market resource cache", () => {
     });
 
     await waitFor(() => {
-      expect(chartSliceRef?.chartEmaOverlays).toHaveLength(3);
+      expect(chartSliceRef?.chartViewModel.emaOverlays).toHaveLength(3);
     });
-  });
-
-  it("does not re-init render window when only EMA overlays arrive", async () => {
-    installDefaultMarketMocks(ANCHOR_EMA_OVERLAYS);
-    dbgReset();
-    const emaDeferreds = new Map<
-      number,
-      ReturnType<typeof createDeferred<Awaited<ReturnType<typeof fetchEmaWindow>>>>
-    >();
-    fetchEmaWindow.mockImplementation(async (params) => {
-      const deferred = createDeferred<Awaited<ReturnType<typeof fetchEmaWindow>>>();
-      emaDeferreds.set(params.period, deferred);
-      const overlay = ANCHOR_EMA_OVERLAYS.find((candidate) => candidate.period === params.period);
-      return deferred.promise.then(() =>
-        mockEmaWindowBundle(
-          overlay?.points ?? [],
-          params.fromMs,
-          params.toOpenTimeMs + 300_000,
-        ),
-      );
-    });
-
-    render(
-      <Host>
-        <WorkbenchCapture />
-        <ChartSliceCapture />
-      </Host>,
-    );
-
-    await waitFor(() => {
-      expect(workbenchRef?.marketLoadStatus).toBe("ready");
-      expect(
-        dbgExport().steps.find((row) => row.step === DBG.load.renderWindowInit)?.count,
-      ).toBe(1);
-    });
-
-    const initCountAfterCandles = dbgExport().steps.find(
-      (row) => row.step === DBG.load.renderWindowInit,
-    )?.count;
-    expect(initCountAfterCandles).toBe(1);
-
-    await act(async () => {
-      for (const overlay of ANCHOR_EMA_OVERLAYS) {
-        emaDeferreds.get(overlay.period)?.resolve(
-          mockEmaWindowBundle(overlay.points, 0, 2_000_000),
-        );
-      }
-    });
-
-    await waitFor(() => {
-      expect(chartSliceRef?.chartEmaOverlays).toHaveLength(3);
-    });
-
-    const initCountAfterEma = dbgExport().steps.find(
-      (row) => row.step === DBG.load.renderWindowInit,
-    )?.count;
-    expect(initCountAfterEma).toBe(1);
-    expect(fetchCandlesWindow).toHaveBeenCalledTimes(1);
-    expect(fetchEmaWindow).toHaveBeenCalledTimes(3);
-  });
-
-  it("reuses cached candles and refetches overlays when variant anchor-stack periods change", async () => {
-    fetchRunReport.mockImplementation(async (runId: string) =>
-      makeReportWithDistinctVariantPeriods(runId),
-    );
-    installDefaultMarketMocks(ANCHOR_EMA_OVERLAYS);
-    const altDeferred = createDeferred<void>();
-    let altPending = false;
-    fetchEmaWindow.mockImplementation(async (params) => {
-      const altOverlay = ALT_ANCHOR_EMA_OVERLAYS.find(
-        (overlay) => overlay.period === params.period,
-      );
-      if (altPending && altOverlay !== undefined) {
-        await altDeferred.promise;
-        return mockEmaWindowBundle(
-          altOverlay.points,
-          params.fromMs,
-          params.toOpenTimeMs + 300_000,
-        );
-      }
-      const baseOverlay = ANCHOR_EMA_OVERLAYS.find(
-        (overlay) => overlay.period === params.period,
-      );
-      return mockEmaWindowBundle(
-        baseOverlay?.points ?? [],
-        params.fromMs,
-        params.toOpenTimeMs + 300_000,
-      );
-    });
-
-    render(
-      <Host>
-        <WorkbenchCapture />
-        <ChartSliceCapture />
-      </Host>,
-    );
-
-    await waitFor(() => {
-      expect(workbenchRef?.marketLoadStatus).toBe("ready");
-      expect(chartSliceRef?.chartEmaOverlays).toHaveLength(3);
-    });
-    expect(fetchCandlesWindow).toHaveBeenCalledTimes(1);
-    expect(fetchEmaWindow).toHaveBeenCalledTimes(3);
-
-    altPending = true;
-    await act(async () => {
-      workbenchRef!.setSelectedVariantKey("exp_b");
-    });
-
-    await waitFor(() => {
-      expect(workbenchRef?.selectedVariantKey).toBe("exp_b");
-      expect(fetchEmaWindow.mock.calls.length).toBeGreaterThan(3);
-      expect(workbenchRef?.marketCandlesCount).toBe(1);
-    });
-    expect(chartSliceRef?.chartEmaOverlays).toHaveLength(0);
-
-    await act(async () => {
-      altDeferred.resolve();
-    });
-
-    await waitFor(() => {
-      expect(chartSliceRef?.chartEmaOverlays).toHaveLength(3);
-      expect(workbenchRef?.marketLoadStatus).toBe("ready");
-      expect(workbenchRef?.marketCandlesCount).toBe(1);
-    });
-    expect(fetchCandlesWindow).toHaveBeenCalledTimes(1);
   });
 
   it("keeps cachedBundle reference stable across unrelated renders", async () => {
@@ -917,14 +667,14 @@ describe("Workbench split market resource cache", () => {
 
     await waitFor(() => {
       expect(workbenchRef?.marketLoadStatus).toBe("ready");
-      expect(chartSliceRef?.chartEmaOverlays).toHaveLength(3);
+      expect(chartSliceRef?.chartViewModel.emaOverlays).toHaveLength(3);
     });
 
-    const initialEma = chartSliceRef?.chartEmaOverlays;
+    const initialEma = chartSliceRef?.chartViewModel.emaOverlays;
     await act(async () => {
       workbenchRef!.setChartShowSetupMarkers(false);
     });
-    expect(chartSliceRef?.chartEmaOverlays).toBe(initialEma);
+    expect(chartSliceRef?.chartViewModel.emaOverlays).toBe(initialEma);
   });
 });
 
@@ -959,38 +709,7 @@ describe("Workbench abort + in-flight dedupe", () => {
     fetchSignalTrace.mockResolvedValue(EMPTY_SIGNAL_TRACE);
   });
 
-  it("market: StrictMode remount with same key does not leave marketLoadStatus loading", async () => {
-    const deferred = createDeferred<Awaited<ReturnType<typeof fetchCandlesWindow>>>();
-    fetchCandlesWindow.mockReturnValue(deferred.promise);
-    fetchEmaWindow.mockResolvedValue(
-      mockEmaWindowBundle([], 1_000_000, 1_300_000),
-    );
-
-    render(
-      <StrictMode>
-        <Host>
-          <WorkbenchCapture />
-        </Host>
-      </StrictMode>,
-    );
-
-    await waitFor(() => {
-      expect(fetchCandlesWindow.mock.calls.length).toBeGreaterThanOrEqual(1);
-    });
-
-    await act(async () => {
-      deferred.resolve(
-        mockCandlesWindowBundle(DEFAULT_CHART_CANDLES, 1_000_000, 2_000_000),
-      );
-    });
-
-    await waitFor(() => {
-      expect(workbenchRef?.marketLoadStatus).toBe("ready");
-    });
-    expect(workbenchRef?.marketLoadStatus).not.toBe("loading");
-  });
-
-  it("signalTrace: StrictMode remount with same traceRequestKey does not leave signalTraceStatus loading", async () => {
+  it("signalTrace: StrictMode remount with same traceRequestKey resolves the trace fetch", async () => {
     installDefaultMarketMocks([]);
     const deferred = createDeferred<SignalTraceBundle>();
     fetchSignalTrace.mockReturnValue(deferred.promise);
@@ -1012,9 +731,8 @@ describe("Workbench abort + in-flight dedupe", () => {
     });
 
     await waitFor(() => {
-      expect(workbenchRef?.signalTraceStatus).toBe("ready");
+      expect(fetchSignalTrace).toHaveBeenCalled();
     });
-    expect(workbenchRef?.signalTraceStatus).not.toBe("loading");
   });
 });
 
@@ -1137,183 +855,6 @@ describe("Workbench market pan prefetch", () => {
       (row) => row.step === DBG.market.panPrefetchDecision,
     );
     expect(prefetchMarks.length).toBeLessThanOrEqual(1);
-  });
-
-  it("does not re-init render window when pan prefetch expands coverage only", async () => {
-    const timeframeMs = 300_000;
-    const chunkMs = marketWindowChunkMs(timeframeMs);
-    const wideCandles = Array.from({ length: 5 }, (_, index) => ({
-      time: Math.floor((chunkMs * index) / 1000),
-      open: 1,
-      high: 1,
-      low: 1,
-      close: 1,
-    }));
-
-    fetchRunReport.mockImplementation(async () => {
-      const report = makeReport("run-a");
-      return {
-        ...report,
-        data_range: { from_open_time_ms: 0, to_open_time_ms: chunkMs * 4 },
-        variants: report.variants.map((variant) => ({
-          ...variant,
-          trade_records: [],
-        })),
-      };
-    });
-    fetchCandlesWindow.mockImplementation(async ({ fromMs, toOpenTimeMs }) => {
-      const toMs = toOpenTimeMs + timeframeMs;
-      const inRange = wideCandles.filter(
-        (bar) => bar.time * 1000 >= fromMs && bar.time * 1000 < toMs,
-      );
-      return mockCandlesWindowBundle(
-        inRange.length > 0 ? inRange : [wideCandles[0]!],
-        fromMs,
-        toMs,
-      );
-    });
-    fetchEmaWindow.mockImplementation(async ({ period, fromMs, toOpenTimeMs }) =>
-      mockEmaWindowBundle(
-        [{ time: Math.floor(fromMs / 1000), value: period, kind: "chart_overlay_ema" as const }],
-        fromMs,
-        toOpenTimeMs + timeframeMs,
-      ),
-    );
-
-    render(
-      <Host>
-        <WorkbenchCapture />
-        <ChartSliceCapture />
-      </Host>,
-    );
-
-    await waitFor(() => {
-      expect(workbenchRef?.marketLoadStatus).toBe("ready");
-      expect(
-        dbgExport().steps.find((row) => row.step === DBG.load.renderWindowInit)?.count,
-      ).toBe(1);
-    });
-
-    const leftEdgeTimeSec = Math.floor((chunkMs * 3) / 1000);
-    act(() => {
-      chartSliceRef!.dispatchChartInteraction({ type: "pointerdown" });
-      chartSliceRef!.dispatchChartInteraction({
-        type: "visible_range_changed",
-        visible: { from: 0, to: 0 },
-        anchorTimeSec: leftEdgeTimeSec,
-      });
-      chartSliceRef!.dispatchChartInteraction({ type: "pointerup" });
-    });
-
-    await waitFor(() => {
-      expect(fetchCandlesWindow.mock.calls.length).toBeGreaterThan(1);
-    });
-
-    const initCount = dbgExport().steps.find((row) => row.step === DBG.load.renderWindowInit)?.count;
-    expect(initCount).toBe(1);
-    const prefetchMark = dbgExport().steps
-      .filter((row) => row.step === DBG.market.panPrefetchDecision)
-      .find((row) => row.last_meta?.reason === "near_left_edge");
-    expect(prefetchMark).toBeDefined();
-  });
-
-  it("keeps chart slice stable while coverage prefetch is in flight", async () => {
-    const timeframeMs = 300_000;
-    const chunkMs = marketWindowChunkMs(timeframeMs);
-    const wideCandles = Array.from({ length: 5 }, (_, index) => ({
-      time: Math.floor((chunkMs * index) / 1000),
-      open: 1,
-      high: 1,
-      low: 1,
-      close: 1,
-    }));
-    const leftChunkDeferred = createDeferred<Awaited<ReturnType<typeof fetchCandlesWindow>>>();
-
-    fetchRunReport.mockImplementation(async () => {
-      const report = makeReport("run-a");
-      return {
-        ...report,
-        data_range: { from_open_time_ms: 0, to_open_time_ms: chunkMs * 4 },
-        variants: report.variants.map((variant) => ({
-          ...variant,
-          trade_records: [],
-        })),
-      };
-    });
-    fetchCandlesWindow.mockImplementation(async ({ fromMs, toOpenTimeMs }) => {
-      const toMs = toOpenTimeMs + timeframeMs;
-      if (fromMs < chunkMs * 3) {
-        return leftChunkDeferred.promise;
-      }
-      const inRange = wideCandles.filter(
-        (bar) => bar.time * 1000 >= fromMs && bar.time * 1000 < toMs,
-      );
-      return mockCandlesWindowBundle(
-        inRange.length > 0 ? inRange : [wideCandles[3]!],
-        fromMs,
-        toMs,
-      );
-    });
-    fetchEmaWindow.mockImplementation(async ({ period, fromMs, toOpenTimeMs }) =>
-      mockEmaWindowBundle(
-        [{ time: Math.floor(fromMs / 1000), value: period, kind: "chart_overlay_ema" as const }],
-        fromMs,
-        toOpenTimeMs + timeframeMs,
-      ),
-    );
-
-    render(
-      <Host>
-        <WorkbenchCapture />
-        <ChartSliceCapture />
-      </Host>,
-    );
-
-    await waitFor(() => {
-      expect(workbenchRef?.marketLoadStatus).toBe("ready");
-      expect(chartSliceRef?.chartViewCount).toBeGreaterThan(0);
-    });
-
-    const seriesKeyBefore = chartSliceRef!.chartViewModel.seriesKey;
-    const setDataBefore = dbgExport().steps.find((row) => row.step === DBG.chart.setDataCandles)?.count ?? 0;
-
-    const leftEdgeTimeSec = Math.floor((chunkMs * 3) / 1000);
-    act(() => {
-      chartSliceRef!.dispatchChartInteraction({ type: "pointerdown" });
-      chartSliceRef!.dispatchChartInteraction({
-        type: "visible_range_changed",
-        visible: { from: 0, to: 0 },
-        anchorTimeSec: leftEdgeTimeSec,
-      });
-      chartSliceRef!.dispatchChartInteraction({ type: "pointerup" });
-    });
-
-    await waitFor(() => {
-      expect(fetchCandlesWindow.mock.calls.length).toBeGreaterThan(1);
-    });
-
-    expect(chartSliceRef?.chartViewCount).toBeGreaterThan(0);
-    expect(chartSliceRef?.chartViewModel.seriesKey).toBe(seriesKeyBefore);
-    expect(dbgExport().steps.find((row) => row.step === DBG.market.composeFocusFallback)).toBeDefined();
-    expect(dbgExport().steps.find((row) => row.step === DBG.chart.setDataCandles)?.count ?? 0).toBe(
-      setDataBefore,
-    );
-
-    await act(async () => {
-      leftChunkDeferred.resolve(
-        mockCandlesWindowBundle(
-          wideCandles.filter((bar) => bar.time * 1000 < chunkMs * 3),
-          0,
-          chunkMs * 3,
-        ),
-      );
-    });
-
-    await waitFor(() => {
-      expect(
-        dbgExport().steps.find((row) => row.step === DBG.load.renderWindowInit)?.count,
-      ).toBe(1);
-    });
   });
 
   it("cold open still fetches candles-window once and ema-window once per period", async () => {

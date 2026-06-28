@@ -10,7 +10,6 @@ export function ContextBar() {
     setSelectedRunId,
     selectedVariantKey,
     setSelectedVariantKey,
-    candlesSource,
   } = useWorkbenchReport();
 
   if (!report) {
@@ -56,9 +55,6 @@ export function ContextBar() {
           </select>
         </label>
       </div>
-      <span className="context-bar__phase">
-        Phase 5 · {candlesSource === "market" ? "market + signal trace" : "market unavailable"}
-      </span>
     </header>
   );
 }

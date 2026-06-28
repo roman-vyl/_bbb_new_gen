@@ -1,226 +1,29 @@
-import type { ChartBar, ChartEmaOverlay, SignalTraceBundle, SideSignalTrace } from "@/api/types";
+import type { ChartBar, ChartEmaOverlay } from "@/api/types";
 import {
-  barIndexAtTime,
   candleAtTime,
   emaValuesAtBar,
-  firstBlockingGate,
-  formatBool,
   formatChartPrice,
   ohlcPriceDecimals,
 } from "@/features/chart/signalTraceLookup";
-import {
-  exitManagementActiveAtBar,
-  exitManagementFieldLabel,
-  formatExitManagementFieldValue,
-  readExitManagementInternals,
-} from "@/features/chart/exitManagementBarInspector";
-import { formatGateDecisionLabel } from "@/features/chart/tradeContextCausalDiagnostics";
-
-function traceOutcomeAtBar(outcome: Record<string, unknown> | null | undefined, key: string, index: number): string | null {
-  const series = outcome?.[key];
-  if (!Array.isArray(series) || index < 0 || index >= series.length) {
-    return null;
-  }
-  const value = series[index];
-  return value === null || value === undefined ? null : String(value);
-}
-
-function traceOutcomeList(outcome: Record<string, unknown> | null | undefined, key: string): string | null {
-  const raw = outcome?.[key];
-  if (!Array.isArray(raw) || raw.length === 0) {
-    return null;
-  }
-  return raw.map(String).join(", ");
-}
 
 type ChartBarInspectorProps = {
   selectedBarTimeSec: number | null;
   candles: ChartBar[];
   emaOverlays: ChartEmaOverlay[];
-  signalTrace: SignalTraceBundle | null;
-  signalTraceError: string | null;
-  signalTraceLoading: boolean;
   onClear: () => void;
 };
-
-function InternalsBlock({
-  title,
-  fields,
-  index,
-}: {
-  title: string;
-  fields: Record<string, boolean[] | (number | null)[]> | undefined;
-  index: number;
-}) {
-  if (!fields) {
-    return null;
-  }
-  return (
-    <details className="bar-inspector__details" open>
-      <summary>{title}</summary>
-      <dl className="bar-inspector__dl">
-        {Object.entries(fields).map(([key, values]) => {
-          const raw = values[index];
-          const display =
-            typeof raw === "boolean"
-              ? formatBool(raw)
-              : raw === null || raw === undefined
-                ? "—"
-                : String(raw);
-          return (
-            <div key={key}>
-              <dt>{key}</dt>
-              <dd>{display}</dd>
-            </div>
-          );
-        })}
-      </dl>
-    </details>
-  );
-}
-
-function readInternals(side: SideSignalTrace): {
-  setups?: Record<string, Record<string, boolean[] | (number | null)[]>>;
-  trigger?: Record<string, boolean[] | (number | null)[]>;
-  direction?: Record<string, boolean[] | (number | null)[]>;
-  blockers?: Record<string, Record<string, boolean[] | (number | null)[]>>;
-} {
-  const root = side.internals;
-  if (!root || typeof root !== "object") {
-    return {};
-  }
-  return root as {
-    setups?: Record<string, Record<string, boolean[] | (number | null)[]>>;
-    trigger?: Record<string, boolean[] | (number | null)[]>;
-    direction?: Record<string, boolean[] | (number | null)[]>;
-    blockers?: Record<string, Record<string, boolean[] | (number | null)[]>>;
-  };
-}
-
-function ExitManagementBlock({
-  fields,
-  index,
-  priceDecimals,
-}: {
-  fields: NonNullable<ReturnType<typeof readExitManagementInternals>>;
-  index: number;
-  priceDecimals: number;
-}) {
-  if (!exitManagementActiveAtBar(fields, index)) {
-    return null;
-  }
-  return (
-    <details className="bar-inspector__details" open>
-      <summary>Exit management (break-even)</summary>
-      <dl className="bar-inspector__dl">
-        {Object.entries(fields).map(([key, values]) => {
-          const raw = values[index];
-          return (
-            <div key={key}>
-              <dt>{exitManagementFieldLabel(key)}</dt>
-              <dd>{formatExitManagementFieldValue(key, raw, priceDecimals)}</dd>
-            </div>
-          );
-        })}
-      </dl>
-    </details>
-  );
-}
-
-function SideBlock({
-  label,
-  side,
-  index,
-  trace,
-  priceDecimals,
-}: {
-  label: string;
-  side: SideSignalTrace;
-  index: number;
-  trace: SignalTraceBundle;
-  priceDecimals: number;
-}) {
-  const blocker = firstBlockingGate(side, index);
-  const {
-    setups: setupsByInstance,
-    trigger: triggerFields,
-    direction: directionFields,
-    blockers: blockersByInstance,
-  } = readInternals(side);
-  const exitManagement = readExitManagementInternals(side);
-
-  return (
-    <div className="bar-inspector__side">
-      <h4>{label}</h4>
-      <dl className="bar-inspector__dl bar-inspector__dl--compact">
-        <dt>signal_entry</dt>
-        <dd>{formatBool(side.signal_entry[index] ?? false)}</dd>
-        <dt>portfolio_entry</dt>
-        <dd>{formatBool(side.portfolio_entry[index] ?? false)}</dd>
-      </dl>
-      <p className="bar-inspector__gates">
-        <span>direction</span> {formatBool(side.direction_ok[index] ?? false)}
-        {" · "}
-        <span>blockers</span> {formatBool(side.blockers_ok[index] ?? false)}
-        {" · "}
-        <span>setup</span> {formatBool(side.setup_ok[index] ?? false)}
-        {" · "}
-        <span>trigger</span> {formatBool(side.trigger_ok[index] ?? false)}
-        {" · "}
-        <span>risk</span> {formatBool(side.risk_ok[index] ?? false)}
-        {" · "}
-        <span>stop_ready</span> {formatBool(side.stop_ready[index] ?? false)}
-      </p>
-      {blocker && (
-        <p className="bar-inspector__blocker" role="status">
-          No entry: <strong>{blocker.label}</strong>=false
-        </p>
-      )}
-      {setupsByInstance &&
-        Object.entries(setupsByInstance).map(([instanceId, fields]) => (
-          <InternalsBlock
-            key={instanceId}
-            title={`Setup ${instanceId}`}
-            fields={fields}
-            index={index}
-          />
-        ))}
-      <InternalsBlock
-        title={`Trigger (${trace.meta.component_ids.trigger})`}
-        fields={triggerFields}
-        index={index}
-      />
-      <InternalsBlock title="Direction" fields={directionFields} index={index} />
-      {blockersByInstance &&
-        Object.entries(blockersByInstance).map(([instanceId, fields]) => (
-          <InternalsBlock
-            key={instanceId}
-            title={`Blocker ${instanceId}`}
-            fields={fields}
-            index={index}
-          />
-        ))}
-      {exitManagement && (
-        <ExitManagementBlock fields={exitManagement} index={index} priceDecimals={priceDecimals} />
-      )}
-    </div>
-  );
-}
 
 export function ChartBarInspector({
   selectedBarTimeSec,
   candles,
   emaOverlays,
-  signalTrace,
-  signalTraceError,
-  signalTraceLoading,
   onClear,
 }: ChartBarInspectorProps) {
   if (selectedBarTimeSec === null) {
     return (
       <aside className="bar-inspector bar-inspector--empty">
         <h3>Bar Inspector</h3>
-        <p className="bar-inspector__hint">Click a candle to inspect entry pipeline gates.</p>
+        <p className="bar-inspector__hint">Click a candle to inspect price and EMA values.</p>
       </aside>
     );
   }
@@ -229,11 +32,6 @@ export function ChartBarInspector({
   const ema = emaValuesAtBar(emaOverlays, selectedBarTimeSec);
   const priceDecimals = candle ? ohlcPriceDecimals(candle) : 0;
   const timeLabel = new Date(selectedBarTimeSec * 1000).toISOString().replace("T", " ").slice(0, 19);
-
-  let index = -1;
-  if (signalTrace) {
-    index = barIndexAtTime(signalTrace.times, selectedBarTimeSec);
-  }
 
   return (
     <aside className="bar-inspector">
@@ -261,118 +59,6 @@ export function ChartBarInspector({
             / {formatChartPrice(ema.slow, priceDecimals)}
           </dd>
         </dl>
-      )}
-      {signalTraceLoading && <p className="bar-inspector__hint">Loading signal trace…</p>}
-      {signalTraceError && (
-        <p className="banner banner--warn" role="status">
-          {signalTraceError}
-        </p>
-      )}
-      {signalTrace && index >= 0 && (
-        <>
-          {signalTrace.htf_context && signalTrace.htf_context.state.length > 0 && (
-            <>
-              <h4 className="bar-inspector__section">HTF context</h4>
-              <dl className="bar-inspector__dl">
-                <dt>context_ref</dt>
-                <dd>{String(signalTrace.htf_context.meta?.context_ref ?? "—")}</dd>
-                <dt>state</dt>
-                <dd>{String(signalTrace.htf_context.state[index] ?? "neutral")}</dd>
-                <dt>EMA fast / anchor / slow</dt>
-                <dd>
-                  {formatChartPrice(signalTrace.htf_context.fast[index] ?? null, priceDecimals)} /{" "}
-                  {formatChartPrice(signalTrace.htf_context.anchor[index] ?? null, priceDecimals)} /{" "}
-                  {formatChartPrice(signalTrace.htf_context.slow[index] ?? null, priceDecimals)}
-                </dd>
-                <dt>meta</dt>
-                <dd>
-                  tf {String((signalTrace.htf_context.meta?.timeframe as string | undefined) ?? "—")} · source{" "}
-                  {String((signalTrace.htf_context.meta?.source as string | undefined) ?? "—")}
-                </dd>
-              </dl>
-            </>
-          )}
-          {(signalTrace.context_consumption_trace ?? []).length > 0 && (
-            <>
-              <h4 className="bar-inspector__section">Context consumption</h4>
-              {(signalTrace.context_consumption_trace ?? []).map((record) => {
-                const outcome = record.outcome ?? undefined;
-                const evaluatedSide =
-                  typeof outcome?.evaluated_side === "string" ? outcome.evaluated_side : null;
-                return (
-                <dl
-                  key={`${record.role}:${record.component_id}:${record.context_ref}:${record.policy_id}:${evaluatedSide ?? ""}:${record.instance_id ?? ""}`}
-                  className="bar-inspector__dl"
-                >
-                  <dt>{record.role}</dt>
-                  <dd>
-                    {record.component_id}
-                    {record.instance_id ? ` (${record.instance_id})` : ""}
-                  </dd>
-                  <dt>context_ref</dt>
-                  <dd>{record.context_ref}</dd>
-                  <dt>policy_id</dt>
-                  <dd>{record.policy_id}</dd>
-                  {evaluatedSide ? (
-                    <>
-                      <dt>evaluated_side</dt>
-                      <dd>{evaluatedSide}</dd>
-                    </>
-                  ) : null}
-                  <dt>gate</dt>
-                  <dd>
-                    {record.role === "exit_policy"
-                      ? "—"
-                      : formatGateDecisionLabel(record.context_applied[index] ?? false)}
-                  </dd>
-                  {traceOutcomeList(outcome, "allowed_regimes") ? (
-                    <>
-                      <dt>allowed_regimes</dt>
-                      <dd>{traceOutcomeList(outcome, "allowed_regimes")}</dd>
-                    </>
-                  ) : null}
-                  {traceOutcomeAtBar(outcome, "raw_state", index) ? (
-                    <>
-                      <dt>raw_state</dt>
-                      <dd>{traceOutcomeAtBar(outcome, "raw_state", index)}</dd>
-                    </>
-                  ) : null}
-                  {traceOutcomeAtBar(outcome, "resolved_regime", index) ? (
-                    <>
-                      <dt>resolved_regime</dt>
-                      <dd>{traceOutcomeAtBar(outcome, "resolved_regime", index)}</dd>
-                    </>
-                  ) : null}
-                  {record.role === "exit_policy" ? (
-                    <>
-                      <dt>context_applied</dt>
-                      <dd>{formatBool(record.context_applied[index] ?? false)}</dd>
-                    </>
-                  ) : null}
-                </dl>
-              );
-              })}
-            </>
-          )}
-          <h4 className="bar-inspector__section">Final entry</h4>
-          <SideBlock
-            label="Long"
-            side={signalTrace.long}
-            index={index}
-            trace={signalTrace}
-            priceDecimals={priceDecimals}
-          />
-          <SideBlock
-            label="Short"
-            side={signalTrace.short}
-            index={index}
-            trace={signalTrace}
-            priceDecimals={priceDecimals}
-          />
-        </>
-      )}
-      {signalTrace && index < 0 && (
-        <p className="bar-inspector__hint">Selected bar is outside the loaded signal trace window.</p>
       )}
     </aside>
   );

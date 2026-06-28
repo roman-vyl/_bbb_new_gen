@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import type { ReactNode } from "react";
-import { act, cleanup, render, waitFor } from "@testing-library/react";
+import { cleanup, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type {
@@ -16,10 +16,9 @@ import type {
 } from "@/api/types";
 import { clearMarketResourceCache } from "@/features/chart/marketResourceCache";
 import { resetChartEventsFlagDisabledNoteForTests } from "@/features/chart/runtime/chartEventsLoad";
-import { dbgExport, dbgReset, PIPELINE_DEBUG_STEPS as DBG } from "@/shared/diagnostics/pipelineDebug";
+import { dbgReset } from "@/shared/diagnostics/pipelineDebug";
 import { installSplitMarketWindowMocks } from "@/test/marketWindowApiMocks";
 import {
-  invalidateTraceDisplayCacheForTests,
   WorkbenchProvider,
   useWorkbenchChart,
   useWorkbenchShell,
@@ -184,16 +183,6 @@ function makeReport(runId: string): RunReport {
   };
 }
 
-function createDeferred<T>() {
-  let resolve!: (value: T) => void;
-  let reject!: (reason?: unknown) => void;
-  const promise = new Promise<T>((res, rej) => {
-    resolve = res;
-    reject = rej;
-  });
-  return { promise, resolve, reject };
-}
-
 let chartSliceRef: ReturnType<typeof useWorkbenchChart> | null = null;
 
 function ChartSliceCapture() {
@@ -209,128 +198,6 @@ function ShellSliceCapture() {
 function Host({ children }: { children?: ReactNode }) {
   return <WorkbenchProvider initialActiveTab="chart">{children}</WorkbenchProvider>;
 }
-
-describe("chart-events display load (5A)", () => {
-  afterEach(() => {
-    cleanup();
-    chartSliceRef = null;
-    vi.unstubAllEnvs();
-    resetChartEventsFlagDisabledNoteForTests();
-  });
-
-  beforeEach(() => {
-    chartSliceRef = null;
-    vi.clearAllMocks();
-    clearMarketResourceCache();
-    dbgReset();
-    vi.stubEnv("VITE_CHART_EVENTS_API", "1");
-    vi.stubEnv("VITE_EMA_PIPELINE_DEBUG", "true");
-    fetchRunSummaries.mockResolvedValue(RUNS);
-    fetchConfigState.mockResolvedValue({
-      family: "ema_pullback",
-      selected_experiment_id: null,
-      configs: [],
-      selected_path: null,
-      draft: null,
-    });
-    fetchRunReport.mockImplementation(async (runId: string) => makeReport(runId));
-    installSplitMarketWindowMocks({
-      fetchCandlesWindow,
-      fetchEmaWindow,
-      candles: [{ time: 1000, open: 1, high: 2, low: 0.5, close: 1.5 }],
-      emaOverlays: [],
-    });
-    fetchChartOverlayEma.mockResolvedValue([]);
-    fetchChartEvents.mockResolvedValue(ONE_POINT_CHART_EVENTS);
-  });
-
-  it("applies chart-events display when dense signal-trace fails", async () => {
-    fetchSignalTrace.mockRejectedValue(new Error("dense trace unavailable"));
-
-    render(
-      <Host>
-        <ChartSliceCapture />
-      </Host>,
-    );
-
-    await waitFor(() => {
-      expect(fetchChartEvents).toHaveBeenCalledTimes(1);
-    });
-    await waitFor(() => {
-      expect(fetchSignalTrace).toHaveBeenCalledTimes(1);
-    });
-
-    await waitFor(() => {
-      expect(chartSliceRef?.chartDisplayComponentEvents).toEqual([CHART_EVENTS_MARKER]);
-    });
-    expect(chartSliceRef?.lanesSignalTraceStatus).toBe("error");
-    expect(chartSliceRef?.lanesSignalTraceError).toContain("dense trace unavailable");
-    expect(chartSliceRef?.chartViewModel.componentEvents).toEqual([CHART_EVENTS_MARKER]);
-
-    const mergeMark = dbgExport().steps.find((row) => row.step === DBG.chartEvents.merge);
-    expect(mergeMark?.last_meta?.source).toBe("chart-events");
-  });
-
-  it("commits display from chart-events before deferred signal-trace resolves", async () => {
-    const deferred = createDeferred<SignalTraceBundle>();
-    fetchSignalTrace.mockReturnValue(deferred.promise);
-
-    render(
-      <Host>
-        <ChartSliceCapture />
-      </Host>,
-    );
-
-    await waitFor(() => {
-      expect(fetchChartEvents).toHaveBeenCalledTimes(1);
-    });
-    await waitFor(() => {
-      expect(fetchSignalTrace).toHaveBeenCalledTimes(1);
-    });
-
-    await waitFor(() => {
-      expect(chartSliceRef?.chartDisplayComponentEvents).toEqual([CHART_EVENTS_MARKER]);
-    });
-    const revisionBeforeDenseResolve = chartSliceRef?.displayApplyRevision ?? 0;
-    expect(revisionBeforeDenseResolve).toBeGreaterThan(0);
-
-    await act(async () => {
-      deferred.resolve({
-        times: [1000],
-        meta: TRACE_META,
-        long: {
-          direction_ok: [false],
-          blockers_ok: [false],
-          setup_ok: [false],
-          trigger_ok: [false],
-          risk_ok: [false],
-          signal_entry: [false],
-          stop_ready: [false],
-          portfolio_entry: [false],
-          internals: {},
-        },
-        short: {
-          direction_ok: [false],
-          blockers_ok: [false],
-          setup_ok: [false],
-          trigger_ok: [false],
-          risk_ok: [false],
-          signal_entry: [false],
-          stop_ready: [false],
-          portfolio_entry: [false],
-          internals: {},
-        },
-        component_events: [],
-      });
-    });
-
-    await waitFor(() => {
-      expect(chartSliceRef?.lanesSignalTraceStatus).toBe("ready");
-    });
-    expect(chartSliceRef?.chartDisplayComponentEvents).toEqual([CHART_EVENTS_MARKER]);
-    expect(chartSliceRef?.displayApplyRevision).toBeGreaterThanOrEqual(revisionBeforeDenseResolve);
-  });
-});
 
 describe("lazy dense lanes (5B)", () => {
   afterEach(() => {
@@ -364,36 +231,6 @@ describe("lazy dense lanes (5B)", () => {
     });
     fetchChartOverlayEma.mockResolvedValue([]);
     fetchChartEvents.mockResolvedValue(ONE_POINT_CHART_EVENTS);
-  });
-
-  it("preserves lanes error on policy skip after display commit (no second dense fetch)", async () => {
-    fetchSignalTrace.mockRejectedValue(new Error("dense trace unavailable"));
-
-    render(
-      <Host>
-        <ChartSliceCapture />
-      </Host>,
-    );
-
-    await waitFor(() => {
-      expect(chartSliceRef?.lanesSignalTraceStatus).toBe("error");
-    });
-    expect(fetchSignalTrace).toHaveBeenCalledTimes(1);
-    expect(fetchChartEvents).toHaveBeenCalledTimes(1);
-
-    await act(async () => {
-      invalidateTraceDisplayCacheForTests();
-    });
-
-    await waitFor(() => {
-      expect(fetchChartEvents).toHaveBeenCalledTimes(2);
-    });
-    expect(fetchSignalTrace).toHaveBeenCalledTimes(1);
-    expect(chartSliceRef?.lanesSignalTraceStatus).toBe("error");
-    expect(chartSliceRef?.lanesSignalTraceError).toContain("dense trace unavailable");
-
-    const skipMark = dbgExport().steps.find((row) => row.step === DBG.lanesTrace.skip);
-    expect(skipMark?.last_meta?.reason).toBe("lanes_ready");
   });
 
   it("flag off performs single combined signal-trace fetch (no chart-events)", async () => {
@@ -438,7 +275,7 @@ describe("lazy dense lanes (5B)", () => {
     });
     expect(fetchChartEvents).not.toHaveBeenCalled();
     await waitFor(() => {
-      expect(chartSliceRef?.lanesSignalTraceStatus).toBe("ready");
+      expect(chartSliceRef?.chartViewModel.componentEvents).toEqual([CHART_EVENTS_MARKER]);
     });
   });
 });

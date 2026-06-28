@@ -19,9 +19,7 @@ import {
 } from "@/api/client";
 import {
   CHART_MARKET_TIMEFRAME,
-  type ChartAuxEmaOverlay,
   type ChartBar,
-  type ChartEmaOverlay,
   type ConfigListEntry,
   type ConfigStateResponse,
   type RunReport,
@@ -48,10 +46,7 @@ import {
 } from "@/features/chart/runtime/traceDisplayOrchestrator";
 import { flushLanesLoadDebug } from "@/features/chart/runtime/workbenchTraceNetworkLoad";
 import type { ChartInteractionEvent, ViewportCommand } from "@/features/chart/runtime/types";
-import {
-  type ChartViewMode,
-  type ChartViewWindow,
-} from "@/features/chart/chartViewWindow";
+import { type ChartViewWindow } from "@/features/chart/chartViewWindow";
 import {
   defaultChartContextOverlayRef,
   strategyContextRefOptions,
@@ -89,9 +84,6 @@ import {
   type RunMarketViewIdentity,
 } from "@/features/chart/runMarketView";
 import {
-  lanesSignalTraceError as deriveLanesSignalTraceError,
-  lanesSignalTraceStatus as deriveLanesSignalTraceStatus,
-  signalTraceMatchesChartWindow,
   type SignalTraceLoadStatus,
 } from "@/shared/context/signalTraceLoadPolicy";
 import { evaluateSignalTraceBootstrap } from "@/shared/context/signalTraceBootstrap";
@@ -189,14 +181,8 @@ type WorkbenchState = {
   report: RunReport | null;
   /** Renderer-facing projection; prefer over individual chart* fields in ChartPanel. */
   chartViewModel: ChartViewModel;
-  chartCandles: ChartBar[];
-  chartEmaOverlays: ChartEmaOverlay[];
-  chartAuxEmaOverlays: ChartAuxEmaOverlay[];
-  chartDisplayAuxEmaOverlays: ChartAuxEmaOverlay[];
   htfAuxEmaOverlayStale: boolean;
-  chartDisplayComponentEvents: ComponentEvent[];
   componentEventsStale: boolean;
-  displayApplyRevision: number;
   renderWindowShiftSeq: number;
   chartShowEntryBlockMarkers: boolean;
   setChartShowEntryBlockMarkers: (show: boolean) => void;
@@ -208,11 +194,6 @@ type WorkbenchState = {
   setChartShowTradeManagementPhaseMarkers: (show: boolean) => void;
   chartShowTradeManagementExitMarkers: boolean;
   setChartShowTradeManagementExitMarkers: (show: boolean) => void;
-  chartViewMode: ChartViewMode;
-  chartViewCenterTimeSec: number | null;
-  chartViewFirstTimeSec: number | null;
-  chartViewLastTimeSec: number | null;
-  chartViewCount: number;
   chartTradeFocusWarning: string | null;
   marketCandlesCount: number;
   fullCandleRange: { min: number; max: number } | null;
@@ -233,13 +214,6 @@ type WorkbenchState = {
   createNewConfig: () => void;
   reloadReport: () => void;
   refreshRunsAndSelectRun: (runId: string) => Promise<void>;
-  signalTrace: SignalTraceBundle | null;
-  signalTraceStatus: SignalTraceLoadStatus;
-  /** Per-window trace for lanes/diagnostics only — null when bundle is for another render window. */
-  lanesSignalTrace: SignalTraceBundle | null;
-  lanesSignalTraceStatus: SignalTraceLoadStatus;
-  lanesSignalTraceError: string | null;
-  signalTraceError: string | null;
   contextOverlayRef: string | null;
   setContextOverlayRef: (ref: string | null) => void;
   effectiveContextOverlayRef: string | null;
@@ -276,7 +250,6 @@ type WorkbenchReportState = Pick<
   | "selectedTradeId"
   | "selectTrade"
   | "selectedVariant"
-  | "candlesSource"
 >;
 
 type WorkbenchComposerState = Pick<
@@ -299,14 +272,8 @@ type WorkbenchChartState = Pick<
   | "marketLoadStatus"
   | "marketError"
   | "chartViewModel"
-  | "chartCandles"
-  | "chartEmaOverlays"
-  | "chartAuxEmaOverlays"
-  | "chartDisplayAuxEmaOverlays"
   | "htfAuxEmaOverlayStale"
-  | "chartDisplayComponentEvents"
   | "componentEventsStale"
-  | "displayApplyRevision"
   | "renderWindowShiftSeq"
   | "chartShowEntryBlockMarkers"
   | "setChartShowEntryBlockMarkers"
@@ -321,11 +288,6 @@ type WorkbenchChartState = Pick<
   | "chartTimeframe"
   | "reportTimeframe"
   | "timeframeMismatch"
-  | "chartViewMode"
-  | "chartViewCenterTimeSec"
-  | "chartViewFirstTimeSec"
-  | "chartViewLastTimeSec"
-  | "chartViewCount"
   | "chartTradeFocusWarning"
   | "marketCandlesCount"
   | "fullCandleRange"
@@ -333,12 +295,6 @@ type WorkbenchChartState = Pick<
   | "selectedVariant"
   | "selectedTradeId"
   | "selectTrade"
-  | "signalTrace"
-  | "signalTraceStatus"
-  | "lanesSignalTrace"
-  | "lanesSignalTraceStatus"
-  | "lanesSignalTraceError"
-  | "signalTraceError"
   | "contextOverlayRef"
   | "setContextOverlayRef"
   | "effectiveContextOverlayRef"
@@ -422,7 +378,7 @@ export function WorkbenchProvider({
   const phase63DTraceOwner = (): Phase63DTraceEventsOwnerState => phase63DTraceOwnerRef.current!;
   const traceDisplayCache = () => phase63DTraceOwner().traceDisplayController.cache;
   const [displayCacheVersion, setDisplayCacheVersion] = useState(0);
-  const [traceSchedulingTick, setTraceSchedulingTick] = useState(0);
+  const [traceSchedulingTick] = useState(0);
   const [displayApplyRevision, setDisplayApplyRevision] = useState(0);
   const [renderWindowShiftSeq, setRenderWindowShiftSeq] = useState(0);
   const [chartDisplayComponentEvents, setChartDisplayComponentEvents] = useState<ComponentEvent[]>([]);
@@ -446,7 +402,6 @@ export function WorkbenchProvider({
   const [signalTrace, setSignalTrace] = useState<SignalTraceBundle | null>(null);
   const [signalTraceStatus, setSignalTraceStatus] = useState<SignalTraceLoadStatus>("idle");
   const [loadedSignalTraceWindowKey, setLoadedSignalTraceWindowKey] = useState<string | null>(null);
-  const [signalTraceError, setSignalTraceError] = useState<string | null>(null);
   const [contextOverlayRef, setContextOverlayRef] = useState<string | null>(null);
   const signalTraceStatusRef = useRef<SignalTraceLoadStatus>("idle");
   const selectedTradeIdRef = useRef<number | string | null>(null);
@@ -1428,20 +1383,6 @@ export function WorkbenchProvider({
     setDisplayCacheVersion((version) => version + 1);
   }, [traceDisplayCacheKey, reloadToken]);
 
-  useEffect(() => {
-    registerTraceDisplayCacheInvalidatorForTests(() => {
-      if (traceDisplayCacheKey === null) {
-        return;
-      }
-      resetPhase63DTraceDisplayCache(phase63DTraceOwner(), traceDisplayCacheKey);
-      setDisplayCacheVersion((version) => version + 1);
-      setTraceSchedulingTick((tick) => tick + 1);
-    });
-    return () => {
-      registerTraceDisplayCacheInvalidatorForTests(null);
-    };
-  }, [traceDisplayCacheKey]);
-
   const sessionCacheIdentity = useMemo(() => {
     if (selectedRunId === null || selectedVariantKey === "") {
       return null;
@@ -1478,33 +1419,6 @@ export function WorkbenchProvider({
     const overlay = effectiveContextOverlayRef ?? "";
     return `${selectedRunId}:${selectedVariantKey}:${first}:${last}:${overlay}`;
   }, [chartView.candles, selectedRunId, selectedVariantKey, effectiveContextOverlayRef]);
-
-  const signalTraceMatchesWindow = signalTraceMatchesChartWindow(
-    chartWindowKey,
-    loadedSignalTraceWindowKey,
-  );
-
-  const lanesSignalTrace = signalTraceMatchesWindow ? signalTrace : null;
-
-  const lanesSignalTraceStatus = useMemo(
-    () =>
-      deriveLanesSignalTraceStatus(
-        chartWindowKey,
-        loadedSignalTraceWindowKey,
-        signalTraceStatus,
-      ),
-    [chartWindowKey, loadedSignalTraceWindowKey, signalTraceStatus],
-  );
-
-  const lanesSignalTraceError = useMemo(
-    () =>
-      deriveLanesSignalTraceError(
-        chartWindowKey,
-        loadedSignalTraceWindowKey,
-        signalTraceError,
-      ),
-    [chartWindowKey, loadedSignalTraceWindowKey, signalTraceError],
-  );
 
   const renderWindowBounds = useMemo(
     () => candleTimeBounds(chartView.candles),
@@ -1684,7 +1598,6 @@ export function WorkbenchProvider({
       setSignalTrace(null);
       setSignalTraceStatus("idle");
       setLoadedSignalTraceWindowKey(null);
-      setSignalTraceError(null);
       signalTraceStatusRef.current = "idle";
       return;
     }
@@ -1744,7 +1657,6 @@ export function WorkbenchProvider({
       const snapshot = resolvePhase63DLanesSnapshot(owner);
       setSignalTrace(snapshot.signalTrace);
       setSignalTraceStatus(snapshot.signalTraceStatus);
-      setSignalTraceError(snapshot.signalTraceError);
       setLoadedSignalTraceWindowKey(snapshot.loadedSignalTraceWindowKey);
       signalTraceStatusRef.current = snapshot.signalTraceStatus;
 
@@ -1831,7 +1743,6 @@ export function WorkbenchProvider({
       selectedTradeId,
       selectTrade,
       selectedVariant,
-      candlesSource,
     }),
     [
       symbol,
@@ -1843,7 +1754,6 @@ export function WorkbenchProvider({
       selectedTradeId,
       selectTrade,
       selectedVariant,
-      candlesSource,
     ],
   );
 
@@ -1879,14 +1789,8 @@ export function WorkbenchProvider({
       marketLoadStatus,
       marketError,
       chartViewModel: modelDomainFields.chartViewModel,
-      chartCandles: modelDomainFields.chartCandles,
-      chartEmaOverlays: modelDomainFields.chartEmaOverlays,
-      chartAuxEmaOverlays: modelDomainFields.chartAuxEmaOverlays,
-      chartDisplayAuxEmaOverlays: modelDomainFields.chartDisplayAuxEmaOverlays,
       htfAuxEmaOverlayStale: modelDomainFields.htfAuxEmaOverlayStale,
-      chartDisplayComponentEvents: modelDomainFields.chartDisplayComponentEvents,
       componentEventsStale: modelDomainFields.componentEventsStale,
-      displayApplyRevision,
       renderWindowShiftSeq,
       chartShowEntryBlockMarkers,
       setChartShowEntryBlockMarkers,
@@ -1901,11 +1805,6 @@ export function WorkbenchProvider({
       chartTimeframe,
       reportTimeframe,
       timeframeMismatch,
-      chartViewMode: modelDomainFields.chartViewMode,
-      chartViewCenterTimeSec: modelDomainFields.chartViewCenterTimeSec,
-      chartViewFirstTimeSec: modelDomainFields.chartViewFirstTimeSec,
-      chartViewLastTimeSec: modelDomainFields.chartViewLastTimeSec,
-      chartViewCount: modelDomainFields.chartViewCount,
       chartTradeFocusWarning,
       marketCandlesCount,
       fullCandleRange,
@@ -1913,12 +1812,6 @@ export function WorkbenchProvider({
       selectedTradeId,
       selectTrade,
       selectedVariant,
-      signalTrace,
-      signalTraceStatus,
-      lanesSignalTrace,
-      lanesSignalTraceStatus,
-      lanesSignalTraceError,
-      signalTraceError,
       contextOverlayRef,
       setContextOverlayRef,
       effectiveContextOverlayRef,
@@ -1939,7 +1832,6 @@ export function WorkbenchProvider({
       marketLoadStatus,
       marketError,
       modelDomainFields,
-      displayApplyRevision,
       renderWindowShiftSeq,
       chartShowEntryBlockMarkers,
       chartShowExitSignalMarkers,
@@ -1953,12 +1845,6 @@ export function WorkbenchProvider({
       selectedTradeId,
       selectTrade,
       selectedVariant,
-      signalTrace,
-      signalTraceStatus,
-      lanesSignalTrace,
-      lanesSignalTraceStatus,
-      lanesSignalTraceError,
-      signalTraceError,
       contextOverlayRef,
       effectiveContextOverlayRef,
       contextOverlayRefOptions,
@@ -1970,7 +1856,6 @@ export function WorkbenchProvider({
       acknowledgeChartViewportCommand,
       isWindowSwapTransactionCancelled,
       settleWindowSwapCommit,
-      displayApplyRevision,
       renderWindowShiftSeq,
     ],
   );
@@ -2000,17 +1885,6 @@ export function useWorkbench(): WorkbenchState {
     }),
     [shell, report, composer, chart],
   );
-}
-
-let traceDisplayCacheInvalidatorForTests: (() => void) | null = null;
-
-function registerTraceDisplayCacheInvalidatorForTests(fn: (() => void) | null): void {
-  traceDisplayCacheInvalidatorForTests = fn;
-}
-
-/** Vitest-only: invalidate display cache coverage without report reload (preserves lanes state). */
-export function invalidateTraceDisplayCacheForTests(): void {
-  traceDisplayCacheInvalidatorForTests?.();
 }
 
 export function useWorkbenchShell(): WorkbenchShellState {
