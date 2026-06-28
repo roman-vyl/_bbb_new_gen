@@ -25,7 +25,7 @@ describe("pipelineDebug", () => {
 
   it("includes cutover debug fields in dbgExport", async () => {
     const { dbgExport } = await import("./pipelineDebug");
-    expect(dbgExport().debug.cutoverPhase).toBe("6.3A");
+    expect(dbgExport().debug.cutoverPhase).toBe("6.3F");
     expect(dbgExport().debug.domainOwners.model).toBe("runtime_v2_production");
   });
 

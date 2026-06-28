@@ -171,6 +171,24 @@ Console: **121** lines matching `[pipeline]` / `[pipeline debug]` including FAQ 
 
 ---
 
+## 13. Fixup applied (post-diagnostic)
+
+| Item | Status |
+|---|---|
+| `--chart-events-api` in `dev-workbench.sh` / `-ChartEventsApi` in `dev-workbench.ps1` | Done |
+| `dev-workbench-debug-mode.sh --chart-events-api` forwards via `"$@"` | Done |
+| `debug/README.md` chart-events env section | Done |
+| `pipelineDebug.test.ts` expects `6.3F` | Done |
+| Smoke re-run | **PASS** |
+
+Operator command (macOS):
+
+```bash
+./scripts/dev-workbench-debug-mode.sh --chart-events-api
+```
+
+---
+
 ## Files in this diagnostic commit
 
 | File | Change |
