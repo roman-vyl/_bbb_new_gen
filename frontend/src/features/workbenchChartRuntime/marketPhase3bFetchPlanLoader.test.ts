@@ -374,7 +374,7 @@ describe("Phase 3B loader harness", () => {
     expect(result.state.readyIdentity).toBeNull();
   });
 
-  it("returns aborted outcome without setting error status", async () => {
+  it("completes applied when candles abort but EMA overlays still seed", async () => {
     const { report, view, viewIdentity } = resolveHarnessView();
     const target = resolveMarketTargetWindow(view, null);
     fetchCandlesWindow.mockImplementation(({ signal }) =>
@@ -426,9 +426,42 @@ describe("Phase 3B loader harness", () => {
     abortController.abort();
     const result = await pending;
 
-    expect(result.outcome).toBe("aborted");
+    expect(result.outcome).toBe("applied");
+    expect(result.loadResult?.emaFetched).toBe(3);
     expect(result.state.status).not.toBe("error");
     expect(result.state.error).toBeNull();
+  });
+
+  it("clears in-flight keys on cancel so the next load can fetch EMA overlays", async () => {
+    const { report, view, viewIdentity } = resolveHarnessView();
+    const target = resolveMarketTargetWindow(view, null);
+    const plan = resolveMarketFetchPlanRuntime({ view, focusWindow: target, coverageWindow: target });
+    expect(plan.emaPlans.length).toBeGreaterThan(0);
+
+    const controller = createMarketLoadRuntimeController();
+    controller.inFlightKeys.add(plan.emaPlans[0]!.inFlightKey);
+
+    mockMarketResponses(target);
+    cancelMarketLoadCycle(controller);
+    expect(controller.inFlightKeys.size).toBe(0);
+
+    const loadGeneration = beginMarketLoadCycle(controller, viewIdentity);
+    const focusKey = buildMarketTargetWindowKey(viewIdentity, target);
+    const result = await runMarketLoadCycle(controller, {
+      view,
+      viewIdentity,
+      focusWindow: target,
+      coverageWindow: target,
+      focusKey,
+      coverageKey: focusKey,
+      symbol: report.symbol,
+      timeframe: "5m",
+      signal: new AbortController().signal,
+      loadGeneration,
+    });
+
+    expect(result.loadResult?.emaFetched).toBe(3);
+    expect(fetchEmaWindow).toHaveBeenCalledTimes(3);
   });
 
   it("dedupes duplicate in-flight keys across concurrent loads", async () => {

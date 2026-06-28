@@ -142,6 +142,21 @@ Module: `phase63FEmaOverlayDiagnostics.ts` (clearly diagnostic; remove after fix
 4. Re-smoke cold start; expect `wb.market_bundle_overlay_count.anchorEmaOverlayCount > 0` before `wb.chart_window_slice`.
 5. Remove temporary diagnostic marks in Phase 7 / post-fixup cleanup.
 
+---
+
+## 11. Fix applied (`5220752` follow-up — pending verification)
+
+**Root cause addressed:** aborted/overlapping market load cycles left EMA fetches unseeded (`api.fetchEmaWindow` without cache commit) and stale `inFlightKeys` blocked retries.
+
+| Change | File |
+|---|---|
+| `cancelMarketLoadCycle` clears `inFlightKeys` | `marketLoadRuntime.ts` |
+| Per-plan `AbortError` swallow for candles/EMA (preserve partial seeds) | `workbenchMarketLoad.ts` |
+| `wb.market_fetch.skip_in_flight` telemetry when EMA skipped | `workbenchMarketLoad.ts` |
+| `chartWindowSlice` deps include `marketOverlayRevision` + `marketCandlesRevision` | `WorkbenchContext.tsx` |
+
+**Verify:** cold start should show `wb.market_bundle_overlay_count.anchorEmaOverlayCount > 0` and `chart.setData.anchor_ema.overlayCount > 0`.
+
 ## Files changed (this diagnostic commit)
 
 | File | Change |

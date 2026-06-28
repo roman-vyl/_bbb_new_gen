@@ -94,6 +94,7 @@ export function beginMarketLoadCycle(
 
 export function cancelMarketLoadCycle(state: MarketLoadRuntimeControllerState): void {
   state.generation += 1;
+  state.inFlightKeys.clear();
 }
 
 function shouldApplyMarketLoadResult(

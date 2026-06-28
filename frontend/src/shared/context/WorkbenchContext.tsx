@@ -1280,6 +1280,8 @@ export function WorkbenchProvider({
     [
       cachedBundle,
       marketLoadStatus,
+      marketOverlayRevision,
+      marketCandlesRevision,
       auxOverlayRevision,
       intendedRunMarketViewIdentity,
       runMarketViewIdentity,

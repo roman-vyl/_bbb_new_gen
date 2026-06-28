@@ -58,7 +58,10 @@ export function emitMarketBundleOverlayDiagnostic(input: {
     input.coverageWindow,
   );
   const bundle = composed?.bundle ?? null;
-  dbgMarkCutover(PHASE_63F_DIAG_MARKET_BUNDLE_OVERLAY_COUNT, "market", {
+    // #region agent log
+    fetch('http://127.0.0.1:7735/ingest/10f2297a-b9c5-499f-84f4-cf393020a54d',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'477d60'},body:JSON.stringify({sessionId:'477d60',location:'phase63FEmaOverlayDiagnostics.ts:emitMarketBundleOverlayDiagnostic',message:'market bundle overlay diagnostic',data:{marketLoadStatus:input.marketLoadStatus,composeSource:composed?.source??null,anchorEmaOverlayCount:bundle?.ema_overlays.length??0,barCount:bundle?.candles.length??0},timestamp:Date.now(),hypothesisId:'H-bundle-compose'})}).catch(()=>{});
+    // #endregion
+    dbgMarkCutover(PHASE_63F_DIAG_MARKET_BUNDLE_OVERLAY_COUNT, "market", {
     marketLoadStatus: input.marketLoadStatus,
     composeSource: composed?.source ?? null,
     barCount: bundle?.candles.length ?? 0,
