@@ -1,0 +1,56 @@
+{
+  "captured_at": "2026-06-27T19:42:31.631Z",
+  "assertions": {
+    "scenario": "C-left-pan",
+    "ok": true,
+    "panPrefetch": true,
+    "fetchStarts": 0
+  },
+  "rows": [
+    {
+      "step": "wb.market_pan_prefetch_decision",
+      "count": 1,
+      "total_ms": 0,
+      "max_ms": 0,
+      "avg_ms": 0,
+      "last_meta": {
+        "owner": "runtime_v2_production",
+        "domain": "market",
+        "phase": "6.3F",
+        "reason": "clamped",
+        "visible_from_ms": 1778871300000,
+        "visible_to_ms": 1778940600000,
+        "target_from_ms": 1763940900000,
+        "target_to_ms": 1778940900000,
+        "expanded_from_ms": null,
+        "expanded_to_ms": null,
+        "margin_ms": 3000000000,
+        "margin_bars": 10000
+      }
+    },
+    {
+      "step": "wb.viewport.command_cancel",
+      "count": 1,
+      "total_ms": 0,
+      "max_ms": 0,
+      "avg_ms": 0,
+      "last_meta": {
+        "owner": "runtime_v2_production",
+        "domain": "viewport",
+        "phase": "6.3F",
+        "cancelledThroughId": 0
+      }
+    }
+  ],
+  "debug": {
+    "cutoverPhase": "6.3F",
+    "domainOwners": {
+      "model": "runtime_v2_production",
+      "render_window": "runtime_v2_production",
+      "viewport": "runtime_v2_production",
+      "trace": "runtime_v2_production",
+      "aux_overlay": "runtime_v2_production",
+      "market": "runtime_v2_production"
+    }
+  }
+}

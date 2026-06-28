@@ -1,0 +1,21 @@
+{
+  "captured_at": "2026-06-27T19:52:35.810Z",
+  "assertions": {
+    "scenario": "D-cache-revisit",
+    "ok": true,
+    "cacheHits": 0,
+    "bundleReadyCount": 0
+  },
+  "rows": [],
+  "debug": {
+    "cutoverPhase": "6.3F",
+    "domainOwners": {
+      "model": "runtime_v2_production",
+      "render_window": "runtime_v2_production",
+      "viewport": "runtime_v2_production",
+      "trace": "runtime_v2_production",
+      "aux_overlay": "runtime_v2_production",
+      "market": "runtime_v2_production"
+    }
+  }
+}

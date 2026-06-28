@@ -127,8 +127,6 @@ export function ChartPanel() {
   const isApplyingViewportRef = useRef(false);
   const suppressPanShiftUntilRef = useRef(0);
   const visibleRangeHandlerRef = useRef<(() => void) | null>(null);
-  /** Atomic setData key for window-swap; cleared after layout apply. */
-  const atomicShiftSeriesKeyRef = useRef<string | null>(null);
 
   const {
 
@@ -614,10 +612,6 @@ export function ChartPanel() {
       return;
     }
 
-    if (atomicShiftSeriesKeyRef.current === chartSeriesDataKey) {
-      return;
-    }
-
     dbgTimedSyncChartModel(
       DBG.chart.setDataCandles,
       () => {
@@ -631,11 +625,6 @@ export function ChartPanel() {
     const chart = chartRef.current;
     const emaByRole = emaSeriesByRoleRef.current;
     if (!chart || !selectedVariant || chartSeriesDataKey === "") {
-      return;
-    }
-
-    if (atomicShiftSeriesKeyRef.current === chartSeriesDataKey) {
-      atomicShiftSeriesKeyRef.current = null;
       return;
     }
 
@@ -703,8 +692,6 @@ export function ChartPanel() {
       },
       () => ({ overlayCount: chartDisplayAuxEmaOverlays.length }),
     );
-
-    atomicShiftSeriesKeyRef.current = chartSeriesDataKey;
   }, [
     chartEmaOverlays,
     chartDisplayAuxEmaOverlays,

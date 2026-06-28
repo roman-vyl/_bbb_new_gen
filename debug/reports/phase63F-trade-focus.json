@@ -1,0 +1,21 @@
+{
+  "captured_at": "2026-06-27T19:37:28.801Z",
+  "assertions": {
+    "scenario": "B-trade-focus",
+    "ok": true,
+    "tradeFocus": true,
+    "hint": "Showing 50000 bars · trade focus · center 1778821500 · range 1763940900–17789406"
+  },
+  "rows": [],
+  "debug": {
+    "cutoverPhase": "6.3F",
+    "domainOwners": {
+      "model": "runtime_v2_production",
+      "render_window": "runtime_v2_production",
+      "viewport": "runtime_v2_production",
+      "trace": "runtime_v2_production",
+      "aux_overlay": "runtime_v2_production",
+      "market": "runtime_v2_production"
+    }
+  }
+}

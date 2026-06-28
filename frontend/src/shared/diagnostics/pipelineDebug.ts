@@ -55,7 +55,6 @@ export const PIPELINE_DEBUG_STEPS = {
   },
   chartWindow: {
     slice: "wb.chart_window_slice",
-    inputOverlayCount: "wb.render_window.input_overlay_count",
   },
   signalTrace: {
     bootstrapReady: "wb.signal_trace.bootstrap_ready",
@@ -93,8 +92,6 @@ export const PIPELINE_DEBUG_STEPS = {
     emaDecision: "wb.market_ema_decision",
     panPrefetchDecision: "wb.market_pan_prefetch_decision",
     composeFocusFallback: "wb.market_compose_focus_fallback",
-    bundleOverlayCount: "wb.market_bundle_overlay_count",
-    overlayCacheDebug: "wb.market_overlay_cache_debug",
   },
   cutover: {
     domainOwners: "wb.cutover.domain_owners",
