@@ -1,252 +1,96 @@
-# Phase 7.A1 — Market Load Provider (WorkbenchContext shrink)
+# Phase 7.01 — Delete Market Mirror State From WorkbenchContext
 
-**Status:** Not started (OpenSpec — implementation pending review)  
-**Branch:** `new-workbench-chart-runtime-v2`  
-**Prerequisite:** Phase 6.5 ownership report approved (`phase6-5-ownership-report.md`)  
-**Parent plan:** `phase6-5-ownership-report.md` §8 Group A step **A1**  
-**Maps to:** `tasks.md` §8.1–8.4 (market domain only)  
-**Phase debug tag:** `phase: 7.A1`, `domain: market`
+**Status:** OpenSpec — docs only, no implementation  
+**Slice:** 7.01 (replaces incorrect "market load provider" direction)  
+**Maps to:** `tasks.md` §8.1  
+**Ownership report:** `phase6-5-ownership-report.md` §5.1 (mirror rows), §5.5 (already-removed symbols must stay absent)  
+**Phase tag:** `phase: 7.01`, `domain: market`  
+**Baseline lines:** `WorkbenchContext.tsx` ≈ 2,202 @ `a7b817d`
+
+---
 
 ## 1. Goal
 
-Relocate **market-domain React orchestration** out of `WorkbenchContext.tsx` into a **thin production runtime provider** so that:
+Delete **redundant market mirror React state** from `WorkbenchContext.tsx`. Market behavior stays owned by existing v2 stack (`phase63FMarketLoadBridge` → `marketLoadRuntime` / `marketBundleRuntime` / `marketViewRuntime` / `marketWindowRuntime` / `panRuntime`).
 
-- `WorkbenchContext` no longer owns `phase63FMarketLoadOwnerRef`, market `useEffect` cycles, or market mirror React state.
-- **Mutable market behavior** remains owned by existing v2 modules (`phase63FMarketLoadBridge` → `marketLoadRuntime`, `marketBundleRuntime`, `marketViewRuntime`, `marketWindowRuntime`, `panRuntime`).
-- `WorkbenchContext` consumes a **read-only market output snapshot** (adapter fields only) and keeps non-chart provider responsibilities unchanged.
-
-This step is **glue relocation only**. It does not change fetch contracts, backend APIs, cache semantics, or cutover ownership (`runtime_v2_production` for `market` stays).
+**No new files. No provider. No relocation.**
 
 ---
 
-## 2. Scope
+## 2. Delete from WorkbenchContext
 
-### In scope (A1)
-
-| Area | WorkbenchContext today | Target owner |
+| Symbol / block | Approx lines | Why dead |
 |---|---|---|
-| `phase63FMarketLoadOwnerRef` lifecycle | Context `useRef` + reset on run switch | Market runtime provider |
-| Focus/coverage window sync effect | `syncPhase63FMarketFocusWindows` + `setMarketFocusWindow` / `setMarketCoverageWindow` | Provider internal state |
-| Market load `useEffect` | `runPhase63FMarketLoad`, abort/cancel, `onChunkSeeded` revisions | Provider effect |
-| Market React mirror state | `marketLoadStatus`, `marketError`, `runMarketViewIdentity`, revisions | Provider → output snapshot |
-| `marketBundleSnapshot` / `cachedBundle` / `renderWindowFoundationKey` | Context memos | Provider output |
-| `getCandles` cache read + `cachedBundleCandlesRef` | Context effect (~1019–1035, ~1136–1145) | `marketBundleRuntime` or provider read path |
-| `intendedRunMarketView` / identity memos | Context `useMemo` (~700–838) | `runtimeInputAdapter` + `marketViewRuntime` input builder in provider |
-| `logPhase63FComposeFocusFallback` effect | Context (~1019–1059) | Provider |
-| `attemptMarketPanPrefetch` callback body | Context (~1189–1228) | Provider (pan still `domain: market` via 63F) |
-| Window key memos | `marketFocusWindowKey`, `marketCoverageWindowKey` | Provider output |
+| `useState` for `marketLoadStatus` | 401 | Mirrors `owner.controller.status` — use `resolvePhase63FMarketReactSync` |
+| `useState` for `marketError` | 402 | Mirrors `owner.controller.error` |
+| `useState` for `runMarketViewIdentity` | 403–405 | Mirrors `owner.controller.readyIdentity` |
+| `useState` for `marketCandlesRevision` / `marketOverlayRevision` | 406–407 | Bump-only ticks; derive from owner revision fields or bundle snapshot |
+| `useState` for `marketFocusWindow` / `marketCoverageWindow` | 418–421 | Mirrors 63F owner windows after `syncPhase63FMarketFocusWindows` |
+| `marketFocusWindowRef` / `marketCoverageWindowRef` / `intendedRunMarketViewRef` | 415–417, 895–897 | Ref mirrors of above; read owner directly |
+| `setMarketLoadStatus` / `setMarketError` / `setRunMarketViewIdentity` in sync callbacks | 762–768, 933–937 | Side-effect of mirror pattern |
+| `setMarketFocusWindow` / `setMarketCoverageWindow` in focus sync effect | 840–879 | Replace with owner-only sync (bridge already mutates owner) |
 
-### Out of scope (later A2–A6 / Phase 8)
+### Keep in WorkbenchContext (NOT this slice)
 
-| Area | Deferred to |
+| Symbol | Reason |
 |---|---|
-| Render-window init/apply/shift (`phase63B*`) | A2 |
-| Viewport commands (`phase63C*`) | A3 |
-| Trace load cycle (`phase63D*`) | A4 |
-| Aux/HTF overlays (`phase63E*`) | A5 |
-| Model slice / `chartValue` shrink | A6 |
-| Legacy adapter field removal (`chartCandles`, …) | Phase 8 |
-| Delete `phase63FMarketLoadBridge.ts` or `*Runtime.ts` modules | Never in A1 — bridges/runtime stay |
-| Backend EMA / signal-trace performance | Out of scope backlog (Phase 6.4) |
-| Cutover config / telemetry tag cleanup | Phase 7 Group C |
+| `phase63FMarketLoadOwnerRef` | Sole production React owner handle |
+| Market load `useEffect` → `runPhase63FMarketLoad` | Sole React entry to 63F bridge |
+| `attemptMarketPanPrefetch` → `evaluatePhase63FPanPrefetch` | Interaction glue calling existing bridge |
+| `marketBundleSnapshot` memo calling `resolvePhase63FMarketBundleSnapshot` | Adapter read (may shrink in 7.02) |
+| `getCandles` cache read for `cachedBundleCandlesRef` | Render input glue until B1 resolved |
 
 ---
 
-## 3. Architecture
+## 3. In-file replacement (allowed)
 
-### 3.1 Current (6.3F)
-
-```
-WorkbenchContext
-  ├── phase63FMarketLoadOwnerRef
-  ├── marketFocusWindow / marketCoverageWindow (useState)
-  ├── market load useEffect → runPhase63FMarketLoad
-  ├── marketBundleSnapshot memo
-  ├── attemptMarketPanPrefetch → evaluatePhase63FPanPrefetch
-  └── chartValue ← reads market fields + other domains
-```
-
-### 3.2 Target (7.A1)
-
-```
-WorkbenchContext
-  ├── builds ChartRuntimeInput (report, selection, IO gate, …)
-  ├── <WorkbenchChartMarketRuntimeProvider input={…}>
-  │     └── owns phase63F owner + effects + pan prefetch
-  │     └── exposes MarketRuntimeOutput snapshot
-  └── reads market snapshot for chartValue + downstream domain inputs
-        (renderWindowFoundationKey, cachedBundle, marketLoadStatus, …)
-```
-
-**Naming (implementation choice — pick one, document in PR):**
-
-- Preferred: `frontend/src/features/workbenchChartRuntime/WorkbenchChartMarketRuntimeProvider.tsx`
-- Hook surface: `useWorkbenchChartMarketRuntime()` (provider-internal or exported for tests)
-- Pure helpers stay in `phase63FMarketLoadBridge.ts`; provider is React wiring only.
-
-### 3.3 Output contract (minimum)
-
-Provider MUST expose a stable snapshot consumed by `WorkbenchContext`:
+Read market fields in memos / `chartValue` from existing bridge helpers:
 
 ```ts
-type WorkbenchChartMarketRuntimeOutput = {
-  marketLoadStatus: RuntimeLoadStatus;
-  marketError: string | null;
-  runMarketViewIdentity: RunMarketViewIdentity | null;
-  marketFocusWindow: MarketDisplayWindowMs | null;
-  marketCoverageWindow: MarketDisplayWindowMs | null;
-  marketFocusWindowKey: string | null;
-  marketCoverageWindowKey: string | null;
-  marketBundleSnapshot: Phase63FMarketBundleSnapshot; // or equivalent
-  cachedBundle: ChartMarketBundle | null;
-  renderWindowFoundationKey: string | null;
-  marketCandlesRevision: number;
-  marketOverlayRevision: number;
-  attemptMarketPanPrefetch: (
-    visibleFromSec: number,
-    visibleToSec: number,
-    forceUserPan?: boolean,
-    visibleSample?: string,
-  ) => void;
-  /** Test-only reset; not exported to ChartPanel */
-  resetForRunSwitch: () => void;
-};
+const marketSync = resolvePhase63FMarketReactSync(phase63FMarketLoadOwner());
+const bundleSnapshot = resolvePhase63FMarketBundleSnapshot({ owner, ... });
 ```
 
-`WorkbenchContext` passes `attemptMarketPanPrefetch` through to `dispatchChartInteraction` unchanged until A2/A3 relocate interaction glue.
+Do **not** add imports from new modules. Only use symbols already exported from `phase63FMarketLoadBridge.ts`.
 
 ---
 
-## 4. WorkbenchContext symbols to remove (A1)
+## 4. Forbidden
 
-After A1, these MUST NOT remain in `WorkbenchContext.tsx`:
-
-| Symbol | Approx lines (current) | Action |
-|---|---|---|
-| `phase63FMarketLoadOwnerRef` | 409–414 | Move to provider |
-| `createPhase63FMarketLoadOwnerState` import usage in context | 411 | Provider only |
-| `marketFocusWindow` / `setMarketFocusWindow` | 401+, 840–873 | Provider state |
-| `marketCoverageWindow` / `setMarketCoverageWindow` | 401+, 840–873, 1215–1225 | Provider state |
-| `marketFocusWindowRef` / `marketCoverageWindowRef` / `intendedRunMarketViewRef` | refs for sync/pan | Provider refs |
-| Market focus sync `useEffect` | 840–879 | Provider |
-| Market load `useEffect` | 899–990 | Provider |
-| `marketBundleSnapshot` memo | 992–1014 | Provider |
-| `getCandles` cache read effect | 1019–1035 | Provider or `marketBundleRuntime` |
-| `logPhase63FComposeFocusFallback` effect | 1019–1059 | Provider |
-| `marketCandlesRevision` / `marketOverlayRevision` bump helpers | 762–768 | Provider |
-| `intendedRunMarketView` / `intendedRunMarketViewIdentity` memos | 700–838 | Provider input builder |
-| `attemptMarketPanPrefetch` implementation | 1189–1228 | Provider |
-| Direct `resetPhase63FMarketLoadOwner` on run switch | 606, 844 | Provider `resetForRunSwitch` |
-
-### Must remain in WorkbenchContext (A1)
-
-- `chartHeavyIoEnabled` / tab activation gate (input to provider)
-- `report`, `selectedVariant`, `chartTimeframe`, `reloadToken`, `selectedTradeEntryTimeMs` (inputs)
-- `dispatchChartInteraction` wrapper that **calls** `attemptMarketPanPrefetch` from provider snapshot
-- `chartValue` fields sourced from market snapshot (names unchanged for ChartPanel compat)
-- Non-chart shell/report/composer/selection state
+- Create `WorkbenchChartMarketRuntimeProvider` or any `WorkbenchChart*` provider
+- Create `WorkbenchChartOrchestration` or `workbenchContextShared`
+- Move market effects to a new file
+- Edit `phase63FMarketLoadBridge.ts`, `marketLoadRuntime.ts`, `workbenchMarketLoad.ts`
+- Edit `chartRuntimeCutoverConfig.ts`, backend, `ChartPanel.tsx`
+- Delete `phase63FMarketLoadOwnerRef` or market load `useEffect` (see BLOCKED B1/B6 in `phase7-deletion-only-plan.md`)
 
 ---
 
-## 5. Forbidden
+## 5. Acceptance checks
 
-- Reintroduce `executeMarketWindowLoad` in `WorkbenchContext.tsx`
-- Reintroduce `composeDisplayMarketWindowBundle` in `WorkbenchContext.tsx`
-- Dual market owner (context + provider both calling `runPhase63FMarketLoad`)
-- `old_production` fallback for empty market bundle
-- Change network endpoints, EMA periods, or window planner semantics
-- Move pan prefetch to render/viewport domain (stays `domain: market` via 63F)
-- Wire `useWorkbenchChartRuntime` full harness as production owner (guarded forbidden)
-- Delete `phase63FMarketLoadBridge.ts` or runtime modules in A1
-
----
-
-## 6. Implementation steps
-
-1. Add `WorkbenchChartMarketRuntimeProvider` + `useWorkbenchChartMarketRuntime` with `phase63FMarketLoadOwnerRef` moved inside.
-2. Move market effects (focus sync, load cycle, bundle snapshot, compose fallback, cache read) into provider.
-3. Move `attemptMarketPanPrefetch` into provider; expose via context/output.
-4. Wrap `WorkbenchProvider` children path: provider receives runtime input slice from shell state.
-5. Replace WorkbenchContext inline market state with snapshot reads.
-6. Update `phase6StaticGuards.test.ts` / `phase6SingleOwnerContract.test.ts`:
-   - Context must **not** contain `phase63FMarketLoadOwner` or `runPhase63FMarketLoad`
-   - Provider must contain them
-7. Add `phase7A1MarketLoadProvider.test.tsx` (provider integration with mocked report/variant).
-8. Verify line-count delta: target **≥150 lines** removed from `WorkbenchContext.tsx` in A1 alone (partial progress toward −1000 total).
-
----
-
-## 7. Tests
-
-| Check | Command / file |
+| Check | Command / criterion |
 |---|---|
-| 63F bridge contracts unchanged | `phase63FMarketLoadBridge.test.ts` |
-| New provider integration | `phase7A1MarketLoadProvider.test.tsx` (new) |
-| Single-owner guards | `phase6SingleOwnerContract.test.ts` (updated) |
-| Static guards | `phase6StaticGuards.test.ts` (updated) |
-| Provider load integration | `workbenchLoad.test.tsx` (cold open, no `fetchChartMarketBundle`) |
-| Market parity harness | `marketPhase3cBundleParity.test.ts` |
-| Build | `npm run build` (frontend) |
+| Mirror `useState` removed | Grep: no `setMarketLoadStatus`, `setMarketFocusWindow` in `WorkbenchContext.tsx` |
+| Bridge wiring intact | Grep: `phase63FMarketLoadOwner`, `runPhase63FMarketLoad` still present |
+| Forbidden symbols absent | No `executeMarketWindowLoad` in context |
+| Line delta | ≥ 80 lines removed (target 80–120) |
+| Build | `npm run build` |
+| Market bridge tests | `phase63FMarketLoadBridge.test.ts` |
+| Provider integration | `workbenchLoad.test.tsx` (cold open, pan prefetch) |
+| Smoke | Reference `debug/reports/phase63F-*.json`; re-capture only on regression |
 
 ---
 
-## 8. Browser smoke evidence (required before merge)
+## 6. Rollback
 
-Re-run or reference existing artifacts; capture new only if behavior changed:
-
-| Scenario | Verdict required | Evidence |
-|---|---|---|
-| Cold Chart open | PASS | `debug/reports/phase63F-cold-open.json` or re-capture |
-| Cache revisit | PASS | `debug/reports/phase63F-cache-revisit.json` |
-| Left pan / prefetch | PASS | `debug/reports/phase63F-left-pan.json` |
-| Trade focus (market window) | PASS | `debug/reports/phase63F-trade-focus.json` |
-| Main vs branch market pattern | No regression | `phase6-4-main-vs-runtime-v2-market-load-diagnostic.md` |
-
-Pipeline: all market steps tagged `owner: runtime_v2_production`, `domain: market`, `phase: 6.3F` (or `7.A1` after telemetry bump if implemented).
+Revert slice PR; restore mirror `useState` pattern. No runtime ownership change.
 
 ---
 
-## 9. Acceptance criteria
+## 7. STOP FOR REVIEW
 
-- [ ] `WorkbenchContext.tsx` does not reference `phase63FMarketLoadOwner`, `runPhase63FMarketLoad`, or market load `useEffect`
-- [ ] `executeMarketWindowLoad` not imported in `WorkbenchContext.tsx` (unchanged from 6.3F)
-- [ ] Single market load owner: provider only calls `runPhase63FMarketLoad`
-- [ ] Chart cold open: candles + 3 EMA visible; `barCount > 0`
-- [ ] No fetch storm on cache revisit / clamped pan
-- [ ] `attemptMarketPanPrefetch` still reachable from chart interaction path
-- [ ] Static guards + unit tests pass
-- [ ] `npm run build` passes
-- [ ] No backend / `data_engine` changes
+- Approve this spec before any 7.01 code PR.
+- One slice per PR — no 7.02+ in same change.
+- If deletion breaks React render scheduling without mirror ticks, document minimal in-file revision read from owner (still deletion-only, not relocation).
 
----
-
-## 10. Files (expected)
-
-| File | Change |
-|---|---|
-| `phase7-a1-market-load-provider.md` | This spec |
-| `WorkbenchChartMarketRuntimeProvider.tsx` | **New** — React provider |
-| `useWorkbenchChartMarketRuntime.ts` | **New** (optional if hook colocated) |
-| `phase7A1MarketLoadProvider.test.tsx` | **New** |
-| `WorkbenchContext.tsx` | **Shrink** — remove A1 symbols |
-| `phase6StaticGuards.test.ts` | Update ownership location assertions |
-| `phase6SingleOwnerContract.test.ts` | Update forbidden symbols in context |
-| `tasks.md` | Link A1 spec under §8 |
-
-**Do not change in A1:** `phase63FMarketLoadBridge.ts`, `marketLoadRuntime.ts`, `workbenchMarketLoad.ts`, `ChartPanel.tsx`, backend.
-
----
-
-## 11. Rollback
-
-Revert provider extraction; restore market refs/effects in `WorkbenchContext`. Cutover config remains `6.3F` all-v2 — rollback is wiring-only, not ownership rollback.
-
----
-
-## 12. STOP FOR REVIEW
-
-- Review this spec before implementation.
-- Implementation PR: **A1 only** — no A2–A6, no Phase 8 adapter trim.
-- After merge: update `phase6-5-ownership-report.md` checklist or add `phase7-a1-market-load-provider-report.md` with line counts and smoke evidence.
-
-**Do not start A2 until A1 is approved and merged.**
+**Do not start 7.02 until 7.01 is merged.**

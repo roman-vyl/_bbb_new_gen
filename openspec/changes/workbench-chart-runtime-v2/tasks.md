@@ -122,28 +122,40 @@ See `phase6-staged-owner-cutover-plan.md` for the full staged rollout (6.3-reset
 - [ ] 6.4 Run full browser smoke matrix after 6.3A–6.3F approved: cold open, Reports→Chart, trade focus, next/prev, distant trade, pan left/right, chart-events enabled/disabled, context overlay switch, variant switch, reload. Capture debug evidence with `owner`, `domain`, `phase` tags. STOP FOR REVIEW.
 - [ ] 6.5 Record final ownership report: owner matrix, old `WorkbenchContext` dead code list, Phase 7 deletion plan, proof of single owner per domain. No deletion in 6.5. STOP FOR REVIEW before Phase 7.
 
-## 8. Phase 7 - Delete Old Chart Runtime Pipeline From WorkbenchContext
+## 8. Phase 7 - Delete Dead Chart Glue From WorkbenchContext (Deletion-Only)
 
-OpenSpec slices (one reviewed PR each): `phase7-a1-market-load-provider.md` (A1: market) → A2–A6 per `phase6-5-ownership-report.md` §8.
+**Policy:** `phase7-deletion-only-plan.md` — **only delete** redundant mirror state, duplicate memos, and transitional glue from `WorkbenchContext.tsx`. v2 pipeline (`phase63*Bridge` + `*Runtime.ts`) already exists. **No new providers, orchestration, or runtime modules.**
 
-- [ ] 8.1 Delete old market identity/window state, refs, keys, and effects from `WorkbenchContext.tsx`. Spec: `phase7-a1-market-load-provider.md`.
-- [ ] 8.2 Delete old market load status/effect, generation refs, in-flight refs, and direct `executeMarketWindowLoad()` ownership.
-- [ ] 8.3 Delete old market cache/bundle composition, focus fallback refs, market count/range/source derivations, and direct `composeDisplayMarketWindowBundle()` ownership.
-- [ ] 8.4 Delete old pan/edge refs/functions and direct `evaluateMarketPanPrefetchExpansion()` ownership.
-- [ ] 8.5 Delete old `chartRuntimeRef`, render-window init/rebuild/shift ownership, and old render-window revisions.
-- [ ] 8.6 Delete old viewport command state, transaction refs, acknowledge/cancel/settle ownership from provider.
-- [ ] 8.7 Delete old trace bootstrap/network/cache orchestration, trace effect, coordinator refs, session cache refs, and dense trace owner state from provider.
-- [ ] 8.8 Delete old chart-events/component-events provider ownership, display apply revision ownership, and direct component event state setters.
-- [ ] 8.9 Delete old aux/HTF overlay provider ownership, BFF aux EMA fetch effect, HTF fallback/frozen refs, and direct aux overlay state ownership.
-- [ ] 8.10 Delete old chart window slicing refs/memos and direct slice cache ownership.
-- [ ] 8.11 Delete old chart model composition and legacy chart compatibility fields that are no longer needed.
-- [ ] 8.12 Delete old imports made obsolete by runtime v2 modules.
-- [ ] 8.13 Add static guards against old chart runtime symbols/imports returning to `WorkbenchContext.tsx`.
-- [ ] 8.14 Verify `WorkbenchContext.tsx` contains only shell/report/Composer/provider glue and runtime input/output adapter wiring.
-- [ ] 8.15 Record post-deletion line count and verify the file is materially smaller, targeting at least 1000 fewer lines from baseline unless separately approved.
-- [ ] 8.16 Run static guards, relevant unit/integration tests, and all required smoke scenarios.
-- [ ] 8.17 Record Phase 7 complexity/ownership report: line count of every new runtime module, current `WorkbenchContext.tsx` line count, old owner symbols still present in `WorkbenchContext.tsx`, and new owner symbols introduced in runtime v2.
-- [ ] 8.18 STOP FOR REVIEW before final cleanup.
+OpenSpec slices (one reviewed PR each): `phase7-deletion-only-plan.md` → 7.01–7.10.
+
+**Forbidden in all Phase 7 implementation PRs:** new `WorkbenchChart*Provider`, `WorkbenchChartOrchestration`, `workbenchContextShared`; edits to `phase63*Bridge.ts`, `*Runtime.ts`, `chartRuntimeCutoverConfig.ts`, backend, `data_engine`.
+
+- [ ] 8.0 Review and approve `phase7-deletion-only-plan.md`. STOP FOR REVIEW before any 7.01 code.
+- [ ] 8.1 **7.01** Delete market mirror `useState` / ref mirrors (`marketLoadStatus`, focus/coverage windows, revision ticks). Read via `resolvePhase63FMarketReactSync`. Spec: `phase7-a1-market-load-provider.md`. **Keep** `phase63FMarketLoadOwnerRef` + load effect.
+- [ ] 8.2 **7.02** Delete duplicate market identity memos (`intendedRunMarketView*`). Spec: `phase7-02-market-identity-memos.md`.
+- [ ] 8.3 **7.03** Delete trace/lanes mirror state; derive from `resolvePhase63DLanesSnapshot`. Spec: `phase7-03-trace-mirror-deletion.md`. **Keep** `phase63DTraceOwnerRef` + trace effect.
+- [ ] 8.4 **7.04** Delete viewport command mirror `useState`. Spec: `phase7-04-viewport-mirror-deletion.md`. **Keep** `phase63CViewportOwnerRef`.
+- [ ] 8.5 **7.05** Delete render-window revision mirror state. Spec: `phase7-05-render-window-mirror-deletion.md`. **Keep** `phase63BRenderWindowOwnerRef` + effects.
+- [ ] 8.6 **7.06** Delete aux overlay revision mirror. Spec: `phase7-06-aux-overlay-mirror-deletion.md`. **Keep** `phase63EAuxOverlayOwnerRef` + effects.
+- [ ] 8.7 **7.07** Delete transitional glue (`stabilizeCaches` reset, `queueTraceFetchIntent` if redundant). Spec: `phase7-07-transitional-glue-deletion.md`.
+- [ ] 8.8 **7.08 BLOCKED** Trim `chartValue` legacy duplicate fields. Spec: `phase7-08-chartvalue-compat-trim.md`. Unblock after consumer audit (likely Phase 8).
+- [ ] 8.9 **7.09** Delete obsolete imports after 7.01–7.07. Spec: `phase7-09-obsolete-imports.md`.
+- [ ] 8.10 **7.10** Update static guards, record line counts, final deletion report. Spec: `phase7-10-guards-and-report.md`.
+- [ ] 8.11 Verify `executeMarketWindowLoad`, `composeDisplayMarketWindowBundle`, `buildChartViewModel` remain absent from `WorkbenchContext.tsx`.
+- [ ] 8.12 Verify `phase63*OwnerRef` + bridge effects still present (production wiring not deleted).
+- [ ] 8.13 Run `npm run build`, static guards, `workbenchLoad.test.tsx`, relevant bridge tests.
+- [ ] 8.14 Record realistic line-count delta vs 2,202 baseline; document BLOCKED B1–B8 if −1,000 goal not met.
+- [ ] 8.15 STOP FOR REVIEW before Phase 8.
+
+### Phase 7 BLOCKED (do not implement under deletion-only policy)
+
+| ID | Item | Reason |
+|---|---|---|
+| B1–B4 | Relocate domain effects to provider | Requires new React module (forbidden) |
+| B5 | Production `useWorkbenchChartRuntime` | Pipeline v3 (forbidden) |
+| B6 | Delete `phase63*OwnerRef` while effects remain | Breaks sole React entry |
+| B7 | Cutover config / telemetry simplification | `chartRuntimeCutoverConfig.ts` frozen |
+| B8 | −1,000 lines from 3,095 baseline via deletion-only | Needs B1–B6 |
 
 ## 9. Phase 8 - Final Cleanup
 
