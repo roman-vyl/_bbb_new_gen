@@ -30,6 +30,10 @@ import {
   type MarketLoadRuntimeControllerState,
 } from "./marketLoadRuntime";
 import type { RuntimeLoadStatus } from "./runtimeTypes";
+import {
+  emitMarketBundleOverlayDiagnostic,
+  emitMarketOverlayCacheDiagnostic,
+} from "./phase63FEmaOverlayDiagnostics";
 
 export type Phase63FMarketLoadOwnerState = {
   controller: MarketLoadRuntimeControllerState;
@@ -219,6 +223,24 @@ export function resolvePhase63FMarketBundleSnapshot(input: {
     marketLoadError: input.marketLoadError,
   });
 
+  if (
+    input.view !== null &&
+    input.focusWindow !== null &&
+    input.coverageWindow !== null
+  ) {
+    emitMarketOverlayCacheDiagnostic({
+      view: input.view,
+      focusWindow: input.focusWindow,
+      coverageWindow: input.coverageWindow,
+    });
+    emitMarketBundleOverlayDiagnostic({
+      view: input.view,
+      focusWindow: input.focusWindow,
+      coverageWindow: input.coverageWindow,
+      marketLoadStatus: input.marketLoadStatus,
+    });
+  }
+
   input.owner.composeSource = snapshot.composeSource;
 
   if (
@@ -230,6 +252,7 @@ export function resolvePhase63FMarketBundleSnapshot(input: {
     input.owner.lastBundleReadyKey = snapshot.foundationKey;
     dbgMarkCutover(DBG.load.marketBundleReady, "market", {
       barCount: snapshot.bundle.candles.length,
+      anchorEmaOverlayCount: snapshot.bundle.ema_overlays.length,
     });
   }
 

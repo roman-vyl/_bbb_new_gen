@@ -10,6 +10,7 @@ import type { AuxOverlayRuntimeBoundary } from "./auxOverlayRuntime";
 import type { TraceDisplayRuntimeBoundary } from "./traceDisplayRuntime";
 import type { ChartRuntimeModelParts } from "./runtimeTypes";
 import type { ChartViewModel } from "@/features/chart/runtime/chartViewModel";
+import { emitModelAdapterInputOverlayDiagnostic } from "./phase63FEmaOverlayDiagnostics";
 
 export const PHASE_63A_MODEL_ADAPTER_APPLY_STEP = "wb.model_adapter.apply";
 
@@ -98,6 +99,10 @@ export function resolvePhase63AModelRuntimeSlice(
   input: OldPipelineModelBridgeInput,
   stabilizeCache?: ChartModelStabilizeCache,
 ): Phase63AModelRuntimeSlice {
+  emitModelAdapterInputOverlayDiagnostic({
+    chartViewEmaCount: input.chartView.emaOverlays.length,
+    chartViewAuxEmaCount: input.chartView.auxEmaOverlays.length,
+  });
   const modelRuntimeInput = buildChartModelRuntimeInputFromOldPipeline(input);
   const boundary = resolveChartModelRuntime({
     ...modelRuntimeInput,

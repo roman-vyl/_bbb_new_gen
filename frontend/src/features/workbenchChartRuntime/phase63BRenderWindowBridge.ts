@@ -19,6 +19,7 @@ import {
   type RenderWindowRuntimeController,
 } from "./renderWindowRuntime";
 import type { RuntimeLoadStatus } from "./runtimeTypes";
+import { emitRenderWindowInputOverlayDiagnostic } from "./phase63FEmaOverlayDiagnostics";
 
 export type Phase63BRenderWindowOwnerState = {
   controller: RenderWindowRuntimeController;
@@ -111,6 +112,11 @@ export function resolvePhase63BChartWindowSlice(
   if (input.bundle === null || input.marketLoadStatus === "error") {
     return createChartWindowRuntimeBoundary();
   }
+
+  emitRenderWindowInputOverlayDiagnostic({
+    bundleAnchorEmaCount: input.bundle.ema_overlays.length,
+    bundleAuxEmaCount: input.auxEmaOverlays.length,
+  });
 
   let barCount = 0;
   let overlayCount = 0;
