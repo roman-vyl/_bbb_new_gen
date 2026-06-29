@@ -717,6 +717,7 @@ function WorkbenchProviderInner({
   }, [intendedRunMarketView]);
 
   const [marketCoverageTargetTick, bumpMarketCoverageTargetTick] = useState(0);
+  const [marketLoadDeliveryTick, bumpMarketLoadDeliveryTick] = useState(0);
 
   const marketTargetWindows = useMemo(() => {
     if (intendedRunMarketView === null || intendedRunMarketViewIdentity === null) {
@@ -782,6 +783,9 @@ function WorkbenchProviderInner({
         symbol: snapshot.symbol,
         timeframe: chartTimeframe,
         signal: abortController.signal,
+        onChunkSeeded: () => {
+          bumpMarketLoadDeliveryTick((tick) => tick + 1);
+        },
       });
 
       if (result.outcome === "aborted") {
@@ -832,6 +836,7 @@ function WorkbenchProviderInner({
       marketError,
       marketFocusWindowKey,
       marketCoverageWindowKey,
+      marketLoadDeliveryTick,
     ],
   );
 
@@ -854,7 +859,13 @@ function WorkbenchProviderInner({
     if (candles !== undefined) {
       cachedBundleCandlesRef.current = candles;
     }
-  }, [renderWindowFoundationKey, intendedRunMarketView, marketCoverageWindow, marketCandlesRevision]);
+  }, [
+    renderWindowFoundationKey,
+    intendedRunMarketView,
+    marketCoverageWindow,
+    marketCandlesRevision,
+    marketLoadDeliveryTick,
+  ]);
 
   const onWindowCommit = useCallback(
     (_commit: WindowCommitResult, slice: ChartBar[]) => {
@@ -950,6 +961,7 @@ function WorkbenchProviderInner({
       marketOverlayRevision,
       intendedRunMarketViewIdentity,
       runMarketViewIdentity,
+      marketLoadDeliveryTick,
     ],
   );
 

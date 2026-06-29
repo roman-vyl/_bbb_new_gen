@@ -20,7 +20,7 @@ import { resolveRunMarketView } from "@/features/chart/runMarketView";
 import {
   resolveMarketTargetWindow,
 } from "@/features/chart/workbenchMarketLoad";
-import { installSplitMarketWindowMocks, mockEmaWindowBundle } from "@/test/marketWindowApiMocks";
+import { installSplitMarketWindowMocks, mockCandlesWindowBundle, mockEmaWindowBundle } from "@/test/marketWindowApiMocks";
 import { dbgExport, dbgReset, PIPELINE_DEBUG_STEPS as DBG } from "@/shared/diagnostics/pipelineDebug";
 import {
   WorkbenchProvider,
@@ -592,12 +592,23 @@ function resolveTailFocusLeftEdgeSec(): number {
 
 function installTailLeftEdgeMarketMocks() {
   const leftEdgeSec = resolveTailFocusLeftEdgeSec();
-  const candles = [{ time: leftEdgeSec, open: 1, high: 2, low: 0.5, close: 1.5 }];
+  const focusFromMs = leftEdgeSec * 1000;
+  const focusCandle = { time: leftEdgeSec, open: 1, high: 2, low: 0.5, close: 1.5 };
   installSplitMarketWindowMocks({
     fetchCandlesWindow,
     fetchEmaWindow,
-    candles,
+    candles: [focusCandle],
     emaOverlays: ANCHOR_EMA_OVERLAYS,
+  });
+  fetchCandlesWindow.mockImplementation(async ({ fromMs, toOpenTimeMs }) => {
+    const candles =
+      fromMs < focusFromMs
+        ? [
+            { time: Math.floor(fromMs / 1000), open: 0.9, high: 1.1, low: 0.8, close: 1.0 },
+            focusCandle,
+          ]
+        : [focusCandle];
+    return mockCandlesWindowBundle(candles, fromMs, toOpenTimeMs + TAIL_TIMEFRAME_MS);
   });
   return leftEdgeSec;
 }
@@ -897,7 +908,11 @@ describe("Workbench market pan prefetch", () => {
     await waitFor(() => {
       expect(workbenchRef?.selectedTradeId).toBeNull();
       expect(workbenchRef?.marketLoadStatus).toBe("ready");
+      expect(renderViewportRef!.chartView.candles.length).toBeGreaterThan(0);
     });
+
+    const firstCandleBefore = renderViewportRef!.chartView.candles[0]!.time;
+    const boundsBefore = renderViewportRef!.renderWindowBounds?.fromSec;
 
     const callsBefore = fetchCandlesWindow.mock.calls.length;
 
@@ -932,6 +947,17 @@ describe("Workbench market pan prefetch", () => {
     expect(expandedFromMs).toBeLessThan(
       WIDE_REPORT_TO_MS - CHART_RENDER_WINDOW_SIZE * TAIL_TIMEFRAME_MS,
     );
+
+    await waitFor(() => {
+      const firstCandleAfter = renderViewportRef!.chartView.candles[0]!.time;
+      const boundsAfter = renderViewportRef!.renderWindowBounds?.fromSec;
+      const movedCandles = firstCandleAfter < firstCandleBefore;
+      const movedBounds =
+        boundsBefore !== undefined &&
+        boundsAfter !== undefined &&
+        boundsAfter < boundsBefore;
+      expect(movedCandles || movedBounds).toBe(true);
+    });
   });
 
   it("resets expanded coverage back to focus after trade selection changes", async () => {
