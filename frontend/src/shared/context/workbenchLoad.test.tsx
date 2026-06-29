@@ -15,6 +15,11 @@ import type {
   WorkbenchTab,
 } from "@/api/types";
 import { clearMarketResourceCache } from "@/features/chart/marketResourceCache";
+import { CHART_RENDER_WINDOW_SIZE } from "@/features/chart/chartViewWindow";
+import { resolveRunMarketView } from "@/features/chart/runMarketView";
+import {
+  resolveMarketTargetWindow,
+} from "@/features/chart/workbenchMarketLoad";
 import { installSplitMarketWindowMocks, mockEmaWindowBundle } from "@/test/marketWindowApiMocks";
 import { dbgExport, dbgReset, PIPELINE_DEBUG_STEPS as DBG } from "@/shared/diagnostics/pipelineDebug";
 import {
@@ -563,6 +568,40 @@ function installDefaultMarketMocks(
   });
 }
 
+const WIDE_REPORT_TO_MS = 20_000_000_000_000;
+const TAIL_TIMEFRAME_MS = 300_000;
+
+function makeWideTailPanReport(runId: string): RunReport {
+  return {
+    ...makeReport(runId),
+    data_range: { from_open_time_ms: 0, to_open_time_ms: WIDE_REPORT_TO_MS },
+  };
+}
+
+function resolveTailFocusLeftEdgeSec(): number {
+  const report = makeWideTailPanReport("run-a");
+  const view = resolveRunMarketView({
+    report,
+    chartTimeframe: "5m",
+    variant: report.variants[0]!,
+    reloadToken: 0,
+  });
+  const focusWindow = resolveMarketTargetWindow(view, null);
+  return Math.floor(focusWindow.fromMs / 1000);
+}
+
+function installTailLeftEdgeMarketMocks() {
+  const leftEdgeSec = resolveTailFocusLeftEdgeSec();
+  const candles = [{ time: leftEdgeSec, open: 1, high: 2, low: 0.5, close: 1.5 }];
+  installSplitMarketWindowMocks({
+    fetchCandlesWindow,
+    fetchEmaWindow,
+    candles,
+    emaOverlays: ANCHOR_EMA_OVERLAYS,
+  });
+  return leftEdgeSec;
+}
+
 describe("Workbench split market resource cache", () => {
   afterEach(() => {
     cleanup();
@@ -834,6 +873,145 @@ describe("Workbench market pan prefetch", () => {
     expect(prefetchMark?.last_meta?.reason).not.toBe("not_user_pan");
     expect(workbenchRef!.selectedTradeId).toBe(tradeIdBefore);
     expect(renderViewportRef!.chartViewportCommandSeq).toBe(viewportSeqBefore);
+  });
+
+  it("applies pan-left prefetch coverage and fetches the expanded range", async () => {
+    fetchRunReport.mockImplementation(async (runId: string) => makeWideTailPanReport(runId));
+    const leftEdgeSec = installTailLeftEdgeMarketMocks();
+
+    render(
+      <Host>
+        <WorkbenchCapture />
+        <ChartSliceCapture />
+      </Host>,
+    );
+
+    await waitFor(() => {
+      expect(workbenchRef?.marketLoadStatus).toBe("ready");
+    });
+
+    act(() => {
+      workbenchRef!.selectTrade(null);
+    });
+
+    await waitFor(() => {
+      expect(workbenchRef?.selectedTradeId).toBeNull();
+      expect(workbenchRef?.marketLoadStatus).toBe("ready");
+    });
+
+    const callsBefore = fetchCandlesWindow.mock.calls.length;
+
+    act(() => {
+      renderViewportRef!.dispatchChartInteraction({ type: "pointerdown" });
+      renderViewportRef!.dispatchChartInteraction({
+        type: "visible_range_changed",
+        visible: { from: 0, to: 0 },
+        anchorTimeSec: leftEdgeSec,
+      });
+      renderViewportRef!.dispatchChartInteraction({ type: "pointerup" });
+    });
+
+    await waitFor(() => {
+      const prefetchMark = dbgExport().steps
+        .filter((row) => row.step === DBG.market.panPrefetchDecision)
+        .at(-1);
+      expect(prefetchMark?.last_meta?.reason).toBe("near_left_edge");
+    });
+
+    const expandedFromMs = dbgExport().steps
+      .filter((row) => row.step === DBG.market.panPrefetchDecision)
+      .at(-1)?.last_meta?.expanded_from_ms;
+
+    await waitFor(() => {
+      const fetchStart = dbgExport().steps
+        .filter((row) => row.step === DBG.load.marketFetchStart)
+        .at(-1);
+      expect(fetchStart?.last_meta?.targetFromMs).toBe(expandedFromMs);
+    });
+    expect(fetchCandlesWindow.mock.calls.length).toBeGreaterThan(callsBefore);
+    expect(expandedFromMs).toBeLessThan(
+      WIDE_REPORT_TO_MS - CHART_RENDER_WINDOW_SIZE * TAIL_TIMEFRAME_MS,
+    );
+  });
+
+  it("resets expanded coverage back to focus after trade selection changes", async () => {
+    fetchRunReport.mockImplementation(async (runId: string) => makeWideTailPanReport(runId));
+    const leftEdgeSec = installTailLeftEdgeMarketMocks();
+
+    render(
+      <Host>
+        <WorkbenchCapture />
+        <ChartSliceCapture />
+      </Host>,
+    );
+
+    await waitFor(() => {
+      expect(workbenchRef?.marketLoadStatus).toBe("ready");
+    });
+
+    act(() => {
+      workbenchRef!.selectTrade(null);
+    });
+
+    await waitFor(() => {
+      expect(workbenchRef?.selectedTradeId).toBeNull();
+      expect(workbenchRef?.marketLoadStatus).toBe("ready");
+    });
+
+    act(() => {
+      renderViewportRef!.dispatchChartInteraction({ type: "pointerdown" });
+      renderViewportRef!.dispatchChartInteraction({
+        type: "visible_range_changed",
+        visible: { from: 0, to: 0 },
+        anchorTimeSec: leftEdgeSec,
+      });
+      renderViewportRef!.dispatchChartInteraction({ type: "pointerup" });
+    });
+
+    await waitFor(() => {
+      const prefetchMark = dbgExport().steps
+        .filter((row) => row.step === DBG.market.panPrefetchDecision)
+        .at(-1);
+      expect(prefetchMark?.last_meta?.reason).toBe("near_left_edge");
+    });
+
+    const expandedFromMs = dbgExport().steps
+      .filter((row) => row.step === DBG.market.panPrefetchDecision)
+      .at(-1)?.last_meta?.expanded_from_ms;
+
+    await waitFor(() => {
+      const fetchStart = dbgExport().steps
+        .filter((row) => row.step === DBG.load.marketFetchStart)
+        .at(-1);
+      expect(fetchStart?.last_meta?.targetFromMs).toBe(expandedFromMs);
+    });
+
+    const report = makeWideTailPanReport("run-a");
+    const view = resolveRunMarketView({
+      report,
+      chartTimeframe: "5m",
+      variant: report.variants[0]!,
+      reloadToken: 0,
+    });
+    const tradeFocusFromMs = resolveMarketTargetWindow(view, 1_100_000).fromMs;
+
+    dbgReset();
+
+    act(() => {
+      workbenchRef!.selectTrade(1);
+    });
+
+    await waitFor(() => {
+      expect(workbenchRef?.selectedTradeId).toBe(1);
+    });
+
+    await waitFor(() => {
+      const fetchStart = dbgExport().steps
+        .filter((row) => row.step === DBG.load.marketFetchStart)
+        .at(-1);
+      expect(fetchStart?.last_meta?.targetFromMs).toBe(tradeFocusFromMs);
+      expect(fetchStart?.last_meta?.targetFromMs).not.toBe(expandedFromMs);
+    });
   });
 
   it("dedupes pan prefetch decisions for identical visible-range samples", async () => {

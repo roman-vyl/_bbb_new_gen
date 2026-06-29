@@ -36,10 +36,6 @@ import {
 } from "@/api/types";
 import { COMPOSER_DEFAULT_FAMILY, createBlankConfigDraft } from "@/features/composer/composerDraft";
 import { resolveChartTimeframeMs } from "@/features/chart/chartTimeframeMs";
-import {
-  buildMarketTargetWindowKey,
-  resolveMarketTargetWindow,
-} from "@/features/chart/workbenchMarketLoad";
 import { getCandles } from "@/features/chart/marketResourceCache";
 import type { WindowCommitResult } from "@/features/chart/runtime/chartRuntime";
 import type { ChartViewModel } from "@/features/chart/runtime/chartViewModel";
@@ -109,6 +105,7 @@ import {
   type Phase63EAuxOverlayOwnerState,
 } from "@/features/workbenchChartRuntime/phase63EAuxOverlayBridge";
 import {
+  applyPhase63FPanPrefetchCoverage,
   cancelPhase63FMarketLoad,
   createPhase63FMarketLoadOwnerState,
   evaluatePhase63FPanPrefetch,
@@ -116,6 +113,7 @@ import {
   resetPhase63FMarketLoadOwner,
   resolvePhase63FMarketBundleSnapshot,
   resolvePhase63FMarketReactSync,
+  resolvePhase63FMarketTargetWindows,
   resolvePhase63FMarketView,
   runPhase63FMarketLoad,
   type Phase63FMarketLoadOwnerState,
@@ -718,28 +716,31 @@ function WorkbenchProviderInner({
     return buildRunMarketViewIdentity(intendedRunMarketView);
   }, [intendedRunMarketView]);
 
-  const marketFocusWindow = useMemo(
-    () =>
-      intendedRunMarketView === null
-        ? null
-        : resolveMarketTargetWindow(intendedRunMarketView, selectedTradeEntryTimeMs),
-    [intendedRunMarketView, selectedTradeEntryTimeMs],
-  );
-  const marketCoverageWindow = marketFocusWindow;
+  const [marketCoverageTargetTick, bumpMarketCoverageTargetTick] = useState(0);
 
-  const marketFocusWindowKey = useMemo(() => {
-    if (intendedRunMarketViewIdentity === null || marketFocusWindow === null) {
+  const marketTargetWindows = useMemo(() => {
+    if (intendedRunMarketView === null || intendedRunMarketViewIdentity === null) {
       return null;
     }
-    return buildMarketTargetWindowKey(intendedRunMarketViewIdentity, marketFocusWindow);
-  }, [intendedRunMarketViewIdentity, marketFocusWindow]);
+    return resolvePhase63FMarketTargetWindows({
+      owner: phase63FMarketLoadOwner(),
+      view: intendedRunMarketView,
+      viewIdentity: intendedRunMarketViewIdentity,
+      selectedTradeEntryTimeMs,
+    });
+  }, [
+    intendedRunMarketView,
+    intendedRunMarketViewIdentity,
+    selectedTradeEntryTimeMs,
+    marketCoverageTargetTick,
+  ]);
 
-  const marketCoverageWindowKey = useMemo(() => {
-    if (intendedRunMarketViewIdentity === null || marketCoverageWindow === null) {
-      return null;
-    }
-    return buildMarketTargetWindowKey(intendedRunMarketViewIdentity, marketCoverageWindow);
-  }, [intendedRunMarketViewIdentity, marketCoverageWindow]);
+  const marketFocusWindow = marketTargetWindows?.focusWindow ?? null;
+  const marketCoverageWindow = marketTargetWindows?.coverageWindow ?? null;
+
+  const marketFocusWindowKey = marketTargetWindows?.focusWindowKey ?? null;
+
+  const marketCoverageWindowKey = marketTargetWindows?.coverageWindowKey ?? null;
 
   useEffect(() => {
     if (report === null || reportLoadStatus !== "ready" || selectedVariant === null) {
@@ -894,8 +895,19 @@ function WorkbenchProviderInner({
       if (!decision.shouldApply || decision.expanded === null) {
         return;
       }
+      const owner = phase63FMarketLoadOwner();
+      if (!applyPhase63FPanPrefetchCoverage(owner, decision.expanded)) {
+        return;
+      }
+      bumpMarketCoverageTargetTick((tick) => tick + 1);
     },
-    [chartHeavyIoEnabled, chartTimeframeMs, intendedRunMarketView, marketCoverageWindow],
+    [
+      bumpMarketCoverageTargetTick,
+      chartHeavyIoEnabled,
+      chartTimeframeMs,
+      intendedRunMarketView,
+      marketCoverageWindow,
+    ],
   );
 
   const renderViewportInputs = useMemo<WorkbenchRenderViewportInputs>(

@@ -33,6 +33,8 @@ import type { RuntimeLoadStatus } from "./runtimeTypes";
 
 export type Phase63FMarketLoadOwnerState = {
   controller: MarketLoadRuntimeControllerState;
+  coverageTargetWindow: MarketDisplayWindowMs | null;
+  coverageResetKey: string | null;
   panPrefetchLogKey: string | null;
   panPrefetchExpansionKey: string | null;
   visiblePrefetchSample: string | null;
@@ -45,6 +47,8 @@ export type Phase63FMarketLoadOwnerState = {
 export function createPhase63FMarketLoadOwnerState(): Phase63FMarketLoadOwnerState {
   return {
     controller: createMarketLoadRuntimeController(),
+    coverageTargetWindow: null,
+    coverageResetKey: null,
     panPrefetchLogKey: null,
     panPrefetchExpansionKey: null,
     visiblePrefetchSample: null,
@@ -57,6 +61,8 @@ export function createPhase63FMarketLoadOwnerState(): Phase63FMarketLoadOwnerSta
 
 export function resetPhase63FMarketLoadOwner(owner: Phase63FMarketLoadOwnerState): void {
   owner.controller = createMarketLoadRuntimeController();
+  owner.coverageTargetWindow = null;
+  owner.coverageResetKey = null;
   owner.panPrefetchLogKey = null;
   owner.panPrefetchExpansionKey = null;
   owner.visiblePrefetchSample = null;
@@ -92,6 +98,83 @@ export function resolvePhase63FMarketView(input: {
   }
 }
 
+function buildCoverageResetKey(
+  viewIdentity: string,
+  selectedTradeEntryTimeMs: number | null,
+  focusWindow: MarketDisplayWindowMs,
+): string {
+  return `${viewIdentity}:${selectedTradeEntryTimeMs ?? "tail"}:${focusWindow.fromMs}:${focusWindow.toMs}:${focusWindow.toOpenTimeMs}`;
+}
+
+function marketDisplayWindowsEqual(
+  left: MarketDisplayWindowMs | null,
+  right: MarketDisplayWindowMs,
+): boolean {
+  if (left === null) {
+    return false;
+  }
+  return (
+    left.fromMs === right.fromMs &&
+    left.toMs === right.toMs &&
+    left.toOpenTimeMs === right.toOpenTimeMs
+  );
+}
+
+function resetPhase63FCoverageTargetForFocusChange(owner: Phase63FMarketLoadOwnerState): void {
+  owner.coverageTargetWindow = null;
+  owner.panPrefetchExpansionKey = null;
+  owner.panPrefetchLogKey = null;
+  owner.visiblePrefetchSample = null;
+  owner.controller.readyTargetKey = null;
+  owner.prevBundleFirstTimeSec = null;
+  owner.composeFallbackKey = null;
+}
+
+export function resolvePhase63FMarketTargetWindows(input: {
+  owner: Phase63FMarketLoadOwnerState;
+  view: RunMarketView;
+  viewIdentity: string;
+  selectedTradeEntryTimeMs: number | null;
+}): {
+  focusWindow: MarketDisplayWindowMs;
+  coverageWindow: MarketDisplayWindowMs;
+  focusWindowKey: string;
+  coverageWindowKey: string;
+} {
+  const focusWindow = resolveMarketTargetWindow(input.view, input.selectedTradeEntryTimeMs);
+  const resetKey = buildCoverageResetKey(
+    input.viewIdentity,
+    input.selectedTradeEntryTimeMs,
+    focusWindow,
+  );
+
+  if (input.owner.coverageResetKey !== resetKey) {
+    input.owner.coverageResetKey = resetKey;
+    resetPhase63FCoverageTargetForFocusChange(input.owner);
+  }
+
+  const coverageWindow = input.owner.coverageTargetWindow ?? focusWindow;
+
+  return {
+    focusWindow,
+    coverageWindow,
+    focusWindowKey: buildMarketTargetWindowKey(input.viewIdentity, focusWindow),
+    coverageWindowKey: buildMarketTargetWindowKey(input.viewIdentity, coverageWindow),
+  };
+}
+
+export function applyPhase63FPanPrefetchCoverage(
+  owner: Phase63FMarketLoadOwnerState,
+  expanded: MarketDisplayWindowMs,
+): boolean {
+  if (marketDisplayWindowsEqual(owner.coverageTargetWindow, expanded)) {
+    return false;
+  }
+  owner.coverageTargetWindow = expanded;
+  owner.controller.readyTargetKey = null;
+  return true;
+}
+
 export function syncPhase63FMarketFocusWindows(input: {
   view: RunMarketView;
   selectedTradeEntryTimeMs: number | null;
@@ -104,30 +187,27 @@ export function syncPhase63FMarketFocusWindows(input: {
   focusChanged: boolean;
   coverageChanged: boolean;
 } {
-  const nextFocus = resolveMarketTargetWindow(input.view, input.selectedTradeEntryTimeMs);
+  const viewIdentity = buildRunMarketViewIdentity(input.view);
+  const resolved = resolvePhase63FMarketTargetWindows({
+    owner: input.owner,
+    view: input.view,
+    viewIdentity,
+    selectedTradeEntryTimeMs: input.selectedTradeEntryTimeMs,
+  });
   const focusChanged =
     input.previousFocus === null ||
-    input.previousFocus.fromMs !== nextFocus.fromMs ||
-    input.previousFocus.toMs !== nextFocus.toMs ||
-    input.previousFocus.toOpenTimeMs !== nextFocus.toOpenTimeMs;
+    input.previousFocus.fromMs !== resolved.focusWindow.fromMs ||
+    input.previousFocus.toMs !== resolved.focusWindow.toMs ||
+    input.previousFocus.toOpenTimeMs !== resolved.focusWindow.toOpenTimeMs;
   const coverageChanged =
     input.previousCoverage === null ||
-    input.previousCoverage.fromMs !== nextFocus.fromMs ||
-    input.previousCoverage.toMs !== nextFocus.toMs ||
-    input.previousCoverage.toOpenTimeMs !== nextFocus.toOpenTimeMs;
-
-  if (focusChanged || coverageChanged) {
-    input.owner.controller.readyTargetKey = null;
-    input.owner.panPrefetchExpansionKey = null;
-    input.owner.panPrefetchLogKey = null;
-    input.owner.visiblePrefetchSample = null;
-    input.owner.prevBundleFirstTimeSec = null;
-    input.owner.composeFallbackKey = null;
-  }
+    input.previousCoverage.fromMs !== resolved.coverageWindow.fromMs ||
+    input.previousCoverage.toMs !== resolved.coverageWindow.toMs ||
+    input.previousCoverage.toOpenTimeMs !== resolved.coverageWindow.toOpenTimeMs;
 
   return {
-    focusWindow: nextFocus,
-    coverageWindow: nextFocus,
+    focusWindow: resolved.focusWindow,
+    coverageWindow: resolved.coverageWindow,
     focusChanged,
     coverageChanged,
   };
