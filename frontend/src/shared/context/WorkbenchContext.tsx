@@ -156,7 +156,6 @@ import {
   shouldPhase63DFinalizeTraceDisplay,
   type Phase63DTraceEventsOwnerState,
 } from "@/features/workbenchChartRuntime/phase63DTraceEventsBridge";
-import { derivePhase63AModelDomainFieldsFromRuntime } from "@/features/workbenchChartRuntime/runtimeOutputAdapter.contract";
 export type ReportLoadStatus = "loading" | "ready" | "error";
 export type ConfigLoadStatus = "loading" | "ready" | "empty" | "error";
 export type MarketLoadStatus = "idle" | "loading" | "ready" | "error";
@@ -1526,11 +1525,6 @@ export function WorkbenchProvider({
     ],
   );
 
-  const modelDomainFields = useMemo(
-    () => derivePhase63AModelDomainFieldsFromRuntime(phase63AModelSlice),
-    [phase63AModelSlice],
-  );
-
   const fullCandleRange = useMemo(
     () => (cachedBundle ? candleRangeMs(cachedBundle.candles) : null),
     [cachedBundle],
@@ -1788,9 +1782,9 @@ export function WorkbenchProvider({
     () => ({
       marketLoadStatus,
       marketError,
-      chartViewModel: modelDomainFields.chartViewModel,
-      htfAuxEmaOverlayStale: modelDomainFields.htfAuxEmaOverlayStale,
-      componentEventsStale: modelDomainFields.componentEventsStale,
+      chartViewModel: phase63AModelSlice.chartViewModel,
+      htfAuxEmaOverlayStale: phase63AModelSlice.chartViewModel.htfOverlayStale,
+      componentEventsStale: phase63AModelSlice.chartViewModel.componentEventsStale,
       renderWindowShiftSeq,
       chartShowEntryBlockMarkers,
       setChartShowEntryBlockMarkers,
@@ -1831,7 +1825,7 @@ export function WorkbenchProvider({
       timeframeMismatch,
       marketLoadStatus,
       marketError,
-      modelDomainFields,
+      phase63AModelSlice,
       renderWindowShiftSeq,
       chartShowEntryBlockMarkers,
       chartShowExitSignalMarkers,
