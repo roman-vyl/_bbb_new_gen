@@ -377,7 +377,6 @@ export function WorkbenchProvider({
   const phase63DTraceOwner = (): Phase63DTraceEventsOwnerState => phase63DTraceOwnerRef.current!;
   const traceDisplayCache = () => phase63DTraceOwner().traceDisplayController.cache;
   const [displayCacheVersion, setDisplayCacheVersion] = useState(0);
-  const [traceSchedulingTick] = useState(0);
   const [displayApplyRevision, setDisplayApplyRevision] = useState(0);
   const [renderWindowShiftSeq, setRenderWindowShiftSeq] = useState(0);
   const [chartDisplayComponentEvents, setChartDisplayComponentEvents] = useState<ComponentEvent[]>([]);
@@ -1705,7 +1704,6 @@ export function WorkbenchProvider({
     finalizeTraceDisplayUpdate,
     chartHeavyIoEnabled,
     chartTimeframe,
-    traceSchedulingTick,
     chartView.candles,
     renderWindowBounds,
   ]);
