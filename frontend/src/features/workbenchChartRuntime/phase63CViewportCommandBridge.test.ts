@@ -114,23 +114,31 @@ describe("Phase 6.3C viewport command cutover", () => {
     expect(bridgeSource).not.toContain("clearMarketResourceCache");
   });
 
-  it("wires WorkbenchContext to v2 viewport bridge without full runtime hook", () => {
+  it("wires render viewport integration layer to v2 viewport bridge without full runtime hook", () => {
+    const renderViewportSource = readWorkspaceSource(
+      "src/shared/context/WorkbenchRenderViewportContext.tsx",
+    );
+    expect(renderViewportSource).toContain("phase63CViewportCommandBridge");
+    expect(renderViewportSource).toContain("runPhase63CSelectTradeFocusCommand");
+    expect(renderViewportSource).toContain("runPhase63CDispatchViewportInteraction");
+    expect(renderViewportSource).not.toContain("useWorkbenchChartRuntime");
+    expect(findForbiddenAdapterFallbackPatterns(renderViewportSource)).toEqual([]);
+
     const workbenchSource = readWorkspaceSource("src/shared/context/WorkbenchContext.tsx");
-    expect(workbenchSource).toContain("phase63CViewportCommandBridge");
-    expect(workbenchSource).toContain("runPhase63CSelectTradeFocusCommand");
-    expect(workbenchSource).toContain("runPhase63CDispatchViewportInteraction");
+    expect(workbenchSource).not.toContain("phase63CViewportCommandBridge");
     expect(workbenchSource).not.toContain("useWorkbenchChartRuntime");
     expect(workbenchSource).not.toContain("chartRuntimeRef");
     expect(findForbiddenAdapterFallbackPatterns(workbenchSource)).toEqual([]);
   });
 
-  it("keeps ChartPanel off runtime v2 internals", () => {
+  it("keeps ChartPanel on workbench integration hooks without runtime internals", () => {
     const chartPanelSource = readWorkspaceSource("src/features/chart/ChartPanel.tsx");
     const violations = collectForbiddenImportViolations(chartPanelSource, [
       /from\s+["']@\/features\/workbenchChartRuntime/,
       /useWorkbenchChartRuntime/,
     ]);
     expect(violations).toEqual([]);
+    expect(chartPanelSource).toContain("useWorkbenchRenderViewport");
   });
 
   it("documents viewport debug step ids", () => {

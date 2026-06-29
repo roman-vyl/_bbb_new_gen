@@ -10,12 +10,10 @@ import {
 
 const PRE_CUTOVER_ALLOWED_WORKBENCH_RUNTIME_IMPORTS = [
   /from\s+["']@\/features\/workbenchChartRuntime\/chartRuntimeCutoverTelemetry["']/,
-  /from\s+["']@\/features\/workbenchChartRuntime\/phase63BRenderWindowBridge["']/,
-  /from\s+["']@\/features\/workbenchChartRuntime\/phase63CViewportCommandBridge["']/,
   /from\s+["']@\/features\/workbenchChartRuntime\/phase63DTraceEventsBridge["']/,
   /from\s+["']@\/features\/workbenchChartRuntime\/phase63EAuxOverlayBridge["']/,
   /from\s+["']@\/features\/workbenchChartRuntime\/phase63FMarketLoadBridge["']/,
-  /from\s+["']@\/features\/workbenchChartRuntime\/runtimeOutputAdapter\.contract["']/,
+  /from\s+["']@\/shared\/context\/WorkbenchRenderViewportContext["']/,
 ];
 
 const PRE_CUTOVER_FORBIDDEN_WORKBENCH_IMPORTS = [
@@ -111,16 +109,23 @@ describe("Phase 6.1 single-owner contract guards", () => {
     expect(violations).toEqual([]);
   });
 
-  it("documents that old chart runtime owners remain in WorkbenchContext until Phase 7 deletion", () => {
+  it("documents remaining WorkbenchContext orchestration owners after render-window extraction", () => {
     const workbenchSource = readWorkspaceSource("src/shared/context/WorkbenchContext.tsx");
     expect(workbenchSource).toContain("runPhase63DTraceLoadCycle");
-    expect(workbenchSource).toContain("v2ChartRuntime");
     expect(workbenchSource).toContain("runPhase63FMarketLoad");
     expect(workbenchSource).toContain("phase63FMarketLoadOwner");
     expect(workbenchSource).not.toContain("executeMarketWindowLoad");
-    expect(workbenchSource).toContain("dispatchChartInteraction");
     expect(workbenchSource).toContain("phase63DTraceOwner");
     expect(workbenchSource).toContain("phase63EAuxOverlayOwner");
+    expect(workbenchSource).toContain("useWorkbenchRenderViewport");
+    expect(workbenchSource).not.toContain("phase63BRenderWindowOwnerRef");
+    expect(workbenchSource).not.toContain("runPhase63CSelectTradeFocusCommand");
+
+    const renderViewportSource = readWorkspaceSource(
+      "src/shared/context/WorkbenchRenderViewportContext.tsx",
+    );
+    expect(renderViewportSource).toContain("runPhase63BRenderWindowInit");
+    expect(renderViewportSource).toContain("runPhase63CSelectTradeFocusCommand");
   });
 });
 

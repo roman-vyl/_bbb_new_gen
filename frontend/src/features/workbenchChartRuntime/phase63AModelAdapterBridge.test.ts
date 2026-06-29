@@ -115,7 +115,8 @@ describe("Phase 6.3A model + adapter cutover", () => {
     expect(findForbiddenAdapterFallbackPatterns(bridgeSource)).toEqual([]);
     expect(workbenchSource).not.toContain("buildChartViewModel");
     expect(workbenchSource).toContain("resolvePhase63EModelRuntimeSlice");
-    expect(workbenchSource).toContain("derivePhase63AModelDomainFieldsFromRuntime");
+    expect(workbenchSource).toContain("phase63AModelSlice.chartViewModel");
+    expect(workbenchSource).not.toContain("derivePhase63AModelDomainFieldsFromRuntime");
     expect(workbenchSource).not.toContain("useWorkbenchChartRuntime");
   });
 

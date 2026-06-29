@@ -22,6 +22,7 @@ import {
   useWorkbench,
   useWorkbenchChart,
 } from "@/shared/context/WorkbenchContext";
+import { useWorkbenchRenderViewport } from "@/shared/context/WorkbenchRenderViewportContext";
 
 const fetchRunReport = vi.fn<typeof import("@/api/client").fetchRunReport>();
 const fetchRunSummaries = vi.fn<typeof import("@/api/client").fetchRunSummaries>();
@@ -302,6 +303,7 @@ function makeHtfReport(runId: string): RunReport {
 
 let workbenchRef: ReturnType<typeof useWorkbench> | null = null;
 let chartSliceRef: ReturnType<typeof useWorkbenchChart> | null = null;
+let renderViewportRef: ReturnType<typeof useWorkbenchRenderViewport> | null = null;
 
 function WorkbenchCapture() {
   workbenchRef = useWorkbench();
@@ -316,6 +318,7 @@ function WorkbenchCapture() {
 
 function ChartSliceCapture() {
   chartSliceRef = useWorkbenchChart();
+  renderViewportRef = useWorkbenchRenderViewport();
   return null;
 }
 
@@ -334,11 +337,13 @@ describe("Workbench report-load invariant", () => {
     cleanup();
     workbenchRef = null;
     chartSliceRef = null;
+    renderViewportRef = null;
   });
 
   beforeEach(() => {
     workbenchRef = null;
     chartSliceRef = null;
+    renderViewportRef = null;
     vi.clearAllMocks();
     clearMarketResourceCache();
     fetchRunSummaries.mockResolvedValue(RUNS);
@@ -468,11 +473,13 @@ describe("Workbench missing-range trace scheduling", () => {
     cleanup();
     workbenchRef = null;
     chartSliceRef = null;
+    renderViewportRef = null;
   });
 
   beforeEach(() => {
     workbenchRef = null;
     chartSliceRef = null;
+    renderViewportRef = null;
     vi.clearAllMocks();
     clearMarketResourceCache();
     fetchRunSummaries.mockResolvedValue(RUNS);
@@ -741,12 +748,14 @@ describe("Workbench market pan prefetch", () => {
     cleanup();
     workbenchRef = null;
     chartSliceRef = null;
+    renderViewportRef = null;
     vi.unstubAllEnvs();
   });
 
   beforeEach(() => {
     workbenchRef = null;
     chartSliceRef = null;
+    renderViewportRef = null;
     vi.clearAllMocks();
     clearMarketResourceCache();
     dbgReset();
@@ -779,13 +788,13 @@ describe("Workbench market pan prefetch", () => {
     const callsBefore = fetchCandlesWindow.mock.calls.length;
 
     act(() => {
-      chartSliceRef!.dispatchChartInteraction({ type: "programmatic_viewport_start" });
-      chartSliceRef!.dispatchChartInteraction({
+      renderViewportRef!.dispatchChartInteraction({ type: "programmatic_viewport_start" });
+      renderViewportRef!.dispatchChartInteraction({
         type: "visible_range_changed",
         visible: { from: 0, to: 10 },
         anchorTimeSec: 1000,
       });
-      chartSliceRef!.dispatchChartInteraction({ type: "programmatic_viewport_end" });
+      renderViewportRef!.dispatchChartInteraction({ type: "programmatic_viewport_end" });
     });
 
     const prefetchMarks = dbgExport().steps.filter(
@@ -806,17 +815,17 @@ describe("Workbench market pan prefetch", () => {
     await waitFor(() => {
       expect(workbenchRef?.marketLoadStatus).toBe("ready");
     });
-    const viewportSeqBefore = workbenchRef!.chartViewportCommandSeq;
+    const viewportSeqBefore = renderViewportRef!.chartViewportCommandSeq;
     const tradeIdBefore = workbenchRef!.selectedTradeId;
 
     act(() => {
-      chartSliceRef!.dispatchChartInteraction({ type: "pointerdown" });
-      chartSliceRef!.dispatchChartInteraction({
+      renderViewportRef!.dispatchChartInteraction({ type: "pointerdown" });
+      renderViewportRef!.dispatchChartInteraction({
         type: "visible_range_changed",
         visible: { from: 0, to: 10 },
         anchorTimeSec: 1000,
       });
-      chartSliceRef!.dispatchChartInteraction({ type: "pointerup" });
+      renderViewportRef!.dispatchChartInteraction({ type: "pointerup" });
     });
 
     const prefetchMark = dbgExport().steps
@@ -824,7 +833,7 @@ describe("Workbench market pan prefetch", () => {
       .at(-1);
     expect(prefetchMark?.last_meta?.reason).not.toBe("not_user_pan");
     expect(workbenchRef!.selectedTradeId).toBe(tradeIdBefore);
-    expect(workbenchRef!.chartViewportCommandSeq).toBe(viewportSeqBefore);
+    expect(renderViewportRef!.chartViewportCommandSeq).toBe(viewportSeqBefore);
   });
 
   it("dedupes pan prefetch decisions for identical visible-range samples", async () => {
@@ -840,15 +849,15 @@ describe("Workbench market pan prefetch", () => {
     });
 
     act(() => {
-      chartSliceRef!.dispatchChartInteraction({ type: "pointerdown" });
+      renderViewportRef!.dispatchChartInteraction({ type: "pointerdown" });
       for (let i = 0; i < 5; i += 1) {
-        chartSliceRef!.dispatchChartInteraction({
+        renderViewportRef!.dispatchChartInteraction({
           type: "visible_range_changed",
           visible: { from: 0, to: 10 },
           anchorTimeSec: 1000,
         });
       }
-      chartSliceRef!.dispatchChartInteraction({ type: "pointerup" });
+      renderViewportRef!.dispatchChartInteraction({ type: "pointerup" });
     });
 
     const prefetchMarks = dbgExport().steps.filter(

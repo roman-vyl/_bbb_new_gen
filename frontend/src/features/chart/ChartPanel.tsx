@@ -73,6 +73,7 @@ import { CHART_RENDER_WINDOW_SIZE } from "@/features/chart/chartDataWindowManage
 import { findTradeById, tradeDisplayNumber } from "@/features/chart/tradeLookup";
 
 import { useWorkbenchChart } from "@/shared/context/WorkbenchContext";
+import { useWorkbenchRenderViewport } from "@/shared/context/WorkbenchRenderViewportContext";
 
 
 
@@ -187,21 +188,17 @@ export function ChartPanel() {
 
     selectBar,
 
-    dispatchChartInteraction,
-
-    chartViewportCommand,
-
-    chartViewportCommandSeq,
-
-    acknowledgeChartViewportCommand,
-
-    isWindowSwapTransactionCancelled,
-
-    settleWindowSwapCommit,
-
-    renderWindowShiftSeq,
-
   } = useWorkbenchChart();
+
+  const {
+    dispatchChartInteraction,
+    chartViewportCommand,
+    chartViewportCommandSeq,
+    acknowledgeChartViewportCommand,
+    isWindowSwapTransactionCancelled,
+    settleWindowSwapCommit,
+    windowShiftSeq,
+  } = useWorkbenchRenderViewport();
 
   const dispatchChartInteractionRef = useRef(dispatchChartInteraction);
   dispatchChartInteractionRef.current = dispatchChartInteraction;
@@ -689,11 +686,11 @@ export function ChartPanel() {
 
     if (
       command.type === "restoreAfterWindowSwap" &&
-      command.shiftSeq !== renderWindowShiftSeq
+      command.shiftSeq !== windowShiftSeq
     ) {
       dbgMark(DBG.chart.viewportRestoreAfterShiftSkippedStale, {
         expected: command.shiftSeq,
-        current: renderWindowShiftSeq,
+        current: windowShiftSeq,
       });
       acknowledgeChartViewportCommand();
       return;
@@ -733,7 +730,7 @@ export function ChartPanel() {
     chartViewportCommand,
     chartViewportCommandSeq,
     chartCandles,
-    renderWindowShiftSeq,
+    windowShiftSeq,
     acknowledgeChartViewportCommand,
     isWindowSwapTransactionCancelled,
     settleWindowSwapCommit,
@@ -791,7 +788,7 @@ export function ChartPanel() {
     selectedVariant,
     selectedTradeId,
     chartDisplayComponentEvents,
-    renderWindowShiftSeq,
+    windowShiftSeq,
     chartViewportCommandSeq,
     chartShowEntryBlockMarkers,
     chartShowExitSignalMarkers,

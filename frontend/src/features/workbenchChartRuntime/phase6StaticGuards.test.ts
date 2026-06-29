@@ -21,15 +21,19 @@ const RUNTIME_FORBIDDEN_DIRECT_CACHE_MUTATION_PATTERNS = [
 ];
 
 const WORKBENCH_CHART_RUNTIME_OWNER_SYMBOLS = [
-  "dispatchChartInteraction",
   "phase63DTraceOwner",
   "phase63EAuxOverlayOwner",
   "phase63FMarketLoadOwner",
-  "emitChartViewportCommand",
+];
+
+const RENDER_VIEWPORT_RUNTIME_OWNER_SYMBOLS = [
+  "dispatchChartInteraction",
+  "runPhase63BRenderWindowInit",
+  "runPhase63CSelectTradeFocusCommand",
 ];
 
 describe("Phase 6.1 static import and ownership guards", () => {
-  it("keeps ChartPanel on WorkbenchContext chart API without runtime internals", () => {
+  it("keeps ChartPanel on workbench integration hooks without runtime internals", () => {
     const chartPanelSource = readWorkspaceSource("src/features/chart/ChartPanel.tsx");
     const violations = collectForbiddenImportViolations(chartPanelSource, [
       /from\s+["']@\/features\/workbenchChartRuntime/,
@@ -38,6 +42,7 @@ describe("Phase 6.1 static import and ownership guards", () => {
     expect(violations).toEqual([]);
     expect(chartPanelSource).toContain('from "@/shared/context/WorkbenchContext"');
     expect(chartPanelSource).toContain("useWorkbenchChart");
+    expect(chartPanelSource).toContain("useWorkbenchRenderViewport");
   });
 
   it("forbids React DOM and Lightweight Charts imports in runtime v2 production modules", () => {
@@ -61,12 +66,21 @@ describe("Phase 6.1 static import and ownership guards", () => {
     expect(violations).toEqual([]);
   });
 
-  it("keeps old WorkbenchContext chart-runtime owners present before Phase 7 deletion", () => {
+  it("keeps trace/market owners in WorkbenchContext and render-window/viewport in integration layer", () => {
     const workbenchSource = readWorkspaceSource("src/shared/context/WorkbenchContext.tsx");
     for (const symbol of WORKBENCH_CHART_RUNTIME_OWNER_SYMBOLS) {
       expect(workbenchSource).toContain(symbol);
     }
     expect(workbenchSource).not.toContain("useWorkbenchChartRuntime");
+    expect(workbenchSource).not.toContain("phase63BRenderWindowBridge");
+    expect(workbenchSource).not.toContain("phase63CViewportCommandBridge");
+
+    const renderViewportSource = readWorkspaceSource(
+      "src/shared/context/WorkbenchRenderViewportContext.tsx",
+    );
+    for (const symbol of RENDER_VIEWPORT_RUNTIME_OWNER_SYMBOLS) {
+      expect(renderViewportSource).toContain(symbol);
+    }
   });
 
   it("does not wire runtime v2 hook into production WorkbenchContext exports", () => {
@@ -83,12 +97,6 @@ describe("Phase 6.1 static import and ownership guards", () => {
     );
     expect(workbenchSource).toContain("resolvePhase63EModelRuntimeSlice");
     expect(workbenchSource).toContain(
-      'from "@/features/workbenchChartRuntime/phase63BRenderWindowBridge"',
-    );
-    expect(workbenchSource).toContain(
-      'from "@/features/workbenchChartRuntime/phase63CViewportCommandBridge"',
-    );
-    expect(workbenchSource).toContain(
       'from "@/features/workbenchChartRuntime/phase63DTraceEventsBridge"',
     );
     expect(workbenchSource).toContain(
@@ -96,6 +104,15 @@ describe("Phase 6.1 static import and ownership guards", () => {
     );
     expect(workbenchSource).toContain(
       'from "@/features/workbenchChartRuntime/phase63FMarketLoadBridge"',
+    );
+    expect(workbenchSource).toContain(
+      'from "@/shared/context/WorkbenchRenderViewportContext"',
+    );
+    expect(workbenchSource).not.toContain(
+      'from "@/features/workbenchChartRuntime/phase63BRenderWindowBridge"',
+    );
+    expect(workbenchSource).not.toContain(
+      'from "@/features/workbenchChartRuntime/phase63CViewportCommandBridge"',
     );
     expect(workbenchSource).not.toContain("buildChartViewModel");
     expect(workbenchSource).not.toContain("useWorkbenchChartRuntime");

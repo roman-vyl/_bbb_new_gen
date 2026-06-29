@@ -112,30 +112,36 @@ describe("Phase 6.3B render-window cutover", () => {
     expect(runPhase63BRenderWindowInit(state, input)).toBe(false);
   });
 
-  it("wires WorkbenchContext to v2 render-window bridge without full runtime hook", () => {
+  it("wires render viewport integration layer to v2 render-window bridge without full runtime hook", () => {
+    const renderViewportSource = readWorkspaceSource(
+      "src/shared/context/WorkbenchRenderViewportContext.tsx",
+    );
+    expect(renderViewportSource).toContain("phase63BRenderWindowBridge");
+    expect(renderViewportSource).toContain("resolvePhase63BChartWindowSlice");
+    expect(renderViewportSource).toContain("buildChartViewWindowFromPhase63BSlice");
+    expect(renderViewportSource).not.toContain("useWorkbenchChartRuntime");
+    expect(findForbiddenAdapterFallbackPatterns(renderViewportSource)).toEqual([]);
+
     const workbenchSource = readWorkspaceSource("src/shared/context/WorkbenchContext.tsx");
-    expect(workbenchSource).toContain("phase63BRenderWindowBridge");
-    expect(workbenchSource).toContain("resolvePhase63BChartWindowSlice");
-    expect(workbenchSource).toContain("buildChartViewWindowFromPhase63BSlice");
     expect(workbenchSource).toContain("resolvePhase63EModelRuntimeSlice");
+    expect(workbenchSource).not.toContain("phase63BRenderWindowBridge");
     expect(workbenchSource).not.toContain("useWorkbenchChartRuntime");
     expect(workbenchSource).not.toContain("buildChartViewModel");
     expect(findForbiddenAdapterFallbackPatterns(workbenchSource)).toEqual([]);
   });
 
-  it("keeps ChartPanel off runtime v2 internals", () => {
+  it("keeps ChartPanel on workbench integration hooks without runtime internals", () => {
     const chartPanelSource = readWorkspaceSource("src/features/chart/ChartPanel.tsx");
     const violations = collectForbiddenImportViolations(chartPanelSource, [
       /from\s+["']@\/features\/workbenchChartRuntime/,
       /useWorkbenchChartRuntime/,
     ]);
     expect(violations).toEqual([]);
+    expect(chartPanelSource).toContain("useWorkbenchRenderViewport");
   });
 
   it("documents that model consumes v2 render-window sliced chartView", () => {
     const workbenchSource = readWorkspaceSource("src/shared/context/WorkbenchContext.tsx");
-    expect(workbenchSource).toMatch(
-      /buildChartViewWindowFromPhase63BSlice[\s\S]*resolvePhase63EModelRuntimeSlice/,
-    );
+    expect(workbenchSource).toMatch(/rv\.chartView[\s\S]*resolvePhase63EModelRuntimeSlice/);
   });
 });

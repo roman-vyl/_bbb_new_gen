@@ -1,0 +1,529 @@
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MutableRefObject,
+  type ReactNode,
+} from "react";
+
+import type { ChartAuxEmaOverlay, ChartBar, ChartMarketBundle } from "@/api/types";
+import { getCandles } from "@/features/chart/marketResourceCache";
+import {
+  buildChartViewWindowFromPhase63BSlice,
+  createPhase63BRenderWindowOwnerState,
+  resolvePhase63BChartWindowSlice,
+  runPhase63BApplyTrade,
+  runPhase63BOffsetPrepend,
+  runPhase63BRenderWindowInit,
+  type Phase63BRenderWindowOwnerState,
+} from "@/features/workbenchChartRuntime/phase63BRenderWindowBridge";
+import {
+  createPhase63CViewportOwnerState,
+  runPhase63CAcknowledgeViewportCommand,
+  runPhase63CCancelViewportOnPointerDown,
+  runPhase63CDispatchViewportInteraction,
+  runPhase63CIsWindowSwapTransactionCancelled,
+  runPhase63COnTraceReady,
+  runPhase63COnWindowSwapCommitted,
+  runPhase63CSelectTradeFocusCommand,
+  runPhase63CSettleWindowSwapCommit,
+  runPhase63CSetViewportPlan,
+  type Phase63CViewportOwnerState,
+} from "@/features/workbenchChartRuntime/phase63CViewportCommandBridge";
+import { applyRenderWindowShiftCommit } from "@/features/workbenchChartRuntime/renderWindowRuntime";
+import type { ChartWindowRuntimeBoundary } from "@/features/workbenchChartRuntime/chartWindowRuntime";
+import type { RuntimeLoadStatus } from "@/features/workbenchChartRuntime/runtimeTypes";
+import { candleTimeBounds } from "@/features/chart/chartRenderWindowDisplay";
+import type { ChartViewWindow } from "@/features/chart/chartViewWindow";
+import type { RunMarketView } from "@/features/chart/runMarketView";
+import type { MarketDisplayWindowMs } from "@/features/chart/workbenchMarketLoad";
+import type { WindowCommitResult } from "@/features/chart/runtime/types";
+import type { ChartInteractionEvent, ViewportCommand } from "@/features/chart/runtime/types";
+import {
+  dbgMark,
+  dbgScheduleShiftFlush,
+  PIPELINE_DEBUG_STEPS as DBG,
+} from "@/shared/diagnostics/pipelineDebug";
+import { dbgMarkCutover } from "@/features/workbenchChartRuntime/chartRuntimeCutoverTelemetry";
+
+export type WorkbenchRenderViewportInputs = {
+  cachedBundle: ChartMarketBundle | undefined;
+  cachedBundleCandlesRef: MutableRefObject<ChartBar[]>;
+  marketLoadStatus: RuntimeLoadStatus;
+  marketCandlesRevision: number;
+  renderWindowFoundationKey: string | null;
+  intendedRunMarketView: RunMarketView | null;
+  marketFocusWindow: MarketDisplayWindowMs | null;
+  marketCoverageWindow: MarketDisplayWindowMs | null;
+  selectedRunId: string | null;
+  selectedVariantKey: string;
+  selectedTradeEntryTimeMs: number | null;
+  chartHeavyIoEnabled: boolean;
+  auxEmaOverlays: readonly ChartAuxEmaOverlay[];
+  auxOverlayRevision: number;
+  marketOverlayRevision: number;
+  intendedRunMarketViewIdentity: string | null;
+  runMarketViewIdentity: string | null;
+  getPrevBundleFirstTimeSec: () => number | null;
+  setPrevBundleFirstTimeSec: (value: number | null) => void;
+};
+
+export type WorkbenchRenderViewportCallbacks = {
+  onWindowCommit: (commit: WindowCommitResult, slice: ChartBar[]) => void;
+  onPanPrefetch: (
+    visibleFromSec: number,
+    visibleToSec: number,
+    isUserPan: boolean,
+    visibleSample?: string,
+  ) => void;
+  shouldPanPrefetchForSample: (sampleKey: string) => boolean;
+};
+
+export type WorkbenchRenderViewportState = {
+  chartView: ChartViewWindow;
+  chartWindowSlice: ChartWindowRuntimeBoundary;
+  renderWindowBounds: { fromSec: number; toSec: number } | null;
+  windowSnapshotRevision: number;
+  windowShiftSeq: number;
+  chartViewportCommand: ViewportCommand | null;
+  chartViewportCommandSeq: number;
+  acknowledgeChartViewportCommand: () => void;
+  isWindowSwapTransactionCancelled: (swapTransactionId: number) => boolean;
+  settleWindowSwapCommit: (shiftSeq: number, swapTransactionId: number) => void;
+  dispatchChartInteraction: (event: ChartInteractionEvent) => void;
+  emitTradeFocusCommand: (entryTimeSec: number) => void;
+  emitViewportCommand: (command: ViewportCommand) => void;
+  onTraceReadyViewport: () => ViewportCommand | null;
+  getInteractionState: () => ReturnType<
+    Phase63BRenderWindowOwnerState["controller"]["chartRuntime"]["renderWindow"]["getInteractionState"]
+  >;
+  hasPendingShift: () => boolean;
+};
+
+const WorkbenchRenderViewportContext = createContext<WorkbenchRenderViewportState | null>(null);
+
+const EMPTY_CHART_VIEW: ChartViewWindow = {
+  mode: "empty",
+  candles: [],
+  emaOverlays: [],
+  auxEmaOverlays: [],
+  centerTimeSec: null,
+  firstTimeSec: null,
+  lastTimeSec: null,
+  count: 0,
+};
+
+export function WorkbenchRenderViewportProvider({
+  children,
+  inputs,
+  callbacks,
+}: {
+  children: ReactNode;
+  inputs: WorkbenchRenderViewportInputs;
+  callbacks: WorkbenchRenderViewportCallbacks;
+}) {
+  const applyWindowCommitRef = useRef<(commit: WindowCommitResult) => void>(() => {});
+  const phase63BRenderWindowOwnerRef = useRef<Phase63BRenderWindowOwnerState | null>(null);
+  if (phase63BRenderWindowOwnerRef.current === null) {
+    phase63BRenderWindowOwnerRef.current = createPhase63BRenderWindowOwnerState((commit) =>
+      applyWindowCommitRef.current(commit),
+    );
+  }
+  const phase63CViewportOwnerRef = useRef<Phase63CViewportOwnerState | null>(null);
+  if (phase63CViewportOwnerRef.current === null) {
+    phase63CViewportOwnerRef.current = createPhase63CViewportOwnerState(
+      phase63BRenderWindowOwnerRef.current!,
+    );
+  }
+  const phase63BRenderWindowOwner = (): Phase63BRenderWindowOwnerState =>
+    phase63BRenderWindowOwnerRef.current!;
+  const phase63CViewportOwner = (): Phase63CViewportOwnerState => phase63CViewportOwnerRef.current!;
+  const v2ChartRuntime = () => phase63BRenderWindowOwner().controller.chartRuntime;
+  const v2RenderWindow = () => v2ChartRuntime().renderWindow;
+
+  const [renderWindowSnapshotVersion, setRenderWindowSnapshotVersion] = useState(0);
+  const [chartViewportCommand, setChartViewportCommand] = useState<ViewportCommand | null>(null);
+  const [chartViewportCommandSeq, setChartViewportCommandSeq] = useState(0);
+  const chartViewCandlesRef = useRef<ChartBar[]>([]);
+
+  const bumpRenderWindowSnapshot = useCallback(() => {
+    setRenderWindowSnapshotVersion((version) => version + 1);
+  }, []);
+
+  const {
+    cachedBundle,
+    cachedBundleCandlesRef,
+    marketLoadStatus,
+    marketCandlesRevision,
+    renderWindowFoundationKey,
+    intendedRunMarketView,
+    marketFocusWindow,
+    selectedVariantKey,
+    selectedTradeEntryTimeMs,
+    auxEmaOverlays,
+    auxOverlayRevision,
+    marketOverlayRevision,
+    intendedRunMarketViewIdentity,
+    runMarketViewIdentity,
+    getPrevBundleFirstTimeSec,
+    setPrevBundleFirstTimeSec,
+  } = inputs;
+
+  const { onWindowCommit, onPanPrefetch, shouldPanPrefetchForSample } = callbacks;
+
+  useEffect(() => {
+    if (
+      intendedRunMarketView === null ||
+      cachedBundle === undefined ||
+      cachedBundle.candles.length === 0
+    ) {
+      return;
+    }
+    const firstTimeSec = cachedBundle.candles[0]!.time;
+    const prevFirstTimeSec = getPrevBundleFirstTimeSec();
+    if (prevFirstTimeSec !== null && firstTimeSec < prevFirstTimeSec) {
+      const changed = runPhase63BOffsetPrepend(phase63BRenderWindowOwner(), {
+        bundleCandles: cachedBundle.candles,
+        previousFirstTimeSec: prevFirstTimeSec,
+      });
+      if (changed) {
+        bumpRenderWindowSnapshot();
+      }
+    }
+    setPrevBundleFirstTimeSec(firstTimeSec);
+  }, [
+    marketCandlesRevision,
+    cachedBundle,
+    intendedRunMarketView,
+    bumpRenderWindowSnapshot,
+    getPrevBundleFirstTimeSec,
+    setPrevBundleFirstTimeSec,
+  ]);
+
+  const emitChartViewportCommand = useCallback((command: ViewportCommand) => {
+    setChartViewportCommand(command);
+    setChartViewportCommandSeq(phase63CViewportOwner().viewportState.commandSeq);
+  }, []);
+
+  const acknowledgeChartViewportCommand = useCallback(() => {
+    runPhase63CAcknowledgeViewportCommand(phase63CViewportOwner());
+    setChartViewportCommand(null);
+  }, []);
+
+  const applyRenderWindowForTrade = useCallback(
+    (entryTimeMs: number | null, forceRebuild: boolean) => {
+      const bundleCandles = cachedBundleCandlesRef.current;
+      if (bundleCandles.length === 0) {
+        return false;
+      }
+      const changed = runPhase63BApplyTrade(phase63BRenderWindowOwner(), {
+        bundleCandles,
+        selectedTradeEntryTimeMs: entryTimeMs,
+        forceRebuild,
+      });
+      if (changed) {
+        bumpRenderWindowSnapshot();
+      }
+      return changed;
+    },
+    [bumpRenderWindowSnapshot, cachedBundleCandlesRef],
+  );
+
+  useEffect(() => {
+    if (marketLoadStatus === "error" || renderWindowFoundationKey === null) {
+      if (marketLoadStatus === "error") {
+        v2ChartRuntime().reset();
+        bumpRenderWindowSnapshot();
+      }
+      runPhase63BRenderWindowInit(phase63BRenderWindowOwner(), {
+        foundationKey: renderWindowFoundationKey,
+        marketLoadStatus,
+        bundleCandles: cachedBundleCandlesRef.current,
+        selectedTradeEntryTimeMs: null,
+        variantKey: selectedVariantKey,
+      });
+      return;
+    }
+    if (intendedRunMarketView === null || marketFocusWindow === null) {
+      return;
+    }
+    const bundleCandles =
+      getCandles(
+        intendedRunMarketView.candlesKey,
+        marketFocusWindow.fromMs,
+        marketFocusWindow.toMs,
+      ) ?? cachedBundleCandlesRef.current;
+    if (bundleCandles.length === 0) {
+      return;
+    }
+    cachedBundleCandlesRef.current = bundleCandles;
+    const initialized = runPhase63BRenderWindowInit(phase63BRenderWindowOwner(), {
+      foundationKey: renderWindowFoundationKey,
+      marketLoadStatus,
+      bundleCandles,
+      selectedTradeEntryTimeMs,
+      variantKey: selectedVariantKey,
+    });
+    if (initialized) {
+      bumpRenderWindowSnapshot();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- trade changes handled by dedicated effect
+  }, [
+    renderWindowFoundationKey,
+    marketLoadStatus,
+    inputs.selectedRunId,
+    selectedVariantKey,
+    runMarketViewIdentity,
+    bumpRenderWindowSnapshot,
+    intendedRunMarketView,
+    marketFocusWindow,
+    cachedBundleCandlesRef,
+  ]);
+
+  useEffect(() => {
+    if (renderWindowFoundationKey === null || marketLoadStatus === "error") {
+      return;
+    }
+    applyRenderWindowForTrade(selectedTradeEntryTimeMs, false);
+  }, [
+    selectedTradeEntryTimeMs,
+    renderWindowFoundationKey,
+    marketLoadStatus,
+    applyRenderWindowForTrade,
+  ]);
+
+  const isWindowSwapTransactionCancelled = useCallback((swapTransactionId: number) => {
+    return runPhase63CIsWindowSwapTransactionCancelled(phase63CViewportOwner(), swapTransactionId);
+  }, []);
+
+  const settleWindowSwapCommit = useCallback((shiftSeq: number, swapTransactionId: number) => {
+    runPhase63CSettleWindowSwapCommit(
+      phase63CViewportOwner(),
+      phase63BRenderWindowOwner(),
+      shiftSeq,
+      swapTransactionId,
+    );
+    dbgMark(DBG.renderWindow.shiftSettled, { shiftSeq, swapTransactionId });
+  }, []);
+
+  const dispatchChartInteraction = useCallback(
+    (event: ChartInteractionEvent) => {
+      if (event.type === "pointerdown") {
+        runPhase63CCancelViewportOnPointerDown(phase63CViewportOwner());
+        setChartViewportCommand(null);
+      }
+      const chartRuntime = v2ChartRuntime();
+      chartRuntime.renderWindow.dispatch(event);
+      const viewportCommand = runPhase63CDispatchViewportInteraction(
+        phase63CViewportOwner(),
+        phase63BRenderWindowOwner(),
+        event,
+      );
+      if (event.type === "visible_range_changed" && event.anchorTimeSec !== null) {
+        chartRuntime.renderWindow.recordBoundaryIntent(event.visible, event.anchorTimeSec);
+        const interactionState = v2RenderWindow().getInteractionState();
+        if (
+          interactionState === "user_panning" ||
+          interactionState === "pending_shift" ||
+          interactionState === "applying_shift"
+        ) {
+          const candles = chartViewCandlesRef.current;
+          if (candles.length > 0) {
+            const fromIdx = Math.max(
+              0,
+              Math.min(candles.length - 1, Math.floor(event.visible.from)),
+            );
+            const toIdx = Math.max(0, Math.min(candles.length - 1, Math.floor(event.visible.to)));
+            const sampleKey = `${fromIdx}:${toIdx}:${candles[fromIdx]!.time}:${candles[toIdx]!.time}`;
+            if (shouldPanPrefetchForSample(sampleKey)) {
+              onPanPrefetch(candles[fromIdx]!.time, candles[toIdx]!.time, true, sampleKey);
+            }
+          }
+        }
+      }
+      if (viewportCommand !== null) {
+        emitChartViewportCommand(viewportCommand);
+      }
+    },
+    [emitChartViewportCommand, onPanPrefetch, shouldPanPrefetchForSample],
+  );
+
+  const renderWindowRevision = phase63BRenderWindowOwner().controller.revision;
+  const renderWindowShiftSeq = phase63BRenderWindowOwner().controller.shiftSeq;
+
+  const chartWindowSlice = useMemo(
+    () =>
+      resolvePhase63BChartWindowSlice(phase63BRenderWindowOwner(), {
+        bundle: cachedBundle ?? null,
+        marketLoadStatus,
+        auxEmaOverlays,
+        marketIdentity: intendedRunMarketViewIdentity ?? "",
+      }),
+    [
+      cachedBundle,
+      marketLoadStatus,
+      marketOverlayRevision,
+      marketCandlesRevision,
+      auxOverlayRevision,
+      intendedRunMarketViewIdentity,
+      runMarketViewIdentity,
+      renderWindowSnapshotVersion,
+      auxEmaOverlays,
+    ],
+  );
+
+  const chartView = useMemo(
+    (): ChartViewWindow =>
+      buildChartViewWindowFromPhase63BSlice({
+        chartWindow: chartWindowSlice,
+        selectedTradeEntryTimeMs,
+      }),
+    [chartWindowSlice, selectedTradeEntryTimeMs],
+  );
+
+  chartViewCandlesRef.current = chartView.candles.length > 0 ? chartView.candles : EMPTY_CHART_VIEW.candles;
+
+  useEffect(() => {
+    runPhase63CSetViewportPlan(
+      phase63CViewportOwner(),
+      chartView.mode,
+      chartView.centerTimeSec,
+    );
+  }, [chartView.mode, chartView.centerTimeSec]);
+
+  const applyWindowCommit = useCallback(
+    (commit: WindowCommitResult) => {
+      if (!cachedBundle || cachedBundle.candles.length === 0) {
+        return;
+      }
+      applyRenderWindowShiftCommit(phase63BRenderWindowOwner().controller, commit);
+      dbgMarkCutover(DBG.renderWindow.shiftApplied, "render_window", {
+        windowStartIndex: commit.bounds.windowStartIndex,
+        windowEndIndex: commit.bounds.windowEndIndex,
+      });
+
+      const viewportCmd = runPhase63COnWindowSwapCommitted(
+        phase63CViewportOwner(),
+        phase63BRenderWindowOwner(),
+        {
+          commit,
+          bundleCandleCount: cachedBundle.candles.length,
+        },
+      );
+      if (viewportCmd !== null) {
+        emitChartViewportCommand(viewportCmd);
+      }
+
+      const slice = cachedBundle.candles.slice(
+        commit.bounds.windowStartIndex,
+        commit.bounds.windowEndIndex,
+      );
+
+      onWindowCommit(commit, slice);
+
+      bumpRenderWindowSnapshot();
+      dbgScheduleShiftFlush();
+
+      if (slice.length > 0) {
+        onPanPrefetch(slice[0]!.time, slice[slice.length - 1]!.time, true);
+      }
+    },
+    [cachedBundle, bumpRenderWindowSnapshot, emitChartViewportCommand, onWindowCommit, onPanPrefetch],
+  );
+
+  useEffect(() => {
+    applyWindowCommitRef.current = applyWindowCommit;
+  }, [applyWindowCommit]);
+
+  const emitTradeFocusCommand = useCallback(
+    (entryTimeSec: number) => {
+      const command = runPhase63CSelectTradeFocusCommand(
+        phase63CViewportOwner(),
+        phase63BRenderWindowOwner(),
+        entryTimeSec,
+      );
+      if (command !== null) {
+        emitChartViewportCommand(command);
+      }
+    },
+    [emitChartViewportCommand],
+  );
+
+  const onTraceReadyViewport = useCallback((): ViewportCommand | null => {
+    return runPhase63COnTraceReady(phase63CViewportOwner(), phase63BRenderWindowOwner());
+  }, []);
+
+  const getInteractionState = useCallback(
+    () => v2RenderWindow().getInteractionState(),
+    // renderWindowSnapshotVersion keeps callback fresh after window shifts
+    [renderWindowSnapshotVersion],
+  );
+
+  const hasPendingShift = useCallback(
+    () => v2RenderWindow().getPendingShift() !== null,
+    [renderWindowSnapshotVersion],
+  );
+
+  const renderWindowBounds = useMemo(
+    () => candleTimeBounds(chartView.candles),
+    [chartView.candles],
+  );
+
+  const value = useMemo<WorkbenchRenderViewportState>(
+    () => ({
+      chartView,
+      chartWindowSlice,
+      renderWindowBounds,
+      windowSnapshotRevision: renderWindowRevision,
+      windowShiftSeq: renderWindowShiftSeq,
+      chartViewportCommand,
+      chartViewportCommandSeq,
+      acknowledgeChartViewportCommand,
+      isWindowSwapTransactionCancelled,
+      settleWindowSwapCommit,
+      dispatchChartInteraction,
+      emitTradeFocusCommand,
+      emitViewportCommand: emitChartViewportCommand,
+      onTraceReadyViewport,
+      getInteractionState,
+      hasPendingShift,
+    }),
+    [
+      chartView,
+      chartWindowSlice,
+      renderWindowBounds,
+      renderWindowRevision,
+      renderWindowShiftSeq,
+      chartViewportCommand,
+      chartViewportCommandSeq,
+      acknowledgeChartViewportCommand,
+      isWindowSwapTransactionCancelled,
+      settleWindowSwapCommit,
+      dispatchChartInteraction,
+      emitTradeFocusCommand,
+      emitChartViewportCommand,
+      onTraceReadyViewport,
+      getInteractionState,
+      hasPendingShift,
+      renderWindowSnapshotVersion,
+    ],
+  );
+
+  return (
+    <WorkbenchRenderViewportContext.Provider value={value}>
+      {children}
+    </WorkbenchRenderViewportContext.Provider>
+  );
+}
+
+export function useWorkbenchRenderViewport(): WorkbenchRenderViewportState {
+  const ctx = useContext(WorkbenchRenderViewportContext);
+  if (!ctx) {
+    throw new Error("useWorkbenchRenderViewport must be used within WorkbenchRenderViewportProvider");
+  }
+  return ctx;
+}

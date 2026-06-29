@@ -7,7 +7,10 @@ import {
   useMemo,
   useRef,
   useState,
+  type Dispatch,
+  type MutableRefObject,
   type ReactNode,
+  type SetStateAction,
 } from "react";
 
 import {
@@ -45,8 +48,6 @@ import {
   takeCommittedTraceFetchIntent,
 } from "@/features/chart/runtime/traceDisplayOrchestrator";
 import { flushLanesLoadDebug } from "@/features/chart/runtime/workbenchTraceNetworkLoad";
-import type { ChartInteractionEvent, ViewportCommand } from "@/features/chart/runtime/types";
-import { type ChartViewWindow } from "@/features/chart/chartViewWindow";
 import {
   defaultChartContextOverlayRef,
   strategyContextRefOptions,
@@ -54,7 +55,6 @@ import {
 import { candleRangeMs, selectedTradeEntryMarkerInView } from "@/features/chart/chartMarkers";
 import {
   buildRenderWindowBoundsKey,
-  candleTimeBounds,
 } from "@/features/chart/chartRenderWindowDisplay";
 import {
   buildSessionCacheIdentity,
@@ -89,7 +89,6 @@ import {
 import { evaluateSignalTraceBootstrap } from "@/shared/context/signalTraceBootstrap";
 import {
   dbgMark,
-  dbgScheduleShiftFlush,
   PIPELINE_DEBUG_STEPS as DBG,
 } from "@/shared/diagnostics/pipelineDebug";
 import {
@@ -122,28 +121,11 @@ import {
   type Phase63FMarketLoadOwnerState,
 } from "@/features/workbenchChartRuntime/phase63FMarketLoadBridge";
 import {
-  buildChartViewWindowFromPhase63BSlice,
-  createPhase63BRenderWindowOwnerState,
-  resolvePhase63BChartWindowSlice,
-  runPhase63BApplyTrade,
-  runPhase63BOffsetPrepend,
-  runPhase63BRenderWindowInit,
-  type Phase63BRenderWindowOwnerState,
-} from "@/features/workbenchChartRuntime/phase63BRenderWindowBridge";
-import { applyRenderWindowShiftCommit } from "@/features/workbenchChartRuntime/renderWindowRuntime";
-import {
-  createPhase63CViewportOwnerState,
-  runPhase63CAcknowledgeViewportCommand,
-  runPhase63CCancelViewportOnPointerDown,
-  runPhase63CDispatchViewportInteraction,
-  runPhase63CIsWindowSwapTransactionCancelled,
-  runPhase63COnTraceReady,
-  runPhase63COnWindowSwapCommitted,
-  runPhase63CSelectTradeFocusCommand,
-  runPhase63CSettleWindowSwapCommit,
-  runPhase63CSetViewportPlan,
-  type Phase63CViewportOwnerState,
-} from "@/features/workbenchChartRuntime/phase63CViewportCommandBridge";
+  WorkbenchRenderViewportProvider,
+  useWorkbenchRenderViewport,
+  type WorkbenchRenderViewportCallbacks,
+  type WorkbenchRenderViewportInputs,
+} from "@/shared/context/WorkbenchRenderViewportContext";
 import { resetTraceCoordinator } from "@/features/workbenchChartRuntime/traceRuntime";
 import {
   createPhase63DTraceEventsOwnerState,
@@ -182,7 +164,6 @@ type WorkbenchState = {
   chartViewModel: ChartViewModel;
   htfAuxEmaOverlayStale: boolean;
   componentEventsStale: boolean;
-  renderWindowShiftSeq: number;
   chartShowEntryBlockMarkers: boolean;
   setChartShowEntryBlockMarkers: (show: boolean) => void;
   chartShowExitSignalMarkers: boolean;
@@ -219,12 +200,6 @@ type WorkbenchState = {
   contextOverlayRefOptions: string[];
   selectedBarTimeSec: number | null;
   selectBar: (timeSec: number | null) => void;
-  dispatchChartInteraction: (event: ChartInteractionEvent) => void;
-  chartViewportCommand: ViewportCommand | null;
-  chartViewportCommandSeq: number;
-  acknowledgeChartViewportCommand: () => void;
-  isWindowSwapTransactionCancelled: (swapTransactionId: number) => boolean;
-  settleWindowSwapCommit: (shiftSeq: number, swapTransactionId: number) => void;
 };
 
 type WorkbenchShellState = Pick<
@@ -273,7 +248,6 @@ type WorkbenchChartState = Pick<
   | "chartViewModel"
   | "htfAuxEmaOverlayStale"
   | "componentEventsStale"
-  | "renderWindowShiftSeq"
   | "chartShowEntryBlockMarkers"
   | "setChartShowEntryBlockMarkers"
   | "chartShowExitSignalMarkers"
@@ -300,12 +274,6 @@ type WorkbenchChartState = Pick<
   | "contextOverlayRefOptions"
   | "selectedBarTimeSec"
   | "selectBar"
-  | "dispatchChartInteraction"
-  | "chartViewportCommand"
-  | "chartViewportCommandSeq"
-  | "acknowledgeChartViewportCommand"
-  | "isWindowSwapTransactionCancelled"
-  | "settleWindowSwapCommit"
 >;
 
 const WorkbenchShellContext = createContext<WorkbenchShellState | null>(null);
@@ -334,6 +302,18 @@ function pickDefaultRunId(runs: RunSummary[]): string | null {
 }
 
 export function WorkbenchProvider({
+  children,
+  initialActiveTab = "chart",
+}: {
+  children: ReactNode;
+  initialActiveTab?: WorkbenchTab;
+}) {
+  return (
+    <WorkbenchProviderInner initialActiveTab={initialActiveTab}>{children}</WorkbenchProviderInner>
+  );
+}
+
+function WorkbenchProviderInner({
   children,
   initialActiveTab = "chart",
 }: {
@@ -375,10 +355,8 @@ export function WorkbenchProvider({
     phase63DTraceOwnerRef.current = createPhase63DTraceEventsOwnerState();
   }
   const phase63DTraceOwner = (): Phase63DTraceEventsOwnerState => phase63DTraceOwnerRef.current!;
-  const traceDisplayCache = () => phase63DTraceOwner().traceDisplayController.cache;
   const [displayCacheVersion, setDisplayCacheVersion] = useState(0);
   const [displayApplyRevision, setDisplayApplyRevision] = useState(0);
-  const [renderWindowShiftSeq, setRenderWindowShiftSeq] = useState(0);
   const [chartDisplayComponentEvents, setChartDisplayComponentEvents] = useState<ComponentEvent[]>([]);
   const chartDisplayComponentEventsRef = useRef<ComponentEvent[]>([]);
   const [traceDisplayState, setTraceDisplayState] = useState<TraceDisplayState>(
@@ -408,28 +386,6 @@ export function WorkbenchProvider({
   const prevVariantKeyRef = useRef("");
   const prevRunIdForTradeBootstrapRef = useRef<string | null>(null);
   const selectedVariantKeyRef = useRef("");
-  const applyWindowCommitRef = useRef<(commit: WindowCommitResult) => void>(() => {});
-  const phase63BRenderWindowOwnerRef = useRef<Phase63BRenderWindowOwnerState | null>(null);
-  if (phase63BRenderWindowOwnerRef.current === null) {
-    phase63BRenderWindowOwnerRef.current = createPhase63BRenderWindowOwnerState((commit) =>
-      applyWindowCommitRef.current(commit),
-    );
-  }
-  const phase63CViewportOwnerRef = useRef<Phase63CViewportOwnerState | null>(null);
-  if (phase63CViewportOwnerRef.current === null) {
-    phase63CViewportOwnerRef.current = createPhase63CViewportOwnerState(
-      phase63BRenderWindowOwnerRef.current!,
-    );
-  }
-  const phase63BRenderWindowOwner = (): Phase63BRenderWindowOwnerState =>
-    phase63BRenderWindowOwnerRef.current!;
-  const phase63CViewportOwner = (): Phase63CViewportOwnerState => phase63CViewportOwnerRef.current!;
-  const v2ChartRuntime = () => phase63BRenderWindowOwner().controller.chartRuntime;
-  const v2RenderWindow = () => v2ChartRuntime().renderWindow;
-  const [renderWindowRevision, setRenderWindowRevision] = useState(0);
-  const [chartViewportCommand, setChartViewportCommand] = useState<ViewportCommand | null>(null);
-  const [chartViewportCommandSeq, setChartViewportCommandSeq] = useState(0);
-  const chartViewCandlesRef = useRef<ChartBar[]>([]);
 
   useEffect(() => {
     if (activeTab === "chart") {
@@ -899,151 +855,39 @@ export function WorkbenchProvider({
     }
   }, [renderWindowFoundationKey, intendedRunMarketView, marketCoverageWindow, marketCandlesRevision]);
 
-  const bumpRenderWindow = useCallback(() => {
-    setRenderWindowRevision((r) => r + 1);
-  }, []);
-
-  useEffect(() => {
-    if (
-      intendedRunMarketView === null ||
-      cachedBundle === undefined ||
-      cachedBundle.candles.length === 0
-    ) {
-      return;
-    }
-    const firstTimeSec = cachedBundle.candles[0]!.time;
-    const owner = phase63FMarketLoadOwner();
-    const prevFirstTimeSec = owner.prevBundleFirstTimeSec;
-    if (prevFirstTimeSec !== null && firstTimeSec < prevFirstTimeSec) {
-      const changed = runPhase63BOffsetPrepend(phase63BRenderWindowOwner(), {
-        bundleCandles: cachedBundle.candles,
-        previousFirstTimeSec: prevFirstTimeSec,
-      });
-      if (changed) {
-        bumpRenderWindow();
+  const onWindowCommit = useCallback(
+    (_commit: WindowCommitResult, slice: ChartBar[]) => {
+      if (slice.length > 0 && selectedRunId !== null) {
+        const overlay =
+          contextOverlayRef ??
+          (selectedVariant
+            ? defaultChartContextOverlayRef(selectedVariant.strategy_spec)
+            : null) ??
+          "";
+        const windowKey = `${selectedRunId}:${selectedVariantKey}:${slice[0]!.time}:${slice[slice.length - 1]!.time}:${overlay}`;
+        queueTraceFetchIntent(windowKey);
       }
-    }
-    owner.prevBundleFirstTimeSec = firstTimeSec;
-  }, [marketCandlesRevision, cachedBundle, intendedRunMarketView, bumpRenderWindow]);
-
-  const emitChartViewportCommand = useCallback((command: ViewportCommand) => {
-    setChartViewportCommand(command);
-    setChartViewportCommandSeq(phase63CViewportOwner().viewportState.commandSeq);
-  }, []);
-
-  const acknowledgeChartViewportCommand = useCallback(() => {
-    runPhase63CAcknowledgeViewportCommand(phase63CViewportOwner());
-    setChartViewportCommand(null);
-  }, []);
-
-  const applyRenderWindowForTrade = useCallback(
-    (entryTimeMs: number | null, forceRebuild: boolean) => {
-      const bundleCandles = cachedBundleCandlesRef.current;
-      if (bundleCandles.length === 0) {
-        return false;
-      }
-      const changed = runPhase63BApplyTrade(phase63BRenderWindowOwner(), {
-        bundleCandles,
-        selectedTradeEntryTimeMs: entryTimeMs,
-        forceRebuild,
-      });
-      if (changed) {
-        bumpRenderWindow();
-      }
-      return changed;
     },
-    [bumpRenderWindow],
+    [selectedRunId, selectedVariantKey, contextOverlayRef, selectedVariant],
   );
 
-  useEffect(() => {
-    if (marketLoadStatus === "error" || renderWindowFoundationKey === null) {
-      if (marketLoadStatus === "error") {
-        v2ChartRuntime().reset();
-        bumpRenderWindow();
-      }
-      runPhase63BRenderWindowInit(phase63BRenderWindowOwner(), {
-        foundationKey: renderWindowFoundationKey,
-        marketLoadStatus,
-        bundleCandles: cachedBundleCandlesRef.current,
-        selectedTradeEntryTimeMs: null,
-        variantKey: selectedVariantKey,
-      });
-      return;
-    }
-    if (intendedRunMarketView === null || marketFocusWindow === null) {
-      return;
-    }
-    const bundleCandles =
-      getCandles(
-        intendedRunMarketView.candlesKey,
-        marketFocusWindow.fromMs,
-        marketFocusWindow.toMs,
-      ) ?? cachedBundleCandlesRef.current;
-    if (bundleCandles.length === 0) {
-      return;
-    }
-    cachedBundleCandlesRef.current = bundleCandles;
-    const initialized = runPhase63BRenderWindowInit(phase63BRenderWindowOwner(), {
-      foundationKey: renderWindowFoundationKey,
-      marketLoadStatus,
-      bundleCandles,
-      selectedTradeEntryTimeMs: selectedTradeEntryTimeMs,
-      variantKey: selectedVariantKey,
-    });
-    if (initialized) {
-      bumpRenderWindow();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- trade changes handled by dedicated effect
-  }, [
-    renderWindowFoundationKey,
-    marketLoadStatus,
-    selectedRunId,
-    selectedVariantKey,
-    runMarketViewIdentity,
-    bumpRenderWindow,
-    intendedRunMarketView,
-    marketFocusWindow,
-  ]);
-
-  useEffect(() => {
-    if (renderWindowFoundationKey === null || marketLoadStatus === "error") {
-      return;
-    }
-    applyRenderWindowForTrade(selectedTradeEntryTimeMs, false);
-  }, [selectedTradeEntryTimeMs, renderWindowFoundationKey, marketLoadStatus, applyRenderWindowForTrade]);
-
-  const isWindowSwapTransactionCancelled = useCallback((swapTransactionId: number) => {
-    return runPhase63CIsWindowSwapTransactionCancelled(phase63CViewportOwner(), swapTransactionId);
-  }, []);
-
-  const settleWindowSwapCommit = useCallback((shiftSeq: number, swapTransactionId: number) => {
-    runPhase63CSettleWindowSwapCommit(
-      phase63CViewportOwner(),
-      phase63BRenderWindowOwner(),
-      shiftSeq,
-      swapTransactionId,
-    );
-    dbgMark(DBG.renderWindow.shiftSettled, { shiftSeq, swapTransactionId });
-  }, []);
-
-  const attemptMarketPanPrefetch = useCallback(
-    (visibleFromSec: number, visibleToSec: number, forceUserPan = false, visibleSample?: string) => {
+  const onPanPrefetch = useCallback(
+    (
+      visibleFromSec: number,
+      visibleToSec: number,
+      isUserPan: boolean,
+      visibleSample?: string,
+    ) => {
       if (intendedRunMarketView === null || marketCoverageWindow === null || !chartHeavyIoEnabled) {
         return;
       }
-      const interactionState = v2RenderWindow().getInteractionState();
-      const isUserPan =
-        forceUserPan ||
-        interactionState === "user_panning" ||
-        interactionState === "pending_shift" ||
-        interactionState === "applying_shift";
       const decision = evaluatePhase63FPanPrefetch(phase63FMarketLoadOwner(), {
         view: intendedRunMarketView,
         coverageWindow: marketCoverageWindow,
         visibleFromSec,
         visibleToSec,
         chartTimeframeMs,
-        forceUserPan,
+        forceUserPan: isUserPan,
         isUserPan,
         visibleSample: visibleSample ?? `${visibleFromSec}:${visibleToSec}`,
       });
@@ -1054,86 +898,307 @@ export function WorkbenchProvider({
     [chartHeavyIoEnabled, chartTimeframeMs, intendedRunMarketView, marketCoverageWindow],
   );
 
-  const dispatchChartInteraction = useCallback(
-    (event: ChartInteractionEvent) => {
-      if (event.type === "pointerdown") {
-        runPhase63CCancelViewportOnPointerDown(phase63CViewportOwner());
-        setChartViewportCommand(null);
-      }
-      const chartRuntime = v2ChartRuntime();
-      chartRuntime.renderWindow.dispatch(event);
-      const viewportCommand = runPhase63CDispatchViewportInteraction(
-        phase63CViewportOwner(),
-        phase63BRenderWindowOwner(),
-        event,
-      );
-      if (event.type === "visible_range_changed" && event.anchorTimeSec !== null) {
-        chartRuntime.renderWindow.recordBoundaryIntent(event.visible, event.anchorTimeSec);
-        const interactionState = v2RenderWindow().getInteractionState();
-        if (
-          interactionState === "user_panning" ||
-          interactionState === "pending_shift" ||
-          interactionState === "applying_shift"
-        ) {
-          const candles = chartViewCandlesRef.current;
-          if (candles.length > 0) {
-            const fromIdx = Math.max(
-              0,
-              Math.min(candles.length - 1, Math.floor(event.visible.from)),
-            );
-            const toIdx = Math.max(0, Math.min(candles.length - 1, Math.floor(event.visible.to)));
-            const sampleKey = `${fromIdx}:${toIdx}:${candles[fromIdx]!.time}:${candles[toIdx]!.time}`;
-            if (sampleKey !== phase63FMarketLoadOwner().visiblePrefetchSample) {
-              attemptMarketPanPrefetch(candles[fromIdx]!.time, candles[toIdx]!.time, false, sampleKey);
-            }
-          }
-        }
-      }
-      if (viewportCommand !== null) {
-        emitChartViewportCommand(viewportCommand);
-      }
-    },
-    [emitChartViewportCommand, attemptMarketPanPrefetch],
-  );
-
-  const chartWindowSlice = useMemo(
-    () =>
-      resolvePhase63BChartWindowSlice(phase63BRenderWindowOwner(), {
-        bundle: cachedBundle ?? null,
-        marketLoadStatus,
-        auxEmaOverlays: phase63EAuxOverlayOwner().controller.auxEmaOverlays,
-        marketIdentity: intendedRunMarketViewIdentity ?? "",
-      }),
+  const renderViewportInputs = useMemo<WorkbenchRenderViewportInputs>(
+    () => ({
+      cachedBundle,
+      cachedBundleCandlesRef,
+      marketLoadStatus,
+      marketCandlesRevision,
+      renderWindowFoundationKey,
+      intendedRunMarketView,
+      marketFocusWindow,
+      marketCoverageWindow,
+      selectedRunId,
+      selectedVariantKey,
+      selectedTradeEntryTimeMs,
+      chartHeavyIoEnabled,
+      auxEmaOverlays: phase63EAuxOverlayOwner().controller.auxEmaOverlays,
+      auxOverlayRevision,
+      marketOverlayRevision,
+      intendedRunMarketViewIdentity,
+      runMarketViewIdentity,
+      getPrevBundleFirstTimeSec: () => phase63FMarketLoadOwner().prevBundleFirstTimeSec,
+      setPrevBundleFirstTimeSec: (value) => {
+        phase63FMarketLoadOwner().prevBundleFirstTimeSec = value;
+      },
+    }),
     [
       cachedBundle,
       marketLoadStatus,
-      marketOverlayRevision,
       marketCandlesRevision,
+      renderWindowFoundationKey,
+      intendedRunMarketView,
+      marketFocusWindow,
+      marketCoverageWindow,
+      selectedRunId,
+      selectedVariantKey,
+      selectedTradeEntryTimeMs,
+      chartHeavyIoEnabled,
       auxOverlayRevision,
+      marketOverlayRevision,
       intendedRunMarketViewIdentity,
       runMarketViewIdentity,
-      renderWindowRevision,
     ],
   );
 
-  const chartView = useMemo(
-    (): ChartViewWindow =>
-      buildChartViewWindowFromPhase63BSlice({
-        chartWindow: chartWindowSlice,
-        selectedTradeEntryTimeMs,
-      }),
-    [chartWindowSlice, selectedTradeEntryTimeMs],
+  const renderViewportCallbacks = useMemo<WorkbenchRenderViewportCallbacks>(
+    () => ({
+      onWindowCommit,
+      onPanPrefetch,
+      shouldPanPrefetchForSample: (sampleKey) =>
+        sampleKey !== phase63FMarketLoadOwner().visiblePrefetchSample,
+    }),
+    [onWindowCommit, onPanPrefetch],
   );
 
-  chartViewCandlesRef.current = chartView.candles;
+  return (
+    <WorkbenchRenderViewportProvider
+      inputs={renderViewportInputs}
+      callbacks={renderViewportCallbacks}
+    >
+      <WorkbenchProviderContexts
+        initialActiveTab={initialActiveTab}
+        activeTab={activeTab}
+        setActiveTab={setActiveTab}
+        hasChartEverActivated={hasChartEverActivated}
+        configDraft={configDraft}
+        setConfigDraft={setConfigDraft}
+        configLoadStatus={configLoadStatus}
+        configLoadError={configLoadError}
+        configList={configList}
+        selectedConfigPath={selectedConfigPath}
+        reloadConfig={reloadConfig}
+        selectConfig={selectConfig}
+        createNewConfig={createNewConfig}
+        reportLoadStatus={reportLoadStatus}
+        reportError={reportError}
+        marketLoadStatus={marketLoadStatus}
+        marketError={marketError}
+        auxOverlayRevision={auxOverlayRevision}
+        setAuxOverlayRevision={setAuxOverlayRevision}
+        displayCacheVersion={displayCacheVersion}
+        setDisplayCacheVersion={setDisplayCacheVersion}
+        displayApplyRevision={displayApplyRevision}
+        setDisplayApplyRevision={setDisplayApplyRevision}
+        chartDisplayComponentEvents={chartDisplayComponentEvents}
+        setChartDisplayComponentEvents={setChartDisplayComponentEvents}
+        chartDisplayComponentEventsRef={chartDisplayComponentEventsRef}
+        traceDisplayState={traceDisplayState}
+        setTraceDisplayState={setTraceDisplayState}
+        chartShowEntryBlockMarkers={chartShowEntryBlockMarkers}
+        setChartShowEntryBlockMarkers={setChartShowEntryBlockMarkers}
+        chartShowExitSignalMarkers={chartShowExitSignalMarkers}
+        setChartShowExitSignalMarkers={setChartShowExitSignalMarkers}
+        chartShowSetupMarkers={chartShowSetupMarkers}
+        setChartShowSetupMarkers={setChartShowSetupMarkers}
+        chartShowTradeManagementPhaseMarkers={chartShowTradeManagementPhaseMarkers}
+        setChartShowTradeManagementPhaseMarkers={setChartShowTradeManagementPhaseMarkers}
+        chartShowTradeManagementExitMarkers={chartShowTradeManagementExitMarkers}
+        setChartShowTradeManagementExitMarkers={setChartShowTradeManagementExitMarkers}
+        runs={runs}
+        selectedRunId={selectedRunId}
+        setSelectedRunId={setSelectedRunId}
+        report={report}
+        selectedVariantKey={selectedVariantKey}
+        setSelectedVariantKey={setSelectedVariantKey}
+        selectedTradeId={selectedTradeId}
+        setSelectedTradeId={setSelectedTradeId}
+        selectedBarTimeSec={selectedBarTimeSec}
+        setSelectedBarTimeSec={setSelectedBarTimeSec}
+        signalTrace={signalTrace}
+        setSignalTrace={setSignalTrace}
+        signalTraceStatus={signalTraceStatus}
+        setSignalTraceStatus={setSignalTraceStatus}
+        loadedSignalTraceWindowKey={loadedSignalTraceWindowKey}
+        setLoadedSignalTraceWindowKey={setLoadedSignalTraceWindowKey}
+        contextOverlayRef={contextOverlayRef}
+        setContextOverlayRef={setContextOverlayRef}
+        signalTraceStatusRef={signalTraceStatusRef}
+        selectedTradeIdRef={selectedTradeIdRef}
+        applyTraceDisplayRef={applyTraceDisplayRef}
+        reloadReport={reloadReport}
+        refreshRunsAndSelectRun={refreshRunsAndSelectRun}
+        selectedVariant={selectedVariant}
+        chartTradeFocusWarning={chartTradeFocusWarning}
+        chartHeavyIoEnabled={chartHeavyIoEnabled}
+        chartTimeframe={chartTimeframe}
+        reportTimeframe={reportTimeframe}
+        timeframeMismatch={timeframeMismatch}
+        cachedBundle={cachedBundle}
+        intendedRunMarketViewIdentity={intendedRunMarketViewIdentity}
+        runMarketViewIdentity={runMarketViewIdentity}
+        expectedRunMarketViewIdentity={expectedRunMarketViewIdentity}
+        effectiveContextOverlayRefSeed={contextOverlayRef}
+        reloadToken={reloadToken}
+        phase63EAuxOverlayOwner={phase63EAuxOverlayOwner}
+        phase63DTraceOwner={phase63DTraceOwner}
+      >
+        {children}
+      </WorkbenchProviderContexts>
+    </WorkbenchRenderViewportProvider>
+  );
+}
 
-  useEffect(() => {
-    runPhase63CSetViewportPlan(
-      phase63CViewportOwner(),
-      chartView.mode,
-      chartView.centerTimeSec,
-    );
-  }, [chartView.mode, chartView.centerTimeSec]);
+type WorkbenchProviderContextsProps = {
+  children: ReactNode;
+  initialActiveTab: WorkbenchTab;
+  activeTab: WorkbenchTab;
+  setActiveTab: (tab: WorkbenchTab) => void;
+  hasChartEverActivated: boolean;
+  configDraft: StrategyConfigDraft | null;
+  setConfigDraft: (draft: StrategyConfigDraft) => void;
+  configLoadStatus: ConfigLoadStatus;
+  configLoadError: string | null;
+  configList: ConfigListEntry[];
+  selectedConfigPath: string | null;
+  reloadConfig: () => Promise<void>;
+  selectConfig: (experimentId: string) => Promise<void>;
+  createNewConfig: () => void;
+  reportLoadStatus: ReportLoadStatus;
+  reportError: string | null;
+  marketLoadStatus: MarketLoadStatus;
+  marketError: string | null;
+  auxOverlayRevision: number;
+  setAuxOverlayRevision: Dispatch<SetStateAction<number>>;
+  displayCacheVersion: number;
+  setDisplayCacheVersion: Dispatch<SetStateAction<number>>;
+  displayApplyRevision: number;
+  setDisplayApplyRevision: Dispatch<SetStateAction<number>>;
+  chartDisplayComponentEvents: ComponentEvent[];
+  setChartDisplayComponentEvents: Dispatch<SetStateAction<ComponentEvent[]>>;
+  chartDisplayComponentEventsRef: MutableRefObject<ComponentEvent[]>;
+  traceDisplayState: TraceDisplayState;
+  setTraceDisplayState: Dispatch<SetStateAction<TraceDisplayState>>;
+  chartShowEntryBlockMarkers: boolean;
+  setChartShowEntryBlockMarkers: (show: boolean) => void;
+  chartShowExitSignalMarkers: boolean;
+  setChartShowExitSignalMarkers: (show: boolean) => void;
+  chartShowSetupMarkers: boolean;
+  setChartShowSetupMarkers: (show: boolean) => void;
+  chartShowTradeManagementPhaseMarkers: boolean;
+  setChartShowTradeManagementPhaseMarkers: (show: boolean) => void;
+  chartShowTradeManagementExitMarkers: boolean;
+  setChartShowTradeManagementExitMarkers: (show: boolean) => void;
+  runs: RunSummary[];
+  selectedRunId: string | null;
+  setSelectedRunId: (runId: string) => void;
+  report: RunReport | null;
+  selectedVariantKey: string;
+  setSelectedVariantKey: (key: string) => void;
+  selectedTradeId: number | string | null;
+  setSelectedTradeId: (id: number | string | null) => void;
+  selectedBarTimeSec: number | null;
+  setSelectedBarTimeSec: (timeSec: number | null) => void;
+  signalTrace: SignalTraceBundle | null;
+  setSignalTrace: (trace: SignalTraceBundle | null) => void;
+  signalTraceStatus: SignalTraceLoadStatus;
+  setSignalTraceStatus: (status: SignalTraceLoadStatus) => void;
+  loadedSignalTraceWindowKey: string | null;
+  setLoadedSignalTraceWindowKey: (key: string | null) => void;
+  contextOverlayRef: string | null;
+  setContextOverlayRef: (ref: string | null) => void;
+  signalTraceStatusRef: MutableRefObject<SignalTraceLoadStatus>;
+  selectedTradeIdRef: MutableRefObject<number | string | null>;
+  applyTraceDisplayRef: MutableRefObject<() => void>;
+  reloadReport: () => void;
+  refreshRunsAndSelectRun: (runId: string) => Promise<void>;
+  selectedVariant: RunVariant | null;
+  chartTradeFocusWarning: string | null;
+  chartHeavyIoEnabled: boolean;
+  chartTimeframe: string;
+  reportTimeframe: string | null;
+  timeframeMismatch: boolean;
+  cachedBundle: ReturnType<typeof marketBundleFromSnapshot>;
+  intendedRunMarketViewIdentity: RunMarketViewIdentity | null;
+  runMarketViewIdentity: string | null;
+  expectedRunMarketViewIdentity: RunMarketViewIdentity | null;
+  effectiveContextOverlayRefSeed: string | null;
+  reloadToken: number;
+  phase63EAuxOverlayOwner: () => Phase63EAuxOverlayOwnerState;
+  phase63DTraceOwner: () => Phase63DTraceEventsOwnerState;
+};
+
+function WorkbenchProviderContexts({
+  children,
+  activeTab,
+  setActiveTab,
+  hasChartEverActivated,
+  configDraft,
+  setConfigDraft,
+  configLoadStatus,
+  configLoadError,
+  configList,
+  selectedConfigPath,
+  reloadConfig,
+  selectConfig,
+  createNewConfig,
+  reportLoadStatus,
+  reportError,
+  marketLoadStatus,
+  marketError,
+  auxOverlayRevision,
+  setAuxOverlayRevision,
+  displayCacheVersion,
+  setDisplayCacheVersion,
+  displayApplyRevision,
+  setDisplayApplyRevision,
+  chartDisplayComponentEvents,
+  setChartDisplayComponentEvents,
+  chartDisplayComponentEventsRef,
+  traceDisplayState,
+  setTraceDisplayState,
+  chartShowEntryBlockMarkers,
+  setChartShowEntryBlockMarkers,
+  chartShowExitSignalMarkers,
+  setChartShowExitSignalMarkers,
+  chartShowSetupMarkers,
+  setChartShowSetupMarkers,
+  chartShowTradeManagementPhaseMarkers,
+  setChartShowTradeManagementPhaseMarkers,
+  chartShowTradeManagementExitMarkers,
+  setChartShowTradeManagementExitMarkers,
+  runs,
+  selectedRunId,
+  setSelectedRunId,
+  report,
+  selectedVariantKey,
+  setSelectedVariantKey,
+  selectedTradeId,
+  setSelectedTradeId,
+  selectedBarTimeSec,
+  setSelectedBarTimeSec,
+  signalTrace,
+  setSignalTrace,
+  signalTraceStatus,
+  setSignalTraceStatus,
+  loadedSignalTraceWindowKey,
+  setLoadedSignalTraceWindowKey,
+  contextOverlayRef,
+  setContextOverlayRef,
+  signalTraceStatusRef,
+  selectedTradeIdRef,
+  applyTraceDisplayRef,
+  reloadReport,
+  refreshRunsAndSelectRun,
+  selectedVariant,
+  chartTradeFocusWarning,
+  chartHeavyIoEnabled,
+  chartTimeframe,
+  reportTimeframe,
+  timeframeMismatch,
+  cachedBundle,
+  intendedRunMarketViewIdentity,
+  runMarketViewIdentity,
+  expectedRunMarketViewIdentity,
+  reloadToken,
+  phase63EAuxOverlayOwner,
+  phase63DTraceOwner,
+}: WorkbenchProviderContextsProps) {
+  const rv = useWorkbenchRenderViewport();
+  const chartView = rv.chartView;
+  const chartWindowSnapshotRevision = rv.windowSnapshotRevision;
+  const renderWindowBounds = rv.renderWindowBounds;
+  const traceDisplayCache = () => phase63DTraceOwner().traceDisplayController.cache;
 
   const contextOverlayRefOptions = useMemo(() => {
     if (!selectedVariant) return [];
@@ -1147,62 +1212,6 @@ export function WorkbenchProvider({
 
   /** Resolved ref for trace + HTF overlays (avoids one-frame null before default effect runs). */
   const effectiveContextOverlayRef = contextOverlayRef ?? defaultContextOverlayRef;
-
-  const applyWindowCommit = useCallback(
-    (commit: WindowCommitResult) => {
-      if (!cachedBundle || cachedBundle.candles.length === 0) {
-        return;
-      }
-      applyRenderWindowShiftCommit(phase63BRenderWindowOwner().controller, commit);
-      dbgMarkCutover(DBG.renderWindow.shiftApplied, "render_window", {
-        windowStartIndex: commit.bounds.windowStartIndex,
-        windowEndIndex: commit.bounds.windowEndIndex,
-      });
-      setRenderWindowShiftSeq(commit.shiftSeq);
-
-      const viewportCmd = runPhase63COnWindowSwapCommitted(
-        phase63CViewportOwner(),
-        phase63BRenderWindowOwner(),
-        {
-          commit,
-          bundleCandleCount: cachedBundle.candles.length,
-        },
-      );
-      if (viewportCmd !== null) {
-        emitChartViewportCommand(viewportCmd);
-      }
-
-      const slice = cachedBundle.candles.slice(
-        commit.bounds.windowStartIndex,
-        commit.bounds.windowEndIndex,
-      );
-      if (slice.length > 0 && selectedRunId !== null) {
-        const overlay = effectiveContextOverlayRef ?? "";
-        const windowKey = `${selectedRunId}:${selectedVariantKey}:${slice[0]!.time}:${slice[slice.length - 1]!.time}:${overlay}`;
-        queueTraceFetchIntent(windowKey);
-      }
-
-      bumpRenderWindow();
-      dbgScheduleShiftFlush();
-
-      if (slice.length > 0) {
-        attemptMarketPanPrefetch(slice[0]!.time, slice[slice.length - 1]!.time, true);
-      }
-    },
-    [
-      cachedBundle,
-      bumpRenderWindow,
-      selectedRunId,
-      selectedVariantKey,
-      effectiveContextOverlayRef,
-      emitChartViewportCommand,
-      attemptMarketPanPrefetch,
-    ],
-  );
-
-  useEffect(() => {
-    applyWindowCommitRef.current = applyWindowCommit;
-  }, [applyWindowCommit]);
 
   useEffect(() => {
     if (contextOverlayRef !== null && !contextOverlayRefOptions.includes(contextOverlayRef)) {
@@ -1229,17 +1238,14 @@ export function WorkbenchProvider({
 
   const finalizeTraceDisplayUpdate = useCallback(() => {
     applyTraceDisplayRef.current();
-    const traceViewportCmd = runPhase63COnTraceReady(
-      phase63CViewportOwner(),
-      phase63BRenderWindowOwner(),
-    );
+    const traceViewportCmd = rv.onTraceReadyViewport();
     if (traceViewportCmd !== null) {
-      emitChartViewportCommand(traceViewportCmd);
+      rv.emitViewportCommand(traceViewportCmd);
     }
-  }, [emitChartViewportCommand]);
+  }, [rv]);
 
   const applyTraceDisplayForCurrentWindow = useCallback(() => {
-    const candles = chartViewCandlesRef.current;
+    const candles = chartView.candles;
     const selectedTradeIdSnapshot = selectedTradeIdRef.current;
     const selectedTradeEntryTimeSec =
       selectedTradeIdSnapshot !== null && selectedVariant
@@ -1275,7 +1281,19 @@ export function WorkbenchProvider({
         setAuxOverlayRevision((revision) => revision + 1);
       }
     }
-  }, [selectedVariant]);
+  }, [
+    selectedVariant,
+    phase63DTraceOwner,
+    chartView.candles,
+    signalTraceStatusRef,
+    selectedTradeIdRef,
+    setTraceDisplayState,
+    chartDisplayComponentEventsRef,
+    setChartDisplayComponentEvents,
+    setDisplayApplyRevision,
+    phase63EAuxOverlayOwner,
+    setAuxOverlayRevision,
+  ]);
 
   applyTraceDisplayRef.current = applyTraceDisplayForCurrentWindow;
 
@@ -1418,11 +1436,6 @@ export function WorkbenchProvider({
     return `${selectedRunId}:${selectedVariantKey}:${first}:${last}:${overlay}`;
   }, [chartView.candles, selectedRunId, selectedVariantKey, effectiveContextOverlayRef]);
 
-  const renderWindowBounds = useMemo(
-    () => candleTimeBounds(chartView.candles),
-    [chartView.candles],
-  );
-
   const renderWindowBoundsKey = useMemo(() => {
     if (renderWindowBounds === null || chartView.count === 0) {
       return "";
@@ -1544,14 +1557,7 @@ export function WorkbenchProvider({
         }
       }
       if (entryTimeSec !== null) {
-        const command = runPhase63CSelectTradeFocusCommand(
-          phase63CViewportOwner(),
-          phase63BRenderWindowOwner(),
-          entryTimeSec,
-        );
-        if (command !== null) {
-          emitChartViewportCommand(command);
-        }
+        rv.emitTradeFocusCommand(entryTimeSec);
       }
       setSelectedTradeId(tradeId);
       if (
@@ -1572,7 +1578,7 @@ export function WorkbenchProvider({
         }
       }
     },
-    [selectedVariant, emitChartViewportCommand, hasChartEverActivated],
+    [selectedVariant, rv, hasChartEverActivated, setActiveTab],
   );
 
   const selectBar = useCallback((timeSec: number | null) => {
@@ -1632,12 +1638,12 @@ export function WorkbenchProvider({
         chartWindowKey,
         candles: chartView.candles,
         renderWindowBounds,
-        interactionState: v2RenderWindow().getInteractionState(),
-        hasPendingShift: v2RenderWindow().getPendingShift() !== null,
+        interactionState: rv.getInteractionState(),
+        hasPendingShift: rv.hasPendingShift(),
         coalescedWindowKey: takeCommittedTraceFetchIntent(),
         signal: abortController.signal,
         telemetryMeta: {
-          renderWindowRevision,
+          renderWindowRevision: chartWindowSnapshotRevision,
           boundsKey: renderWindowBoundsKey,
           fetchSource,
         },
@@ -1695,7 +1701,7 @@ export function WorkbenchProvider({
     selectedRunId,
     selectedVariantKey,
     chartWindowKey,
-    renderWindowRevision,
+    chartWindowSnapshotRevision,
     renderWindowBoundsKey,
     marketLoadStatus,
     runMarketViewIdentity,
@@ -1706,6 +1712,7 @@ export function WorkbenchProvider({
     chartTimeframe,
     chartView.candles,
     renderWindowBounds,
+    rv,
   ]);
 
   const symbol = report?.symbol ?? "—";
@@ -1783,7 +1790,6 @@ export function WorkbenchProvider({
       chartViewModel: phase63AModelSlice.chartViewModel,
       htfAuxEmaOverlayStale: phase63AModelSlice.chartViewModel.htfOverlayStale,
       componentEventsStale: phase63AModelSlice.chartViewModel.componentEventsStale,
-      renderWindowShiftSeq,
       chartShowEntryBlockMarkers,
       setChartShowEntryBlockMarkers,
       chartShowExitSignalMarkers,
@@ -1810,12 +1816,6 @@ export function WorkbenchProvider({
       contextOverlayRefOptions,
       selectedBarTimeSec,
       selectBar,
-      dispatchChartInteraction,
-      chartViewportCommand,
-      chartViewportCommandSeq,
-      acknowledgeChartViewportCommand,
-      isWindowSwapTransactionCancelled,
-      settleWindowSwapCommit,
     }),
     [
       chartTimeframe,
@@ -1824,7 +1824,6 @@ export function WorkbenchProvider({
       marketLoadStatus,
       marketError,
       phase63AModelSlice,
-      renderWindowShiftSeq,
       chartShowEntryBlockMarkers,
       chartShowExitSignalMarkers,
       chartShowSetupMarkers,
@@ -1842,13 +1841,6 @@ export function WorkbenchProvider({
       contextOverlayRefOptions,
       selectedBarTimeSec,
       selectBar,
-      dispatchChartInteraction,
-      chartViewportCommand,
-      chartViewportCommandSeq,
-      acknowledgeChartViewportCommand,
-      isWindowSwapTransactionCancelled,
-      settleWindowSwapCommit,
-      renderWindowShiftSeq,
     ],
   );
 

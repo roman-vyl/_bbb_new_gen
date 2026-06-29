@@ -127,18 +127,24 @@ describe("Phase 6.3D trace/events cutover", () => {
     const workbenchSource = readWorkspaceSource("src/shared/context/WorkbenchContext.tsx");
     expect(workbenchSource).toContain("phase63DTraceEventsBridge");
     expect(workbenchSource).toContain("runPhase63DTraceLoadCycle");
-    expect(workbenchSource).toContain("runPhase63COnTraceReady");
+    expect(workbenchSource).toContain("onTraceReadyViewport");
     expect(workbenchSource).not.toContain("useWorkbenchChartRuntime");
     expect(findForbiddenAdapterFallbackPatterns(workbenchSource)).toEqual([]);
+
+    const renderViewportSource = readWorkspaceSource(
+      "src/shared/context/WorkbenchRenderViewportContext.tsx",
+    );
+    expect(renderViewportSource).toContain("runPhase63COnTraceReady");
   });
 
-  it("keeps ChartPanel off runtime v2 internals", () => {
+  it("keeps ChartPanel on workbench integration hooks without runtime internals", () => {
     const chartPanelSource = readWorkspaceSource("src/features/chart/ChartPanel.tsx");
     const violations = collectForbiddenImportViolations(chartPanelSource, [
       /from\s+["']@\/features\/workbenchChartRuntime/,
       /useWorkbenchChartRuntime/,
     ]);
     expect(violations).toEqual([]);
+    expect(chartPanelSource).toContain("useWorkbenchRenderViewport");
   });
 
   it("finalizes trace display for completed load outcomes", () => {
