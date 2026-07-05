@@ -247,7 +247,10 @@ export function WorkbenchRenderViewportProvider({
   );
 
   useEffect(() => {
-    if (marketLoadStatus === "error" || renderWindowFoundationKey === null) {
+    if (renderWindowFoundationKey === null) {
+      if (marketLoadStatus === "loading") {
+        return;
+      }
       if (marketLoadStatus === "error") {
         v2ChartRuntime().reset();
         bumpRenderWindowSnapshot();
@@ -261,16 +264,27 @@ export function WorkbenchRenderViewportProvider({
       });
       return;
     }
+    if (marketLoadStatus === "error") {
+      v2ChartRuntime().reset();
+      bumpRenderWindowSnapshot();
+      runPhase63BRenderWindowInit(phase63BRenderWindowOwner(), {
+        foundationKey: renderWindowFoundationKey,
+        marketLoadStatus,
+        bundleCandles: cachedBundleCandlesRef.current,
+        selectedTradeEntryTimeMs: null,
+        variantKey: selectedVariantKey,
+      });
+      return;
+    }
     if (intendedRunMarketView === null || marketFocusWindow === null) {
       return;
     }
-    const bundleCandles =
-      getCandles(
-        intendedRunMarketView.candlesKey,
-        marketFocusWindow.fromMs,
-        marketFocusWindow.toMs,
-      ) ?? cachedBundleCandlesRef.current;
-    if (bundleCandles.length === 0) {
+    const bundleCandles = getCandles(
+      intendedRunMarketView.candlesKey,
+      marketFocusWindow.fromMs,
+      marketFocusWindow.toMs,
+    );
+    if (bundleCandles === undefined || bundleCandles.length === 0) {
       return;
     }
     cachedBundleCandlesRef.current = bundleCandles;

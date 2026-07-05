@@ -132,6 +132,25 @@ function markFocusCandlesReady(
   return true;
 }
 
+function markFocusCandlesLoadingForTargetChange(
+  state: MarketLoadRuntimeControllerState,
+  focusKey: string,
+): void {
+  if (state.readyTargetKey !== focusKey) {
+    state.status = "loading";
+  }
+}
+
+function reconcileAbortedMarketLoad(
+  state: MarketLoadRuntimeControllerState,
+  focusKey: string,
+): void {
+  if (state.readyTargetKey !== focusKey) {
+    state.readyTargetKey = null;
+    state.status = "loading";
+  }
+}
+
 function onMarketChunkSeeded(
   state: MarketLoadRuntimeControllerState,
   kind: MarketWindowChunkKind,
@@ -171,8 +190,8 @@ export async function runMarketLoadCycle(
       };
     }
     focusReadyFromCache = markFocusCandlesReady(state, input.viewIdentity, input.focusKey);
-  } else if (state.readyTargetKey === null) {
-    state.status = "loading";
+  } else {
+    markFocusCandlesLoadingForTargetChange(state, input.focusKey);
   }
 
   try {
@@ -212,6 +231,7 @@ export async function runMarketLoadCycle(
     };
   } catch (err) {
     if (isAbortError(err)) {
+      reconcileAbortedMarketLoad(state, input.focusKey);
       return { outcome: "aborted", loadResult: null, state, focusReadyFromCache };
     }
     if (shouldIgnoreStaleCacheHit(state, input.loadGeneration, input.viewIdentity)) {

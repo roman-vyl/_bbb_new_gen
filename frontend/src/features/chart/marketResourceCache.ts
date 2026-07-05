@@ -148,6 +148,44 @@ export function chunkBoundsFromEmaCoverage(
   };
 }
 
+function coalesceCandlesChunks(chunks: MarketCandlesChunk[]): MarketCandlesChunk[] {
+  if (chunks.length <= 1) {
+    return chunks;
+  }
+  const sorted = [...chunks].sort((a, b) => a.fromMs - b.fromMs);
+  const result: MarketCandlesChunk[] = [{ ...sorted[0]!, candles: [...sorted[0]!.candles] }];
+  for (let i = 1; i < sorted.length; i += 1) {
+    const current = sorted[i]!;
+    const last = result[result.length - 1]!;
+    if (current.fromMs <= last.toMs) {
+      last.toMs = Math.max(last.toMs, current.toMs);
+      last.candles = dedupeCandlesByTime([...last.candles, ...current.candles]);
+    } else {
+      result.push({ ...current, candles: [...current.candles] });
+    }
+  }
+  return result;
+}
+
+function coalesceOverlayChunks(chunks: MarketOverlayChunk[]): MarketOverlayChunk[] {
+  if (chunks.length <= 1) {
+    return chunks;
+  }
+  const sorted = [...chunks].sort((a, b) => a.fromMs - b.fromMs);
+  const result: MarketOverlayChunk[] = [{ ...sorted[0]!, points: [...sorted[0]!.points] }];
+  for (let i = 1; i < sorted.length; i += 1) {
+    const current = sorted[i]!;
+    const last = result[result.length - 1]!;
+    if (current.fromMs <= last.toMs) {
+      last.toMs = Math.max(last.toMs, current.toMs);
+      last.points = dedupePointsByTime([...last.points, ...current.points]);
+    } else {
+      result.push({ ...current, points: [...current.points] });
+    }
+  }
+  return result;
+}
+
 function rebuildCandlesMerged(chunks: readonly MarketCandlesChunk[]): {
   candles: ChartBar[];
   coverage: MarketTimeBoundsMs[];
@@ -213,7 +251,7 @@ export function createMarketCandlesCacheStore(): MarketCandlesCacheStore {
     },
 
     mergeChunk(chunk: MarketCandlesChunk) {
-      chunks.push(chunk);
+      chunks = coalesceCandlesChunks([...chunks, chunk]);
       if (chunks.length > MAX_CHUNKS_PER_KEY) {
         chunks = chunks.slice(chunks.length - MAX_CHUNKS_PER_KEY);
       }
@@ -257,7 +295,7 @@ export function createMarketOverlayCacheStore(): MarketOverlayCacheStore {
     },
 
     mergeChunk(chunk: MarketOverlayChunk) {
-      chunks.push(chunk);
+      chunks = coalesceOverlayChunks([...chunks, chunk]);
       if (chunks.length > MAX_CHUNKS_PER_KEY) {
         chunks = chunks.slice(chunks.length - MAX_CHUNKS_PER_KEY);
       }

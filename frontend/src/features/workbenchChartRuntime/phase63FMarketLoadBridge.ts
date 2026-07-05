@@ -126,6 +126,7 @@ function resetPhase63FCoverageTargetForFocusChange(owner: Phase63FMarketLoadOwne
   owner.panPrefetchLogKey = null;
   owner.visiblePrefetchSample = null;
   owner.controller.readyTargetKey = null;
+  owner.controller.status = "loading";
   owner.prevBundleFirstTimeSec = null;
   owner.composeFallbackKey = null;
 }
