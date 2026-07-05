@@ -67,7 +67,7 @@ import {
 } from "@/features/chart/tradeManagementChartEvents";
 
 import { shouldSuppressPanShiftRequest } from "@/features/chart/chartViewport";
-import { createChartInteractionAdapter } from "@/features/chart/runtime/interactionAdapter";
+import { createChartInteractionAdapter, isChartNavigationKey } from "@/features/chart/runtime/interactionAdapter";
 import { executeViewportCommand } from "@/features/chart/runtime/executeViewportCommand";
 import { CHART_RENDER_WINDOW_SIZE } from "@/features/chart/chartDataWindowManager";
 import { findTradeById, tradeDisplayNumber } from "@/features/chart/tradeLookup";
@@ -502,10 +502,34 @@ export function ChartPanel() {
     const onPointerDown = () => adapter.onPointerDown();
     const onPointerUp = () => adapter.onPointerUp();
     const onWheel = () => adapter.onWheel();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) {
+        return;
+      }
+      if (!isChartNavigationKey(event.key)) {
+        return;
+      }
+      const active = document.activeElement;
+      if (active !== el && !el.contains(active)) {
+        return;
+      }
+      const target = event.target;
+      if (target instanceof HTMLElement) {
+        const tag = target.tagName;
+        if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA" || tag === "BUTTON") {
+          return;
+        }
+        if (target.isContentEditable) {
+          return;
+        }
+      }
+      adapter.onKeyboardPanStart(event.key);
+    };
 
     el.addEventListener("pointerdown", onPointerDown);
     el.addEventListener("pointerup", onPointerUp);
     el.addEventListener("wheel", onWheel, { passive: true });
+    el.addEventListener("keydown", onKeyDown);
 
     const visibleRangeHandler = (range: { from: number; to: number } | null) => {
       if (
@@ -553,6 +577,7 @@ export function ChartPanel() {
       el.removeEventListener("pointerdown", onPointerDown);
       el.removeEventListener("pointerup", onPointerUp);
       el.removeEventListener("wheel", onWheel);
+      el.removeEventListener("keydown", onKeyDown);
 
       // chart.remove() destroys all series; do not call removeSeries afterward.
       auxEmaSeriesRef.current.clear();
@@ -957,7 +982,7 @@ export function ChartPanel() {
 
         <div className="chart-panel__main">
 
-          <div ref={containerRef} className="chart-canvas" />
+          <div ref={containerRef} className="chart-canvas" tabIndex={0} />
 
           {selectedTradeId !== null && (
             <ChartTradeFocusNav

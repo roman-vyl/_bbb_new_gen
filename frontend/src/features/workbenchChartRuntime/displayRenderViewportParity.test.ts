@@ -429,6 +429,105 @@ describe("Phase 4 display/render/viewport parity", () => {
     expect(result.suppressedProgrammatic).toBe(false);
   });
 
+  it("keyboard prelude plus range change triggers prefetch", () => {
+    const view = resolveView();
+    const candles = makeCandles(200, 1_300);
+    const renderController = createRenderWindowRuntimeController();
+    initializeRenderWindowRuntime(renderController, {
+      foundationKey: "foundation",
+      marketLoadStatus: "ready",
+      bundleCandles: candles,
+      selectedTradeEntryTimeMs: null,
+    });
+    const interactionHarness = createInteractionRuntimeHarness({
+      renderController,
+      bundleCandles: candles,
+    });
+
+    dispatchInteractionCandidate(
+      interactionHarness,
+      { type: "keyboard_pan_start", key: "ArrowLeft" },
+      {
+        view,
+        coverageWindow: FOCUS_WINDOW,
+        timeframeMs: 300_000,
+        chartHeavyIoEnabled: true,
+      },
+    );
+    const result = dispatchInteractionCandidate(
+      interactionHarness,
+      {
+        type: "visible_range_changed",
+        visible: { from: 0, to: CHART_RENDER_SAFE_ZONE - 1 },
+        anchorTimeSec: candles[0]!.time,
+      },
+      {
+        view,
+        coverageWindow: FOCUS_WINDOW,
+        timeframeMs: 300_000,
+        chartHeavyIoEnabled: true,
+      },
+    );
+
+    expect(result.panReason).not.toBeNull();
+    expect(result.suppressedProgrammatic).toBe(false);
+  });
+
+  it("range change alone does not trigger prefetch from idle", () => {
+    const view = resolveView();
+    const candles = makeCandles(200, 1_300);
+    const renderController = createRenderWindowRuntimeController();
+    initializeRenderWindowRuntime(renderController, {
+      foundationKey: "foundation",
+      marketLoadStatus: "ready",
+      bundleCandles: candles,
+      selectedTradeEntryTimeMs: null,
+    });
+    const interactionHarness = createInteractionRuntimeHarness({
+      renderController,
+      bundleCandles: candles,
+    });
+
+    const result = dispatchInteractionCandidate(
+      interactionHarness,
+      {
+        type: "visible_range_changed",
+        visible: { from: 0, to: CHART_RENDER_SAFE_ZONE - 1 },
+        anchorTimeSec: candles[0]!.time,
+      },
+      {
+        view,
+        coverageWindow: FOCUS_WINDOW,
+        timeframeMs: 300_000,
+        chartHeavyIoEnabled: true,
+      },
+    );
+
+    expect(result.panReason).toBeNull();
+  });
+
+  it("keyboard prelude cancels stale viewport command like pointerdown", () => {
+    const renderController = createRenderWindowRuntimeController();
+    const harness = createInteractionRuntimeHarness({
+      renderController,
+      bundleCandles: makeCandles(10),
+    });
+    harness.viewportState.lastCommand = { type: "focusTrade", entryTimeSec: 1_100 };
+
+    dispatchInteractionCandidate(
+      harness,
+      { type: "keyboard_pan_start", key: "ArrowLeft" },
+      {
+        view: null,
+        coverageWindow: null,
+        timeframeMs: 300_000,
+        chartHeavyIoEnabled: true,
+      },
+    );
+
+    expect(harness.viewportState.lastCommand).toBeNull();
+  });
+
   it("trade focus without force rebuild skips when trade stays in safe zone", () => {
     const candles = makeCandles(200);
     const renderController = createRenderWindowRuntimeController();

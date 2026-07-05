@@ -61,6 +61,9 @@ export function createViewportController(initial?: Partial<ViewportControllerSta
         case "wheel":
           state = { ...state, userPanning: false, activeFocusIntent: null, viewportOwner: "user" };
           return { type: "noViewportChange" };
+        case "keyboard_pan_start":
+          state = userPanSessionStart(state);
+          return { type: "noViewportChange" };
         case "trade_selected": {
           if (state.userPanning) {
             return { type: "noViewportChange" };

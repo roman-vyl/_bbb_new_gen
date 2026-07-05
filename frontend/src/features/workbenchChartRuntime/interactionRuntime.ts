@@ -64,7 +64,7 @@ export function dispatchInteractionCandidate(
     chartHeavyIoEnabled: boolean;
   },
 ): InteractionDispatchCandidate {
-  if (event.type === "pointerdown") {
+  if (event.type === "pointerdown" || event.type === "keyboard_pan_start") {
     cancelViewportCommandsOnPointerDown(harness.viewportState);
   }
 

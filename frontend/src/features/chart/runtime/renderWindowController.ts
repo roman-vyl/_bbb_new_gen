@@ -219,6 +219,13 @@ export function createRenderWindowController(
           }
         }, 50);
         break;
+      case "keyboard_pan_start":
+        if (interactionState === "applying_shift") {
+          abortApplyingShift();
+        }
+        setInteractionState(pendingShift ? "pending_shift" : "user_panning");
+        scheduleIdleCommit();
+        break;
       case "programmatic_viewport_start":
         programmaticViewportActive = true;
         break;

@@ -100,4 +100,64 @@ describe("viewportController", () => {
     expect(resizeCmd?.type).toBe("preserveUserRange");
     expect(canEmitTradeFocus(controller.getState())).toBe(false);
   });
+
+  it("keyboard_pan_start clears activeFocusIntent", () => {
+    const controller = createViewportController({
+      mode: "around-trade",
+      centerTimeSec: 1_700_000_000,
+      activeFocusIntent: "trade",
+      viewportOwner: "trade",
+    });
+
+    expect(canEmitTradeFocus(controller.getState())).toBe(true);
+    controller.dispatch({ type: "keyboard_pan_start", key: "ArrowLeft" });
+
+    expect(controller.getState().activeFocusIntent).toBeNull();
+    expect(controller.getState().viewportOwner).toBe("user");
+    expect(controller.getState().userPanning).toBe(true);
+    expect(canEmitTradeFocus(controller.getState())).toBe(false);
+  });
+
+  it("onTraceReady returns noViewportChange after keyboard_pan_start", () => {
+    const controller = createViewportController({
+      mode: "around-trade",
+      centerTimeSec: 1_700_000_000,
+      activeFocusIntent: "trade",
+      viewportOwner: "trade",
+    });
+
+    controller.dispatch({ type: "keyboard_pan_start", key: "PageUp" });
+    expect(controller.onTraceReady()).toEqual({ type: "noViewportChange" });
+  });
+
+  it("ordinary visible_range_changed does not clear focus intent", () => {
+    const controller = createViewportController({
+      mode: "around-trade",
+      centerTimeSec: 1_700_000_000,
+      activeFocusIntent: "trade",
+      viewportOwner: "trade",
+    });
+
+    controller.dispatch({
+      type: "visible_range_changed",
+      visible: { from: 10, to: 50 },
+      anchorTimeSec: 1_700_000_000,
+    });
+
+    expect(canEmitTradeFocus(controller.getState())).toBe(true);
+  });
+
+  it("programmatic_viewport_start/end do not clear trade focus intent", () => {
+    const controller = createViewportController({
+      mode: "around-trade",
+      centerTimeSec: 1_700_000_000,
+      activeFocusIntent: "trade",
+      viewportOwner: "trade",
+    });
+
+    controller.dispatch({ type: "programmatic_viewport_start" });
+    controller.dispatch({ type: "programmatic_viewport_end" });
+
+    expect(canEmitTradeFocus(controller.getState())).toBe(true);
+  });
 });

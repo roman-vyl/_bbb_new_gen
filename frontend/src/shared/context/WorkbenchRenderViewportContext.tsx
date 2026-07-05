@@ -312,7 +312,7 @@ export function WorkbenchRenderViewportProvider({
 
   const dispatchChartInteraction = useCallback(
     (event: ChartInteractionEvent) => {
-      if (event.type === "pointerdown") {
+      if (event.type === "pointerdown" || event.type === "keyboard_pan_start") {
         runPhase63CCancelViewportOnPointerDown(phase63CViewportOwner());
         setChartViewportCommand(null);
       }
