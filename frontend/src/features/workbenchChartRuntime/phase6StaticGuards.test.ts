@@ -29,7 +29,7 @@ const WORKBENCH_CHART_RUNTIME_OWNER_SYMBOLS = [
 const RENDER_VIEWPORT_RUNTIME_OWNER_SYMBOLS = [
   "dispatchChartInteraction",
   "runPhase63BRenderWindowInit",
-  "runPhase63CSelectTradeFocusCommand",
+  "runPhase63CForceTradeFocusCommand",
 ];
 
 describe("Phase 6.1 static import and ownership guards", () => {

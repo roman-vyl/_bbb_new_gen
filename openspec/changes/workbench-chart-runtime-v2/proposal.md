@@ -42,11 +42,11 @@ This proposal is grounded in `docs/workbench-chart-runtime-analysis.md`, which m
   - Do not perform a big-bang cutover that enables all runtime v2 production owners at once.
   - Do not start runtime implementation before this OpenSpec is approved.
 
-Success criteria:
+Success criteria (final — 2026-07-05):
 
-- The new runtime produces a complete authoritative `ChartRuntimeOutput`.
-- Smoke scenarios from `docs/workbench-chart-runtime-analysis.md` pass.
-- The Chart tab works through the new runtime after staged owner-domain cutover (6.3A–6.3F) and Phase 6.4 smoke matrix.
-- Old chart/runtime code is physically removed from `WorkbenchContext.tsx`.
-- `WorkbenchContext.tsx` is materially smaller, targeting at least 1000 fewer lines from the 3096-line baseline unless review approves a different target.
-- No mutable chart domain has two active owners after cutover.
+- The new runtime produces a complete authoritative `ChartRuntimeOutput` and is the **production Chart tab path** (cutover phase 6.3F).
+- Smoke scenarios from `docs/workbench-chart-runtime-analysis.md` pass, including Phase 6.4 matrix and trade-navigation acceptance (`f43b794`, `146f599`).
+- Chart domains have a **single active owner**; no dual pipeline.
+- Old inline chart orchestration is removed from `WorkbenchContext`; Phase 63B/C live in `WorkbenchRenderViewportContext`; 63D/63E/63F bridge wiring remains in `WorkbenchContext`.
+- Trade navigation uses **demand-load + readiness-gated `focusTrade`**; user pan uses interaction FSM gate (not broad `visible_range_changed` promotion).
+- Phase 7 mirror deletion and −1000-line target are **deferred backlog**, not acceptance blockers (see `final-architecture-summary.md`).

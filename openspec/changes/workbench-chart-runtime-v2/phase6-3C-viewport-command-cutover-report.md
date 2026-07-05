@@ -45,7 +45,7 @@ From `WorkbenchContext` old `chartRuntimeRef.viewport` path:
 - Window-swap settle protocol (`settleWindowSwapCommit` / `isWindowSwapTransactionCancelled`)
 - Viewport plan sync from `chartView` (`setViewportPlan`)
 - Interaction dispatch viewport half (`viewport.dispatch`)
-- Trade-select focus command emission (`selectTrade` → `focusTrade`)
+- Trade-select focus command emission — **superseded**: focus is readiness-gated in `WorkbenchRenderViewportContext` orchestrator; `selectTrade` does not sync-emit (see `final-architecture-summary.md` §3.3)
 - Window-swap restore command (`onWindowSwapCommitted`)
 - Trace-ready viewport command (`onTraceReady`)
 

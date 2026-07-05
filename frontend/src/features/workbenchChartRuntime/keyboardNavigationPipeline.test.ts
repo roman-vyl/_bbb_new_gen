@@ -23,7 +23,6 @@ import {
 } from "./displayRenderViewportHarness";
 import type { InteractionRuntimeHarness } from "./interactionRuntime";
 import { dispatchInteractionCandidate } from "./interactionRuntime";
-import { createInteractionRuntimeHarness } from "./interactionRuntime";
 import { createChartDataWindowManager } from "@/features/chart/chartDataWindowManager";
 import { createRenderWindowController } from "@/features/chart/runtime/renderWindowController";
 

@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Workbench Chart keeps a **sliding render window** (default 50 000 bars) over cached market intervals. Pan near window edges shifts the slice from cache with deferred commit during active drag; pan outside cache coverage triggers split `candles-window` / `ema-window` fetches for missing ranges only.
+Workbench Chart keeps a **sliding render window** (default 25 000 bars) over cached market intervals. Pan near window edges shifts the slice from cache with deferred commit during active drag; pan outside cache coverage triggers split `candles-window` / `ema-window` fetches for missing ranges only.
 ## Requirements
 ### Requirement: Chart maintains a sliding render window over the cached full candle bundle
 
@@ -12,8 +12,8 @@ The render window MUST be managed by a dedicated frontend module (`chartDataWind
 
 - `fullCandlesCount` (bars available in the covering cached interval for the current target bounds)
 - `windowStartIndex` and `windowEndIndex` (half-open indices into that interval's bar array)
-- `renderWindowSize` (default **50 000** bars)
-- `safeZoneSize` (default **10 000** bars from each window edge)
+- `renderWindowSize` (default **25 000** bars)
+- `safeZoneSize` (default **5 000** bars from each window edge)
 
 Pan-driven window shifts inside the **covering cached interval** MUST NOT trigger market API requests; they MUST slice from that interval's in-memory array only.
 
@@ -23,7 +23,7 @@ When a committed pan shift or trade navigation requires display bounds **outside
 
 - **GIVEN** the covering cached interval contains 120 000 bars
 - **WHEN** the chart initializes for the variant
-- **THEN** the chart series receives at most `renderWindowSize` bars (50 000 by default)
+- **THEN** the chart series receives at most `renderWindowSize` bars (25 000 by default)
 - **AND** the render window is a contiguous sub-range of that interval's bar array
 
 #### Scenario: Full bundle smaller than render window
@@ -64,9 +64,9 @@ After commit:
 
 #### Scenario: Active drag at right boundary queues shift without immediate swap
 
-- **GIVEN** a render window of 50 000 bars with `safeZoneSize` 10 000
+- **GIVEN** a render window of 25 000 bars with `safeZoneSize` 5 000
 - **AND** pointer drag is active
-- **WHEN** `visible.to` becomes greater than 40 000
+- **WHEN** `visible.to` becomes greater than 20 000
 - **THEN** a right-shift intent is recorded
 - **AND** `setData` is not called until pan idle commit
 
@@ -252,7 +252,7 @@ Workbench MUST NOT return a prior empty anchor slice from stabilize when the int
 
 ### Requirement: Lazy chart activation preserves render-window semantics
 
-Chart-heavy IO gating SHALL NOT change sliding render-window behavior after Chart activation. Once market data is loaded, the chart MUST still initialize tail or trade-centered windows, use the 50k render window and 10k safe zone defaults, and defer active-pan swaps until commit.
+Chart-heavy IO gating SHALL NOT change sliding render-window behavior after Chart activation. Once market data is loaded, the chart MUST still initialize tail or trade-centered windows, use the 25k render window and 5k safe zone defaults, and defer active-pan swaps until commit.
 
 #### Scenario: First chart activation initializes normal window
 

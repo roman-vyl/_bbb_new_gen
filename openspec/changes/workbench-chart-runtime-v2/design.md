@@ -341,7 +341,61 @@ Gaps that cannot remain before switch:
 10. Phase 6.3-debug — wire `domainOwners` / `cutoverPhase` console telemetry; no owner transfer.
 11. Staged cutover 6.3A (model/adapter) through 6.3F (market last); field map frozen before 6.3A code; STOP FOR REVIEW after each slice.
 12. Phase 6.4 full browser smoke matrix; Phase 6.5 ownership report before deletion.
-13. Phase 7 — delete old chart/runtime pipeline from `WorkbenchContext.tsx`.
-14. Phase 8 — remove temporary shadow/comparison code and shrink compatibility API.
+13. Post-cutover stabilization: extract `WorkbenchRenderViewportContext`; readiness-gated trade focus; outside/inside-window trade navigation fixes (`f43b794`, `146f599`).
+14. Phase 7 — optional mirror deletion from `WorkbenchContext.tsx` (**deferred backlog**).
+15. Phase 8 — remove temporary shadow/comparison code and shrink compatibility API (**deferred backlog**).
 
 Rollback before cutover is simply to keep using the current working pipeline. After cutover, rollback is reverting the cutover commit, not keeping a permanent fallback.
+
+---
+
+## 11. Final delivered architecture (2026-07-05)
+
+This section supersedes interim design assumptions. Authoritative detail: `final-architecture-summary.md`.
+
+### 11.1 Production layout
+
+| Layer | Role |
+|---|---|
+| `workbenchChartRuntime/*Runtime.ts` | Pure domain owners (market, render, viewport, trace, aux, model) |
+| `phase63*Bridge.ts` | Imperative bridge API between React refs and runtime modules |
+| `WorkbenchContext.tsx` | Workbench shell + 63D trace + 63E aux + 63F market load + composes render viewport provider |
+| `WorkbenchRenderViewportContext.tsx` | **63B render-window + 63C viewport + trade-focus orchestrator + interaction dispatch** |
+| `ChartPanel.tsx` | Renderer only |
+
+`WorkbenchContext` is **not** “thin glue only.” It remains a substantial orchestration shell but does **not** directly own render-window indices, viewport command policy, or trade-focus timing.
+
+### 11.2 User pan vs trade navigation
+
+**User pan** (mouse, wheel, keyboard prelude):
+
+- `ChartPanel` → `dispatchChartInteraction`
+- `RenderWindowController` FSM may enter `user_panning` from pointer/wheel/keyboard_pan_start — **not** from bare `visible_range_changed`
+- On `visible_range_changed`, market prefetch runs only when interaction state is already `user_panning`, `pending_shift`, or `applying_shift`
+- Boundary prefetch expands `marketCoverageWindow` → 63F load → render-window shift → `restoreAfterWindowSwap`
+
+**Trade navigation** (Reports row, Next/Prev):
+
+- `selectTrade` updates selection only — **no sync `focusTrade`**
+- `resolvePhase63FMarketTargetWindows` shifts focus window → demand-load when trade is outside current focus coverage
+- `phase63TradeFocusBridge.evaluateTradeFocusReadiness` gates emit until market/render/chart slice ready
+- Orchestrator in `WorkbenchRenderViewportContext` emits `focusTrade` via `runPhase63CForceTradeFocusCommand`
+
+### 11.3 Rejected approaches (do not document as current)
+
+| Approach | Status |
+|---|---|
+| Broad `visible_range_changed` → `user_panning` | **Rejected** |
+| Keyboard pan as primary trade-navigation fix | **Rejected** |
+| Sync `focusTrade` from `selectTrade` | **Rejected** |
+| WorkbenchContext market mirror state as owner | **Obsolete** |
+| Stale bundle for new focus without demand-load | **Rejected** |
+| Chunk eviction without coalescing | **Rejected** (`marketResourceCache` coalesces chunks) |
+
+### 11.4 Acceptance commits
+
+- Staged cutover: 6.3A–6.3F (Phase 6.4 smoke PASS)
+- Trade readiness gating: `1ad9c43`
+- Outside-window: `f43b794`
+- Inside-window: `146f599`
+

@@ -63,6 +63,19 @@ Synchronous `setData` for candles/EMA can still freeze UI during fast window shi
 
 `componentEventsLen=0` in tested dense trace payload; `componentMarkerCount=0` on main and branch. Separate data/trace-generation semantics investigation — only if component events are expected for that run/config.
 
+### 6. Trade navigation sequence (post-6.4 acceptance)
+
+Added with commits `f43b794` (outside-window) and `146f599` (inside-window):
+
+| Check | Verdict | Evidence |
+|---|---|---|
+| 22× Next trade without sticky unavailable | **PASS** | `run-trade-focus-smoke.mjs`, `e2e/trade-focus-smoke-20.spec.ts` |
+| Inside-window viewport moves | **PASS** | `insideWindowTradeFocus.test.ts`, `run-trade-focus-first3.mjs` |
+| Outside-window demand-load recovery | **PASS** | `outsideWindowTradeTransition.test.ts`, `marketResourceCache.test.ts` |
+| No broad visible_range user-pan promotion | **PASS** | `keyboardNavigationPipeline.test.ts`, `workbenchLoad.test.tsx` |
+
+---
+
 ### 5. Phase 7 cleanup not started
 
 Old `WorkbenchContext` chart/runtime code must **not** be deleted until Phase 6.5 ownership report explicitly maps removable code and confirms no domain still depends on old owner.
@@ -72,7 +85,7 @@ Old `WorkbenchContext` chart/runtime code must **not** be deleted until Phase 6.
 | Item | Status |
 |---|---|
 | Full 3×OFF / 3×ON perf matrix | Stopped at 3/6 runs — sufficient for attribution; see `phase6-4-events-vs-trace-perf-smoke.md` |
-| Reports → Chart, next/prev trade, variant switch, reload | Covered by 6.3F harness + unit contracts; not re-captured as dedicated Phase 6.4 artifacts |
+| Reports → Chart, next/prev trade, variant switch, reload | Covered by 6.3F harness + unit contracts; **supplemented** by trade-focus smokes (`f43b794`, `146f599`) |
 | chart-events ON for signal-trace readiness | Not run — dense fallback path tested; chart-events correctness separately PASS |
 
 ---

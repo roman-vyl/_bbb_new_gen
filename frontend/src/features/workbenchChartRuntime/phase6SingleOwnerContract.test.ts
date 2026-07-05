@@ -120,12 +120,13 @@ describe("Phase 6.1 single-owner contract guards", () => {
     expect(workbenchSource).toContain("useWorkbenchRenderViewport");
     expect(workbenchSource).not.toContain("phase63BRenderWindowOwnerRef");
     expect(workbenchSource).not.toContain("runPhase63CSelectTradeFocusCommand");
+    expect(workbenchSource).not.toContain("runPhase63CForceTradeFocusCommand");
 
     const renderViewportSource = readWorkspaceSource(
       "src/shared/context/WorkbenchRenderViewportContext.tsx",
     );
     expect(renderViewportSource).toContain("runPhase63BRenderWindowInit");
-    expect(renderViewportSource).toContain("runPhase63CSelectTradeFocusCommand");
+    expect(renderViewportSource).toContain("runPhase63CForceTradeFocusCommand");
   });
 });
 

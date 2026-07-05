@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { RunReport, RunVariant } from "@/api/types";
 import { clearMarketResourceCache, mergeCandlesWindowBundle } from "@/features/chart/marketResourceCache";
+import { CHART_RENDER_WINDOW_SIZE } from "@/features/chart/chartViewWindow";
 import {
   planCandlesWindowFetchForView,
   planEmaWindowFetchesForView,
@@ -62,7 +63,7 @@ const EMPTY_METRICS = {
 };
 
 const TIMEFRAME_MS = 300_000;
-const TARGET_SPAN_MS = 50_000 * TIMEFRAME_MS;
+const TARGET_SPAN_MS = CHART_RENDER_WINDOW_SIZE * TIMEFRAME_MS;
 
 function makeVariant(overrides: Partial<RunVariant> = {}): RunVariant {
   return {

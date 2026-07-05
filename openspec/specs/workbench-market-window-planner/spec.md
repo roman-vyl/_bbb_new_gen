@@ -12,7 +12,7 @@ Workbench Chart SHALL determine a **target display window** (time bounds in mill
 
 Initial cold open MUST resolve either:
 
-- a tail-aligned render window (default ~50 000 bars), or
+- a tail-aligned render window (default ~25 000 bars), or
 - a trade-centered window when a distant trade is the navigation target (~400 bars centered on entry per sliding-window policy, expanded to render-window size when needed)
 
 The planner MUST NOT default to the full report `data_range` for the first fetch.

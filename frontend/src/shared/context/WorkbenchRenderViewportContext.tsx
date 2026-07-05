@@ -29,7 +29,6 @@ import {
   runPhase63CIsWindowSwapTransactionCancelled,
   runPhase63COnWindowSwapCommitted,
   runPhase63CForceTradeFocusCommand,
-  runPhase63CSelectTradeFocusCommand,
   runPhase63CSettleWindowSwapCommit,
   runPhase63CSetViewportPlan,
   type Phase63CViewportOwnerState,

@@ -119,7 +119,10 @@ describe("insideWindowTradeFocus", () => {
     });
 
     expect(commands.every((cmd) => cmd?.type === "focusTrade")).toBe(true);
-    expect(new Set(commands.map((cmd) => cmd?.entryTimeSec)).size).toBe(indices.length);
+    const focusEntryTimes = commands
+      .filter((cmd): cmd is Extract<typeof cmd, { type: "focusTrade" }> => cmd?.type === "focusTrade")
+      .map((cmd) => cmd.entryTimeSec);
+    expect(new Set(focusEntryTimes).size).toBe(indices.length);
   });
 
   it("edge-aligned trades rebuild to identical bounds and still need viewport focus", () => {

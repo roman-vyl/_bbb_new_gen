@@ -175,24 +175,26 @@ Runtime v2 SHALL expose a debug snapshot containing at minimum run id, variant k
 - **THEN** console or `__pipelineDebugExport()` shows `domainOwners` with all domains `old_production` and `phase: 6.3-debug`
 - **AND** domain-relevant pipeline marks include `owner`, `domain`, and `phase` fields
 
-### Requirement: Old WorkbenchContext chart runtime SHALL be deleted after cutover
+### Requirement: Old WorkbenchContext chart runtime SHALL NOT remain as a dual pipeline
 
-After runtime v2 cutover passes acceptance gates, old chart/runtime state, refs, effects, callbacks, imports, and duplicated compatibility computations SHALL be physically removed from `frontend/src/shared/context/WorkbenchContext.tsx`.
+After runtime v2 cutover, `WorkbenchContext.tsx` SHALL NOT implement an active second chart pipeline alongside runtime v2 modules. Inline chart loader, bundle, pan, render-window, viewport, trace, aux, or model composition helpers MUST NOT remain as competing production owners.
 
-`WorkbenchContext.tsx` SHALL remain responsible only for shell/report/Composer/provider glue and runtime input/output adapters. The file SHOULD shrink by at least 1000 lines from the 3096-line baseline unless OpenSpec review approves a different target.
+`WorkbenchContext` SHALL retain shell/report/composer/selection glue and React wiring for Phase 63D trace, 63E aux, and 63F market load (`phase63*OwnerRef` bridges). Phase 63B render-window, 63C viewport commands, interaction dispatch, and trade-focus orchestration SHALL live in `WorkbenchRenderViewportContext`.
 
-#### Scenario: Provider no longer imports old chart loaders
+Phase 7 mirror-state deletion from `WorkbenchContext` is deferred optional cleanup; it is NOT required for runtime-v2 acceptance.
+
+#### Scenario: Provider does not import old chart loaders as active owners
 
 - **GIVEN** runtime v2 cutover has completed
 - **WHEN** `WorkbenchContext.tsx` is inspected
 - **THEN** it does not directly import or call old chart runtime loader, market bundle, pan prefetch, trace network, trace cache, render-window, viewport, aux overlay, or chart model composition helpers as active owners
-- **AND** those responsibilities are owned by modules under `frontend/src/features/workbenchChartRuntime/`
+- **AND** those domain behaviors are owned by modules under `frontend/src/features/workbenchChartRuntime/` and `WorkbenchRenderViewportContext`
 
-#### Scenario: Deletion phase cannot be skipped
+#### Scenario: Phase 7 deletion is optional backlog
 
-- **GIVEN** runtime v2 is production-active for Chart tab
-- **WHEN** implementation tasks are reviewed for completion
-- **THEN** the deletion phase has removed old provider chart runtime code or documents a separately approved exception
+- **GIVEN** runtime v2 is production-active for the Chart tab
+- **WHEN** refactor acceptance is reviewed
+- **THEN** optional Phase 7 mirror deletion may remain unimplemented without blocking archive
 - **AND** the change is not accepted as a permanent dual-runtime system
 
 ### Requirement: Runtime v2 SHALL pass required smoke gates before completion
@@ -212,3 +214,77 @@ Runtime v2 SHALL pass the required smoke gates from `docs/workbench-chart-runtim
 - **WHEN** final verification is reported
 - **THEN** the report includes HTF context EMA overlay verification on a variant with `strategy.contexts`
 - **AND** the verification confirms dashed HTF lines come from signal trace or chart-events `htf_context`, not BFF chart overlay EMA
+
+### Requirement: Phase 63B/C orchestration SHALL live in WorkbenchRenderViewportContext
+
+After cutover stabilization, render-window initialization/shift, viewport command stream, interaction dispatch, and trade-focus orchestration SHALL be owned by `WorkbenchRenderViewportContext`, not inline in `WorkbenchContext`.
+
+`WorkbenchContext` SHALL compose `WorkbenchRenderViewportProvider` with market bundle inputs and pan-prefetch callbacks from Phase 63F.
+
+#### Scenario: Viewport commands originate from render viewport context
+
+- **GIVEN** the Chart tab is active with runtime v2 production owners
+- **WHEN** trade focus or render-window restore requires a viewport command
+- **THEN** `chartViewportCommand` is produced by `WorkbenchRenderViewportContext` via Phase 63C bridge
+- **AND** `WorkbenchContext` does not maintain a competing viewport command owner
+
+### Requirement: Trade navigation SHALL use demand-load and readiness-gated focusTrade
+
+Trade selection (`selectTrade`, Next/Prev trade) SHALL NOT synchronously emit `focusTrade`. Trade focus SHALL emit only after market load, render foundation, and chart slice cover the selected trade entry.
+
+Outside-window navigation SHALL trigger focus-window demand-load and recover contiguous market cache coverage (including coalesced resource chunks).
+
+Inside-window navigation SHALL NOT reset market load to loading when the focus window is unchanged; `focusTrade` SHALL apply even when the bounded render window does not shift.
+
+#### Scenario: selectTrade does not sync-emit focusTrade
+
+- **GIVEN** the user selects a different trade
+- **WHEN** `selectTrade` runs
+- **THEN** selection state updates immediately
+- **AND** no synchronous `focusTrade` viewport command is emitted before readiness checks pass
+
+#### Scenario: Outside-window trade triggers demand-load
+
+- **GIVEN** the selected trade entry is outside the current market focus window coverage
+- **WHEN** trade selection changes
+- **THEN** focus window resolves to a trade-centered target window
+- **AND** Phase 63F market load fetches until cache coverage includes the new focus
+- **AND** trade focus emits only after readiness is `ready`
+
+#### Scenario: Inside-window trade moves viewport without spurious loading
+
+- **GIVEN** the next trade lies within the current focus window
+- **WHEN** the user navigates with Next/Prev trade
+- **THEN** market load status does not spuriously return to loading solely due to trade change
+- **AND** `focusTrade` applies to center the new trade even if render-window indices are unchanged
+
+### Requirement: User pan SHALL NOT be inferred from bare visible_range_changed
+
+`visible_range_changed` events from Lightweight Charts SHALL NOT alone promote interaction state to `user_panning` or trigger market boundary prefetch.
+
+Market pan prefetch SHALL run only when render-window interaction state is already `user_panning`, `pending_shift`, or `applying_shift` after controller dispatch, or from explicit pointer/wheel/keyboard_pan_start paths.
+
+#### Scenario: Programmatic visible range does not prefetch
+
+- **GIVEN** visible range changes due to programmatic viewport restore or trade focus
+- **WHEN** `visible_range_changed` is dispatched
+- **THEN** interaction state does not become `user_panning` from that event alone
+- **AND** market pan prefetch is not invoked with reason `interaction_state_gate` bypass
+
+#### Scenario: Keyboard prelude is not the trade navigation fix
+
+- **GIVEN** trade navigation via Next/Prev trade
+- **WHEN** viewport centers on the new trade
+- **THEN** the primary path is demand-load + readiness-gated `focusTrade`
+- **AND** keyboard_pan_start is not required for trade navigation correctness
+
+### Requirement: Market resource cache SHALL coalesce overlapping chunks
+
+When sequential trade-focus loads append candle or overlay chunks, `marketResourceCache` SHALL coalesce overlapping ranges so eviction does not leave coverage holes that strand trade navigation in unavailable market state.
+
+#### Scenario: Sequential trade loads keep contiguous coverage
+
+- **GIVEN** multiple market window loads for adjacent focus targets
+- **WHEN** chunks are written to the resource cache
+- **THEN** overlapping ranges are merged into contiguous coverage
+- **AND** a subsequent trade inside the merged coverage does not show sticky "Market data unavailable"

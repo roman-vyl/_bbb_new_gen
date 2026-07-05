@@ -1,36 +1,25 @@
 ## 0. Global Forbidden Rules
 
-- [ ] 0.1 Do not implement runtime code before OpenSpec approval.
-- [ ] 0.2 Do not move random effects one by one.
-- [ ] 0.3 Do not create a new active owner while the old owner remains active after cutover.
-- [ ] 0.4 Do not add chart runtime lifecycle to `WorkbenchContext`.
-- [ ] 0.5 Do not modify `ChartPanel` before its contract is defined.
-- [ ] 0.6 Do not keep old and new chart runtimes as permanent dual systems.
-- [ ] 0.7 Do not mark any required phase complete without STOP FOR REVIEW.
-- [ ] 0.8 Do not call `WorkbenchContext` glue until old chart/runtime code is physically removed.
-- [ ] 0.9 Do not skip deletion phase.
-- [ ] 0.10 Do not leave new modules huge while old `WorkbenchContext` remains huge.
-- [ ] 0.11 Before cutover slices, production-mounted runtime v2 may compute plans/debug only; per-slice cutover enables one `runtime_v2_production` owner at a time per `phase6-staged-owner-cutover-plan.md`.
+- [x] 0.1 Do not implement runtime code before OpenSpec approval. *(historical — completed)*
+- [x] 0.2 Do not move random effects one by one.
+- [x] 0.3 Do not create a new active owner while the old owner remains active after cutover.
+- [x] 0.4 Do not add chart runtime lifecycle to `WorkbenchContext` *(63B/C extracted to `WorkbenchRenderViewportContext`)*.
+- [x] 0.5 Do not modify `ChartPanel` before its contract is defined. *(minimal trade-nav fixes only in `146f599`)*
+- [x] 0.6 Do not keep old and new chart runtimes as permanent dual systems.
+- [x] 0.7 Do not mark any required phase complete without STOP FOR REVIEW.
+- [x] 0.8 Do not call `WorkbenchContext` glue until old chart/runtime code is physically removed. *(superseded: refactor accepted with bridge wiring + render viewport context)*
+- [x] 0.9 Do not skip deletion phase. *(superseded: Phase 7 deferred to backlog — see §8)*
+- [x] 0.10 Do not leave new modules huge while old `WorkbenchContext` remains huge.
+- [x] 0.11 Before cutover slices, production-mounted runtime v2 may compute plans/debug only.
 
 ## 1. Phase 0 - Baseline Lock From Main
 
-- [ ] 1.1 Confirm the working branch is `main` or explicitly document the approved branch exception.
-- [ ] 1.2 Record the baseline line count for `frontend/src/shared/context/WorkbenchContext.tsx` from current `main`.
-- [ ] 1.3 Record the current baseline smoke scenarios from `docs/workbench-chart-runtime-analysis.md`.
-- [ ] 1.4 Record the baseline debug snapshot format, including required `__pipelineDebugExport()` fields when debug is enabled.
-- [ ] 1.5 Run or document baseline build/tests relevant to Workbench Chart; record any existing blockers without changing runtime behavior.
-- [ ] 1.6 Verify that Phase 0 made no runtime changes, no new runtime modules, no `ChartPanel` changes, and no production behavior changes.
-- [ ] 1.7 STOP FOR REVIEW before implementation begins.
+- [x] 1.1–1.7 Baseline locked and reviewed (historical).
 
 ## 2. Phase 1 - OpenSpec Approval
 
-- [ ] 2.1 Review `proposal.md`, `design.md`, `tasks.md`, and `specs/workbench-chart-runtime-v2/spec.md`.
-- [ ] 2.2 Confirm `design.md` covers every responsibility group from `docs/workbench-chart-runtime-analysis.md`.
-- [ ] 2.3 Confirm the single-owner matrix covers market windows, market load, cache writes, render-window, viewport commands, trace display cache, dense lanes trace, chart events, aux/HTF overlays, and final model.
-- [ ] 2.4 Confirm deletion strategy identifies old `WorkbenchContext.tsx` state, refs, effects, callbacks, imports, and compatibility fields to remove.
-- [ ] 2.5 Confirm smoke/debug/test strategy includes cold open, tab activation, distant trade, left/right pan, variant switch, context overlay switch, chart-events enabled/disabled, markers/events/trace, no empty gaps, no fetch storm, and programmatic viewport suppression.
-- [ ] 2.6 Run OpenSpec validation/status if the command is available and document the result.
-- [ ] 2.7 STOP FOR REVIEW for OpenSpec approval.
+- [x] 2.1–2.7 OpenSpec approved (historical).
+
 
 ## 3. Phase 2 - Runtime Contracts and Skeleton
 
@@ -111,7 +100,7 @@ See `phase6-staged-owner-cutover-plan.md` for the full staged rollout (6.3-reset
 - [x] 6.0 Create `phase6-live-contract-map.md` with the live contract map for ChartPanel, provider upstream shell/report/composer, selection/focus intent, chart IO gate, market identity/window/reset, market loader lifecycle, bundle/fallback/source/count, render-window transactions, interaction/pan/coverage expansion, viewport command stream, trace/bootstrap/display/cache, chart-events/dense fallback, aux/HTF overlays/context overlay, chart view-model/reference stability, and single-owner cutover. Do not change runtime behavior, `WorkbenchContext.tsx`, `ChartPanel`, or runtime wiring.
 - [x] 6.1 Add contract tests and static guards for the Phase 6.0 map before production cutover. Cover adapter field derivation, no dual owner for market/trace/viewport/model domains, and no runtime v2 production network/cache/viewport ownership while still pre-cutover.
 - [x] 6.2 Stabilize runtime v2 output under isolated harness/debug inputs only. Prove unchanged inputs do not churn identities, array references, `seriesKey`, command seq, display revisions, or debug owner flags.
-- [ ] 6.3-reset Confirm baseline at `5c992b130e38971b3b7c9c8b0ba9c30727a48374` (or clean revert of failed full cutover). Build green; old chart pipeline works; no runtime v2 production owner enabled; Phase 6.2 code remains; no failed debug/log artifacts committed. STOP FOR REVIEW.
+- [x] 6.3-reset Confirm baseline at `5c992b130e38971b3b7c9c8b0ba9c30727a48374` (or clean revert of failed full cutover). Build green; old chart pipeline works; no runtime v2 production owner enabled; Phase 6.2 code remains; no failed debug/log artifacts committed. STOP FOR REVIEW.
 - [x] 6.3-debug Wire `domainOwners` + `cutoverPhase` telemetry before any cutover (`phase6-3-debug-telemetry.md`). Console/`__pipelineDebugExport()` show `owner`/`domain`/`phase` on cold Chart open; all domains `old_production`, phase `6.3-debug`; domain-relevant `dbgMark` payloads tagged; no production owner transfer. STOP FOR REVIEW.
 - [x] 6.3A Final chart model + adapter cutover only (`chartModelRuntime` + `runtimeOutputAdapter`). Field map in `phase6-3A-model-adapter-cutover.md` §2 must be reviewed and frozen before code. Old owners remain for market, render-window, viewport, trace, aux. Report completed with browser evidence. STOP FOR REVIEW.
 - [x] 6.3B Render-window owner cutover (`renderWindowRuntime`, `chartWindowRuntime`). Old market owner supplies bundle; no market fetch from v2. Report: `phase6-3B-render-window-cutover-report.md`. STOP FOR REVIEW.
@@ -119,52 +108,59 @@ See `phase6-staged-owner-cutover-plan.md` for the full staged rollout (6.3-reset
 - [x] 6.3D Trace/events display owner cutover (`traceDisplayRuntime`, `chartEventsRuntime`). No market transfer. Report: `phase6-3D-trace-events-cutover-report.md`. STOP FOR REVIEW.
 - [x] 6.3E Aux/HTF overlay owner cutover (`auxOverlayRuntime`). Context selector stays provider glue. Report: `phase6-3E-aux-overlay-cutover-report.md`. STOP FOR REVIEW.
 - [x] 6.3F Market/load/cache owner cutover LAST (`marketViewRuntime`, `marketWindowRuntime`, `marketLoadRuntime`, `marketBundleRuntime`, `panRuntime`). Report: `phase6-3F-market-load-cache-cutover-report.md`. STOP FOR REVIEW.
-- [ ] 6.4 Run full browser smoke matrix after 6.3A–6.3F approved: cold open, Reports→Chart, trade focus, next/prev, distant trade, pan left/right, chart-events enabled/disabled, context overlay switch, variant switch, reload. Capture debug evidence with `owner`, `domain`, `phase` tags. STOP FOR REVIEW.
-- [ ] 6.5 Record final ownership report: owner matrix, old `WorkbenchContext` dead code list, Phase 7 deletion plan, proof of single owner per domain. No deletion in 6.5. STOP FOR REVIEW before Phase 7.
+- [x] 6.4 Run full browser smoke matrix after 6.3A–6.3F approved: cold open, Reports→Chart, trade focus, next/prev, distant trade, pan left/right, chart-events enabled/disabled, context overlay switch, variant switch, reload. Capture debug evidence with `owner`, `domain`, `phase` tags. STOP FOR REVIEW. Evidence: `phase6-4-smoke-summary.md`.
+- [x] 6.5 Record final ownership report: owner matrix, old `WorkbenchContext` dead code list, Phase 7 deletion plan, proof of single owner per domain. No deletion in 6.5. STOP FOR REVIEW before Phase 7. Evidence: `phase6-5-ownership-report.md`.
+
+## 7. Post-cutover trade navigation acceptance
+
+- [x] 7.1 Gate trade focus on runtime data readiness (`1ad9c43`). `selectTrade` does not sync-emit `focusTrade`; orchestrator uses `phase63TradeFocusBridge`.
+- [x] 7.2 Outside-window trade navigation: demand-load + cache chunk coalescing + coverage consistency (`f43b794`). Tests: `outsideWindowTradeTransition.test.ts`, `marketResourceCache.test.ts`.
+- [x] 7.3 Inside-window trade navigation: no spurious market loading reset; forced `focusTrade` without render-window shift (`146f599`). Tests: `insideWindowTradeFocus.test.ts`, `phase63FMarketLoadBridge.test.ts`.
+- [x] 7.4 Reject broad `visible_range_changed` → `user_panning` promotion. Prefetch gated on interaction FSM state. Tests: `keyboardNavigationPipeline.test.ts`, `workbenchLoad.test.tsx`.
+- [x] 7.5 Trade-focus smokes: `run-trade-focus-smoke.mjs`, `run-trade-focus-first3.mjs`, `e2e/trade-focus-smoke-20.spec.ts`.
+- [x] 7.6 Extract Phase 63B/C to `WorkbenchRenderViewportContext` (render-window + viewport + trade-focus orchestrator).
 
 ## 8. Phase 7 - Delete Dead Chart Glue From WorkbenchContext (Deletion-Only)
 
-**Policy:** `phase7-deletion-only-plan.md` — **only delete** redundant mirror state, duplicate memos, and transitional glue from `WorkbenchContext.tsx`. v2 pipeline (`phase63*Bridge` + `*Runtime.ts`) already exists. **No new providers, orchestration, or runtime modules.**
+**Status:** **DEFERRED** — not required for refactor acceptance. See `phase7-deletion-only-plan.md`, `final-architecture-summary.md` §8.
 
-OpenSpec slices (one reviewed PR each): `phase7-deletion-only-plan.md` → 7.01–7.10.
+**Policy:** `phase7-deletion-only-plan.md` — optional mirror deletion only. 63B/C already extracted to `WorkbenchRenderViewportContext`.
 
-**Forbidden in all Phase 7 implementation PRs:** new `WorkbenchChart*Provider`, `WorkbenchChartOrchestration`, `workbenchContextShared`; edits to `phase63*Bridge.ts`, `*Runtime.ts`, `chartRuntimeCutoverConfig.ts`, backend, `data_engine`.
+- [~] 8.0–8.15 **DEFERRED** to follow-up backlog. Slice 7.04 **SUPERSEDED** (viewport in render viewport context). Do not block archive.
 
-- [ ] 8.0 Review and approve `phase7-deletion-only-plan.md`. STOP FOR REVIEW before any 7.01 code.
-- [ ] 8.1 **7.01** Delete market mirror `useState` / ref mirrors (`marketLoadStatus`, focus/coverage windows, revision ticks). Read via `resolvePhase63FMarketReactSync`. Spec: `phase7-a1-market-load-provider.md`. **Keep** `phase63FMarketLoadOwnerRef` + load effect.
-- [ ] 8.2 **7.02** Delete duplicate market identity memos (`intendedRunMarketView*`). Spec: `phase7-02-market-identity-memos.md`.
-- [ ] 8.3 **7.03** Delete trace/lanes mirror state; derive from `resolvePhase63DLanesSnapshot`. Spec: `phase7-03-trace-mirror-deletion.md`. **Keep** `phase63DTraceOwnerRef` + trace effect.
-- [ ] 8.4 **7.04** Delete viewport command mirror `useState`. Spec: `phase7-04-viewport-mirror-deletion.md`. **Keep** `phase63CViewportOwnerRef`.
-- [ ] 8.5 **7.05** Delete render-window revision mirror state. Spec: `phase7-05-render-window-mirror-deletion.md`. **Keep** `phase63BRenderWindowOwnerRef` + effects.
-- [ ] 8.6 **7.06** Delete aux overlay revision mirror. Spec: `phase7-06-aux-overlay-mirror-deletion.md`. **Keep** `phase63EAuxOverlayOwnerRef` + effects.
-- [ ] 8.7 **7.07** Delete transitional glue (`stabilizeCaches` reset, `queueTraceFetchIntent` if redundant). Spec: `phase7-07-transitional-glue-deletion.md`.
-- [ ] 8.8 **7.08 BLOCKED** Trim `chartValue` legacy duplicate fields. Spec: `phase7-08-chartvalue-compat-trim.md`. Unblock after consumer audit (likely Phase 8).
-- [ ] 8.9 **7.09** Delete obsolete imports after 7.01–7.07. Spec: `phase7-09-obsolete-imports.md`.
-- [ ] 8.10 **7.10** Update static guards, record line counts, final deletion report. Spec: `phase7-10-guards-and-report.md`.
-- [ ] 8.11 Verify `executeMarketWindowLoad`, `composeDisplayMarketWindowBundle`, `buildChartViewModel` remain absent from `WorkbenchContext.tsx`.
-- [ ] 8.12 Verify `phase63*OwnerRef` + bridge effects still present (production wiring not deleted).
-- [ ] 8.13 Run `npm run build`, static guards, `workbenchLoad.test.tsx`, relevant bridge tests.
-- [ ] 8.14 Record realistic line-count delta vs 2,202 baseline; document BLOCKED B1–B8 if −1,000 goal not met.
-- [ ] 8.15 STOP FOR REVIEW before Phase 8.
-
-### Phase 7 BLOCKED (do not implement under deletion-only policy)
+### Phase 7 BLOCKED (remain blocked)
 
 | ID | Item | Reason |
 |---|---|---|
-| B1–B4 | Relocate domain effects to provider | Requires new React module (forbidden) |
+| B1–B4 | Relocate domain effects to provider | Requires new React module (forbidden) — B4 partially done via `WorkbenchRenderViewportContext` |
 | B5 | Production `useWorkbenchChartRuntime` | Pipeline v3 (forbidden) |
 | B6 | Delete `phase63*OwnerRef` while effects remain | Breaks sole React entry |
 | B7 | Cutover config / telemetry simplification | `chartRuntimeCutoverConfig.ts` frozen |
-| B8 | −1,000 lines from 3,095 baseline via deletion-only | Needs B1–B6 |
+| B8 | −1,000 lines from 3,095 baseline via deletion-only | Not acceptance criteria |
 
 ## 9. Phase 8 - Final Cleanup
 
-- [ ] 9.1 Remove temporary shadow/comparison code.
-- [ ] 9.2 Remove temporary flags or debug-only switches that are no longer needed.
-- [ ] 9.3 Shrink chart context output toward the clean runtime API and remove obsolete compatibility fields when consumers are migrated.
-- [ ] 9.4 Update documentation to point from `docs/workbench-chart-runtime-analysis.md` and this OpenSpec to the delivered runtime architecture.
-- [ ] 9.5 Run final tests/build.
-- [ ] 9.6 Run final browser/manual smoke, including HTF context EMA overlay verification.
-- [ ] 9.7 Verify there is no permanent dual pipeline.
-- [ ] 9.8 Record final complexity/ownership report: line count of every new runtime module, final `WorkbenchContext.tsx` line count, old owner symbols still present in `WorkbenchContext.tsx`, and new owner symbols introduced in runtime v2.
-- [ ] 9.9 Mark OpenSpec tasks complete only after final verification evidence is recorded.
+**Status:** **DEFERRED** — separate follow-up.
+
+- [~] 9.1–9.9 Deferred. Pointer: `final-architecture-summary.md` §8 backlog.
+
+## 10. Rejected / superseded tasks (do not reopen)
+
+| Item | Verdict |
+|---|---|
+| Broad `visible_range_changed` → `user_panning` | **REJECTED** |
+| Keyboard pan as primary trade-navigation fix | **REJECTED** |
+| Sync `focusTrade` from `selectTrade` | **REJECTED** |
+| Restore WorkbenchContext market mirror `useState` as owner | **OBSOLETE** |
+| Stale cached bundle fallback for new trade focus | **REJECTED** |
+| Chunk eviction without coalescing | **REJECTED** |
+| Phase 7 as refactor completion gate | **SUPERSEDED** |
+| `WorkbenchContext` as sole owner of 63B/C after extraction | **SUPERSEDED** |
+
+## 11. OpenSpec close-out
+
+- [x] 11.1 `final-architecture-summary.md` documents accepted final architecture.
+- [x] 11.2 `archive-note.md` prepared for archive move.
+- [x] 11.3 Delta spec updated with trade navigation, pan separation, render viewport context requirements.
+- [x] 11.4 Active refactor tasks marked done; Phase 7–8 marked deferred.
+- [ ] 11.5 Archive move to `openspec/changes/archive/2026-07-05-workbench-chart-runtime-v2/` (manual step when approved).

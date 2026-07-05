@@ -357,3 +357,38 @@ Before starting Phase 7 code deletion:
 | `phase6SingleOwnerContract.test.ts` | Single-owner import guards |
 
 **STOP FOR REVIEW**
+
+---
+
+## Addendum — post-6.5 stabilization (2026-07-05)
+
+**Status:** ACCEPTED — supersedes §4 line-count table and §12 “Phase 7 may proceed” as refactor gate.
+
+### Architectural changes after 6.5
+
+| Change | Detail |
+|---|---|
+| `WorkbenchRenderViewportContext` | Phase 63B/C + trade-focus orchestrator extracted from `WorkbenchContext` |
+| Trade focus gating | `phase63TradeFocusBridge`; `selectTrade` does not sync-emit `focusTrade` |
+| Outside-window trade nav | `f43b794` — cache coalescing, demand-load recovery |
+| Inside-window trade nav | `146f599` — no spurious loading reset; forced focus without render-window shift |
+| Pan gate | `visible_range_changed` does not alone promote `user_panning` |
+
+### Updated ownership diagram
+
+```
+WorkbenchContext (shell + 63D trace + 63E aux + 63F market load)
+  └── WorkbenchRenderViewportProvider (63B render + 63C viewport + trade-focus orchestrator)
+        └── ChartPanel (renderer)
+```
+
+### Line counts (current)
+
+| File | Lines (approx.) |
+|---|---|
+| `WorkbenchContext.tsx` | ~1,947 |
+| `WorkbenchRenderViewportContext.tsx` | ~800 |
+
+Phase 7 mirror deletion remains **optional backlog** — not a blocker for archiving this OpenSpec change.
+
+See `final-architecture-summary.md` for authoritative final architecture.

@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import type { ChartBar, RunReport, RunVariant } from "@/api/types";
 import { CHART_RENDER_SAFE_ZONE } from "@/features/chart/chartViewWindow";
-import { clearMarketResourceCache, mergeCandlesWindowBundle } from "@/features/chart/marketResourceCache";
+import { clearMarketResourceCache } from "@/features/chart/marketResourceCache";
 import { resolveRunMarketView } from "@/features/chart/runMarketView";
 import { canEmitTradeFocus } from "@/features/chart/runtime/viewportController";
 import {
@@ -11,10 +11,7 @@ import {
   tradeFocusEmitKey,
 } from "@/features/workbenchChartRuntime/phase63TradeFocusBridge";
 
-import {
-  createDisplayRenderViewportHarness,
-  type DisplayRenderViewportHarness,
-} from "./displayRenderViewportHarness";
+import { createDisplayRenderViewportHarness } from "./displayRenderViewportHarness";
 import { dispatchInteractionCandidate } from "./interactionRuntime";
 
 const EMPTY_METRICS = {

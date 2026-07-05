@@ -119,7 +119,7 @@ describe("Phase 6.3C viewport command cutover", () => {
       "src/shared/context/WorkbenchRenderViewportContext.tsx",
     );
     expect(renderViewportSource).toContain("phase63CViewportCommandBridge");
-    expect(renderViewportSource).toContain("runPhase63CSelectTradeFocusCommand");
+    expect(renderViewportSource).toContain("runPhase63CForceTradeFocusCommand");
     expect(renderViewportSource).toContain("runPhase63CDispatchViewportInteraction");
     expect(renderViewportSource).not.toContain("useWorkbenchChartRuntime");
     expect(findForbiddenAdapterFallbackPatterns(renderViewportSource)).toEqual([]);

@@ -1,6 +1,6 @@
 # Follow-up: WorkbenchContext decomposition
 
-**Status:** Proposed (not started)  
+**Status:** **SUPERSEDED** by delivered `workbench-chart-runtime-v2` (see `openspec/changes/workbench-chart-runtime-v2/final-architecture-summary.md`). Do not start this plan as written.  
 **Parent:** Archived change `frontend-chart-architecture-refactor` (2026-05-31)  
 **Reference map:** `openspec/changes/archive/2026-05-31-frontend-chart-architecture-refactor/implementation/ownership-map.md`
 

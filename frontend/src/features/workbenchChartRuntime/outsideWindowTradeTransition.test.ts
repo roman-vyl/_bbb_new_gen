@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { ChartBar, RunReport } from "@/api/types";
+import type { ChartBar, ChartMarketBundle, RunReport } from "@/api/types";
+import type { ExecuteMarketWindowLoadResult } from "@/features/chart/workbenchMarketLoad";
 import { CHART_RENDER_WINDOW_SIZE } from "@/features/chart/chartViewWindow";
 import {
   clearMarketResourceCache,
@@ -155,7 +156,7 @@ function runRenderViewportTick(input: {
 
 function resolveChartView(input: {
   phase63BOwner: ReturnType<typeof createPhase63BRenderWindowOwnerState>;
-  bundle: { candles: ChartBar[]; ema_overlays: [] };
+  bundle: ChartMarketBundle;
   marketLoadStatus: "ready" | "loading" | "idle" | "error";
   selectedTradeEntryTimeMs: number | null;
 }) {
@@ -319,7 +320,9 @@ describe("outside-window trade transition (A inside chartView → B outside char
       timeframe: "5m",
       signal: new AbortController().signal,
       loadGeneration: beginMarketLoadCycle(controller, viewIdentity),
-      executeLoad: vi.fn(async () => new Promise(() => {})),
+      executeLoad: vi.fn(
+        (): Promise<ExecuteMarketWindowLoadResult> => new Promise(() => {}),
+      ),
     });
 
     expect(marketCandlesReadyForTarget(view, focusB)).toBe(false);
