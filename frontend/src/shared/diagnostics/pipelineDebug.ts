@@ -53,6 +53,15 @@ export const PIPELINE_DEBUG_STEPS = {
     noShift: "wb.pan.no_shift",
     shiftRequested: "wb.pan.shift_requested",
   },
+  keyboard: {
+    keydownDecision: "wb.keyboard.keydown_decision",
+    panStartDispatched: "wb.keyboard.pan_start_dispatched",
+    renderWindowPanStart: "wb.keyboard.render_window_pan_start",
+    viewportPanStart: "wb.keyboard.viewport_pan_start",
+    visibleRangeDispatch: "wb.keyboard.visible_range_dispatch",
+    focusTradeEmitDecision: "wb.viewport.focus_trade_emit_decision",
+    modelApplyEmpty: "wb.model_adapter.apply_empty",
+  },
   chartWindow: {
     slice: "wb.chart_window_slice",
   },

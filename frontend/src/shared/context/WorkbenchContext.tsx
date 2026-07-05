@@ -934,6 +934,7 @@ function WorkbenchProviderInner({
       selectedRunId,
       selectedVariantKey,
       selectedTradeEntryTimeMs,
+      selectedTradeId,
       chartHeavyIoEnabled,
       auxEmaOverlays: phase63EAuxOverlayOwner().controller.auxEmaOverlays,
       auxOverlayRevision,
@@ -956,6 +957,7 @@ function WorkbenchProviderInner({
       selectedRunId,
       selectedVariantKey,
       selectedTradeEntryTimeMs,
+      selectedTradeId,
       chartHeavyIoEnabled,
       auxOverlayRevision,
       marketOverlayRevision,
@@ -1539,25 +1541,42 @@ function WorkbenchProviderContexts({
     return true;
   }, [chartDisplayComponentEvents.length, traceDisplayState.status]);
 
-  const phase63AModelSlice = useMemo(
-    () =>
-      resolvePhase63EModelRuntimeSlice(
-        {
-          chartView,
-          chartDisplayAuxEmaOverlays: [],
-          chartDisplayComponentEvents,
-          htfAuxEmaOverlayStale: false,
-          componentEventsStale,
-          traceDisplayState,
-        },
-        auxOverlaySnapshot,
-      ),
-    [
+  const phase63AModelSlice = useMemo(() => {
+    const slice = resolvePhase63EModelRuntimeSlice(
+      {
+        chartView,
+        chartDisplayAuxEmaOverlays: [],
+        chartDisplayComponentEvents,
+        htfAuxEmaOverlayStale: false,
+        componentEventsStale,
+        traceDisplayState,
+      },
+      auxOverlaySnapshot,
+    );
+    if (slice.chartViewModel.count === 0) {
+      dbgMark(DBG.keyboard.modelApplyEmpty, {
+        seriesKey: slice.chartViewModel.seriesKey,
+        barCount: 0,
+        chartWindowKey,
+        renderWindowBounds,
+        cachedBundleCandleCount: cachedBundle?.candles.length ?? 0,
+        chartViewCount: chartView.count,
+        chartViewFirstTimeSec: chartView.firstTimeSec,
+        chartViewLastTimeSec: chartView.lastTimeSec,
+        marketLoadStatus,
+      });
+    }
+    return slice;
+  }, [
       chartView,
       chartDisplayComponentEvents,
       componentEventsStale,
       traceDisplayState,
       auxOverlaySnapshot,
+      chartWindowKey,
+      renderWindowBounds,
+      cachedBundle,
+      marketLoadStatus,
     ],
   );
 

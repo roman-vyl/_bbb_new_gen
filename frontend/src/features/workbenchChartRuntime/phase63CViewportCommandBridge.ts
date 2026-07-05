@@ -6,7 +6,7 @@ import type {
   WindowCommitResult,
 } from "@/features/chart/runtime/types";
 import { canEmitTradeFocus } from "@/features/chart/runtime/viewportController";
-import { PIPELINE_DEBUG_STEPS as DBG } from "@/shared/diagnostics/pipelineDebug";
+import { PIPELINE_DEBUG_STEPS as DBG, dbgMark } from "@/shared/diagnostics/pipelineDebug";
 
 import { dbgMarkCutover } from "./chartRuntimeCutoverTelemetry";
 import type { Phase63BRenderWindowOwnerState } from "./phase63BRenderWindowBridge";
@@ -55,6 +55,7 @@ export function runPhase63CSetViewportPlan(
 export function runPhase63CRecordViewportCommand(
   state: Phase63CViewportOwnerState,
   command: ViewportControllerCommand | null,
+  options?: { emitSource?: string; selectedTradeId?: string | number | null },
 ): ViewportCommand | null {
   if (command === null) {
     return null;
@@ -71,6 +72,8 @@ export function runPhase63CRecordViewportCommand(
         mode: viewportState.mode,
         viewportOwner: viewportState.viewportOwner,
         activeFocusIntent: viewportState.activeFocusIntent,
+        emitSource: options?.emitSource ?? null,
+        selectedTradeId: options?.selectedTradeId ?? null,
       });
     }
     return null;
@@ -80,6 +83,7 @@ export function runPhase63CRecordViewportCommand(
   if (recorded === null) {
     dbgMarkCutover(PHASE_63C_VIEWPORT_DUPLICATE_SKIP_STEP, "viewport", {
       commandType: filtered.type,
+      emitSource: options?.emitSource ?? null,
     });
     return null;
   }
@@ -87,12 +91,25 @@ export function runPhase63CRecordViewportCommand(
   dbgMarkCutover(PHASE_63C_VIEWPORT_EMIT_STEP, "viewport", {
     commandType: recorded.type,
     commandSeq: state.viewportState.commandSeq,
+    emitSource: options?.emitSource ?? null,
   });
 
   if (recorded.type === "focusTrade") {
+    const viewportState = state.viewportState.controller.getState();
     dbgMarkCutover(DBG.chart.viewportApplyTradeFocus, "viewport", {
       entryTimeSec: recorded.entryTimeSec,
       commandSeq: state.viewportState.commandSeq,
+      emitSource: options?.emitSource ?? null,
+    });
+    dbgMark(DBG.keyboard.focusTradeEmitDecision, {
+      commandType: "focusTrade",
+      entryTimeSec: recorded.entryTimeSec,
+      viewportOwner: viewportState.viewportOwner,
+      activeFocusIntent: viewportState.activeFocusIntent,
+      userPanning: viewportState.userPanning,
+      selectedTradeId: options?.selectedTradeId ?? null,
+      emitSource: options?.emitSource ?? null,
+      allowed: true,
     });
   }
   if (recorded.type === "restoreAfterWindowSwap") {
@@ -112,10 +129,14 @@ export function runPhase63CAcknowledgeViewportCommand(state: Phase63CViewportOwn
   });
 }
 
-export function runPhase63CCancelViewportOnPointerDown(state: Phase63CViewportOwnerState): void {
+export function runPhase63CCancelViewportOnPointerDown(
+  state: Phase63CViewportOwnerState,
+  options?: { trigger?: string },
+): void {
   cancelViewportCommandsOnPointerDown(state.viewportState);
   dbgMarkCutover(PHASE_63C_VIEWPORT_CANCEL_STEP, "viewport", {
     cancelledThroughId: state.viewportState.windowSwapCancelledThroughId,
+    trigger: options?.trigger ?? "pointerdown",
   });
 }
 
@@ -186,6 +207,7 @@ export function runPhase63COnWindowSwapCommitted(
 export function runPhase63COnTraceReady(
   state: Phase63CViewportOwnerState,
   renderWindowOwner: Phase63BRenderWindowOwnerState,
+  options?: { selectedTradeId?: string | number | null },
 ): ViewportCommand | null {
   const traceViewportCmd = v2ViewportController(renderWindowOwner).onTraceReady();
   if (
@@ -194,20 +216,27 @@ export function runPhase63COnTraceReady(
   ) {
     return null;
   }
-  return runPhase63CRecordViewportCommand(state, traceViewportCmd);
+  return runPhase63CRecordViewportCommand(state, traceViewportCmd, {
+    emitSource: "onTraceReady",
+    selectedTradeId: options?.selectedTradeId ?? null,
+  });
 }
 
 export function runPhase63CSelectTradeFocusCommand(
   state: Phase63CViewportOwnerState,
   renderWindowOwner: Phase63BRenderWindowOwnerState,
   entryTimeSec: number,
+  options?: { selectedTradeId?: string | number | null },
 ): ViewportCommand | null {
   runPhase63CSetViewportPlan(state, "around-trade", entryTimeSec);
   const command = v2ViewportController(renderWindowOwner).dispatch({
     type: "trade_selected",
     entryTimeSec,
   });
-  return runPhase63CRecordViewportCommand(state, command);
+  return runPhase63CRecordViewportCommand(state, command, {
+    emitSource: "selectTrade",
+    selectedTradeId: options?.selectedTradeId ?? null,
+  });
 }
 
 export function runPhase63CIsWindowSwapTransactionCancelled(

@@ -241,6 +241,20 @@ export function resolvePhase63EModelRuntimeSlice(
     viewMode: boundary.chartViewModel.viewMode,
   });
 
+  if (boundary.chartViewModel.count === 0) {
+    dbgMarkCutover(DBG.keyboard.modelApplyEmpty, "model", {
+      seriesKey: boundary.chartViewModel.seriesKey,
+      barCount: 0,
+      viewMode: boundary.chartViewModel.viewMode,
+      inputFirstTimeSec: input.chartView.firstTimeSec,
+      inputLastTimeSec: input.chartView.lastTimeSec,
+      inputCount: input.chartView.count,
+      inputMode: input.chartView.mode,
+      inputCenterTimeSec: input.chartView.centerTimeSec,
+      inputCandlesLength: input.chartView.candles.length,
+    });
+  }
+
   return { chartViewModel: boundary.chartViewModel };
 }
 

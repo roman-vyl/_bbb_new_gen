@@ -67,12 +67,15 @@ import {
 } from "@/features/chart/tradeManagementChartEvents";
 
 import { shouldSuppressPanShiftRequest } from "@/features/chart/chartViewport";
-import { createChartInteractionAdapter, isChartNavigationKey } from "@/features/chart/runtime/interactionAdapter";
+import {
+  createChartInteractionAdapter,
+  handleChartNavigationKeydown,
+} from "@/features/chart/runtime/interactionAdapter";
 import { executeViewportCommand } from "@/features/chart/runtime/executeViewportCommand";
 import { CHART_RENDER_WINDOW_SIZE } from "@/features/chart/chartDataWindowManager";
 import { findTradeById, tradeDisplayNumber } from "@/features/chart/tradeLookup";
 
-import { useWorkbenchChart } from "@/shared/context/WorkbenchContext";
+import { useWorkbenchChart, useWorkbenchShell } from "@/shared/context/WorkbenchContext";
 import { useWorkbenchRenderViewport } from "@/shared/context/WorkbenchRenderViewportContext";
 
 
@@ -102,6 +105,10 @@ function overlaySeriesTitle(overlay: ChartEmaOverlay): string {
 }
 
 export function ChartPanel() {
+  const { activeTab } = useWorkbenchShell();
+  const chartTabActiveRef = useRef(activeTab === "chart");
+  chartTabActiveRef.current = activeTab === "chart";
+
   const containerRef = useRef<HTMLDivElement>(null);
   const panelBodyRef = useRef<HTMLDivElement>(null);
   const asideRef = useRef<HTMLDivElement>(null);
@@ -502,34 +509,19 @@ export function ChartPanel() {
     const onPointerDown = () => adapter.onPointerDown();
     const onPointerUp = () => adapter.onPointerUp();
     const onWheel = () => adapter.onWheel();
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) {
-        return;
-      }
-      if (!isChartNavigationKey(event.key)) {
-        return;
-      }
-      const active = document.activeElement;
-      if (active !== el && !el.contains(active)) {
-        return;
-      }
-      const target = event.target;
-      if (target instanceof HTMLElement) {
-        const tag = target.tagName;
-        if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA" || tag === "BUTTON") {
-          return;
-        }
-        if (target.isContentEditable) {
-          return;
-        }
-      }
-      adapter.onKeyboardPanStart(event.key);
+    const onDocumentKeyDown = (event: KeyboardEvent) => {
+      handleChartNavigationKeydown(event, {
+        listenerScope: "document",
+        chartTabActive: chartTabActiveRef.current,
+        chartCanvas: el,
+        adapter,
+      });
     };
 
     el.addEventListener("pointerdown", onPointerDown);
     el.addEventListener("pointerup", onPointerUp);
     el.addEventListener("wheel", onWheel, { passive: true });
-    el.addEventListener("keydown", onKeyDown);
+    document.addEventListener("keydown", onDocumentKeyDown, true);
 
     const visibleRangeHandler = (range: { from: number; to: number } | null) => {
       if (
@@ -577,7 +569,7 @@ export function ChartPanel() {
       el.removeEventListener("pointerdown", onPointerDown);
       el.removeEventListener("pointerup", onPointerUp);
       el.removeEventListener("wheel", onWheel);
-      el.removeEventListener("keydown", onKeyDown);
+      document.removeEventListener("keydown", onDocumentKeyDown, true);
 
       // chart.remove() destroys all series; do not call removeSeries afterward.
       auxEmaSeriesRef.current.clear();

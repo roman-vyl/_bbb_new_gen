@@ -62,6 +62,7 @@ export type WorkbenchRenderViewportInputs = {
   selectedRunId: string | null;
   selectedVariantKey: string;
   selectedTradeEntryTimeMs: number | null;
+  selectedTradeId: string | number | null;
   chartHeavyIoEnabled: boolean;
   auxEmaOverlays: readonly ChartAuxEmaOverlay[];
   auxOverlayRevision: number;
@@ -164,6 +165,7 @@ export function WorkbenchRenderViewportProvider({
     marketFocusWindow,
     selectedVariantKey,
     selectedTradeEntryTimeMs,
+    selectedTradeId,
     auxEmaOverlays,
     auxOverlayRevision,
     marketOverlayRevision,
@@ -312,8 +314,15 @@ export function WorkbenchRenderViewportProvider({
 
   const dispatchChartInteraction = useCallback(
     (event: ChartInteractionEvent) => {
+      const interactionStateBeforeDispatch =
+        event.type === "visible_range_changed"
+          ? v2RenderWindow().getInteractionState()
+          : null;
+
       if (event.type === "pointerdown" || event.type === "keyboard_pan_start") {
-        runPhase63CCancelViewportOnPointerDown(phase63CViewportOwner());
+        runPhase63CCancelViewportOnPointerDown(phase63CViewportOwner(), {
+          trigger: event.type,
+        });
         setChartViewportCommand(null);
       }
       const chartRuntime = v2ChartRuntime();
@@ -324,26 +333,60 @@ export function WorkbenchRenderViewportProvider({
         event,
       );
       if (event.type === "visible_range_changed" && event.anchorTimeSec !== null) {
-        chartRuntime.renderWindow.recordBoundaryIntent(event.visible, event.anchorTimeSec);
-        const interactionState = v2RenderWindow().getInteractionState();
-        if (
-          interactionState === "user_panning" ||
-          interactionState === "pending_shift" ||
-          interactionState === "applying_shift"
-        ) {
+        const boundaryRecorded = chartRuntime.renderWindow.recordBoundaryIntent(
+          event.visible,
+          event.anchorTimeSec,
+        );
+        const interactionStateAfterDispatch = v2RenderWindow().getInteractionState();
+        const prefetchGateEntered =
+          interactionStateAfterDispatch === "user_panning" ||
+          interactionStateAfterDispatch === "pending_shift" ||
+          interactionStateAfterDispatch === "applying_shift";
+
+        let fromIdx: number | null = null;
+        let toIdx: number | null = null;
+        let sampleKey: string | null = null;
+        let prefetchCalled = false;
+        let prefetchSkippedReason: string | null = null;
+
+        if (prefetchGateEntered) {
           const candles = chartViewCandlesRef.current;
-          if (candles.length > 0) {
-            const fromIdx = Math.max(
+          if (candles.length === 0) {
+            prefetchSkippedReason = "no_candles";
+          } else {
+            fromIdx = Math.max(
               0,
               Math.min(candles.length - 1, Math.floor(event.visible.from)),
             );
-            const toIdx = Math.max(0, Math.min(candles.length - 1, Math.floor(event.visible.to)));
-            const sampleKey = `${fromIdx}:${toIdx}:${candles[fromIdx]!.time}:${candles[toIdx]!.time}`;
+            toIdx = Math.max(0, Math.min(candles.length - 1, Math.floor(event.visible.to)));
+            sampleKey = `${fromIdx}:${toIdx}:${candles[fromIdx]!.time}:${candles[toIdx]!.time}`;
             if (shouldPanPrefetchForSample(sampleKey)) {
               onPanPrefetch(candles[fromIdx]!.time, candles[toIdx]!.time, true, sampleKey);
+              prefetchCalled = true;
+            } else {
+              prefetchSkippedReason = "sample_deduped";
             }
           }
+        } else {
+          prefetchSkippedReason = "interaction_state_gate";
         }
+
+        dbgMark(DBG.keyboard.visibleRangeDispatch, {
+          eventType: event.type,
+          interactionStateBeforeDispatch,
+          interactionStateAfterDispatch,
+          recordBoundaryIntent: boundaryRecorded,
+          visibleFrom: event.visible.from,
+          visibleTo: event.visible.to,
+          anchorTimeSec: event.anchorTimeSec,
+          fromIdx,
+          toIdx,
+          sampleKey,
+          prefetchGateEntered,
+          prefetchCalled,
+          prefetchSkippedReason,
+          chartViewCandleCount: chartViewCandlesRef.current.length,
+        });
       }
       if (viewportCommand !== null) {
         emitChartViewportCommand(viewportCommand);
@@ -445,17 +488,20 @@ export function WorkbenchRenderViewportProvider({
         phase63CViewportOwner(),
         phase63BRenderWindowOwner(),
         entryTimeSec,
+        { selectedTradeId },
       );
       if (command !== null) {
         emitChartViewportCommand(command);
       }
     },
-    [emitChartViewportCommand],
+    [emitChartViewportCommand, selectedTradeId],
   );
 
   const onTraceReadyViewport = useCallback((): ViewportCommand | null => {
-    return runPhase63COnTraceReady(phase63CViewportOwner(), phase63BRenderWindowOwner());
-  }, []);
+    return runPhase63COnTraceReady(phase63CViewportOwner(), phase63BRenderWindowOwner(), {
+      selectedTradeId,
+    });
+  }, [selectedTradeId]);
 
   const getInteractionState = useCallback(
     () => v2RenderWindow().getInteractionState(),
