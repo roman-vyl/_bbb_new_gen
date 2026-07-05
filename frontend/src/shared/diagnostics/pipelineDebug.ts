@@ -102,6 +102,14 @@ export const PIPELINE_DEBUG_STEPS = {
     panPrefetchDecision: "wb.market_pan_prefetch_decision",
     composeFocusFallback: "wb.market_compose_focus_fallback",
   },
+  tradeFocus: {
+    request: "wb.trade_focus.request",
+    coverageCheck: "wb.trade_focus.coverage_check",
+    delayed: "wb.trade_focus.delayed",
+    applied: "wb.trade_focus.applied",
+    cancelled: "wb.trade_focus.cancelled",
+    emptyPrevented: "wb.trade_focus.empty_prevented",
+  },
   cutover: {
     domainOwners: "wb.cutover.domain_owners",
   },

@@ -69,7 +69,7 @@ import {
 import { shouldSuppressPanShiftRequest } from "@/features/chart/chartViewport";
 import {
   createChartInteractionAdapter,
-  handleChartNavigationKeydown,
+  registerChartDocumentKeyboardNavigation,
 } from "@/features/chart/runtime/interactionAdapter";
 import { executeViewportCommand } from "@/features/chart/runtime/executeViewportCommand";
 import { CHART_RENDER_WINDOW_SIZE } from "@/features/chart/chartDataWindowManager";
@@ -509,19 +509,15 @@ export function ChartPanel() {
     const onPointerDown = () => adapter.onPointerDown();
     const onPointerUp = () => adapter.onPointerUp();
     const onWheel = () => adapter.onWheel();
-    const onDocumentKeyDown = (event: KeyboardEvent) => {
-      handleChartNavigationKeydown(event, {
-        listenerScope: "document",
-        chartTabActive: chartTabActiveRef.current,
-        chartCanvas: el,
-        adapter,
-      });
-    };
+    const keyboardNavigation = registerChartDocumentKeyboardNavigation({
+      chartTabActive: () => chartTabActiveRef.current,
+      chartCanvas: el,
+      adapter,
+    });
 
     el.addEventListener("pointerdown", onPointerDown);
     el.addEventListener("pointerup", onPointerUp);
     el.addEventListener("wheel", onWheel, { passive: true });
-    document.addEventListener("keydown", onDocumentKeyDown, true);
 
     const visibleRangeHandler = (range: { from: number; to: number } | null) => {
       if (
@@ -569,7 +565,7 @@ export function ChartPanel() {
       el.removeEventListener("pointerdown", onPointerDown);
       el.removeEventListener("pointerup", onPointerUp);
       el.removeEventListener("wheel", onWheel);
-      document.removeEventListener("keydown", onDocumentKeyDown, true);
+      keyboardNavigation.unregister();
 
       // chart.remove() destroys all series; do not call removeSeries afterward.
       auxEmaSeriesRef.current.clear();

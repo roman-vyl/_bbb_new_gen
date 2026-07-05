@@ -927,6 +927,7 @@ function WorkbenchProviderInner({
       cachedBundleCandlesRef,
       marketLoadStatus,
       marketCandlesRevision,
+      marketLoadDeliveryTick,
       renderWindowFoundationKey,
       intendedRunMarketView,
       marketFocusWindow,
@@ -1599,9 +1600,6 @@ function WorkbenchProviderContexts({
           entryTimeSec = Math.floor(entryTimeMs / 1000);
         }
       }
-      if (entryTimeSec !== null) {
-        rv.emitTradeFocusCommand(entryTimeSec);
-      }
       setSelectedTradeId(tradeId);
       if (
         tradeId !== null &&
@@ -1621,7 +1619,7 @@ function WorkbenchProviderContexts({
         }
       }
     },
-    [selectedVariant, rv, hasChartEverActivated, setActiveTab],
+    [selectedVariant, hasChartEverActivated, setActiveTab],
   );
 
   const selectBar = useCallback((timeSec: number | null) => {

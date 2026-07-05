@@ -152,6 +152,30 @@ export function handleChartNavigationKeydown(
   }
 }
 
+export type ChartDocumentKeyboardRegistration = {
+  unregister: () => void;
+};
+
+/** Registers ChartPanel document capture listener; exposed for harness tests. */
+export function registerChartDocumentKeyboardNavigation(options: {
+  chartTabActive: () => boolean;
+  chartCanvas: HTMLElement;
+  adapter: Pick<ChartInteractionAdapter, "onKeyboardPanStart">;
+}): ChartDocumentKeyboardRegistration {
+  const onDocumentKeyDown = (event: KeyboardEvent) => {
+    handleChartNavigationKeydown(event, {
+      listenerScope: "document",
+      chartTabActive: options.chartTabActive(),
+      chartCanvas: options.chartCanvas,
+      adapter: options.adapter,
+    });
+  };
+  document.addEventListener("keydown", onDocumentKeyDown, true);
+  return {
+    unregister: () => document.removeEventListener("keydown", onDocumentKeyDown, true),
+  };
+}
+
 export type ChartInteractionDispatch = (event: ChartInteractionEvent) => void;
 
 export type ChartInteractionAdapterOptions = {

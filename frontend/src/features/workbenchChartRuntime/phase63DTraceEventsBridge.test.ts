@@ -134,7 +134,9 @@ describe("Phase 6.3D trace/events cutover", () => {
     const renderViewportSource = readWorkspaceSource(
       "src/shared/context/WorkbenchRenderViewportContext.tsx",
     );
-    expect(renderViewportSource).toContain("runPhase63COnTraceReady");
+    expect(renderViewportSource).toContain("evaluateTradeFocusReadiness");
+    expect(renderViewportSource).toContain("tryEmitTradeFocusWhenReady");
+    expect(renderViewportSource).toContain("phase63TradeFocusBridge");
   });
 
   it("keeps ChartPanel on workbench integration hooks without runtime internals", () => {

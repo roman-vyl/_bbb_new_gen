@@ -178,6 +178,24 @@ describe("renderWindowController", () => {
     vi.useRealTimers();
   });
 
+  it("trade_focused blocks recordBoundaryIntent without keyboard prelude", () => {
+    const manager = createChartDataWindowManager();
+    manager.reset(100_000);
+    manager.buildTailWindow();
+
+    const controller = createRenderWindowController({ manager });
+
+    controller.dispatch({ type: "trade_selected", entryTimeSec: 1_700_000_000 });
+    expect(controller.getInteractionState()).toBe("trade_focused");
+
+    const recorded = controller.recordBoundaryIntent(
+      { from: 0, to: manager.getWindowLength() - 1 },
+      1_700_000_000,
+    );
+    expect(recorded).toBe(false);
+    expect(controller.getPendingShift()).toBeNull();
+  });
+
   it("plain visible_range_changed from idle does not enter user_panning", () => {
     const manager = createChartDataWindowManager();
     manager.reset(100_000);

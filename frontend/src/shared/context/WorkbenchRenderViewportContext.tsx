@@ -27,7 +27,6 @@ import {
   runPhase63CCancelViewportOnPointerDown,
   runPhase63CDispatchViewportInteraction,
   runPhase63CIsWindowSwapTransactionCancelled,
-  runPhase63COnTraceReady,
   runPhase63COnWindowSwapCommitted,
   runPhase63CSelectTradeFocusCommand,
   runPhase63CSettleWindowSwapCommit,
@@ -35,6 +34,12 @@ import {
   type Phase63CViewportOwnerState,
 } from "@/features/workbenchChartRuntime/phase63CViewportCommandBridge";
 import { applyRenderWindowShiftCommit } from "@/features/workbenchChartRuntime/renderWindowRuntime";
+import {
+  evaluateTradeFocusReadiness,
+  shouldEmitTradeFocus,
+  tradeFocusEmitKey,
+  type TradeFocusEmitKey,
+} from "@/features/workbenchChartRuntime/phase63TradeFocusBridge";
 import type { ChartWindowRuntimeBoundary } from "@/features/workbenchChartRuntime/chartWindowRuntime";
 import type { RuntimeLoadStatus } from "@/features/workbenchChartRuntime/runtimeTypes";
 import { candleTimeBounds } from "@/features/chart/chartRenderWindowDisplay";
@@ -55,6 +60,7 @@ export type WorkbenchRenderViewportInputs = {
   cachedBundleCandlesRef: MutableRefObject<ChartBar[]>;
   marketLoadStatus: RuntimeLoadStatus;
   marketCandlesRevision: number;
+  marketLoadDeliveryTick: number;
   renderWindowFoundationKey: string | null;
   intendedRunMarketView: RunMarketView | null;
   marketFocusWindow: MarketDisplayWindowMs | null;
@@ -150,6 +156,10 @@ export function WorkbenchRenderViewportProvider({
   const [chartViewportCommand, setChartViewportCommand] = useState<ViewportCommand | null>(null);
   const [chartViewportCommandSeq, setChartViewportCommandSeq] = useState(0);
   const chartViewCandlesRef = useRef<ChartBar[]>([]);
+  const tradeFocusRequestSeqRef = useRef(0);
+  const lastTradeFocusEmitRef = useRef<TradeFocusEmitKey | null>(null);
+  const tradeFocusSuppressedByUserPanRef = useRef(false);
+  const prevSelectedTradeKeyRef = useRef<string | null>(null);
 
   const bumpRenderWindowSnapshot = useCallback(() => {
     setRenderWindowSnapshotVersion((version) => version + 1);
@@ -160,6 +170,7 @@ export function WorkbenchRenderViewportProvider({
     cachedBundleCandlesRef,
     marketLoadStatus,
     marketCandlesRevision,
+    marketLoadDeliveryTick,
     renderWindowFoundationKey,
     intendedRunMarketView,
     marketFocusWindow,
@@ -320,6 +331,12 @@ export function WorkbenchRenderViewportProvider({
           : null;
 
       if (event.type === "pointerdown" || event.type === "keyboard_pan_start") {
+        tradeFocusSuppressedByUserPanRef.current = true;
+        dbgMark(DBG.tradeFocus.cancelled, {
+          reason: "user_pan",
+          trigger: event.type,
+          requestSeq: tradeFocusRequestSeqRef.current,
+        });
         runPhase63CCancelViewportOnPointerDown(phase63CViewportOwner(), {
           trigger: event.type,
         });
@@ -483,7 +500,15 @@ export function WorkbenchRenderViewportProvider({
   }, [applyWindowCommit]);
 
   const emitTradeFocusCommand = useCallback(
-    (entryTimeSec: number) => {
+    (entryTimeSec: number, emitSource: "orchestrator" | "trace_ready" = "orchestrator") => {
+      if (chartView.count === 0) {
+        dbgMark(DBG.tradeFocus.emptyPrevented, {
+          entryTimeSec,
+          emitSource,
+          chartViewCount: chartView.count,
+        });
+        return;
+      }
       const command = runPhase63CSelectTradeFocusCommand(
         phase63CViewportOwner(),
         phase63BRenderWindowOwner(),
@@ -491,17 +516,147 @@ export function WorkbenchRenderViewportProvider({
         { selectedTradeId },
       );
       if (command !== null) {
+        dbgMark(DBG.tradeFocus.applied, {
+          entryTimeSec,
+          emitSource,
+          selectedTradeId,
+          foundationKey: renderWindowFoundationKey,
+        });
         emitChartViewportCommand(command);
       }
     },
-    [emitChartViewportCommand, selectedTradeId],
+    [
+      emitChartViewportCommand,
+      selectedTradeId,
+      chartView.count,
+      renderWindowFoundationKey,
+    ],
   );
 
-  const onTraceReadyViewport = useCallback((): ViewportCommand | null => {
-    return runPhase63COnTraceReady(phase63CViewportOwner(), phase63BRenderWindowOwner(), {
+  const tryEmitTradeFocusWhenReady = useCallback(
+    (emitSource: "orchestrator" | "trace_ready"): ViewportCommand | null => {
+      const readiness = evaluateTradeFocusReadiness({
+        selectedTradeId,
+        selectedTradeEntryTimeMs,
+        renderWindowFoundationKey,
+        marketLoadStatus,
+        chartView,
+      });
+
+      dbgMark(DBG.tradeFocus.coverageCheck, {
+        status: readiness.status,
+        reason:
+          readiness.status === "waiting"
+            ? readiness.reason
+            : readiness.status === "failed"
+              ? readiness.reason
+              : null,
+        selectedTradeId,
+        entryTimeSec:
+          readiness.status === "ready"
+            ? readiness.entryTimeSec
+            : selectedTradeEntryTimeMs !== null
+              ? Math.floor(selectedTradeEntryTimeMs / 1000)
+              : null,
+        chartViewCount: chartView.count,
+        foundationKey: renderWindowFoundationKey,
+        emitSource,
+      });
+
+      if (readiness.status === "idle") {
+        lastTradeFocusEmitRef.current = null;
+        return null;
+      }
+
+      if (readiness.status === "failed") {
+        return null;
+      }
+
+      if (readiness.status === "waiting") {
+        dbgMark(DBG.tradeFocus.delayed, {
+          reason: readiness.reason,
+          selectedTradeId,
+          requestSeq: tradeFocusRequestSeqRef.current,
+          emitSource,
+        });
+        return null;
+      }
+
+      if (renderWindowFoundationKey === null || selectedTradeId === null) {
+        return null;
+      }
+
+      const nextEmit = tradeFocusEmitKey(
+        selectedTradeId,
+        readiness.entryTimeSec,
+        renderWindowFoundationKey,
+      );
+
+      if (
+        !shouldEmitTradeFocus(readiness, lastTradeFocusEmitRef.current, nextEmit, {
+          suppressedByUserPan: tradeFocusSuppressedByUserPanRef.current,
+        })
+      ) {
+        return null;
+      }
+
+      lastTradeFocusEmitRef.current = nextEmit;
+      emitTradeFocusCommand(readiness.entryTimeSec, emitSource);
+      return null;
+    },
+    [
       selectedTradeId,
-    });
-  }, [selectedTradeId]);
+      selectedTradeEntryTimeMs,
+      renderWindowFoundationKey,
+      marketLoadStatus,
+      chartView,
+      emitTradeFocusCommand,
+    ],
+  );
+
+  useEffect(() => {
+    const tradeKey =
+      selectedTradeId === null
+        ? null
+        : `${String(selectedTradeId)}:${selectedTradeEntryTimeMs ?? "none"}`;
+
+    if (tradeKey !== prevSelectedTradeKeyRef.current) {
+      prevSelectedTradeKeyRef.current = tradeKey;
+      if (selectedTradeId !== null && selectedTradeEntryTimeMs !== null) {
+        tradeFocusRequestSeqRef.current += 1;
+        tradeFocusSuppressedByUserPanRef.current = false;
+        dbgMark(DBG.tradeFocus.request, {
+          selectedTradeId,
+          selectedTradeEntryTimeMs,
+          requestSeq: tradeFocusRequestSeqRef.current,
+          focusWindowFromMs: marketFocusWindow?.fromMs ?? null,
+          focusWindowToMs: marketFocusWindow?.toMs ?? null,
+        });
+      } else {
+        lastTradeFocusEmitRef.current = null;
+        tradeFocusSuppressedByUserPanRef.current = false;
+      }
+    }
+
+    if (selectedTradeId === null) {
+      return;
+    }
+
+    tryEmitTradeFocusWhenReady("orchestrator");
+  }, [
+    selectedTradeId,
+    selectedTradeEntryTimeMs,
+    renderWindowFoundationKey,
+    marketLoadDeliveryTick,
+    marketLoadStatus,
+    marketFocusWindow,
+    chartView,
+    tryEmitTradeFocusWhenReady,
+  ]);
+
+  const onTraceReadyViewport = useCallback((): ViewportCommand | null => {
+    return tryEmitTradeFocusWhenReady("trace_ready");
+  }, [tryEmitTradeFocusWhenReady]);
 
   const getInteractionState = useCallback(
     () => v2RenderWindow().getInteractionState(),
