@@ -1,8 +1,20 @@
 # Archive Note — workbench-chart-runtime-v2
 
-**Prepared:** 2026-07-05  
+**Archived:** 2026-07-05  
 **Change schema:** spec-driven (`.openspec.yaml`)  
-**Archive target:** `openspec/changes/archive/2026-07-05-workbench-chart-runtime-v2/`
+**Archive location:** `openspec/changes/archive/2026-07-05-workbench-chart-runtime-v2/`
+
+---
+
+## Canonical spec (current architecture)
+
+The **permanent promoted spec** is:
+
+`openspec/specs/workbench-chart-runtime-v2/spec.md`
+
+That file is the canonical description of the **current production** Workbench Chart runtime v2 architecture. This archived change directory contains **history only**: phase reports, cutover evidence, `final-architecture-summary.md`, and the original delta spec under `specs/`.
+
+Do not treat archived `proposal.md`, `design.md`, or delta `specs/workbench-chart-runtime-v2/spec.md` as active requirements when they diverge from the promoted main spec.
 
 ---
 
@@ -17,7 +29,7 @@ Post-cutover stabilization added:
 - **Outside-window trade navigation** — demand-load + cache chunk coalescing (`f43b794`)
 - **Inside-window trade navigation** — no spurious market loading reset; forced focus without render-window shift (`146f599`)
 
-Authoritative architecture description: **`final-architecture-summary.md`**.
+Historical detail: **`final-architecture-summary.md`** in this archive.
 
 ---
 
@@ -25,9 +37,9 @@ Authoritative architecture description: **`final-architecture-summary.md`**.
 
 | Planned slice | Status | Reason |
 |---|---|---|
-| Phase 7 deletion-only (`phase7-deletion-only-plan.md`) | **DEFERRED** | Mirror deletion optional; ~300–450 line shrink; bridge refs must remain |
+| Phase 7 deletion-only (`phase7-deletion-only-plan.md`) | **DEFERRED** | Mirror deletion optional; bridge refs must remain |
 | Phase 8 compat / shadow removal | **DEFERRED** | Separate cleanup; `chartValue` trim blocked on consumer audit |
-| `WorkbenchContext` −1000 lines | **NOT MET** | Achieved ~−893 at 6.3F + further extraction to render viewport context; full −1000 required relocating bridge effects (explicitly forbidden in Phase 7 policy) |
+| `WorkbenchContext` −1000 lines | **NOT MET** | Full −1000 required relocating bridge effects (forbidden in Phase 7 policy) |
 | Production `useWorkbenchChartRuntime` hook | **NOT DONE** | Pipeline v3; rejected under Phase 7 policy |
 
 ---
@@ -55,17 +67,8 @@ Authoritative architecture description: **`final-architecture-summary.md`**.
 | Trade navigation acceptance (`f43b794`, `146f599`) | Done |
 | Phase 7 mirror deletion | **Rejected as refactor scope** → backlog |
 | Phase 8 final cleanup | **Deferred** → backlog |
-
----
-
-## Delta spec sync
-
-Delta spec: `specs/workbench-chart-runtime-v2/spec.md`
-
-Main spec `openspec/specs/workbench-chart-runtime-v2/spec.md` **does not exist yet**. Recommended on archive:
-
-- **Sync now:** copy/promote delta spec to `openspec/specs/workbench-chart-runtime-v2/spec.md` with final-state amendments (render viewport context, trade-focus gating, pan separation).
-- **Or archive without sync** if team prefers capability spec to remain in archive only.
+| Archive move | **Done** |
+| Promoted main spec | **Done** — `openspec/specs/workbench-chart-runtime-v2/spec.md` |
 
 ---
 
@@ -77,11 +80,11 @@ Main spec `openspec/specs/workbench-chart-runtime-v2/spec.md` **does not exist y
 - [x] No contradictory “current architecture” claims for rejected experiments
 - [x] Acceptance criteria mapped to tests/smokes
 - [x] Remaining backlog separated from refactor scope
-- [ ] Run `mv openspec/changes/workbench-chart-runtime-v2 openspec/changes/archive/2026-07-05-workbench-chart-runtime-v2` when approved
-- [ ] Optional: promote delta spec to `openspec/specs/`
+- [x] Archive move completed
+- [x] Permanent spec promoted to `openspec/specs/workbench-chart-runtime-v2/spec.md`
 
 ---
 
 ## Reviewer one-liner
 
-**Runtime v2 is production.** WorkbenchContext is shell + 63D/63E/63F wiring; render/viewport/trade-focus live in `WorkbenchRenderViewportContext`. Trade nav = demand-load + readiness-gated focusTrade; user pan = interaction FSM gate, not bare visible_range_changed.
+**Runtime v2 is production.** Canonical spec: `openspec/specs/workbench-chart-runtime-v2/spec.md`. WorkbenchContext is shell + 63D/63E/63F wiring; render/viewport/trade-focus live in `WorkbenchRenderViewportContext`. Trade nav = demand-load + readiness-gated focusTrade; user pan = interaction FSM gate, not bare `visible_range_changed`.

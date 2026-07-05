@@ -54,6 +54,13 @@ Market pan prefetch SHALL run only when interaction state is `user_panning`, `pe
 
 Sliding render window SHALL default to **25 000** bars (`CHART_RENDER_WINDOW_SIZE`) with **5 000** bars safe zone (`CHART_RENDER_SAFE_ZONE`) per `chartViewWindow.ts`.
 
+#### Scenario: Constants match sliding-window defaults
+
+- **GIVEN** `frontend/src/features/chart/chartViewWindow.ts` exports render-window constants
+- **WHEN** the Chart tab initializes a bounded render window
+- **THEN** `CHART_RENDER_WINDOW_SIZE` is 25 000
+- **AND** `CHART_RENDER_SAFE_ZONE` is 5 000
+
 ### Requirement: Rejected approaches remain forbidden
 
 The following SHALL NOT be reintroduced as production architecture:
@@ -64,6 +71,27 @@ The following SHALL NOT be reintroduced as production architecture:
 - stale cached bundle fallback for a new trade focus target without demand-load
 - chunk eviction without coalescing that leaves coverage holes
 
+#### Scenario: Broad visible_range promotion is rejected
+
+- **GIVEN** a `visible_range_changed` event from programmatic viewport restore or trade focus
+- **WHEN** interaction state was not already `user_panning`, `pending_shift`, or `applying_shift`
+- **THEN** the event alone does not promote `user_panning`
+- **AND** market boundary prefetch is not started solely from that event
+
+#### Scenario: Trade navigation does not depend on keyboard pan prelude
+
+- **GIVEN** the user navigates trades with Next/Prev or Reports row selection
+- **WHEN** viewport centers on the newly selected trade
+- **THEN** the primary path is demand-load plus readiness-gated `focusTrade`
+- **AND** `keyboard_pan_start` is not required for correct trade navigation
+
 ### Requirement: Phase 7 WorkbenchContext mirror deletion is optional backlog
 
 Further shrink of `WorkbenchContext` mirror state is deferred cleanup. It is NOT an acceptance criterion for runtime v2. Bridge owner refs and 63D/63E/63F effects SHALL remain until a future explicitly scoped change.
+
+#### Scenario: Runtime v2 acceptance does not require Phase 7 deletion
+
+- **GIVEN** runtime v2 is production-active at cutover phase 6.3F
+- **WHEN** refactor acceptance is reviewed
+- **THEN** optional Phase 7 mirror deletion may remain unimplemented without blocking archive
+- **AND** `phase63*OwnerRef` bridges plus 63D/63E/63F effects remain the React entry for those domains
