@@ -429,6 +429,40 @@ describe("Phase 4 display/render/viewport parity", () => {
     expect(result.suppressedProgrammatic).toBe(false);
   });
 
+  it("keyboard-like visible_range_changed triggers prefetch without pointerdown", () => {
+    const view = resolveView();
+    const candles = makeCandles(200, 1_300);
+    const renderController = createRenderWindowRuntimeController();
+    initializeRenderWindowRuntime(renderController, {
+      foundationKey: "foundation",
+      marketLoadStatus: "ready",
+      bundleCandles: candles,
+      selectedTradeEntryTimeMs: null,
+    });
+    const interactionHarness = createInteractionRuntimeHarness({
+      renderController,
+      bundleCandles: candles,
+    });
+
+    const result = dispatchInteractionCandidate(
+      interactionHarness,
+      {
+        type: "visible_range_changed",
+        visible: { from: 0, to: CHART_RENDER_SAFE_ZONE - 1 },
+        anchorTimeSec: candles[0]!.time,
+      },
+      {
+        view,
+        coverageWindow: FOCUS_WINDOW,
+        timeframeMs: 300_000,
+        chartHeavyIoEnabled: true,
+      },
+    );
+
+    expect(result.panReason).not.toBeNull();
+    expect(result.suppressedProgrammatic).toBe(false);
+  });
+
   it("trade focus without force rebuild skips when trade stays in safe zone", () => {
     const candles = makeCandles(200);
     const renderController = createRenderWindowRuntimeController();

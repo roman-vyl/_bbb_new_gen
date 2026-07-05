@@ -90,6 +90,9 @@ export function createViewportController(initial?: Partial<ViewportControllerSta
           return { type: "noViewportChange" };
         case "programmatic_viewport_end":
           return { type: "noViewportChange" };
+        case "visible_range_changed":
+          state = userPanSessionStart(state);
+          return { type: "noViewportChange" };
         default:
           return null;
       }
