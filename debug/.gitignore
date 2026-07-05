@@ -1,4 +1,18 @@
+# --- debug/reports/ : generated capture output (keep dir + .gitkeep) ---
 reports/*.log
 reports/workbench-*.json
 reports/workbench_*.txt
 !reports/.gitkeep
+
+# --- debug/ root : ad-hoc scratch/smoke notes (any name) ---
+# Ignore everything here except harness scripts, run helpers, and docs.
+# Scratch = extensionless files or .txt; harnesses = .mjs / .sh / .bat / .md
+/*
+!README.md
+!capture-*.mjs
+!run-*.sh
+!run-*.bat
+!*.md
+!reports/
+!.gitignore
+/*.txt

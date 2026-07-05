@@ -1,8 +1,8 @@
 import type { ChartAuxEmaOverlay, ChartBar, ChartEmaOverlay, IndicatorPoint } from "@/api/types";
 import { sliceAuxOverlaysToCandleWindow } from "@/features/chart/chartAuxEmaOverlays";
 
-export const CHART_RENDER_WINDOW_SIZE = 50_000;
-export const CHART_RENDER_SAFE_ZONE = 10_000;
+export const CHART_RENDER_WINDOW_SIZE = 25_000;
+export const CHART_RENDER_SAFE_ZONE = 5_000;
 
 /** @deprecated Use CHART_RENDER_WINDOW_SIZE */
 export const CHART_RENDER_BAR_LIMIT = CHART_RENDER_WINDOW_SIZE;

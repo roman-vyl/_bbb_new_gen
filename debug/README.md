@@ -30,9 +30,36 @@ debug\run-pipeline-debug.bat
 Включение (один из вариантов):
 
 - **`scripts\dev-workbench-debug-mode.bat`** — как `dev-workbench.bat`, но Vite с `VITE_EMA_PIPELINE_DEBUG=true` (рекомендуется)
+- **`scripts\dev-workbench-debug-mode.sh --chart-events-api`** (macOS) — pipeline debug + `VITE_CHART_EVENTS_API=1` для Phase 6.4 chart-events smoke
 - или `VITE_EMA_PIPELINE_DEBUG=true` в `frontend/.env.local` + restart Vite
 
 Без флага — **no-op** (нет `performance.now()`, console, meta).
+
+### Chart-events API (Phase 6.4+)
+
+| Flag | Value | Reader |
+|------|-------|--------|
+| `VITE_CHART_EVENTS_API` | `"1"` | `frontend/src/features/chart/runtime/chartEventsLoad.ts` |
+
+Vite **встраивает** env при старте dev server. Parent-shell export (`VITE_CHART_EVENTS_API=1 ./scripts/dev-workbench.sh`) **не работает** — скрипт открывает Vite в отдельном Terminal/PowerShell без наследования env.
+
+Используйте явный флаг скрипта:
+
+```bash
+./scripts/dev-workbench-debug-mode.sh --chart-events-api
+# или
+./scripts/dev-workbench.sh --pipeline-debug --chart-events-api
+```
+
+Windows:
+
+```bat
+powershell -File scripts\dev-workbench.ps1 -PipelineDebug -ChartEventsApi
+```
+
+Ожидаемые pipeline marks: `api.fetchChartEvents`, `wb.chart_events_merge`. Не должно быть `wb.chart_events_fallback { reason: flag_disabled }`.
+
+Автоматический smoke: `cd frontend && node ../debug/capture-phase64-chart-events-smoke.mjs` (требует запущенный BFF + Vite с обоими флагами).
 
 Хуки только в **WorkbenchContext** / **ChartPanel** (call-site), не в pure utils.
 

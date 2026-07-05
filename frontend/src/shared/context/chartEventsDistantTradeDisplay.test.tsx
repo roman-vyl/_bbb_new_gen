@@ -10,7 +10,6 @@ import type {
   RunReport,
   RunSummary,
   SideMetrics,
-  SignalTraceBundle,
   VariantMetrics,
 } from "@/api/types";
 import { selectedTradeEntryMarkerInView } from "@/features/chart/chartMarkers";
@@ -301,7 +300,7 @@ describe("chart-events distant trade display apply", () => {
       ).toBe(true);
     });
 
-    const applyMark = dbgExport()
+    const applyMark = dbgExport().steps
       .filter((row) => row.step === DBG.traceDisplay.applyCurrentWindow)
       .at(-1);
     expect(applyMark?.last_meta?.selectedTradeId).toBe(1);

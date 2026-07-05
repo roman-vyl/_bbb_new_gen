@@ -156,8 +156,8 @@ describe("loadDisplayTraceChunk", () => {
 
     await loadDisplayTraceChunk(ctx);
 
-    expect(dbgExport().some((row) => row.step === DBG.chartEvents.fetchFail)).toBe(true);
-    expect(dbgExport().some((row) => row.step === DBG.chartEvents.fallback)).toBe(true);
+    expect(dbgExport().steps.some((row) => row.step === DBG.chartEvents.fetchFail)).toBe(true);
+    expect(dbgExport().steps.some((row) => row.step === DBG.chartEvents.fallback)).toBe(true);
   });
 
   it("ignores chart-events 404 when fetch generation is stale (run switch)", async () => {
@@ -176,8 +176,8 @@ describe("loadDisplayTraceChunk", () => {
     rejectDeferred(new ApiError(404, "not found"));
     const result = await promise;
     expect(result).toEqual({ outcome: "stale", phase: "chart_events_response" });
-    expect(dbgExport().some((row) => row.step === DBG.chartEvents.fetchFail)).toBe(false);
-    expect(dbgExport().some((row) => row.step === DBG.chartEvents.fallback)).toBe(false);
+    expect(dbgExport().steps.some((row) => row.step === DBG.chartEvents.fetchFail)).toBe(false);
+    expect(dbgExport().steps.some((row) => row.step === DBG.chartEvents.fallback)).toBe(false);
   });
 });
 

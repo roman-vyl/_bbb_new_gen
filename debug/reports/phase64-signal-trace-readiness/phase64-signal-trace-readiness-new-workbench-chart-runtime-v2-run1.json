@@ -1,0 +1,1003 @@
+{
+  "captured_at": "2026-06-28T15:22:37.677Z",
+  "label": "new-workbench-chart-runtime-v2-run1",
+  "gitBranch": "new-workbench-chart-runtime-v2",
+  "gitCommit": "d85102c1aa46b21e3b62238f24e39df436cfa067",
+  "run": 1,
+  "targetRun": "2026-06-28T134603Z_ema_pullback_BTCUSDT_5m",
+  "targetOverlayRef": "htf_1",
+  "variant": "instance_1",
+  "cacheReset": {
+    "browserContext": "new (no persistent profile)",
+    "browserCookies": "cleared",
+    "browserLocalStorage": "cleared via init script",
+    "browserSessionStorage": "cleared via init script",
+    "httpCache": "disabled via CDP Network.setCacheDisabled",
+    "frontendInMemory": "reset by Vite process restart (orchestrator)",
+    "bffProcess": "restarted by orchestrator before this run",
+    "osFileCache": "NOT explicitly cleared"
+  },
+  "pipelineDebugOk": true,
+  "milestones": {
+    "pageNavMs": 91,
+    "reportReadyMs": 437,
+    "overlayRefSelectedMs": 0,
+    "chartOpenMs": 0,
+    "candlesVisibleMs": 1851,
+    "emaVisibleMs": 63410,
+    "signalTraceRequestStartMs": 1836,
+    "signalTraceResponseEndMs": 12826,
+    "traceHintLoadedMs": 12886,
+    "mergeChunkMs": 12886,
+    "applyCurrentWindowMs": 12886,
+    "htfAuxVisibleMs": 12886,
+    "componentMarkersReadyMs": null,
+    "barInspectorReadyMs": 300198,
+    "timeoutReached": true
+  },
+  "readinessTimeoutMs": 300000,
+  "network": {
+    "harLike": {
+      "signalTrace": [
+        {
+          "url": "http://127.0.0.1:5173/api/research/runs/2026-06-28T134603Z_ema_pullback_BTCUSDT_5m/signal-trace?variant=instance_1&from=1763940900000&to_open_time_ms=1778940600000&context_overlay_ref=htf_1",
+          "path": "/api/research/runs/2026-06-28T134603Z_ema_pullback_BTCUSDT_5m/signal-trace",
+          "params": {
+            "variant": "instance_1",
+            "from": "1763940900000",
+            "to_open_time_ms": "1778940600000",
+            "context_overlay_ref": "htf_1"
+          },
+          "status": 200,
+          "method": "GET",
+          "requestStartMs": 1836,
+          "responseEndMs": 12826,
+          "durationMs": 10990,
+          "responseSize": 16116232,
+          "contextOverlayRef": "htf_1",
+          "from": "1763940900000",
+          "toOpenTimeMs": "1778940600000",
+          "variant": "instance_1",
+          "bodySummary": {
+            "timesLen": 50000,
+            "htfFastLen": 50000,
+            "htfAnchorLen": 50000,
+            "htfSlowLen": 50000,
+            "htfMeta": {
+              "context_ref": "htf_1",
+              "component_id": "htf_context",
+              "timeframe": "4h",
+              "source": "close",
+              "fast_period": 100,
+              "anchor_period": 200,
+              "slow_period": 1000
+            },
+            "componentEventsLen": 0
+          }
+        }
+      ],
+      "chartEvents": [],
+      "related": [
+        {
+          "endpointKind": "candles-window",
+          "url": "http://127.0.0.1:5173/api/market/candles-window?symbol=BTCUSDT&timeframe=5m&from=1763940900000&to_open_time_ms=1778940600000",
+          "params": {
+            "symbol": "BTCUSDT",
+            "timeframe": "5m",
+            "from": "1763940900000",
+            "to_open_time_ms": "1778940600000"
+          },
+          "status": 200,
+          "durationMs": 1735,
+          "responseSize": 4828089
+        },
+        {
+          "endpointKind": "ema-window",
+          "url": "http://127.0.0.1:5173/api/market/ema-window?symbol=BTCUSDT&timeframe=5m&from=1763940900000&to_open_time_ms=1778940600000&period=200&origin_policy=canonical",
+          "params": {
+            "symbol": "BTCUSDT",
+            "timeframe": "5m",
+            "from": "1763940900000",
+            "to_open_time_ms": "1778940600000",
+            "period": "200",
+            "origin_policy": "canonical"
+          },
+          "status": 200,
+          "durationMs": 57044,
+          "responseSize": 3642562
+        },
+        {
+          "endpointKind": "ema-window",
+          "url": "http://127.0.0.1:5173/api/market/ema-window?symbol=BTCUSDT&timeframe=5m&from=1763940900000&to_open_time_ms=1778940600000&period=1000&origin_policy=canonical",
+          "params": {
+            "symbol": "BTCUSDT",
+            "timeframe": "5m",
+            "from": "1763940900000",
+            "to_open_time_ms": "1778940600000",
+            "period": "1000",
+            "origin_policy": "canonical"
+          },
+          "status": 200,
+          "durationMs": 57524,
+          "responseSize": 3642194
+        },
+        {
+          "endpointKind": "ema-window",
+          "url": "http://127.0.0.1:5173/api/market/ema-window?symbol=BTCUSDT&timeframe=5m&from=1763940900000&to_open_time_ms=1778940600000&period=500&origin_policy=canonical",
+          "params": {
+            "symbol": "BTCUSDT",
+            "timeframe": "5m",
+            "from": "1763940900000",
+            "to_open_time_ms": "1778940600000",
+            "period": "500",
+            "origin_policy": "canonical"
+          },
+          "status": 200,
+          "durationMs": 61471,
+          "responseSize": 3642307
+        }
+      ]
+    },
+    "primarySignalTrace": {
+      "url": "http://127.0.0.1:5173/api/research/runs/2026-06-28T134603Z_ema_pullback_BTCUSDT_5m/signal-trace?variant=instance_1&from=1763940900000&to_open_time_ms=1778940600000&context_overlay_ref=htf_1",
+      "path": "/api/research/runs/2026-06-28T134603Z_ema_pullback_BTCUSDT_5m/signal-trace",
+      "params": {
+        "variant": "instance_1",
+        "from": "1763940900000",
+        "to_open_time_ms": "1778940600000",
+        "context_overlay_ref": "htf_1"
+      },
+      "status": 200,
+      "method": "GET",
+      "requestStartMs": 1836,
+      "responseEndMs": 12826,
+      "durationMs": 10990,
+      "responseSize": 16116232,
+      "contextOverlayRef": "htf_1",
+      "from": "1763940900000",
+      "toOpenTimeMs": "1778940600000",
+      "variant": "instance_1",
+      "bodySummary": {
+        "timesLen": 50000,
+        "htfFastLen": 50000,
+        "htfAnchorLen": 50000,
+        "htfSlowLen": 50000,
+        "htfMeta": {
+          "context_ref": "htf_1",
+          "component_id": "htf_context",
+          "timeframe": "4h",
+          "source": "close",
+          "fast_period": 100,
+          "anchor_period": 200,
+          "slow_period": 1000
+        },
+        "componentEventsLen": 0
+      }
+    },
+    "signalTraceCount": 1,
+    "chartEventsCount": 0
+  },
+  "pipeline": {
+    "available": true,
+    "fetchSignalTrace": {
+      "count": 1,
+      "total_ms": 10860.8,
+      "max_ms": 10860.8,
+      "avg_ms": 10860.8,
+      "last_meta": {}
+    },
+    "fetchChartEvents": {
+      "count": 0,
+      "total_ms": 0,
+      "max_ms": 0,
+      "avg_ms": 0
+    },
+    "signalTraceFetchStart": 1,
+    "signalTraceFetchEnd": 1,
+    "traceMergeChunk": {
+      "count": 1,
+      "total_ms": 0.2,
+      "max_ms": 0.2,
+      "avg_ms": 0.2,
+      "last_meta": {
+        "owner": "runtime_v2_production",
+        "domain": "trace",
+        "phase": "6.3F",
+        "eventCount": 0,
+        "timeCount": 50000,
+        "source": "signal-trace-fallback"
+      }
+    },
+    "traceApplyCurrentWindow": {
+      "count": 6,
+      "total_ms": 0,
+      "max_ms": 0,
+      "avg_ms": 0,
+      "last_meta": {
+        "owner": "runtime_v2_production",
+        "domain": "trace",
+        "phase": "6.3F",
+        "fromSec": 1763940900,
+        "toSec": 1778940600,
+        "status": "current",
+        "eventCount": 0,
+        "htfTimeCount": 50000,
+        "coveredRanges": [
+          {
+            "fromSec": 1763940900,
+            "toSec": 1778940600
+          }
+        ],
+        "missingRange": null,
+        "retainedPreviousDisplay": true,
+        "selectedTradeId": 617,
+        "selectedTradeEntryTimeSec": 1778821500,
+        "renderWindowFromSec": 1763940900,
+        "renderWindowToSec": 1778940600,
+        "selectedTradeEntryMarkerInView": true
+      }
+    },
+    "traceApplyCurrentStatus": "current",
+    "traceSliceEvents": {
+      "count": 2,
+      "total_ms": 0.1,
+      "max_ms": 0.1,
+      "avg_ms": 0.1,
+      "last_meta": {
+        "owner": "runtime_v2_production",
+        "domain": "trace",
+        "phase": "6.3F",
+        "fromSec": 1763940900,
+        "toSec": 1778940600
+      }
+    },
+    "chartEventsFallback": 1,
+    "chartEventsMerge": {
+      "count": 0,
+      "total_ms": 0,
+      "max_ms": 0,
+      "avg_ms": 0
+    },
+    "auxOverlayApply": {
+      "count": 2,
+      "total_ms": 0,
+      "max_ms": 0,
+      "avg_ms": 0,
+      "last_meta": {
+        "owner": "runtime_v2_production",
+        "domain": "aux_overlay",
+        "phase": "6.3F",
+        "overlayCount": 3,
+        "htfOverlayCount": 3,
+        "stale": true
+      }
+    },
+    "auxOverlayMerge": {
+      "count": 0,
+      "total_ms": 0,
+      "max_ms": 0,
+      "avg_ms": 0
+    },
+    "setDataAuxHtf": {
+      "count": 11,
+      "total_ms": 256.2,
+      "max_ms": 68.7,
+      "avg_ms": 23.3,
+      "last_meta": {
+        "owner": "runtime_v2_production",
+        "domain": "model",
+        "phase": "6.3F",
+        "overlayCount": 3
+      }
+    },
+    "setDataCandles": {
+      "count": 5,
+      "total_ms": 64.9,
+      "max_ms": 64.4,
+      "avg_ms": 13,
+      "last_meta": {
+        "owner": "runtime_v2_production",
+        "domain": "model",
+        "phase": "6.3F",
+        "barCount": 50000
+      }
+    },
+    "setDataAnchorEma": {
+      "count": 11,
+      "total_ms": 170.9,
+      "max_ms": 71.8,
+      "avg_ms": 15.5,
+      "last_meta": {
+        "owner": "runtime_v2_production",
+        "domain": "model",
+        "phase": "6.3F",
+        "overlayCount": 3
+      }
+    },
+    "markersRebuild": {
+      "count": 3,
+      "total_ms": 7.1,
+      "max_ms": 4.1,
+      "avg_ms": 2.4,
+      "last_meta": {
+        "tradeMarkerCount": 72,
+        "componentMarkerCount": 0,
+        "tradeManagementMarkerCount": 0
+      }
+    },
+    "componentMarkerCount": 0,
+    "tradeMarkerCount": 72,
+    "cutoverPhase": "6.3F",
+    "domainOwners": {
+      "model": "runtime_v2_production",
+      "render_window": "runtime_v2_production",
+      "viewport": "runtime_v2_production",
+      "trace": "runtime_v2_production",
+      "aux_overlay": "runtime_v2_production",
+      "market": "runtime_v2_production"
+    }
+  },
+  "ui": {
+    "overlayRefValue": "htf_1",
+    "chartHint": "Showing 50000 bars · trade focus · center 1778821500 · range 1763940900–1778940600 · OHLC + EMA stack 200/500/1000 (overlay, periods from run strategy_spec) · +3 aux EMA (exit/HTF) · HTF EMA may lag (signal trace reloading; stable BFF overlay planned) · trade markers from report · · signal trace loaded",
+    "barInspectorSnippet": "Bar Inspector\nClear\n\nTime 2026-05-16 05:15:00 UTC\n\nOHLC\nO 78993.0 H 78994.5 L 78975.5 C 78986.4\nEMA fast / anchor / slow\n79322.8 / 79790.9 / 80094.4\nHTF context\ncontext_ref\nhtf_1\nstate\nneutral\nEMA fast / anchor / slow\n79561.5 / 77785.4 / 80494.4\nmeta\ntf 4h · source close\nContext consumption\nexit_policy\nexit_policy\ncontext_ref\nhtf_1\npolicy_id\nexit_profile_by_htf_state\ngate\n—\ncontext_applied\ntrue\nFinal entry\nLong\nsignal_entry\nfalse\nportfolio_entry\nfalse\n\ndirection false · blockers true · setup false · trigger false · risk true · stop_ready true\n\nNo entry: direction_ok=false\n\nSetup setup\ntouch\ntrue\nside_ok\nfalse\nprior_touch\ntrue\nuntouched_prior\nfalse\narmed_pre\nfalse\nfirst_touch\nfalse\ntouch_active\nfalse\nsetup\nfalse\nlocal_setup_allowed\nfalse\ncontext_gate_allowed\ntrue\nfinal_setup_allowed\nfalse\nT"
+  },
+  "consolePipelineCount": 136,
+  "consolePipelineSample": [
+    {
+      "atMs": null,
+      "type": "log",
+      "text": "%c[pipeline debug]%c VITE_EMA_PIPELINE_DEBUG — см. FAQ ниже (или __pipelineDebugHelp()) font-weight:700;color:#a78bfa color:inherit"
+    },
+    {
+      "atMs": null,
+      "type": "startGroupCollapsed",
+      "text": "[pipeline debug] FAQ — что нажать и что вводить в консоль"
+    },
+    {
+      "atMs": null,
+      "type": "log",
+      "text": "5. Живые логи по ходу: фильтр консоли [pipeline]"
+    },
+    {
+      "atMs": null,
+      "type": "debug",
+      "text": "[pipeline] wb.model_adapter.apply {count: 1, owner: runtime_v2_production, domain: model, phase: 6.3F, seriesKey: ::0:empty:}"
+    },
+    {
+      "atMs": null,
+      "type": "debug",
+      "text": "[pipeline] wb.model_adapter.apply {count: 2, owner: runtime_v2_production, domain: model, phase: 6.3F, seriesKey: ::0:empty:}"
+    },
+    {
+      "atMs": null,
+      "type": "debug",
+      "text": "[pipeline] wb.cutover.domain_owners {count: 1, phase: 6.3F, owners: Object}"
+    },
+    {
+      "atMs": null,
+      "type": "debug",
+      "text": "[pipeline] wb.trace_display.apply_current_window {count: 1, owner: runtime_v2_production, domain: trace, phase: 6.3F, fromSec: 0}"
+    },
+    {
+      "atMs": null,
+      "type": "debug",
+      "text": "[pipeline] wb.signal_trace.bootstrap_blocked {count: 1, owner: runtime_v2_production, domain: trace, phase: 6.3F, reason: run_switch_not_ready}"
+    },
+    {
+      "atMs": null,
+      "type": "debug",
+      "text": "[pipeline] wb.cutover.domain_owners {count: 2, phase: 6.3F, owners: Object}"
+    },
+    {
+      "atMs": null,
+      "type": "debug",
+      "text": "[pipeline] wb.trace_display.apply_current_window {count: 2, owner: runtime_v2_production, domain: trace, phase: 6.3F, fromSec: 0}"
+    },
+    {
+      "atMs": null,
+      "type": "debug",
+      "text": "[pipeline] wb.signal_trace.bootstrap_blocked {count: 2, owner: runtime_v2_production, domain: trace, phase: 6.3F, reason: run_switch_not_ready}"
+    },
+    {
+      "atMs": null,
+      "type": "debug",
+      "text": "[pipeline] wb.model_adapter.apply {count: 3, owner: runtime_v2_production, domain: model, phase: 6.3F, seriesKey: ::0:empty:}"
+    },
+    {
+      "atMs": null,
+      "type": "debug",
+      "text": "[pipeline] wb.model_adapter.apply {count: 4, owner: runtime_v2_production, domain: model, phase: 6.3F, seriesKey: ::0:empty:}"
+    },
+    {
+      "atMs": null,
+      "type": "debug",
+      "text": "[pipeline] wb.signal_trace.bootstrap_blocked {count: 3, owner: runtime_v2_production, domain: trace, phase: 6.3F, reason: run_switch_not_ready}"
+    },
+    {
+      "atMs": null,
+      "type": "debug",
+      "text": "[pipeline] wb.signal_trace.bootstrap_blocked {count: 4, owner: runtime_v2_production, domain: trace, phase: 6.3F, reason: run_switch_not_ready}"
+    },
+    {
+      "atMs": null,
+      "type": "debug",
+      "text": "[pipeline] wb.model_adapter.apply {count: 5, owner: runtime_v2_production, domain: model, phase: 6.3F, seriesKey: ::0:empty:}"
+    },
+    {
+      "atMs": null,
+      "type": "debug",
+      "text": "[pipeline] wb.model_adapter.apply {count: 6, owner: runtime_v2_production, domain: model, phase: 6.3F, seriesKey: ::0:empty:}"
+    },
+    {
+      "atMs": null,
+      "type": "debug",
+      "text": "[pipeline] wb.signal_trace.bootstrap_blocked {count: 5, owner: runtime_v2_production, domain: trace, phase: 6.3F, reason: run_switch_not_ready}"
+    },
+    {
+      "atMs": null,
+      "type": "debug",
+      "text": "[pipeline] api.fetchRunReport {count: 1, ms: 34.8}"
+    },
+    {
+      "atMs": null,
+      "type": "debug",
+      "text": "[pipeline] wb.model_adapter.apply {count: 7, owner: runtime_v2_production, domain: model, phase: 6.3F, seriesKey: ::0:empty:}"
+    },
+    {
+      "atMs": null,
+      "type": "debug",
+      "text": "[pipeline] wb.model_adapter.apply {count: 8, owner: runtime_v2_production, domain: model, phase: 6.3F, seriesKey: ::0:empty:}"
+    },
+    {
+      "atMs": null,
+      "type": "debug",
+      "text": "[pipeline] wb.load.report_ready {count: 1, owner: runtime_v2_production, domain: market, phase: 6.3F, runId: 2026-06-28T134603Z_ema_pullback_BTCUSDT_5m}"
+    },
+    {
+      "atMs": null,
+      "type": "debug",
+      "text": "[pipeline] wb.trace_display.apply_current_window {count: 3, owner: runtime_v2_production, domain: trace, phase: 6.3F, fromSec: 0}"
+    },
+    {
+      "atMs": null,
+      "type": "debug",
+      "text": "[pipeline] wb.signal_trace.bootstrap_blocked {count: 6, owner: runtime_v2_production, domain: trace, phase: 6.3F, reason: no_variant}"
+    },
+    {
+      "atMs": null,
+      "type": "debug",
+      "text": "[pipeline] wb.model_adapter.apply {count: 9, owner: runtime_v2_production, domain: model, phase: 6.3F, seriesKey: ::0:empty:}"
+    },
+    {
+      "atMs": null,
+      "type": "debug",
+      "text": "[pipeline] wb.model_adapter.apply {count: 10, owner: runtime_v2_production, domain: model, phase: 6.3F, seriesKey: ::0:empty:}"
+    },
+    {
+      "atMs": null,
+      "type": "debug",
+      "text": "[pipeline] chart.setData.candles {count: 1, ms: 0.2, owner: runtime_v2_production, domain: model, phase: 6.3F}"
+    },
+    {
+      "atMs": null,
+      "type": "debug",
+      "text": "[pipeline] chart.setData.anchor_ema {count: 1, ms: 0.0, owner: runtime_v2_production, domain: model, phase: 6.3F}"
+    },
+    {
+      "atMs": null,
+      "type": "debug",
+      "text": "[pipeline] chart.setData.aux_htf {count: 1, ms: 0.0, owner: runtime_v2_production, domain: model, phase: 6.3F}"
+    },
+    {
+      "atMs": null,
+      "type": "debug",
+      "text": "[pipeline] wb.market_fetch.start {count: 1, owner: runtime_v2_production, domain: market, phase: 6.3F, key: 2026-06-28T134603Z_ema_pullback_BTCUSDT_5m\u001finstanc…000\u001e0\u001f0:1763940900000:1778940900000:1778940600000}"
+    }
+  ],
+  "rows": [
+    {
+      "step": "api.fetchCandlesWindow",
+      "count": 1,
+      "total_ms": 1708.2,
+      "max_ms": 1708.2,
+      "avg_ms": 1708.2,
+      "last_meta": {}
+    },
+    {
+      "step": "api.fetchEmaWindow",
+      "count": 3,
+      "total_ms": 175972.8,
+      "max_ms": 61445.8,
+      "avg_ms": 58657.6,
+      "last_meta": {}
+    },
+    {
+      "step": "api.fetchRunReport",
+      "count": 1,
+      "total_ms": 34.8,
+      "max_ms": 34.8,
+      "avg_ms": 34.8,
+      "last_meta": {}
+    },
+    {
+      "step": "api.fetchSignalTrace",
+      "count": 1,
+      "total_ms": 10860.8,
+      "max_ms": 10860.8,
+      "avg_ms": 10860.8,
+      "last_meta": {}
+    },
+    {
+      "step": "chart.markers.rebuild",
+      "count": 3,
+      "total_ms": 7.1,
+      "max_ms": 4.1,
+      "avg_ms": 2.4,
+      "last_meta": {
+        "tradeMarkerCount": 72,
+        "componentMarkerCount": 0,
+        "tradeManagementMarkerCount": 0
+      }
+    },
+    {
+      "step": "chart.setData.anchor_ema",
+      "count": 11,
+      "total_ms": 170.9,
+      "max_ms": 71.8,
+      "avg_ms": 15.5,
+      "last_meta": {
+        "owner": "runtime_v2_production",
+        "domain": "model",
+        "phase": "6.3F",
+        "overlayCount": 3
+      }
+    },
+    {
+      "step": "chart.setData.aux_htf",
+      "count": 11,
+      "total_ms": 256.2,
+      "max_ms": 68.7,
+      "avg_ms": 23.3,
+      "last_meta": {
+        "owner": "runtime_v2_production",
+        "domain": "model",
+        "phase": "6.3F",
+        "overlayCount": 3
+      }
+    },
+    {
+      "step": "chart.setData.candles",
+      "count": 5,
+      "total_ms": 64.9,
+      "max_ms": 64.4,
+      "avg_ms": 13,
+      "last_meta": {
+        "owner": "runtime_v2_production",
+        "domain": "model",
+        "phase": "6.3F",
+        "barCount": 50000
+      }
+    },
+    {
+      "step": "wb.aux_overlay.apply_current_window",
+      "count": 2,
+      "total_ms": 0,
+      "max_ms": 0,
+      "avg_ms": 0,
+      "last_meta": {
+        "owner": "runtime_v2_production",
+        "domain": "aux_overlay",
+        "phase": "6.3F",
+        "overlayCount": 3,
+        "htfOverlayCount": 3,
+        "stale": true
+      }
+    },
+    {
+      "step": "wb.aux_overlay.slice",
+      "count": 1,
+      "total_ms": 0,
+      "max_ms": 0,
+      "avg_ms": 0,
+      "last_meta": {
+        "owner": "runtime_v2_production",
+        "domain": "aux_overlay",
+        "phase": "6.3F",
+        "htfTimeCount": 50000,
+        "source": "display_slice"
+      }
+    },
+    {
+      "step": "wb.aux_overlay.stale",
+      "count": 2,
+      "total_ms": 0,
+      "max_ms": 0,
+      "avg_ms": 0,
+      "last_meta": {
+        "owner": "runtime_v2_production",
+        "domain": "aux_overlay",
+        "phase": "6.3F",
+        "displayCacheCoversWindow": false,
+        "displayCacheHasWindowData": false,
+        "signalTraceStatus": "ready"
+      }
+    },
+    {
+      "step": "wb.chart_events_fallback",
+      "count": 1,
+      "total_ms": 0,
+      "max_ms": 0,
+      "avg_ms": 0,
+      "last_meta": {
+        "reason": "flag_disabled"
+      }
+    },
+    {
+      "step": "wb.chart_window_slice",
+      "count": 16,
+      "total_ms": 17,
+      "max_ms": 2.5,
+      "avg_ms": 1.1,
+      "last_meta": {
+        "owner": "runtime_v2_production",
+        "domain": "render_window",
+        "phase": "6.3F",
+        "barCount": 50000,
+        "overlayCount": 6
+      }
+    },
+    {
+      "step": "wb.cutover.domain_owners",
+      "count": 2,
+      "total_ms": 0,
+      "max_ms": 0,
+      "avg_ms": 0,
+      "last_meta": {
+        "phase": "6.3F",
+        "owners": {
+          "model": "runtime_v2_production",
+          "render_window": "runtime_v2_production",
+          "viewport": "runtime_v2_production",
+          "trace": "runtime_v2_production",
+          "aux_overlay": "runtime_v2_production",
+          "market": "runtime_v2_production"
+        }
+      }
+    },
+    {
+      "step": "wb.load.market_bundle_ready",
+      "count": 1,
+      "total_ms": 0,
+      "max_ms": 0,
+      "avg_ms": 0,
+      "last_meta": {
+        "owner": "runtime_v2_production",
+        "domain": "market",
+        "phase": "6.3F",
+        "barCount": 50000,
+        "anchorEmaOverlayCount": 0
+      }
+    },
+    {
+      "step": "wb.load.report_ready",
+      "count": 1,
+      "total_ms": 0,
+      "max_ms": 0,
+      "avg_ms": 0,
+      "last_meta": {
+        "owner": "runtime_v2_production",
+        "domain": "market",
+        "phase": "6.3F",
+        "runId": "2026-06-28T134603Z_ema_pullback_BTCUSDT_5m"
+      }
+    },
+    {
+      "step": "wb.market_candles_decision",
+      "count": 1,
+      "total_ms": 0,
+      "max_ms": 0,
+      "avg_ms": 0,
+      "last_meta": {
+        "owner": "runtime_v2_production",
+        "domain": "market",
+        "phase": "6.3F",
+        "decision": "fetch",
+        "candlesKey": "BTCUSDT\u001e5m\u001e0",
+        "fromMs": 1763940900000,
+        "toMs": 1778940900000,
+        "toOpenTimeMs": 1778940600000
+      }
+    },
+    {
+      "step": "wb.market_ema_decision",
+      "count": 3,
+      "total_ms": 0,
+      "max_ms": 0,
+      "avg_ms": 0,
+      "last_meta": {
+        "owner": "runtime_v2_production",
+        "domain": "market",
+        "phase": "6.3F",
+        "decision": "fetch",
+        "overlayKey": "BTCUSDT\u001e5m\u001eanchor_stack\u001eslow\u001e1000\u001e0",
+        "role": "slow",
+        "period": 1000,
+        "fromMs": 1763940900000,
+        "toMs": 1778940900000,
+        "toOpenTimeMs": 1778940600000
+      }
+    },
+    {
+      "step": "wb.market_fetch.end",
+      "count": 1,
+      "total_ms": 0,
+      "max_ms": 0,
+      "avg_ms": 0,
+      "last_meta": {
+        "owner": "runtime_v2_production",
+        "domain": "market",
+        "phase": "6.3F",
+        "key": "2026-06-28T134603Z_ema_pullback_BTCUSDT_5m\u001finstance_1\u001fBTCUSDT\u001e5m\u001e0\u001fBTCUSDT\u001e5m\u001eanchor_stack\u001efast\u001e200\u001e0\u001fBTCUSDT\u001e5m\u001eanchor_stack\u001eanchor\u001e500\u001e0\u001fBTCUSDT\u001e5m\u001eanchor_stack\u001eslow\u001e1000\u001e0\u001f0:1763940900000:1778940900000:1778940600000",
+        "candlesFetched": true,
+        "emaFetched": 3
+      }
+    },
+    {
+      "step": "wb.market_fetch.start",
+      "count": 1,
+      "total_ms": 0,
+      "max_ms": 0,
+      "avg_ms": 0,
+      "last_meta": {
+        "owner": "runtime_v2_production",
+        "domain": "market",
+        "phase": "6.3F",
+        "key": "2026-06-28T134603Z_ema_pullback_BTCUSDT_5m\u001finstance_1\u001fBTCUSDT\u001e5m\u001e0\u001fBTCUSDT\u001e5m\u001eanchor_stack\u001efast\u001e200\u001e0\u001fBTCUSDT\u001e5m\u001eanchor_stack\u001eanchor\u001e500\u001e0\u001fBTCUSDT\u001e5m\u001eanchor_stack\u001eslow\u001e1000\u001e0\u001f0:1763940900000:1778940900000:1778940600000",
+        "candlesCached": false,
+        "targetFromMs": 1763940900000,
+        "targetToMs": 1778940900000
+      }
+    },
+    {
+      "step": "wb.model_adapter.apply",
+      "count": 30,
+      "total_ms": 0,
+      "max_ms": 0,
+      "avg_ms": 0,
+      "last_meta": {
+        "owner": "runtime_v2_production",
+        "domain": "model",
+        "phase": "6.3F",
+        "seriesKey": "1763940900:1778940600:50000:around-trade:1778821500",
+        "barCount": 50000,
+        "viewMode": "around-trade"
+      }
+    },
+    {
+      "step": "wb.render_window.init",
+      "count": 1,
+      "total_ms": 0,
+      "max_ms": 0,
+      "avg_ms": 0,
+      "last_meta": {
+        "owner": "runtime_v2_production",
+        "domain": "render_window",
+        "phase": "6.3F",
+        "fullLength": 50000,
+        "variant": "instance_1"
+      }
+    },
+    {
+      "step": "wb.render_window.trade_select",
+      "count": 1,
+      "total_ms": 0,
+      "max_ms": 0,
+      "avg_ms": 0,
+      "last_meta": {
+        "owner": "runtime_v2_production",
+        "domain": "render_window",
+        "phase": "6.3F",
+        "rebuilt": false,
+        "skipped": true
+      }
+    },
+    {
+      "step": "wb.signal_trace_merge",
+      "count": 1,
+      "total_ms": 0,
+      "max_ms": 0,
+      "avg_ms": 0,
+      "last_meta": {
+        "windowKey": "2026-06-28T134603Z_ema_pullback_BTCUSDT_5m:instance_1:1763940900:1778940600:htf_1",
+        "traceRequestKey": "2026-06-28T134603Z_ema_pullback_BTCUSDT_5m\u001finstance_1\u001f1763940900000\u001f1778940600000\u001fhtf_1",
+        "truncated": false,
+        "requested": {
+          "fromSec": 1763940900,
+          "toSec": 1778940600
+        },
+        "actual": {
+          "fromSec": 1763940900,
+          "toSec": 1778940600
+        }
+      }
+    },
+    {
+      "step": "wb.signal_trace.bootstrap_blocked",
+      "count": 10,
+      "total_ms": 0,
+      "max_ms": 0,
+      "avg_ms": 0,
+      "last_meta": {
+        "owner": "runtime_v2_production",
+        "domain": "trace",
+        "phase": "6.3F",
+        "reason": "no_render_window"
+      }
+    },
+    {
+      "step": "wb.signal_trace.bootstrap_ready",
+      "count": 1,
+      "total_ms": 0,
+      "max_ms": 0,
+      "avg_ms": 0,
+      "last_meta": {
+        "owner": "runtime_v2_production",
+        "domain": "trace",
+        "phase": "6.3F",
+        "windowKey": "2026-06-28T134603Z_ema_pullback_BTCUSDT_5m:instance_1:1763940900:1778940600:htf_1",
+        "traceRequestKey": "2026-06-28T134603Z_ema_pullback_BTCUSDT_5m:instance_1",
+        "renderWindowRevision": 1,
+        "boundsKey": "1763940900:1778940600:50000",
+        "fetchSource": "initial"
+      }
+    },
+    {
+      "step": "wb.signal_trace.fetch_end",
+      "count": 3,
+      "total_ms": 0,
+      "max_ms": 0,
+      "avg_ms": 0,
+      "last_meta": {
+        "owner": "runtime_v2_production",
+        "domain": "trace",
+        "phase": "6.3F",
+        "windowKey": "2026-06-28T134603Z_ema_pullback_BTCUSDT_5m:instance_1:1763940900:1778940600:htf_1",
+        "traceRequestKey": "2026-06-28T134603Z_ema_pullback_BTCUSDT_5m\u001finstance_1\u001f1763940900000\u001f1778940600000\u001fhtf_1",
+        "outcome": "ok"
+      }
+    },
+    {
+      "step": "wb.signal_trace.fetch_start",
+      "count": 2,
+      "total_ms": 0,
+      "max_ms": 0,
+      "avg_ms": 0,
+      "last_meta": {
+        "owner": "runtime_v2_production",
+        "domain": "trace",
+        "phase": "6.3F",
+        "source": "initial",
+        "windowKey": "2026-06-28T134603Z_ema_pullback_BTCUSDT_5m:instance_1:1763940900:1778940600:htf_1",
+        "traceRequestKey": "2026-06-28T134603Z_ema_pullback_BTCUSDT_5m\u001finstance_1\u001f1763940900000\u001f1778940600000\u001fhtf_1",
+        "denseFetch": true
+      }
+    },
+    {
+      "step": "wb.trace_display.apply_current_window",
+      "count": 6,
+      "total_ms": 0,
+      "max_ms": 0,
+      "avg_ms": 0,
+      "last_meta": {
+        "owner": "runtime_v2_production",
+        "domain": "trace",
+        "phase": "6.3F",
+        "fromSec": 1763940900,
+        "toSec": 1778940600,
+        "status": "current",
+        "eventCount": 0,
+        "htfTimeCount": 50000,
+        "coveredRanges": [
+          {
+            "fromSec": 1763940900,
+            "toSec": 1778940600
+          }
+        ],
+        "missingRange": null,
+        "retainedPreviousDisplay": true,
+        "selectedTradeId": 617,
+        "selectedTradeEntryTimeSec": 1778821500,
+        "renderWindowFromSec": 1763940900,
+        "renderWindowToSec": 1778940600,
+        "selectedTradeEntryMarkerInView": true
+      }
+    },
+    {
+      "step": "wb.trace_display.coverage",
+      "count": 1,
+      "total_ms": 0,
+      "max_ms": 0,
+      "avg_ms": 0,
+      "last_meta": {
+        "owner": "runtime_v2_production",
+        "domain": "trace",
+        "phase": "6.3F",
+        "fromSec": 1763940900,
+        "toSec": 1778940600,
+        "coversWindow": false,
+        "missingRange": {
+          "fromSec": 1763940900,
+          "toSec": 1778940600
+        }
+      }
+    },
+    {
+      "step": "wb.trace_display.merge_chunk",
+      "count": 1,
+      "total_ms": 0.2,
+      "max_ms": 0.2,
+      "avg_ms": 0.2,
+      "last_meta": {
+        "owner": "runtime_v2_production",
+        "domain": "trace",
+        "phase": "6.3F",
+        "eventCount": 0,
+        "timeCount": 50000,
+        "source": "signal-trace-fallback"
+      }
+    },
+    {
+      "step": "wb.trace_display.slice_events",
+      "count": 2,
+      "total_ms": 0.1,
+      "max_ms": 0.1,
+      "avg_ms": 0.1,
+      "last_meta": {
+        "owner": "runtime_v2_production",
+        "domain": "trace",
+        "phase": "6.3F",
+        "fromSec": 1763940900,
+        "toSec": 1778940600
+      }
+    },
+    {
+      "step": "wb.trace_display.slice_htf",
+      "count": 3,
+      "total_ms": 0.1,
+      "max_ms": 0.1,
+      "avg_ms": 0,
+      "last_meta": {
+        "owner": "runtime_v2_production",
+        "domain": "aux_overlay",
+        "phase": "6.3F",
+        "source": "display_slice"
+      }
+    },
+    {
+      "step": "wb.viewport.command_cancel",
+      "count": 1,
+      "total_ms": 0,
+      "max_ms": 0,
+      "avg_ms": 0,
+      "last_meta": {
+        "owner": "runtime_v2_production",
+        "domain": "viewport",
+        "phase": "6.3F",
+        "cancelledThroughId": 0
+      }
+    }
+  ],
+  "debug": {
+    "cutoverPhase": "6.3F",
+    "domainOwners": {
+      "model": "runtime_v2_production",
+      "render_window": "runtime_v2_production",
+      "viewport": "runtime_v2_production",
+      "trace": "runtime_v2_production",
+      "aux_overlay": "runtime_v2_production",
+      "market": "runtime_v2_production"
+    }
+  },
+  "screenshot": "/Users/mcroma/bbb/debug/reports/phase64-signal-trace-readiness/phase64-signal-trace-readiness-new-workbench-chart-runtime-v2-run1.png"
+}

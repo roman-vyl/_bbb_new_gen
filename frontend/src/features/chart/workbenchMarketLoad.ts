@@ -15,8 +15,13 @@ import {
   type PlannedCandlesWindowFetch,
   type PlannedEmaWindowFetch,
 } from "@/features/chart/marketWindowPlanner";
+import { PIPELINE_DEBUG_STEPS as DBG, dbgMark } from "@/shared/diagnostics/pipelineDebug";
 
 export type { MarketDisplayWindowMs };
+
+function isAbortError(err: unknown): boolean {
+  return err instanceof DOMException && err.name === "AbortError";
+}
 
 export function resolveMarketTargetWindow(
   view: RunMarketView,
@@ -250,6 +255,10 @@ export async function executeMarketWindowLoad(input: {
       });
       candlesFetched = true;
       input.onChunkSeeded?.("candles");
+    } catch (err) {
+      if (!isAbortError(err)) {
+        throw err;
+      }
     } finally {
       input.inFlightKeys.delete(candlesPlan.inFlightKey);
     }
@@ -263,6 +272,11 @@ export async function executeMarketWindowLoad(input: {
   await Promise.all(
     emaPlans.map(async (plan) => {
       if (input.inFlightKeys.has(plan.inFlightKey)) {
+        dbgMark(DBG.load.marketFetchSkipInFlight, {
+          kind: "ema",
+          inFlightKey: plan.inFlightKey,
+          overlayKey: plan.overlayKey,
+        });
         return;
       }
       input.inFlightKeys.add(plan.inFlightKey);
@@ -274,6 +288,10 @@ export async function executeMarketWindowLoad(input: {
         });
         emaFetched += 1;
         input.onChunkSeeded?.("ema");
+      } catch (err) {
+        if (!isAbortError(err)) {
+          throw err;
+        }
       } finally {
         input.inFlightKeys.delete(plan.inFlightKey);
       }

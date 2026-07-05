@@ -27,11 +27,20 @@ export type CommittedRenderWindow = {
   revision: number;
 };
 
+export type ChartNavigationKey =
+  | "ArrowLeft"
+  | "ArrowRight"
+  | "PageUp"
+  | "PageDown"
+  | "Home"
+  | "End";
+
 export type ChartInteractionEvent =
   | { type: "pointerdown" }
   | { type: "pointermove" }
   | { type: "pointerup" }
   | { type: "wheel" }
+  | { type: "keyboard_pan_start"; key: ChartNavigationKey }
   | { type: "programmatic_viewport_start" }
   | { type: "programmatic_viewport_end" }
   | { type: "visible_range_changed"; visible: ChartLogicalRange; anchorTimeSec: number | null }

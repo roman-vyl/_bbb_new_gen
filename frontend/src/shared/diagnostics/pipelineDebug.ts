@@ -7,6 +7,12 @@
  * 3. Manual save — copy(__pipelineDebugExport()) into debug/reports/ (no auto file I/O).
  */
 
+import { getCutoverDebugExportFields } from "@/features/workbenchChartRuntime/chartRuntimeCutoverTelemetry";
+import type {
+  ChartRuntimeCutoverPhase,
+  ChartRuntimeDomainOwners,
+} from "@/features/workbenchChartRuntime/runtimeTypes";
+
 type Row = {
   count: number;
   totalMs: number;
@@ -47,6 +53,15 @@ export const PIPELINE_DEBUG_STEPS = {
     noShift: "wb.pan.no_shift",
     shiftRequested: "wb.pan.shift_requested",
   },
+  keyboard: {
+    keydownDecision: "wb.keyboard.keydown_decision",
+    panStartDispatched: "wb.keyboard.pan_start_dispatched",
+    renderWindowPanStart: "wb.keyboard.render_window_pan_start",
+    viewportPanStart: "wb.keyboard.viewport_pan_start",
+    visibleRangeDispatch: "wb.keyboard.visible_range_dispatch",
+    focusTradeEmitDecision: "wb.viewport.focus_trade_emit_decision",
+    modelApplyEmpty: "wb.model_adapter.apply_empty",
+  },
   chartWindow: {
     slice: "wb.chart_window_slice",
   },
@@ -70,6 +85,12 @@ export const PIPELINE_DEBUG_STEPS = {
     fetchSuperseded: "wb.trace_display.fetch_superseded",
     coverage: "wb.trace_display.coverage",
   },
+  auxOverlay: {
+    applyCurrentWindow: "wb.aux_overlay.apply_current_window",
+    slice: "wb.aux_overlay.slice",
+    stale: "wb.aux_overlay.stale",
+    merge: "wb.aux_overlay.merge",
+  },
   chartEvents: {
     fetchFail: "wb.chart_events_fetch_fail",
     fallback: "wb.chart_events_fallback",
@@ -80,6 +101,17 @@ export const PIPELINE_DEBUG_STEPS = {
     emaDecision: "wb.market_ema_decision",
     panPrefetchDecision: "wb.market_pan_prefetch_decision",
     composeFocusFallback: "wb.market_compose_focus_fallback",
+  },
+  tradeFocus: {
+    request: "wb.trade_focus.request",
+    coverageCheck: "wb.trade_focus.coverage_check",
+    delayed: "wb.trade_focus.delayed",
+    applied: "wb.trade_focus.applied",
+    cancelled: "wb.trade_focus.cancelled",
+    emptyPrevented: "wb.trade_focus.empty_prevented",
+  },
+  cutover: {
+    domainOwners: "wb.cutover.domain_owners",
   },
   lanesTrace: {
     skip: "wb.lanes_trace_skip",
@@ -111,6 +143,14 @@ export type PipelineDebugExportRow = {
   max_ms: number;
   avg_ms: number;
   last_meta?: Record<string, unknown>;
+};
+
+export type PipelineDebugExport = {
+  steps: PipelineDebugExportRow[];
+  debug: {
+    cutoverPhase: ChartRuntimeCutoverPhase;
+    domainOwners: ChartRuntimeDomainOwners;
+  };
 };
 
 export function pipelineDebugEnabled(): boolean {
@@ -179,8 +219,8 @@ export async function dbgTimed<T>(
   }
 }
 
-export function dbgExport(): PipelineDebugExportRow[] {
-  return [...stats.entries()]
+export function dbgExport(): PipelineDebugExport {
+  const steps = [...stats.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([step, row]) => ({
       step,
@@ -190,6 +230,11 @@ export function dbgExport(): PipelineDebugExportRow[] {
       avg_ms: row.count > 0 ? Number((row.totalMs / row.count).toFixed(1)) : 0,
       ...(row.lastMeta !== undefined ? { last_meta: row.lastMeta } : {}),
     }));
+
+  return {
+    steps,
+    debug: getCutoverDebugExportFields(),
+  };
 }
 
 export function dbgReset(): void {
@@ -198,7 +243,7 @@ export function dbgReset(): void {
 
 export function dbgFlush(label = "workbench"): void {
   if (!pipelineDebugEnabled()) return;
-  const rows = dbgExport();
+  const { steps: rows } = dbgExport();
   console.group(`=== PIPELINE_DEBUG [${label}] ===`);
   console.table(
     rows.map((row) => ({
@@ -262,7 +307,7 @@ export function dbgPrintConsoleFaq(force = false): void {
 
 type PipelineDebugWindow = {
   __pipelineDebugFlush?: (label?: string) => void;
-  __pipelineDebugExport?: () => PipelineDebugExportRow[];
+  __pipelineDebugExport?: () => PipelineDebugExport;
   __pipelineDebugReset?: () => void;
   __pipelineDebugHelp?: () => void;
 };

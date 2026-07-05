@@ -134,6 +134,51 @@ describe("marketResourceCache interval storage", () => {
     expect(marketCandlesReady(candlesKey, 1_500_000_000_000, 1_700_000_600_000)).toBe(false);
   });
 
+  it("coalesces adjacent chunks so eviction cap does not punch holes", () => {
+    const store = createMarketCandlesCacheStore();
+    const step = 300_000;
+    const chunkBars = 200;
+    const chunkSpan = chunkBars * step;
+    for (let i = 0; i < 30; i += 1) {
+      const fromMs = i * chunkSpan;
+      const toMs = fromMs + chunkSpan;
+      const candles: ChartBar[] = [];
+      for (let b = 0; b < chunkBars; b += 1) {
+        candles.push(bar(Math.floor((fromMs + b * step) / 1000)));
+      }
+      store.mergeChunk({ fromMs, toMs, candles });
+    }
+
+    expect(store.chunkCount()).toBeLessThanOrEqual(2);
+    expect(store.coversRange(0, 30 * chunkSpan)).toBe(true);
+  });
+
+  it("keeps contiguous coverage across sequential trade windows via mergeCandlesWindowBundle", () => {
+    const step = 300_000;
+    const windowSpan = 200 * step;
+    for (let i = 0; i < 20; i += 1) {
+      const fromMs = i * (windowSpan / 4);
+      const toMs = fromMs + windowSpan;
+      const candles: ChartBar[] = [];
+      for (let t = fromMs; t < toMs; t += step) {
+        candles.push(bar(Math.floor(t / 1000)));
+      }
+      mergeCandlesWindowBundle(candlesKey, {
+        candles,
+        coverage: {
+          requested_from_ms: fromMs,
+          requested_to_ms: toMs,
+          actual_from_ms: fromMs,
+          actual_to_ms: toMs,
+          truncated: false,
+        },
+      });
+    }
+
+    const totalTo = 19 * (windowSpan / 4) + windowSpan;
+    expect(marketCandlesReady(candlesKey, 0, totalTo)).toBe(true);
+  });
+
   it("overlays track independent interval sets", () => {
     const fastKey = buildOverlayCacheKey({
       symbol: "BTCUSDT",

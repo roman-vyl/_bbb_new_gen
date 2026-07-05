@@ -7,12 +7,14 @@ import {
   useMemo,
   useRef,
   useState,
+  type Dispatch,
+  type MutableRefObject,
   type ReactNode,
+  type SetStateAction,
 } from "react";
 
 import {
   ApiError,
-  fetchChartOverlayEma,
   fetchConfigState,
   fetchRunReport,
   fetchRunSummaries,
@@ -20,10 +22,7 @@ import {
 } from "@/api/client";
 import {
   CHART_MARKET_TIMEFRAME,
-  type AnchorStackPeriods,
-  type ChartAuxEmaOverlay,
   type ChartBar,
-  type ChartEmaOverlay,
   type ConfigListEntry,
   type ConfigStateResponse,
   type RunReport,
@@ -31,95 +30,35 @@ import {
   type RunVariant,
   type TradeRecord,
   type SignalTraceBundle,
-  type HtfContextTrace,
   type ComponentEvent,
   type StrategyConfigDraft,
   type WorkbenchTab,
 } from "@/api/types";
 import { COMPOSER_DEFAULT_FAMILY, createBlankConfigDraft } from "@/features/composer/composerDraft";
 import { resolveChartTimeframeMs } from "@/features/chart/chartTimeframeMs";
-import {
-  AnchorStackParseError,
-  anchorStackPeriodsFromStrategySpec,
-} from "@/features/chart/anchorStackFromSpec";
-import {
-  executeMarketWindowLoad,
-  buildMarketTargetWindowKey,
-  evaluateMarketPanPrefetchExpansion,
-  marketCandlesReadyForTarget,
-  resolveMarketTargetWindow,
-  type MarketDisplayWindowMs,
-} from "@/features/chart/workbenchMarketLoad";
 import { getCandles } from "@/features/chart/marketResourceCache";
-import { mergeAuxOverlayPoints } from "@/features/chart/chartAuxEmaOverlays";
-import type { ChartDataWindowManager } from "@/features/chart/chartDataWindowManager";
-import { createChartRuntime, type WindowCommitResult } from "@/features/chart/runtime/chartRuntime";
-import { buildChartViewModel, type ChartViewModel } from "@/features/chart/runtime/chartViewModel";
+import type { WindowCommitResult } from "@/features/chart/runtime/chartRuntime";
+import type { ChartViewModel } from "@/features/chart/runtime/chartViewModel";
 import {
-  planTraceDisplayLoad,
   queueTraceFetchIntent,
   takeCommittedTraceFetchIntent,
 } from "@/features/chart/runtime/traceDisplayOrchestrator";
-import {
-  buildDisplayTraceRequestKey,
-  isChartEventsApiEnabled,
-} from "@/features/chart/runtime/chartEventsLoad";
-import {
-  buildTraceRequestKey,
-  createSignalTraceRequestCoordinator,
-} from "@/features/chart/runtime/signalTraceRequestCoordinator";
-import {
-  buildTraceDisplayChunkKey,
-  planMissingTraceDisplayChunkFetch,
-} from "@/features/chart/runtime/traceDisplayChunkScheduling";
-import {
-  applyLanesFromSessionBundle,
-  decideDenseLanesNetworkLoad,
-  flushLanesLoadDebug,
-  loadDenseLanesTrace,
-  loadDisplayTraceChunk,
-  mapDisplayLoadOutcome,
-  mergeDisplayFromDenseFallback,
-} from "@/features/chart/runtime/workbenchTraceNetworkLoad";
-import { canEmitTradeFocus } from "@/features/chart/runtime/viewportController";
-import type { ChartInteractionEvent, ViewportCommand } from "@/features/chart/runtime/types";
-import {
-  emptyChartViewWindow,
-  findBarIndexAtOrBefore,
-  type ChartViewMode,
-  type ChartViewWindow,
-} from "@/features/chart/chartViewWindow";
-import {
-  auxOverlayFromHtfSlice,
-  auxOverlayFromHtfTrace,
-  collectAuxEmaSpecs,
-} from "@/features/chart/strategySpecAuxEma";
+import { flushLanesLoadDebug } from "@/features/chart/runtime/workbenchTraceNetworkLoad";
 import {
   defaultChartContextOverlayRef,
   strategyContextRefOptions,
 } from "@/features/chart/strategyContexts";
 import { candleRangeMs, selectedTradeEntryMarkerInView } from "@/features/chart/chartMarkers";
 import {
-  buildAuxOverlaysStabilizeKey,
-  buildEmaOverlaysStabilizeKey,
   buildRenderWindowBoundsKey,
-  candleTimeBounds,
-  displayAuxOverlaysForRenderWindow,
-  frozenHtfOverlaysForStorage,
-  stabilizeByWindowBoundsKey,
 } from "@/features/chart/chartRenderWindowDisplay";
 import {
   buildSessionCacheIdentity,
-  createSignalTraceBundleSessionCache,
 } from "@/features/chart/signalTraceBundleSessionCache";
 import {
   buildTraceDisplayCacheKey,
-  createSignalTraceDisplayCache,
-  mergeDisplayChunkFromResponse,
 } from "@/features/chart/signalTraceDisplayCache";
 import {
-  deriveTraceDisplayStateForCandles,
-  shouldRetainPreviousTraceDisplay,
   type TraceDisplayState,
 } from "@/features/chart/traceDisplayApply";
 import {
@@ -136,26 +75,67 @@ import {
 import { hasTradeManagementEvents } from "@/features/chart/tradeManagementChartEvents";
 import {
   buildRunMarketViewIdentity,
-  composeDisplayMarketWindowBundle,
-  composePartialRunMarketWindowBundle,
   resolveRunMarketView,
   type RunMarketView,
   type RunMarketViewIdentity,
 } from "@/features/chart/runMarketView";
 import {
-  decideSignalTraceLoad,
-  lanesSignalTraceError as deriveLanesSignalTraceError,
-  lanesSignalTraceStatus as deriveLanesSignalTraceStatus,
-  signalTraceMatchesChartWindow,
   type SignalTraceLoadStatus,
 } from "@/shared/context/signalTraceLoadPolicy";
 import { evaluateSignalTraceBootstrap } from "@/shared/context/signalTraceBootstrap";
 import {
   dbgMark,
-  dbgScheduleShiftFlush,
-  dbgTimedSync,
   PIPELINE_DEBUG_STEPS as DBG,
 } from "@/shared/diagnostics/pipelineDebug";
+import {
+  dbgMarkCutover,
+  dbgTimedSyncCutover,
+  emitCutoverDomainOwnersSnapshot,
+} from "@/features/workbenchChartRuntime/chartRuntimeCutoverTelemetry";
+import {
+  createPhase63EAuxOverlayOwnerState,
+  resetPhase63EAuxOverlayOwner,
+  resolvePhase63EDisplayCacheHasWindowData,
+  resolvePhase63EAuxOverlaySnapshot,
+  resolvePhase63EModelRuntimeSlice,
+  runPhase63EApplyHtfFromDisplaySlice,
+  runPhase63ELoadBffAuxOverlays,
+  runPhase63ESyncHtfOverlaysFromTraceFallback,
+  syncPhase63EAuxOverlaySpecs,
+  type Phase63EAuxOverlayOwnerState,
+} from "@/features/workbenchChartRuntime/phase63EAuxOverlayBridge";
+import {
+  applyPhase63FPanPrefetchCoverage,
+  cancelPhase63FMarketLoad,
+  createPhase63FMarketLoadOwnerState,
+  evaluatePhase63FPanPrefetch,
+  marketBundleFromSnapshot,
+  resetPhase63FMarketLoadOwner,
+  resolvePhase63FMarketBundleSnapshot,
+  resolvePhase63FMarketReactSync,
+  resolvePhase63FMarketTargetWindows,
+  resolvePhase63FMarketView,
+  runPhase63FMarketLoad,
+  type Phase63FMarketLoadOwnerState,
+} from "@/features/workbenchChartRuntime/phase63FMarketLoadBridge";
+import {
+  WorkbenchRenderViewportProvider,
+  useWorkbenchRenderViewport,
+  type WorkbenchRenderViewportCallbacks,
+  type WorkbenchRenderViewportInputs,
+} from "@/shared/context/WorkbenchRenderViewportContext";
+import { resetTraceCoordinator } from "@/features/workbenchChartRuntime/traceRuntime";
+import {
+  createPhase63DTraceEventsOwnerState,
+  logPhase63DTraceCoverage,
+  resetPhase63DTraceDisplayCache,
+  resetPhase63DTraceSessionCache,
+  resolvePhase63DLanesSnapshot,
+  runPhase63DApplyTraceDisplayForWindow,
+  runPhase63DTraceLoadCycle,
+  shouldPhase63DFinalizeTraceDisplay,
+  type Phase63DTraceEventsOwnerState,
+} from "@/features/workbenchChartRuntime/phase63DTraceEventsBridge";
 export type ReportLoadStatus = "loading" | "ready" | "error";
 export type ConfigLoadStatus = "loading" | "ready" | "empty" | "error";
 export type MarketLoadStatus = "idle" | "loading" | "ready" | "error";
@@ -180,15 +160,8 @@ type WorkbenchState = {
   report: RunReport | null;
   /** Renderer-facing projection; prefer over individual chart* fields in ChartPanel. */
   chartViewModel: ChartViewModel;
-  chartCandles: ChartBar[];
-  chartEmaOverlays: ChartEmaOverlay[];
-  chartAuxEmaOverlays: ChartAuxEmaOverlay[];
-  chartDisplayAuxEmaOverlays: ChartAuxEmaOverlay[];
   htfAuxEmaOverlayStale: boolean;
-  chartDisplayComponentEvents: ComponentEvent[];
   componentEventsStale: boolean;
-  displayApplyRevision: number;
-  renderWindowShiftSeq: number;
   chartShowEntryBlockMarkers: boolean;
   setChartShowEntryBlockMarkers: (show: boolean) => void;
   chartShowExitSignalMarkers: boolean;
@@ -199,11 +172,6 @@ type WorkbenchState = {
   setChartShowTradeManagementPhaseMarkers: (show: boolean) => void;
   chartShowTradeManagementExitMarkers: boolean;
   setChartShowTradeManagementExitMarkers: (show: boolean) => void;
-  chartViewMode: ChartViewMode;
-  chartViewCenterTimeSec: number | null;
-  chartViewFirstTimeSec: number | null;
-  chartViewLastTimeSec: number | null;
-  chartViewCount: number;
   chartTradeFocusWarning: string | null;
   marketCandlesCount: number;
   fullCandleRange: { min: number; max: number } | null;
@@ -224,25 +192,12 @@ type WorkbenchState = {
   createNewConfig: () => void;
   reloadReport: () => void;
   refreshRunsAndSelectRun: (runId: string) => Promise<void>;
-  signalTrace: SignalTraceBundle | null;
-  signalTraceStatus: SignalTraceLoadStatus;
-  /** Per-window trace for lanes/diagnostics only — null when bundle is for another render window. */
-  lanesSignalTrace: SignalTraceBundle | null;
-  lanesSignalTraceStatus: SignalTraceLoadStatus;
-  lanesSignalTraceError: string | null;
-  signalTraceError: string | null;
   contextOverlayRef: string | null;
   setContextOverlayRef: (ref: string | null) => void;
   effectiveContextOverlayRef: string | null;
   contextOverlayRefOptions: string[];
   selectedBarTimeSec: number | null;
   selectBar: (timeSec: number | null) => void;
-  dispatchChartInteraction: (event: ChartInteractionEvent) => void;
-  chartViewportCommand: ViewportCommand | null;
-  chartViewportCommandSeq: number;
-  acknowledgeChartViewportCommand: () => void;
-  isWindowSwapTransactionCancelled: (swapTransactionId: number) => boolean;
-  settleWindowSwapCommit: (shiftSeq: number, swapTransactionId: number) => void;
 };
 
 type WorkbenchShellState = Pick<
@@ -267,7 +222,6 @@ type WorkbenchReportState = Pick<
   | "selectedTradeId"
   | "selectTrade"
   | "selectedVariant"
-  | "candlesSource"
 >;
 
 type WorkbenchComposerState = Pick<
@@ -290,15 +244,8 @@ type WorkbenchChartState = Pick<
   | "marketLoadStatus"
   | "marketError"
   | "chartViewModel"
-  | "chartCandles"
-  | "chartEmaOverlays"
-  | "chartAuxEmaOverlays"
-  | "chartDisplayAuxEmaOverlays"
   | "htfAuxEmaOverlayStale"
-  | "chartDisplayComponentEvents"
   | "componentEventsStale"
-  | "displayApplyRevision"
-  | "renderWindowShiftSeq"
   | "chartShowEntryBlockMarkers"
   | "setChartShowEntryBlockMarkers"
   | "chartShowExitSignalMarkers"
@@ -312,11 +259,6 @@ type WorkbenchChartState = Pick<
   | "chartTimeframe"
   | "reportTimeframe"
   | "timeframeMismatch"
-  | "chartViewMode"
-  | "chartViewCenterTimeSec"
-  | "chartViewFirstTimeSec"
-  | "chartViewLastTimeSec"
-  | "chartViewCount"
   | "chartTradeFocusWarning"
   | "marketCandlesCount"
   | "fullCandleRange"
@@ -324,24 +266,12 @@ type WorkbenchChartState = Pick<
   | "selectedVariant"
   | "selectedTradeId"
   | "selectTrade"
-  | "signalTrace"
-  | "signalTraceStatus"
-  | "lanesSignalTrace"
-  | "lanesSignalTraceStatus"
-  | "lanesSignalTraceError"
-  | "signalTraceError"
   | "contextOverlayRef"
   | "setContextOverlayRef"
   | "effectiveContextOverlayRef"
   | "contextOverlayRefOptions"
   | "selectedBarTimeSec"
   | "selectBar"
-  | "dispatchChartInteraction"
-  | "chartViewportCommand"
-  | "chartViewportCommandSeq"
-  | "acknowledgeChartViewportCommand"
-  | "isWindowSwapTransactionCancelled"
-  | "settleWindowSwapCommit"
 >;
 
 const WorkbenchShellContext = createContext<WorkbenchShellState | null>(null);
@@ -369,24 +299,19 @@ function pickDefaultRunId(runs: RunSummary[]): string | null {
   return runs[0].run_id;
 }
 
-function marketErrorMessage(err: unknown): string {
-  if (err instanceof ApiError) {
-    if (err.status === 404) {
-      return `${err.detail} — перезапустите BFF (uvicorn) после обновления кода; нужны /api/market/candles-window и /api/market/ema-window`;
-    }
-    return err.detail;
-  }
-  if (err instanceof Error) {
-    return err.message;
-  }
-  return "Failed to load market data.";
-}
-
-function isAbortError(err: unknown): boolean {
-  return err instanceof Error && err.name === "AbortError";
-}
-
 export function WorkbenchProvider({
+  children,
+  initialActiveTab = "chart",
+}: {
+  children: ReactNode;
+  initialActiveTab?: WorkbenchTab;
+}) {
+  return (
+    <WorkbenchProviderInner initialActiveTab={initialActiveTab}>{children}</WorkbenchProviderInner>
+  );
+}
+
+function WorkbenchProviderInner({
   children,
   initialActiveTab = "chart",
 }: {
@@ -403,35 +328,33 @@ export function WorkbenchProvider({
 
   const [reportLoadStatus, setReportLoadStatus] = useState<ReportLoadStatus>("loading");
   const [reportError, setReportError] = useState<string | null>(null);
-  const [marketLoadStatus, setMarketLoadStatus] = useState<MarketLoadStatus>("idle");
-  const [marketError, setMarketError] = useState<string | null>(null);
-  const [runMarketViewIdentity, setRunMarketViewIdentity] = useState<RunMarketViewIdentity | null>(
-    null,
-  );
-  const [marketCandlesRevision, setMarketCandlesRevision] = useState(0);
-  const [marketOverlayRevision, setMarketOverlayRevision] = useState(0);
-  const marketReadyTargetKeyRef = useRef<string | null>(null);
   const cachedBundleCandlesRef = useRef<ChartBar[]>([]);
-  const marketFocusWindowRef = useRef<MarketDisplayWindowMs | null>(null);
-  const marketCoverageWindowRef = useRef<MarketDisplayWindowMs | null>(null);
-  const intendedRunMarketViewRef = useRef<RunMarketView | null>(null);
-  const lastPanPrefetchLogKeyRef = useRef<string | null>(null);
-  const lastPanPrefetchExpansionKeyRef = useRef<string | null>(null);
-  const lastVisiblePrefetchSampleRef = useRef<string | null>(null);
-  const prevBundleFirstTimeSecRef = useRef<number | null>(null);
-  const lastComposeFallbackKeyRef = useRef<string | null>(null);
-  const marketComposeSourceRef = useRef<"coverage" | "focus" | null>(null);
-  const [marketFocusWindow, setMarketFocusWindow] = useState<MarketDisplayWindowMs | null>(null);
-  const [marketCoverageWindow, setMarketCoverageWindow] = useState<MarketDisplayWindowMs | null>(
-    null,
-  );
-  const [auxEmaOverlays, setAuxEmaOverlays] = useState<ChartAuxEmaOverlay[]>([]);
-  const signalTraceDisplayCacheRef = useRef(createSignalTraceDisplayCache());
-  const signalTraceBundleSessionCacheRef = useRef(createSignalTraceBundleSessionCache());
+  const phase63FMarketLoadOwnerRef = useRef<Phase63FMarketLoadOwnerState | null>(null);
+  if (phase63FMarketLoadOwnerRef.current === null) {
+    phase63FMarketLoadOwnerRef.current = createPhase63FMarketLoadOwnerState();
+  }
+  const phase63FMarketLoadOwner = (): Phase63FMarketLoadOwnerState =>
+    phase63FMarketLoadOwnerRef.current!;
+  const marketReactState = resolvePhase63FMarketReactSync(phase63FMarketLoadOwner());
+  const marketLoadStatus = marketReactState.marketLoadStatus;
+  const marketError = marketReactState.marketError;
+  const runMarketViewIdentity = marketReactState.runMarketViewIdentity;
+  const marketCandlesRevision = phase63FMarketLoadOwner().controller.candlesRevision;
+  const marketOverlayRevision = phase63FMarketLoadOwner().controller.overlayRevision;
+  const phase63EAuxOverlayOwnerRef = useRef<Phase63EAuxOverlayOwnerState | null>(null);
+  if (phase63EAuxOverlayOwnerRef.current === null) {
+    phase63EAuxOverlayOwnerRef.current = createPhase63EAuxOverlayOwnerState();
+  }
+  const phase63EAuxOverlayOwner = (): Phase63EAuxOverlayOwnerState =>
+    phase63EAuxOverlayOwnerRef.current!;
+  const [auxOverlayRevision, setAuxOverlayRevision] = useState(0);
+  const phase63DTraceOwnerRef = useRef<Phase63DTraceEventsOwnerState | null>(null);
+  if (phase63DTraceOwnerRef.current === null) {
+    phase63DTraceOwnerRef.current = createPhase63DTraceEventsOwnerState();
+  }
+  const phase63DTraceOwner = (): Phase63DTraceEventsOwnerState => phase63DTraceOwnerRef.current!;
   const [displayCacheVersion, setDisplayCacheVersion] = useState(0);
-  const [traceSchedulingTick, setTraceSchedulingTick] = useState(0);
   const [displayApplyRevision, setDisplayApplyRevision] = useState(0);
-  const [renderWindowShiftSeq, setRenderWindowShiftSeq] = useState(0);
   const [chartDisplayComponentEvents, setChartDisplayComponentEvents] = useState<ComponentEvent[]>([]);
   const chartDisplayComponentEventsRef = useRef<ComponentEvent[]>([]);
   const [traceDisplayState, setTraceDisplayState] = useState<TraceDisplayState>(
@@ -453,50 +376,14 @@ export function WorkbenchProvider({
   const [signalTrace, setSignalTrace] = useState<SignalTraceBundle | null>(null);
   const [signalTraceStatus, setSignalTraceStatus] = useState<SignalTraceLoadStatus>("idle");
   const [loadedSignalTraceWindowKey, setLoadedSignalTraceWindowKey] = useState<string | null>(null);
-  const [signalTraceError, setSignalTraceError] = useState<string | null>(null);
   const [contextOverlayRef, setContextOverlayRef] = useState<string | null>(null);
-  const signalTraceRequestCoordinatorRef = useRef(createSignalTraceRequestCoordinator());
   const signalTraceStatusRef = useRef<SignalTraceLoadStatus>("idle");
-  const signalTraceRef = useRef<SignalTraceBundle | null>(null);
-  const signalTraceErrorRef = useRef<string | null>(null);
   const selectedTradeIdRef = useRef<number | string | null>(null);
-  const loadedSignalTraceWindowKeyRef = useRef<string | null>(null);
-  const previousChartWindowKeyRef = useRef<string | null>(null);
-  /** Last HTF aux overlays for current trace coverage; re-sliced when render window moves before trace key catches up. */
-  const lastSlicedHtfOverlaysRef = useRef<ChartAuxEmaOverlay[]>([]);
-  const traceLoadGenerationRef = useRef(0);
   const applyTraceDisplayRef = useRef<() => void>(() => {});
   const [reloadToken, setReloadToken] = useState(0);
   const prevVariantKeyRef = useRef("");
   const prevRunIdForTradeBootstrapRef = useRef<string | null>(null);
   const selectedVariantKeyRef = useRef("");
-  const marketLoadGenRef = useRef(0);
-  const intendedRunMarketViewIdentityRef = useRef<RunMarketViewIdentity | null>(null);
-  const marketFetchInFlightKeysRef = useRef<Set<string>>(new Set());
-  const applyWindowCommitRef = useRef<(commit: WindowCommitResult) => void>(() => {});
-  const windowSwapTransactionIdRef = useRef(0);
-  const windowSwapCancelledThroughIdRef = useRef(0);
-  const chartRuntimeRef = useRef(
-    createChartRuntime({
-      renderWindow: {
-        onCommit: (commit) => applyWindowCommitRef.current(commit),
-      },
-    }),
-  );
-  const renderWindowManager = (): ChartDataWindowManager =>
-    chartRuntimeRef.current.renderWindow.getManager();
-  const chartCandlesCacheRef = useRef<{ key: string; value: ChartBar[] }>({ key: "", value: [] });
-  const chartEmaCacheRef = useRef<{ key: string; value: ChartEmaOverlay[] }>({ key: "", value: [] });
-  const chartAuxEmaCacheRef = useRef<{ key: string; value: ChartAuxEmaOverlay[] }>({
-    key: "",
-    value: [],
-  });
-  const [renderWindowRevision, setRenderWindowRevision] = useState(0);
-  const [chartViewportCommand, setChartViewportCommand] = useState<ViewportCommand | null>(null);
-  const [chartViewportCommandSeq, setChartViewportCommandSeq] = useState(0);
-  const skipTradeWindowRebuildRef = useRef(false);
-  const renderWindowShiftSeqRef = useRef(0);
-  const chartViewCandlesRef = useRef<ChartBar[]>([]);
 
   useEffect(() => {
     if (activeTab === "chart") {
@@ -605,12 +492,7 @@ export function WorkbenchProvider({
     async function loadReportRemote() {
       setReportLoadStatus("loading");
       setReportError(null);
-      setMarketError(null);
-      setMarketLoadStatus("idle");
-      setRunMarketViewIdentity(null);
-      marketReadyTargetKeyRef.current = null;
-      setMarketCandlesRevision(0);
-      setMarketOverlayRevision(0);
+      resetPhase63FMarketLoadOwner(phase63FMarketLoadOwner());
       try {
         const loaded = await fetchRunReport(runId);
         if (cancelled) return;
@@ -637,16 +519,22 @@ export function WorkbenchProvider({
   }, [selectedRunId, reloadToken]);
 
   useEffect(() => {
-    traceLoadGenerationRef.current += 1;
-    signalTraceRequestCoordinatorRef.current.reset();
-    previousChartWindowKeyRef.current = null;
+    phase63DTraceOwner().traceController.loadGeneration += 1;
+    resetTraceCoordinator(phase63DTraceOwner().traceController);
+    phase63DTraceOwner().traceController.previousWindowKey = null;
   }, [selectedRunId]);
 
   useEffect(() => {
     if (reportLoadStatus === "ready" && selectedRunId !== null) {
-      dbgMark(DBG.load.reportReady, { runId: selectedRunId });
+      dbgMarkCutover(DBG.load.reportReady, "market", { runId: selectedRunId });
     }
   }, [reportLoadStatus, selectedRunId]);
+
+  useEffect(() => {
+    if (chartHeavyIoEnabled) {
+      emitCutoverDomainOwnersSnapshot();
+    }
+  }, [chartHeavyIoEnabled]);
 
   useEffect(() => {
     let cancelled = false;
@@ -758,14 +646,6 @@ export function WorkbenchProvider({
     applyTradeFocusSelection(selectedVariant.trade_records);
   }, [selectedVariant, selectedTradeId, selectedVariantKey, applyTradeFocusSelection]);
 
-  const bumpMarketCandlesRevision = useCallback(() => {
-    setMarketCandlesRevision((revision) => revision + 1);
-  }, []);
-
-  const bumpMarketOverlayRevision = useCallback(() => {
-    setMarketOverlayRevision((revision) => revision + 1);
-  }, []);
-
   const chartTimeframeMs = useMemo(
     () => resolveChartTimeframeMs(chartTimeframe),
     [chartTimeframe],
@@ -836,74 +716,32 @@ export function WorkbenchProvider({
     return buildRunMarketViewIdentity(intendedRunMarketView);
   }, [intendedRunMarketView]);
 
-  useEffect(() => {
-    if (intendedRunMarketView === null) {
-      setMarketFocusWindow(null);
-      setMarketCoverageWindow(null);
-      marketReadyTargetKeyRef.current = null;
-      lastPanPrefetchExpansionKeyRef.current = null;
-      lastPanPrefetchLogKeyRef.current = null;
-      lastVisiblePrefetchSampleRef.current = null;
-      prevBundleFirstTimeSecRef.current = null;
-      lastComposeFallbackKeyRef.current = null;
-      return;
+  const [marketCoverageTargetTick, bumpMarketCoverageTargetTick] = useState(0);
+  const [marketLoadDeliveryTick, bumpMarketLoadDeliveryTick] = useState(0);
+
+  const marketTargetWindows = useMemo(() => {
+    if (intendedRunMarketView === null || intendedRunMarketViewIdentity === null) {
+      return null;
     }
-    const nextFocus = resolveMarketTargetWindow(
-      intendedRunMarketView,
+    return resolvePhase63FMarketTargetWindows({
+      owner: phase63FMarketLoadOwner(),
+      view: intendedRunMarketView,
+      viewIdentity: intendedRunMarketViewIdentity,
       selectedTradeEntryTimeMs,
-    );
-    setMarketFocusWindow((previous) => {
-      if (
-        previous !== null &&
-        previous.fromMs === nextFocus.fromMs &&
-        previous.toMs === nextFocus.toMs &&
-        previous.toOpenTimeMs === nextFocus.toOpenTimeMs
-      ) {
-        return previous;
-      }
-      marketReadyTargetKeyRef.current = null;
-      lastPanPrefetchExpansionKeyRef.current = null;
-      lastPanPrefetchLogKeyRef.current = null;
-      lastVisiblePrefetchSampleRef.current = null;
-      prevBundleFirstTimeSecRef.current = null;
-      lastComposeFallbackKeyRef.current = null;
-      return nextFocus;
-    });
-    setMarketCoverageWindow((previous) => {
-      if (
-        previous !== null &&
-        previous.fromMs === nextFocus.fromMs &&
-        previous.toMs === nextFocus.toMs &&
-        previous.toOpenTimeMs === nextFocus.toOpenTimeMs
-      ) {
-        return previous;
-      }
-      return nextFocus;
     });
   }, [
     intendedRunMarketView,
     intendedRunMarketViewIdentity,
     selectedTradeEntryTimeMs,
-    reloadToken,
+    marketCoverageTargetTick,
   ]);
 
-  const marketFocusWindowKey = useMemo(() => {
-    if (intendedRunMarketViewIdentity === null || marketFocusWindow === null) {
-      return null;
-    }
-    return buildMarketTargetWindowKey(intendedRunMarketViewIdentity, marketFocusWindow);
-  }, [intendedRunMarketViewIdentity, marketFocusWindow]);
+  const marketFocusWindow = marketTargetWindows?.focusWindow ?? null;
+  const marketCoverageWindow = marketTargetWindows?.coverageWindow ?? null;
 
-  const marketCoverageWindowKey = useMemo(() => {
-    if (intendedRunMarketViewIdentity === null || marketCoverageWindow === null) {
-      return null;
-    }
-    return buildMarketTargetWindowKey(intendedRunMarketViewIdentity, marketCoverageWindow);
-  }, [intendedRunMarketViewIdentity, marketCoverageWindow]);
+  const marketFocusWindowKey = marketTargetWindows?.focusWindowKey ?? null;
 
-  marketFocusWindowRef.current = marketFocusWindow;
-  marketCoverageWindowRef.current = marketCoverageWindow;
-  intendedRunMarketViewRef.current = intendedRunMarketView;
+  const marketCoverageWindowKey = marketTargetWindows?.coverageWindowKey ?? null;
 
   useEffect(() => {
     if (report === null || reportLoadStatus !== "ready" || selectedVariant === null) {
@@ -920,143 +758,54 @@ export function WorkbenchProvider({
     }
 
     const snapshot: RunReport = report;
-    const variant = selectedVariant;
     const abortController = new AbortController();
-
-    let view: RunMarketView;
-    try {
-      view = resolveRunMarketView({
-        report: snapshot,
-        chartTimeframe,
-        variant,
-        reloadToken,
-      });
-    } catch (err) {
-      const message =
-        err instanceof AnchorStackParseError
-          ? err.message
-          : "Invalid strategy_spec.anchor_stack in run report";
-      setMarketError(message);
-      setRunMarketViewIdentity(null);
-      setMarketLoadStatus("error");
+    const owner = phase63FMarketLoadOwner();
+    const resolvedView = resolvePhase63FMarketView({
+      report: snapshot,
+      chartTimeframe,
+      variant: selectedVariant,
+      reloadToken,
+    });
+    if (resolvedView.outcome === "error") {
       return;
     }
 
-    const viewIdentity = buildRunMarketViewIdentity(view);
+    const { view, viewIdentity } = resolvedView;
     const focusWindow = marketFocusWindow;
     const coverageWindow = marketCoverageWindow;
-    const focusKey = buildMarketTargetWindowKey(viewIdentity, focusWindow);
-    const coverageKey = buildMarketTargetWindowKey(viewIdentity, coverageWindow);
-    const loadGen = ++marketLoadGenRef.current;
-    intendedRunMarketViewIdentityRef.current = viewIdentity;
 
-    async function loadMarket() {
-      setMarketError(null);
-
-      const focusCandlesReady = marketCandlesReadyForTarget(view, focusWindow);
-      if (focusCandlesReady) {
-        dbgMark(DBG.load.marketFetchCacheHit, {
-          viewIdentity,
-          candlesCached: true,
-          targetFromMs: coverageWindow.fromMs,
-          targetToMs: coverageWindow.toMs,
-        });
-        if (
-          marketLoadGenRef.current !== loadGen &&
-          intendedRunMarketViewIdentityRef.current !== viewIdentity
-        ) {
-          dbgMark(DBG.load.marketFetchStaleResponse, { key: viewIdentity, phase: "cache_hit" });
-          return;
-        }
-        if (marketReadyTargetKeyRef.current !== focusKey) {
-          marketReadyTargetKeyRef.current = focusKey;
-          setRunMarketViewIdentity(viewIdentity);
-          setMarketLoadStatus("ready");
-        }
-      } else if (marketReadyTargetKeyRef.current === null) {
-        setMarketLoadStatus("loading");
-      }
-
-      dbgMark(DBG.load.marketFetchStart, {
-        key: coverageKey,
-        candlesCached: focusCandlesReady,
-        targetFromMs: coverageWindow.fromMs,
-        targetToMs: coverageWindow.toMs,
+    void (async () => {
+      const result = await runPhase63FMarketLoad(owner, {
+        view,
+        viewIdentity,
+        focusWindow,
+        coverageWindow,
+        symbol: snapshot.symbol,
+        timeframe: chartTimeframe,
+        signal: abortController.signal,
+        onChunkSeeded: () => {
+          bumpMarketLoadDeliveryTick((tick) => tick + 1);
+        },
       });
 
-      try {
-        const result = await executeMarketWindowLoad({
-          view,
-          targetWindow: coverageWindow,
-          symbol: snapshot.symbol,
-          timeframe: chartTimeframe,
-          signal: abortController.signal,
-          inFlightKeys: marketFetchInFlightKeysRef.current,
-          onChunkSeeded: (kind) => {
-            if (kind === "candles") {
-              bumpMarketCandlesRevision();
-              if (
-                marketCandlesReadyForTarget(view, focusWindow) &&
-                marketReadyTargetKeyRef.current !== focusKey
-              ) {
-                marketReadyTargetKeyRef.current = focusKey;
-                setRunMarketViewIdentity(viewIdentity);
-                setMarketLoadStatus("ready");
-              }
-            } else {
-              bumpMarketOverlayRevision();
-            }
-          },
+      if (result.outcome === "aborted") {
+        dbgMark(DBG.load.marketFetchAbort, {
+          key: viewIdentity,
+          note: "frontend abort/stale-response protection; backend CPU work may continue",
         });
-        dbgMark(DBG.load.marketFetchEnd, {
-          key: coverageKey,
-          candlesFetched: result.candlesFetched,
-          emaFetched: result.emaFetched,
-        });
-        const applyToUi =
-          marketLoadGenRef.current === loadGen ||
-          intendedRunMarketViewIdentityRef.current === viewIdentity;
-        if (!applyToUi) {
-          dbgMark(DBG.load.marketFetchStaleResponse, {
-            key: viewIdentity,
-            phase: "network",
-          });
-          return;
-        }
-        if (
-          marketCandlesReadyForTarget(view, focusWindow) &&
-          marketReadyTargetKeyRef.current !== focusKey
-        ) {
-          marketReadyTargetKeyRef.current = focusKey;
-          setRunMarketViewIdentity(viewIdentity);
-          setMarketLoadStatus("ready");
-        }
-      } catch (err) {
-        if (isAbortError(err)) {
-          dbgMark(DBG.load.marketFetchAbort, {
-            key: viewIdentity,
-            note: "frontend abort/stale-response protection; backend CPU work may continue",
-          });
-          return;
-        }
-        if (
-          marketLoadGenRef.current !== loadGen &&
-          intendedRunMarketViewIdentityRef.current !== viewIdentity
-        ) {
-          dbgMark(DBG.load.marketFetchStaleResponse, { key: viewIdentity, phase: "error" });
-          return;
-        }
-        setMarketError(marketErrorMessage(err));
-        setRunMarketViewIdentity(null);
-        marketReadyTargetKeyRef.current = null;
-        setMarketLoadStatus("error");
+        return;
       }
-    }
+      if (result.outcome === "stale_response") {
+        dbgMark(DBG.load.marketFetchStaleResponse, { key: viewIdentity, phase: "network" });
+        return;
+      }
+      // Re-render after load settles even when no new chunks were seeded (cache-hit ready).
+      bumpMarketLoadDeliveryTick((tick) => tick + 1);
+    })();
 
-    void loadMarket();
     return () => {
       abortController.abort();
-      marketLoadGenRef.current += 1;
+      cancelPhase63FMarketLoad(owner);
     };
   }, [
     report,
@@ -1068,61 +817,33 @@ export function WorkbenchProvider({
     marketCoverageWindowKey,
   ]);
 
-  const cachedBundle = useMemo(() => {
-    if (
-      intendedRunMarketView === null ||
-      marketFocusWindow === null ||
-      marketCoverageWindow === null ||
-      marketLoadStatus === "error"
-    ) {
-      return undefined;
-    }
-    if (!marketCandlesReadyForTarget(intendedRunMarketView, marketFocusWindow)) {
-      return undefined;
-    }
-    const composed = composeDisplayMarketWindowBundle(
+  const marketBundleSnapshot = useMemo(
+    () =>
+      resolvePhase63FMarketBundleSnapshot({
+        owner: phase63FMarketLoadOwner(),
+        view: intendedRunMarketView,
+        focusWindow: marketFocusWindow,
+        coverageWindow: marketCoverageWindow,
+        focusWindowKey: marketFocusWindowKey,
+        marketLoadStatus,
+        marketLoadError: marketError,
+      }),
+    [
       intendedRunMarketView,
-      marketFocusWindow,
-      marketCoverageWindow,
-    );
-    marketComposeSourceRef.current = composed?.source ?? null;
-    return composed?.bundle;
-  }, [
-    intendedRunMarketView,
-    intendedRunMarketViewIdentity,
-    runMarketViewIdentity,
-    marketCandlesRevision,
-    marketOverlayRevision,
-    marketLoadStatus,
-    marketFocusWindowKey,
-    marketCoverageWindowKey,
-  ]);
+      intendedRunMarketViewIdentity,
+      runMarketViewIdentity,
+      marketCandlesRevision,
+      marketOverlayRevision,
+      marketLoadStatus,
+      marketError,
+      marketFocusWindowKey,
+      marketCoverageWindowKey,
+      marketLoadDeliveryTick,
+    ],
+  );
 
-  const renderWindowFoundationKey = useMemo(() => {
-    if (
-      intendedRunMarketView === null ||
-      marketFocusWindow === null ||
-      marketLoadStatus !== "ready" ||
-      marketFocusWindowKey === null
-    ) {
-      return null;
-    }
-    const candles = getCandles(
-      intendedRunMarketView.candlesKey,
-      marketFocusWindow.fromMs,
-      marketFocusWindow.toMs,
-    );
-    if (candles === undefined || candles.length === 0) {
-      return null;
-    }
-    return `${marketFocusWindowKey}:${candles.length}`;
-  }, [
-    intendedRunMarketView,
-    marketFocusWindow,
-    marketFocusWindowKey,
-    marketLoadStatus,
-    marketCandlesRevision,
-  ]);
+  const cachedBundle = marketBundleFromSnapshot(marketBundleSnapshot);
+  const renderWindowFoundationKey = marketBundleSnapshot.foundationKey;
 
   useEffect(() => {
     if (
@@ -1140,379 +861,373 @@ export function WorkbenchProvider({
     if (candles !== undefined) {
       cachedBundleCandlesRef.current = candles;
     }
-  }, [renderWindowFoundationKey, intendedRunMarketView, marketCoverageWindow, marketCandlesRevision]);
-
-  useEffect(() => {
-    if (
-      marketComposeSourceRef.current === "focus" &&
-      marketFocusWindow !== null &&
-      marketCoverageWindow !== null &&
-      marketCoverageWindowKey !== null &&
-      marketFocusWindowKey !== null &&
-      marketCoverageWindowKey !== marketFocusWindowKey
-    ) {
-      const fallbackKey = `${marketCoverageWindowKey}:${marketCandlesRevision}`;
-      if (fallbackKey !== lastComposeFallbackKeyRef.current) {
-        lastComposeFallbackKeyRef.current = fallbackKey;
-        dbgMark(DBG.market.composeFocusFallback, {
-          focusFromMs: marketFocusWindow.fromMs,
-          focusToMs: marketFocusWindow.toMs,
-          coverageFromMs: marketCoverageWindow.fromMs,
-          coverageToMs: marketCoverageWindow.toMs,
-        });
-      }
-    } else if (marketComposeSourceRef.current === "coverage") {
-      lastComposeFallbackKeyRef.current = null;
-    }
-  }, [
-    marketFocusWindow,
-    marketCoverageWindow,
-    marketFocusWindowKey,
-    marketCoverageWindowKey,
-    marketCandlesRevision,
-    cachedBundle,
-  ]);
-
-  useEffect(() => {
-    if (marketLoadStatus === "ready" && cachedBundle !== undefined) {
-      dbgMark(DBG.load.marketBundleReady, { barCount: cachedBundle.candles.length });
-    }
-  }, [marketLoadStatus, cachedBundle]);
-
-  const bumpRenderWindow = useCallback(() => {
-    setRenderWindowRevision((r) => r + 1);
-  }, []);
-
-  useEffect(() => {
-    if (
-      intendedRunMarketView === null ||
-      cachedBundle === undefined ||
-      cachedBundle.candles.length === 0
-    ) {
-      return;
-    }
-    const firstTimeSec = cachedBundle.candles[0]!.time;
-    const prevFirstTimeSec = prevBundleFirstTimeSecRef.current;
-    if (prevFirstTimeSec !== null && firstTimeSec < prevFirstTimeSec) {
-      const delta = findBarIndexAtOrBefore(cachedBundle.candles, prevFirstTimeSec);
-      if (delta > 0) {
-        const changed = renderWindowManager().offsetWindowStart(delta);
-        if (changed !== null) {
-          bumpRenderWindow();
-        }
-      }
-    }
-    prevBundleFirstTimeSecRef.current = firstTimeSec;
-  }, [marketCandlesRevision, cachedBundle, intendedRunMarketView, bumpRenderWindow]);
-
-  const emitChartViewportCommand = useCallback((command: ViewportCommand) => {
-    if (command.type === "noViewportChange" || command.type === "preserveUserRange") {
-      return;
-    }
-    if (
-      command.type === "focusTrade" &&
-      !canEmitTradeFocus(chartRuntimeRef.current.viewport.getState())
-    ) {
-      dbgMark(DBG.chart.viewportApplySkippedNoFocusIntent, {
-        mode: chartRuntimeRef.current.viewport.getState().mode,
-        viewportOwner: chartRuntimeRef.current.viewport.getState().viewportOwner,
-        activeFocusIntent: chartRuntimeRef.current.viewport.getState().activeFocusIntent,
-      });
-      return;
-    }
-    setChartViewportCommand(command);
-    setChartViewportCommandSeq((seq) => seq + 1);
-  }, []);
-
-  const acknowledgeChartViewportCommand = useCallback(() => {
-    setChartViewportCommand(null);
-  }, []);
-
-  const applyRenderWindowForTrade = useCallback(
-    (entryTimeMs: number | null, forceRebuild: boolean) => {
-      const bundleCandles = cachedBundleCandlesRef.current;
-      if (bundleCandles.length === 0) {
-        return false;
-      }
-      let rebuilt = false;
-      let skipped = false;
-      const didRebuild = dbgTimedSync(
-        DBG.renderWindow.tradeSelect,
-        () => {
-          const manager = renderWindowManager();
-          if (entryTimeMs === null) {
-            const changed = manager.buildTailWindow();
-            if (changed !== null) {
-              bumpRenderWindow();
-            }
-            rebuilt = changed !== null;
-            return rebuilt;
-          }
-          const entryIndex = findBarIndexAtOrBefore(
-            bundleCandles,
-            Math.floor(entryTimeMs / 1000),
-          );
-          if (!forceRebuild && !manager.shouldRebuildForTrade(entryIndex)) {
-            skipTradeWindowRebuildRef.current = true;
-            skipped = true;
-            return false;
-          }
-          skipTradeWindowRebuildRef.current = false;
-          const changed = manager.buildWindowAroundIndex(entryIndex);
-          if (changed !== null) {
-            bumpRenderWindow();
-          }
-          rebuilt = changed !== null;
-          return rebuilt;
-        },
-        () => ({ rebuilt, skipped }),
-      );
-      return didRebuild;
-    },
-    [bumpRenderWindow],
-  );
-
-  useEffect(() => {
-    if (marketLoadStatus === "error" || renderWindowFoundationKey === null) {
-      if (marketLoadStatus === "error") {
-        chartRuntimeRef.current.reset();
-        renderWindowManager().reset(0);
-        bumpRenderWindow();
-      }
-      return;
-    }
-    if (intendedRunMarketView === null || marketFocusWindow === null) {
-      return;
-    }
-    const bundleCandles =
-      getCandles(
-        intendedRunMarketView.candlesKey,
-        marketFocusWindow.fromMs,
-        marketFocusWindow.toMs,
-      ) ?? cachedBundleCandlesRef.current;
-    if (bundleCandles.length === 0) {
-      return;
-    }
-    cachedBundleCandlesRef.current = bundleCandles;
-    const manager = renderWindowManager();
-    manager.reset(bundleCandles.length);
-    if (selectedTradeEntryTimeMs !== null) {
-      applyRenderWindowForTrade(selectedTradeEntryTimeMs, true);
-    } else {
-      manager.buildTailWindow();
-      bumpRenderWindow();
-    }
-    dbgMark(DBG.load.renderWindowInit, {
-      fullLength: bundleCandles.length,
-      variant: selectedVariantKey,
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- trade changes handled by dedicated effect
   }, [
     renderWindowFoundationKey,
-    marketLoadStatus,
-    selectedRunId,
-    selectedVariantKey,
-    runMarketViewIdentity,
-    bumpRenderWindow,
     intendedRunMarketView,
-    marketFocusWindow,
+    marketCoverageWindow,
+    marketCandlesRevision,
+    marketLoadDeliveryTick,
   ]);
 
-  useEffect(() => {
-    if (renderWindowFoundationKey === null || marketLoadStatus === "error") {
-      return;
-    }
-    applyRenderWindowForTrade(selectedTradeEntryTimeMs, false);
-  }, [selectedTradeEntryTimeMs, renderWindowFoundationKey, marketLoadStatus, applyRenderWindowForTrade]);
+  const onWindowCommit = useCallback(
+    (_commit: WindowCommitResult, slice: ChartBar[]) => {
+      if (slice.length > 0 && selectedRunId !== null) {
+        const overlay =
+          contextOverlayRef ??
+          (selectedVariant
+            ? defaultChartContextOverlayRef(selectedVariant.strategy_spec)
+            : null) ??
+          "";
+        const windowKey = `${selectedRunId}:${selectedVariantKey}:${slice[0]!.time}:${slice[slice.length - 1]!.time}:${overlay}`;
+        queueTraceFetchIntent(windowKey);
+      }
+    },
+    [selectedRunId, selectedVariantKey, contextOverlayRef, selectedVariant],
+  );
 
-  const isWindowSwapTransactionCancelled = useCallback((swapTransactionId: number) => {
-    return swapTransactionId <= windowSwapCancelledThroughIdRef.current;
-  }, []);
-
-  const settleWindowSwapCommit = useCallback((shiftSeq: number, swapTransactionId: number) => {
-    if (swapTransactionId <= windowSwapCancelledThroughIdRef.current) {
-      dbgMark(DBG.renderWindow.shiftRestoreCancelled, { shiftSeq, swapTransactionId });
-      return;
-    }
-    chartRuntimeRef.current.renderWindow.settleWindowSwap(shiftSeq);
-    dbgMark(DBG.renderWindow.shiftSettled, { shiftSeq, swapTransactionId });
-  }, []);
-
-  const attemptMarketPanPrefetch = useCallback(
-    (visibleFromSec: number, visibleToSec: number, forceUserPan = false) => {
-      const view = intendedRunMarketViewRef.current;
-      const coverageWindow = marketCoverageWindowRef.current;
-      if (view === null || coverageWindow === null || !chartHeavyIoEnabled) {
+  const onPanPrefetch = useCallback(
+    (
+      visibleFromSec: number,
+      visibleToSec: number,
+      isUserPan: boolean,
+      visibleSample?: string,
+    ) => {
+      if (intendedRunMarketView === null || marketCoverageWindow === null || !chartHeavyIoEnabled) {
         return;
       }
-      const interactionState = chartRuntimeRef.current.renderWindow.getInteractionState();
-      const isUserPan =
-        forceUserPan ||
-        interactionState === "user_panning" ||
-        interactionState === "pending_shift" ||
-        interactionState === "applying_shift";
-      const decision = evaluateMarketPanPrefetchExpansion({
-        targetWindow: coverageWindow,
+      const decision = evaluatePhase63FPanPrefetch(phase63FMarketLoadOwner(), {
+        view: intendedRunMarketView,
+        coverageWindow: marketCoverageWindow,
         visibleFromSec,
         visibleToSec,
-        reportFromMs: view.fromOpenTimeMs,
-        reportToMs: view.toOpenTimeMs,
-        timeframeMs: chartTimeframeMs,
+        chartTimeframeMs,
+        forceUserPan: isUserPan,
         isUserPan,
+        visibleSample: visibleSample ?? `${visibleFromSec}:${visibleToSec}`,
       });
-      const logKey = `${decision.reason}:${decision.meta.expanded_from_ms ?? "x"}:${decision.meta.expanded_to_ms ?? "x"}`;
-      if (logKey !== lastPanPrefetchLogKeyRef.current) {
-        lastPanPrefetchLogKeyRef.current = logKey;
-        dbgMark(DBG.market.panPrefetchDecision, {
-          reason: decision.reason,
-          ...decision.meta,
-        });
-      }
-      if (decision.expanded === null) {
+      if (!decision.shouldApply || decision.expanded === null) {
         return;
       }
-      const expansionKey = `${decision.expanded.fromMs}:${decision.expanded.toMs}:${decision.expanded.toOpenTimeMs}`;
-      if (expansionKey === lastPanPrefetchExpansionKeyRef.current) {
+      const owner = phase63FMarketLoadOwner();
+      if (!applyPhase63FPanPrefetchCoverage(owner, decision.expanded)) {
         return;
       }
-      lastPanPrefetchExpansionKeyRef.current = expansionKey;
-      setMarketCoverageWindow((previous) => {
-        if (
-          previous !== null &&
-          previous.fromMs === decision.expanded!.fromMs &&
-          previous.toMs === decision.expanded!.toMs &&
-          previous.toOpenTimeMs === decision.expanded!.toOpenTimeMs
-        ) {
-          return previous;
-        }
-        return decision.expanded!;
-      });
+      bumpMarketCoverageTargetTick((tick) => tick + 1);
     },
-    [chartHeavyIoEnabled, chartTimeframeMs],
+    [
+      bumpMarketCoverageTargetTick,
+      chartHeavyIoEnabled,
+      chartTimeframeMs,
+      intendedRunMarketView,
+      marketCoverageWindow,
+    ],
   );
 
-  const dispatchChartInteraction = useCallback(
-    (event: ChartInteractionEvent) => {
-      if (event.type === "pointerdown") {
-        windowSwapCancelledThroughIdRef.current = windowSwapTransactionIdRef.current;
-        setChartViewportCommand(null);
-      }
-      const command = chartRuntimeRef.current.dispatchInteraction(event);
-      if (event.type === "visible_range_changed" && event.anchorTimeSec !== null) {
-        const interactionState = chartRuntimeRef.current.renderWindow.getInteractionState();
-        if (
-          interactionState === "user_panning" ||
-          interactionState === "pending_shift" ||
-          interactionState === "applying_shift"
-        ) {
-          const candles = chartViewCandlesRef.current;
-          if (candles.length > 0) {
-            const fromIdx = Math.max(
-              0,
-              Math.min(candles.length - 1, Math.floor(event.visible.from)),
-            );
-            const toIdx = Math.max(0, Math.min(candles.length - 1, Math.floor(event.visible.to)));
-            const sampleKey = `${fromIdx}:${toIdx}:${candles[fromIdx]!.time}:${candles[toIdx]!.time}`;
-            if (sampleKey !== lastVisiblePrefetchSampleRef.current) {
-              lastVisiblePrefetchSampleRef.current = sampleKey;
-              attemptMarketPanPrefetch(candles[fromIdx]!.time, candles[toIdx]!.time);
-            }
-          }
-        }
-      }
-      if (command !== null && command.type !== "restoreAfterWindowSwap") {
-        emitChartViewportCommand(command);
-      }
-    },
-    [emitChartViewportCommand, attemptMarketPanPrefetch],
-  );
-
-  const chartWindowSlice = useMemo(() => {
-    if (!cachedBundle || marketLoadStatus === "error") {
-      return {
-        candles: [] as ChartBar[],
-        emaOverlays: [] as ChartEmaOverlay[],
-        auxEmaOverlays: [] as ChartAuxEmaOverlay[],
-        firstTimeSec: null as number | null,
-        lastTimeSec: null as number | null,
-        count: 0,
-      };
-    }
-    let barCount = 0;
-    let overlayCount = 0;
-    const slice = dbgTimedSync(
-      DBG.chartWindow.slice,
-      () => {
-        const manager = renderWindowManager();
-        manager.setFullLength(cachedBundle.candles.length);
-        const anchorEmaOverlays = cachedBundle.ema_overlays;
-        const rawCandles = manager.sliceCandles(cachedBundle.candles);
-        const rawEma = manager.sliceEmaOverlays(anchorEmaOverlays, cachedBundle.candles);
-        const rawAux = manager.sliceAuxOverlays(auxEmaOverlays, cachedBundle.candles);
-        const count = rawCandles.length;
-        barCount = count;
-        overlayCount = rawEma.length + rawAux.length;
-        const firstTimeSec = count > 0 ? rawCandles[0]!.time : null;
-        const lastTimeSec = count > 0 ? rawCandles[count - 1]!.time : null;
-        const boundsKey = buildRenderWindowBoundsKey(firstTimeSec, lastTimeSec, count);
-        const emaStabilizeKey = buildEmaOverlaysStabilizeKey(
-          boundsKey,
-          rawEma,
-          intendedRunMarketViewIdentity ?? "",
-        );
-        const auxStabilizeKey = buildAuxOverlaysStabilizeKey(boundsKey, rawAux);
-        return {
-          candles: stabilizeByWindowBoundsKey(chartCandlesCacheRef, boundsKey, rawCandles),
-          emaOverlays: stabilizeByWindowBoundsKey(chartEmaCacheRef, emaStabilizeKey, rawEma),
-          auxEmaOverlays: stabilizeByWindowBoundsKey(chartAuxEmaCacheRef, auxStabilizeKey, rawAux),
-          firstTimeSec,
-          lastTimeSec,
-          count,
-        };
+  const renderViewportInputs = useMemo<WorkbenchRenderViewportInputs>(
+    () => ({
+      cachedBundle,
+      cachedBundleCandlesRef,
+      marketLoadStatus,
+      marketCandlesRevision,
+      marketLoadDeliveryTick,
+      renderWindowFoundationKey,
+      intendedRunMarketView,
+      marketFocusWindow,
+      marketCoverageWindow,
+      selectedRunId,
+      selectedVariantKey,
+      selectedTradeEntryTimeMs,
+      selectedTradeId,
+      chartHeavyIoEnabled,
+      auxEmaOverlays: phase63EAuxOverlayOwner().controller.auxEmaOverlays,
+      auxOverlayRevision,
+      marketOverlayRevision,
+      intendedRunMarketViewIdentity,
+      runMarketViewIdentity,
+      getPrevBundleFirstTimeSec: () => phase63FMarketLoadOwner().prevBundleFirstTimeSec,
+      setPrevBundleFirstTimeSec: (value) => {
+        phase63FMarketLoadOwner().prevBundleFirstTimeSec = value;
       },
-      () => ({ barCount, overlayCount }),
-    );
-    return slice;
-  }, [
-    cachedBundle,
-    marketLoadStatus,
-    auxEmaOverlays,
-    intendedRunMarketViewIdentity,
-    runMarketViewIdentity,
-    renderWindowRevision,
-  ]);
+    }),
+    [
+      cachedBundle,
+      marketLoadStatus,
+      marketCandlesRevision,
+      renderWindowFoundationKey,
+      intendedRunMarketView,
+      marketFocusWindow,
+      marketCoverageWindow,
+      selectedRunId,
+      selectedVariantKey,
+      selectedTradeEntryTimeMs,
+      selectedTradeId,
+      chartHeavyIoEnabled,
+      auxOverlayRevision,
+      marketOverlayRevision,
+      intendedRunMarketViewIdentity,
+      runMarketViewIdentity,
+      marketLoadDeliveryTick,
+    ],
+  );
 
-  const chartView = useMemo((): ChartViewWindow => {
-    if (chartWindowSlice.count === 0) {
-      return emptyChartViewWindow();
-    }
-    const mode: ChartViewMode =
-      selectedTradeEntryTimeMs !== null ? "around-trade" : "tail";
-    const centerTimeSec =
-      selectedTradeEntryTimeMs !== null
-        ? Math.floor(selectedTradeEntryTimeMs / 1000)
-        : null;
-    return {
-      mode,
-      candles: chartWindowSlice.candles,
-      emaOverlays: chartWindowSlice.emaOverlays,
-      auxEmaOverlays: chartWindowSlice.auxEmaOverlays,
-      centerTimeSec,
-      firstTimeSec: chartWindowSlice.firstTimeSec,
-      lastTimeSec: chartWindowSlice.lastTimeSec,
-      count: chartWindowSlice.count,
-    };
-  }, [chartWindowSlice, selectedTradeEntryTimeMs]);
+  const renderViewportCallbacks = useMemo<WorkbenchRenderViewportCallbacks>(
+    () => ({
+      onWindowCommit,
+      onPanPrefetch,
+      shouldPanPrefetchForSample: (sampleKey) =>
+        sampleKey !== phase63FMarketLoadOwner().visiblePrefetchSample,
+    }),
+    [onWindowCommit, onPanPrefetch],
+  );
 
-  chartViewCandlesRef.current = chartView.candles;
+  return (
+    <WorkbenchRenderViewportProvider
+      inputs={renderViewportInputs}
+      callbacks={renderViewportCallbacks}
+    >
+      <WorkbenchProviderContexts
+        initialActiveTab={initialActiveTab}
+        activeTab={activeTab}
+        setActiveTab={setActiveTab}
+        hasChartEverActivated={hasChartEverActivated}
+        configDraft={configDraft}
+        setConfigDraft={setConfigDraft}
+        configLoadStatus={configLoadStatus}
+        configLoadError={configLoadError}
+        configList={configList}
+        selectedConfigPath={selectedConfigPath}
+        reloadConfig={reloadConfig}
+        selectConfig={selectConfig}
+        createNewConfig={createNewConfig}
+        reportLoadStatus={reportLoadStatus}
+        reportError={reportError}
+        marketLoadStatus={marketLoadStatus}
+        marketError={marketError}
+        auxOverlayRevision={auxOverlayRevision}
+        setAuxOverlayRevision={setAuxOverlayRevision}
+        displayCacheVersion={displayCacheVersion}
+        setDisplayCacheVersion={setDisplayCacheVersion}
+        displayApplyRevision={displayApplyRevision}
+        setDisplayApplyRevision={setDisplayApplyRevision}
+        chartDisplayComponentEvents={chartDisplayComponentEvents}
+        setChartDisplayComponentEvents={setChartDisplayComponentEvents}
+        chartDisplayComponentEventsRef={chartDisplayComponentEventsRef}
+        traceDisplayState={traceDisplayState}
+        setTraceDisplayState={setTraceDisplayState}
+        chartShowEntryBlockMarkers={chartShowEntryBlockMarkers}
+        setChartShowEntryBlockMarkers={setChartShowEntryBlockMarkers}
+        chartShowExitSignalMarkers={chartShowExitSignalMarkers}
+        setChartShowExitSignalMarkers={setChartShowExitSignalMarkers}
+        chartShowSetupMarkers={chartShowSetupMarkers}
+        setChartShowSetupMarkers={setChartShowSetupMarkers}
+        chartShowTradeManagementPhaseMarkers={chartShowTradeManagementPhaseMarkers}
+        setChartShowTradeManagementPhaseMarkers={setChartShowTradeManagementPhaseMarkers}
+        chartShowTradeManagementExitMarkers={chartShowTradeManagementExitMarkers}
+        setChartShowTradeManagementExitMarkers={setChartShowTradeManagementExitMarkers}
+        runs={runs}
+        selectedRunId={selectedRunId}
+        setSelectedRunId={setSelectedRunId}
+        report={report}
+        selectedVariantKey={selectedVariantKey}
+        setSelectedVariantKey={setSelectedVariantKey}
+        selectedTradeId={selectedTradeId}
+        setSelectedTradeId={setSelectedTradeId}
+        selectedBarTimeSec={selectedBarTimeSec}
+        setSelectedBarTimeSec={setSelectedBarTimeSec}
+        signalTrace={signalTrace}
+        setSignalTrace={setSignalTrace}
+        signalTraceStatus={signalTraceStatus}
+        setSignalTraceStatus={setSignalTraceStatus}
+        loadedSignalTraceWindowKey={loadedSignalTraceWindowKey}
+        setLoadedSignalTraceWindowKey={setLoadedSignalTraceWindowKey}
+        contextOverlayRef={contextOverlayRef}
+        setContextOverlayRef={setContextOverlayRef}
+        signalTraceStatusRef={signalTraceStatusRef}
+        selectedTradeIdRef={selectedTradeIdRef}
+        applyTraceDisplayRef={applyTraceDisplayRef}
+        reloadReport={reloadReport}
+        refreshRunsAndSelectRun={refreshRunsAndSelectRun}
+        selectedVariant={selectedVariant}
+        chartTradeFocusWarning={chartTradeFocusWarning}
+        chartHeavyIoEnabled={chartHeavyIoEnabled}
+        chartTimeframe={chartTimeframe}
+        reportTimeframe={reportTimeframe}
+        timeframeMismatch={timeframeMismatch}
+        cachedBundle={cachedBundle}
+        intendedRunMarketViewIdentity={intendedRunMarketViewIdentity}
+        runMarketViewIdentity={runMarketViewIdentity}
+        expectedRunMarketViewIdentity={expectedRunMarketViewIdentity}
+        effectiveContextOverlayRefSeed={contextOverlayRef}
+        reloadToken={reloadToken}
+        phase63EAuxOverlayOwner={phase63EAuxOverlayOwner}
+        phase63DTraceOwner={phase63DTraceOwner}
+      >
+        {children}
+      </WorkbenchProviderContexts>
+    </WorkbenchRenderViewportProvider>
+  );
+}
 
-  useEffect(() => {
-    chartRuntimeRef.current.setViewportPlan(chartView.mode, chartView.centerTimeSec);
-  }, [chartView.mode, chartView.centerTimeSec]);
+type WorkbenchProviderContextsProps = {
+  children: ReactNode;
+  initialActiveTab: WorkbenchTab;
+  activeTab: WorkbenchTab;
+  setActiveTab: (tab: WorkbenchTab) => void;
+  hasChartEverActivated: boolean;
+  configDraft: StrategyConfigDraft | null;
+  setConfigDraft: (draft: StrategyConfigDraft) => void;
+  configLoadStatus: ConfigLoadStatus;
+  configLoadError: string | null;
+  configList: ConfigListEntry[];
+  selectedConfigPath: string | null;
+  reloadConfig: () => Promise<void>;
+  selectConfig: (experimentId: string) => Promise<void>;
+  createNewConfig: () => void;
+  reportLoadStatus: ReportLoadStatus;
+  reportError: string | null;
+  marketLoadStatus: MarketLoadStatus;
+  marketError: string | null;
+  auxOverlayRevision: number;
+  setAuxOverlayRevision: Dispatch<SetStateAction<number>>;
+  displayCacheVersion: number;
+  setDisplayCacheVersion: Dispatch<SetStateAction<number>>;
+  displayApplyRevision: number;
+  setDisplayApplyRevision: Dispatch<SetStateAction<number>>;
+  chartDisplayComponentEvents: ComponentEvent[];
+  setChartDisplayComponentEvents: Dispatch<SetStateAction<ComponentEvent[]>>;
+  chartDisplayComponentEventsRef: MutableRefObject<ComponentEvent[]>;
+  traceDisplayState: TraceDisplayState;
+  setTraceDisplayState: Dispatch<SetStateAction<TraceDisplayState>>;
+  chartShowEntryBlockMarkers: boolean;
+  setChartShowEntryBlockMarkers: (show: boolean) => void;
+  chartShowExitSignalMarkers: boolean;
+  setChartShowExitSignalMarkers: (show: boolean) => void;
+  chartShowSetupMarkers: boolean;
+  setChartShowSetupMarkers: (show: boolean) => void;
+  chartShowTradeManagementPhaseMarkers: boolean;
+  setChartShowTradeManagementPhaseMarkers: (show: boolean) => void;
+  chartShowTradeManagementExitMarkers: boolean;
+  setChartShowTradeManagementExitMarkers: (show: boolean) => void;
+  runs: RunSummary[];
+  selectedRunId: string | null;
+  setSelectedRunId: (runId: string) => void;
+  report: RunReport | null;
+  selectedVariantKey: string;
+  setSelectedVariantKey: (key: string) => void;
+  selectedTradeId: number | string | null;
+  setSelectedTradeId: (id: number | string | null) => void;
+  selectedBarTimeSec: number | null;
+  setSelectedBarTimeSec: (timeSec: number | null) => void;
+  signalTrace: SignalTraceBundle | null;
+  setSignalTrace: (trace: SignalTraceBundle | null) => void;
+  signalTraceStatus: SignalTraceLoadStatus;
+  setSignalTraceStatus: (status: SignalTraceLoadStatus) => void;
+  loadedSignalTraceWindowKey: string | null;
+  setLoadedSignalTraceWindowKey: (key: string | null) => void;
+  contextOverlayRef: string | null;
+  setContextOverlayRef: (ref: string | null) => void;
+  signalTraceStatusRef: MutableRefObject<SignalTraceLoadStatus>;
+  selectedTradeIdRef: MutableRefObject<number | string | null>;
+  applyTraceDisplayRef: MutableRefObject<() => void>;
+  reloadReport: () => void;
+  refreshRunsAndSelectRun: (runId: string) => Promise<void>;
+  selectedVariant: RunVariant | null;
+  chartTradeFocusWarning: string | null;
+  chartHeavyIoEnabled: boolean;
+  chartTimeframe: string;
+  reportTimeframe: string | null;
+  timeframeMismatch: boolean;
+  cachedBundle: ReturnType<typeof marketBundleFromSnapshot>;
+  intendedRunMarketViewIdentity: RunMarketViewIdentity | null;
+  runMarketViewIdentity: string | null;
+  expectedRunMarketViewIdentity: RunMarketViewIdentity | null;
+  effectiveContextOverlayRefSeed: string | null;
+  reloadToken: number;
+  phase63EAuxOverlayOwner: () => Phase63EAuxOverlayOwnerState;
+  phase63DTraceOwner: () => Phase63DTraceEventsOwnerState;
+};
 
-  useEffect(() => {
-    intendedRunMarketViewIdentityRef.current = intendedRunMarketViewIdentity;
-  }, [intendedRunMarketViewIdentity]);
+function WorkbenchProviderContexts({
+  children,
+  activeTab,
+  setActiveTab,
+  hasChartEverActivated,
+  configDraft,
+  setConfigDraft,
+  configLoadStatus,
+  configLoadError,
+  configList,
+  selectedConfigPath,
+  reloadConfig,
+  selectConfig,
+  createNewConfig,
+  reportLoadStatus,
+  reportError,
+  marketLoadStatus,
+  marketError,
+  auxOverlayRevision,
+  setAuxOverlayRevision,
+  displayCacheVersion,
+  setDisplayCacheVersion,
+  displayApplyRevision,
+  setDisplayApplyRevision,
+  chartDisplayComponentEvents,
+  setChartDisplayComponentEvents,
+  chartDisplayComponentEventsRef,
+  traceDisplayState,
+  setTraceDisplayState,
+  chartShowEntryBlockMarkers,
+  setChartShowEntryBlockMarkers,
+  chartShowExitSignalMarkers,
+  setChartShowExitSignalMarkers,
+  chartShowSetupMarkers,
+  setChartShowSetupMarkers,
+  chartShowTradeManagementPhaseMarkers,
+  setChartShowTradeManagementPhaseMarkers,
+  chartShowTradeManagementExitMarkers,
+  setChartShowTradeManagementExitMarkers,
+  runs,
+  selectedRunId,
+  setSelectedRunId,
+  report,
+  selectedVariantKey,
+  setSelectedVariantKey,
+  selectedTradeId,
+  setSelectedTradeId,
+  selectedBarTimeSec,
+  setSelectedBarTimeSec,
+  signalTrace,
+  setSignalTrace,
+  signalTraceStatus,
+  setSignalTraceStatus,
+  loadedSignalTraceWindowKey,
+  setLoadedSignalTraceWindowKey,
+  contextOverlayRef,
+  setContextOverlayRef,
+  signalTraceStatusRef,
+  selectedTradeIdRef,
+  applyTraceDisplayRef,
+  reloadReport,
+  refreshRunsAndSelectRun,
+  selectedVariant,
+  chartTradeFocusWarning,
+  chartHeavyIoEnabled,
+  chartTimeframe,
+  reportTimeframe,
+  timeframeMismatch,
+  cachedBundle,
+  intendedRunMarketViewIdentity,
+  runMarketViewIdentity,
+  expectedRunMarketViewIdentity,
+  reloadToken,
+  phase63EAuxOverlayOwner,
+  phase63DTraceOwner,
+}: WorkbenchProviderContextsProps) {
+  const rv = useWorkbenchRenderViewport();
+  const chartView = rv.chartView;
+  const chartWindowSnapshotRevision = rv.windowSnapshotRevision;
+  const renderWindowBounds = rv.renderWindowBounds;
+  const traceDisplayCache = () => phase63DTraceOwner().traceDisplayController.cache;
 
   const contextOverlayRefOptions = useMemo(() => {
     if (!selectedVariant) return [];
@@ -1526,64 +1241,6 @@ export function WorkbenchProvider({
 
   /** Resolved ref for trace + HTF overlays (avoids one-frame null before default effect runs). */
   const effectiveContextOverlayRef = contextOverlayRef ?? defaultContextOverlayRef;
-
-  const applyWindowCommit = useCallback(
-    (commit: WindowCommitResult) => {
-      if (!cachedBundle || cachedBundle.candles.length === 0) {
-        return;
-      }
-      dbgMark(DBG.renderWindow.shiftApplied, {
-        windowStartIndex: commit.bounds.windowStartIndex,
-        windowEndIndex: commit.bounds.windowEndIndex,
-      });
-      renderWindowShiftSeqRef.current = commit.shiftSeq;
-      setRenderWindowShiftSeq(commit.shiftSeq);
-
-      const swapTransactionId = ++windowSwapTransactionIdRef.current;
-      const viewportCmd = chartRuntimeRef.current.viewport.onWindowSwapCommitted({
-        anchorTimeSec: commit.anchorTimeSec,
-        previousVisible: commit.previousVisible,
-        shiftSeq: commit.shiftSeq,
-        windowStartIndex: commit.boundsBefore.windowStartIndex,
-        fullLength: cachedBundle.candles.length,
-      });
-      if (viewportCmd.type === "restoreAfterWindowSwap") {
-        emitChartViewportCommand({ ...viewportCmd, swapTransactionId });
-      } else {
-        emitChartViewportCommand(viewportCmd);
-      }
-
-      const slice = cachedBundle.candles.slice(
-        commit.bounds.windowStartIndex,
-        commit.bounds.windowEndIndex,
-      );
-      if (slice.length > 0 && selectedRunId !== null) {
-        const overlay = effectiveContextOverlayRef ?? "";
-        const windowKey = `${selectedRunId}:${selectedVariantKey}:${slice[0]!.time}:${slice[slice.length - 1]!.time}:${overlay}`;
-        queueTraceFetchIntent(windowKey);
-      }
-
-      bumpRenderWindow();
-      dbgScheduleShiftFlush();
-
-      if (slice.length > 0) {
-        attemptMarketPanPrefetch(slice[0]!.time, slice[slice.length - 1]!.time, true);
-      }
-    },
-    [
-      cachedBundle,
-      bumpRenderWindow,
-      selectedRunId,
-      selectedVariantKey,
-      effectiveContextOverlayRef,
-      emitChartViewportCommand,
-      attemptMarketPanPrefetch,
-    ],
-  );
-
-  useEffect(() => {
-    applyWindowCommitRef.current = applyWindowCommit;
-  }, [applyWindowCommit]);
 
   useEffect(() => {
     if (contextOverlayRef !== null && !contextOverlayRefOptions.includes(contextOverlayRef)) {
@@ -1599,94 +1256,25 @@ export function WorkbenchProvider({
     setContextOverlayRef(defaultChartContextOverlayRef(selectedVariant.strategy_spec));
   }, [selectedRunId, selectedVariantKey, selectedVariant]);
 
-  const auxEmaSpecs = useMemo(() => {
-    if (!selectedVariant) return [];
-    try {
-      const periods = anchorStackPeriodsFromStrategySpec(selectedVariant.strategy_spec);
-      return collectAuxEmaSpecs(
-        selectedVariant.strategy_spec,
-        chartTimeframe,
-        periods,
-        effectiveContextOverlayRef,
-      );
-    } catch {
-      return [];
-    }
+  useEffect(() => {
+    syncPhase63EAuxOverlaySpecs(phase63EAuxOverlayOwner(), {
+      selectedVariant,
+      chartTimeframe,
+      effectiveContextOverlayRef,
+    });
+    setAuxOverlayRevision((revision) => revision + 1);
   }, [selectedVariant, chartTimeframe, effectiveContextOverlayRef]);
 
   const finalizeTraceDisplayUpdate = useCallback(() => {
     applyTraceDisplayRef.current();
-    const traceViewportCmd = chartRuntimeRef.current.viewport.onTraceReady();
-    if (traceViewportCmd.type !== "noViewportChange" && traceViewportCmd.type !== "restoreAfterWindowSwap") {
-      emitChartViewportCommand(traceViewportCmd);
+    const traceViewportCmd = rv.onTraceReadyViewport();
+    if (traceViewportCmd !== null) {
+      rv.emitViewportCommand(traceViewportCmd);
     }
-  }, [emitChartViewportCommand]);
-
-  const applyHtfOverlaysFromDisplaySlice = useCallback(
-    (htfSlice: { times: number[]; htf_context?: HtfContextTrace }) => {
-      const htfSpecCount = auxEmaSpecs.filter((spec) => spec.source === "htf_trace").length;
-      if (htfSpecCount === 0 || htfSlice.times.length === 0 || !htfSlice.htf_context) {
-        return;
-      }
-      const htfOverlays = auxEmaSpecs
-        .filter((spec) => spec.source === "htf_trace")
-        .map((spec) =>
-          auxOverlayFromHtfSlice(spec, htfSlice.times, htfSlice.htf_context!),
-        )
-        .filter((overlay): overlay is ChartAuxEmaOverlay => overlay !== null);
-      if (htfOverlays.length === 0) {
-        return;
-      }
-      lastSlicedHtfOverlaysRef.current = htfOverlays;
-      setAuxEmaOverlays((prev) => {
-        const nonHtf = prev.filter((overlay) => !overlay.id.startsWith("htf_"));
-        return mergeAuxOverlayPoints(nonHtf, htfOverlays);
-      });
-    },
-    [auxEmaSpecs],
-  );
+  }, [rv]);
 
   const applyTraceDisplayForCurrentWindow = useCallback(() => {
-    const candles = chartViewCandlesRef.current;
-    const nextDisplayState = deriveTraceDisplayStateForCandles(
-      signalTraceDisplayCacheRef.current,
-      candles,
-      signalTraceStatusRef.current,
-    );
-    const shouldRetainPreviousDisplay = shouldRetainPreviousTraceDisplay(nextDisplayState, {
-      eventCount: chartDisplayComponentEventsRef.current.length,
-      htfOverlayPointCount: lastSlicedHtfOverlaysRef.current.reduce(
-        (total, overlay) => total + overlay.points.length,
-        0,
-      ),
-    });
-    const retainedDisplayStatus =
-      signalTraceStatusRef.current === "loading" ? "loading_missing" : nextDisplayState.status;
-
-    setTraceDisplayState(
-      shouldRetainPreviousDisplay
-        ? {
-            ...nextDisplayState,
-            status: retainedDisplayStatus,
-            events: chartDisplayComponentEventsRef.current,
-          }
-        : nextDisplayState,
-    );
-
-    if (nextDisplayState.status === "empty") {
-      chartDisplayComponentEventsRef.current = [];
-      setChartDisplayComponentEvents([]);
-      setDisplayApplyRevision((revision) => revision + 1);
-      return;
-    }
-
-    if (!shouldRetainPreviousDisplay) {
-      chartDisplayComponentEventsRef.current = nextDisplayState.events;
-      setChartDisplayComponentEvents(nextDisplayState.events);
-    }
-    setDisplayApplyRevision((revision) => revision + 1);
-
-    const bounds = candleTimeBounds(candles);
+    const candles = chartView.candles;
     const selectedTradeIdSnapshot = selectedTradeIdRef.current;
     const selectedTradeEntryTimeSec =
       selectedTradeIdSnapshot !== null && selectedVariant
@@ -1697,21 +1285,11 @@ export function WorkbenchProvider({
           })()
         : null;
 
-    dbgMark(DBG.traceDisplay.applyCurrentWindow, {
-      fromSec: nextDisplayState.fromSec,
-      toSec: nextDisplayState.toSec,
-      status: shouldRetainPreviousDisplay ? retainedDisplayStatus : nextDisplayState.status,
-      eventCount: shouldRetainPreviousDisplay
-        ? chartDisplayComponentEventsRef.current.length
-        : nextDisplayState.events.length,
-      htfTimeCount: nextDisplayState.htfSlice.times.length,
-      coveredRanges: nextDisplayState.coveredRanges,
-      missingRange: nextDisplayState.missingRange,
-      retainedPreviousDisplay: shouldRetainPreviousDisplay,
+    const applyResult = runPhase63DApplyTraceDisplayForWindow(phase63DTraceOwner(), {
+      candles,
+      traceLoadStatus: signalTraceStatusRef.current,
       selectedTradeId: selectedTradeIdSnapshot,
       selectedTradeEntryTimeSec,
-      renderWindowFromSec: bounds?.fromSec,
-      renderWindowToSec: bounds?.toSec,
       selectedTradeEntryMarkerInView:
         selectedVariant !== null && selectedTradeIdSnapshot !== null
           ? selectedTradeEntryMarkerInView(
@@ -1722,10 +1300,29 @@ export function WorkbenchProvider({
           : false,
     });
 
-    if (!shouldRetainPreviousDisplay || nextDisplayState.htfSlice.times.length > 0) {
-      applyHtfOverlaysFromDisplaySlice(nextDisplayState.htfSlice);
+    setTraceDisplayState(applyResult.state);
+    chartDisplayComponentEventsRef.current = applyResult.componentEvents;
+    setChartDisplayComponentEvents(applyResult.componentEvents);
+    setDisplayApplyRevision(applyResult.displayApplyRevision);
+
+    if (applyResult.htfSlice.times.length > 0) {
+      if (runPhase63EApplyHtfFromDisplaySlice(phase63EAuxOverlayOwner(), applyResult.htfSlice)) {
+        setAuxOverlayRevision((revision) => revision + 1);
+      }
     }
-  }, [applyHtfOverlaysFromDisplaySlice, selectedVariant]);
+  }, [
+    selectedVariant,
+    phase63DTraceOwner,
+    chartView.candles,
+    signalTraceStatusRef,
+    selectedTradeIdRef,
+    setTraceDisplayState,
+    chartDisplayComponentEventsRef,
+    setChartDisplayComponentEvents,
+    setDisplayApplyRevision,
+    phase63EAuxOverlayOwner,
+    setAuxOverlayRevision,
+  ]);
 
   applyTraceDisplayRef.current = applyTraceDisplayForCurrentWindow;
 
@@ -1738,20 +1335,8 @@ export function WorkbenchProvider({
   }, [signalTraceStatus]);
 
   useEffect(() => {
-    signalTraceRef.current = signalTrace;
-  }, [signalTrace]);
-
-  useEffect(() => {
-    signalTraceErrorRef.current = signalTraceError;
-  }, [signalTraceError]);
-
-  useEffect(() => {
     selectedTradeIdRef.current = selectedTradeId;
   }, [selectedTradeId]);
-
-  useEffect(() => {
-    loadedSignalTraceWindowKeyRef.current = loadedSignalTraceWindowKey;
-  }, [loadedSignalTraceWindowKey]);
 
   useEffect(() => {
     if (!chartHeavyIoEnabled) {
@@ -1760,122 +1345,61 @@ export function WorkbenchProvider({
       });
       return;
     }
-    if (marketLoadStatus !== "ready" || report === null || auxEmaSpecs.length === 0) {
-      setAuxEmaOverlays([]);
+
+    const owner = phase63EAuxOverlayOwner();
+    if (
+      marketLoadStatus !== "ready" ||
+      report === null ||
+      owner.controller.auxEmaSpecs.length === 0
+    ) {
+      resetPhase63EAuxOverlayOwner(owner);
+      setAuxOverlayRevision((revision) => revision + 1);
       return;
     }
 
-    const bffSpecs = auxEmaSpecs.filter((spec) => spec.source === "bff");
-    if (bffSpecs.length === 0) {
-      setAuxEmaOverlays((prev) => prev.filter((overlay) => overlay.id.startsWith("htf_")));
-      return;
-    }
-
-    let cancelled = false;
     const abortController = new AbortController();
-    const snapshot = report;
-    const fromMs = snapshot.data_range.from_open_time_ms;
-    const toOpenTimeMs = snapshot.data_range.to_open_time_ms;
+    let cancelled = false;
 
-    async function loadBffAuxEma() {
-      try {
-        const loaded = await Promise.all(
-          bffSpecs.map(async (spec) => {
-            const points = await fetchChartOverlayEma({
-              symbol: snapshot.symbol,
-              timeframe: chartTimeframe,
-              period: spec.period,
-              fromMs,
-              toOpenTimeMs,
-              signal: abortController.signal,
-            });
-            return {
-              id: spec.id,
-              label: spec.label,
-              period: spec.period,
-              timeframe: spec.timeframe,
-              points,
-              dashed: false,
-            } satisfies ChartAuxEmaOverlay;
-          }),
-        );
-        if (cancelled) return;
-        setAuxEmaOverlays((prev) => {
-          const htfOnly = prev.filter((overlay) => overlay.id.startsWith("htf_"));
-          return mergeAuxOverlayPoints(htfOnly, loaded);
-        });
-      } catch (err) {
-        if (isAbortError(err)) {
-          dbgMark(DBG.load.marketFetchAbort, {
-            source: "aux_ema",
-            note: "frontend abort/stale-response protection; backend CPU work may continue",
-          });
-          return;
-        }
-        if (!cancelled) {
-          setAuxEmaOverlays((prev) => prev.filter((overlay) => overlay.id.startsWith("htf_")));
-        }
+    void (async () => {
+      const result = await runPhase63ELoadBffAuxOverlays(owner, {
+        chartHeavyIoEnabled,
+        marketLoadStatus,
+        report,
+        chartTimeframe,
+        signal: abortController.signal,
+      });
+      if (cancelled) {
+        return;
       }
-    }
+      if (result.outcome === "aborted") {
+        dbgMark(DBG.load.marketFetchAbort, {
+          source: "aux_ema",
+          note: "frontend abort/stale-response protection; backend CPU work may continue",
+        });
+        return;
+      }
+      setAuxOverlayRevision((revision) => revision + 1);
+    })();
 
-    void loadBffAuxEma();
     return () => {
       cancelled = true;
       abortController.abort();
     };
-  }, [
-    marketLoadStatus,
-    report,
-    chartTimeframe,
-    auxEmaSpecs,
-    chartHeavyIoEnabled,
-  ]);
+  }, [marketLoadStatus, report, chartTimeframe, chartHeavyIoEnabled, selectedVariant, effectiveContextOverlayRef]);
 
   useEffect(() => {
-    const htfSpecCount = auxEmaSpecs.filter((spec) => spec.source === "htf_trace").length;
-    if (htfSpecCount === 0) {
-      return;
-    }
-
-    const bounds = candleTimeBounds(chartView.candles);
-    if (!bounds) {
-      return;
-    }
-
-    const htfSlice = signalTraceDisplayCacheRef.current.sliceHtfContextForWindow(
-      bounds.fromSec,
-      bounds.toSec,
-    );
-
-    if (htfSlice.times.length > 0 && htfSlice.htf_context) {
-      return;
-    }
-
-    if (signalTraceStatus === "ready" && signalTrace !== null) {
-      const htfOverlays = auxEmaSpecs
-        .filter((spec) => spec.source === "htf_trace")
-        .map((spec) => auxOverlayFromHtfTrace(spec, signalTrace))
-        .filter((overlay): overlay is ChartAuxEmaOverlay => overlay !== null);
-
-      lastSlicedHtfOverlaysRef.current = htfOverlays;
-      setAuxEmaOverlays((prev) => {
-        const nonHtf = prev.filter((overlay) => !overlay.id.startsWith("htf_"));
-        return mergeAuxOverlayPoints(nonHtf, htfOverlays);
-      });
-      return;
-    }
-
-    if (signalTraceStatus === "loading" || signalTraceStatus === "error") {
-      return;
-    }
-
-    if (signalTraceStatus === "idle" && htfSpecCount > 0) {
-      setAuxEmaOverlays((prev) => prev.filter((overlay) => !overlay.id.startsWith("htf_")));
+    const changed = runPhase63ESyncHtfOverlaysFromTraceFallback(phase63EAuxOverlayOwner(), {
+      renderWindowCandles: chartView.candles,
+      traceDisplayCache: traceDisplayCache(),
+      signalTraceStatus,
+      signalTrace,
+    });
+    if (changed) {
+      setAuxOverlayRevision((revision) => revision + 1);
     }
   }, [
     signalTrace,
     signalTraceStatus,
-    auxEmaSpecs,
     chartView.candles,
     displayCacheVersion,
     displayApplyRevision,
@@ -1896,31 +1420,13 @@ export function WorkbenchProvider({
     if (traceDisplayCacheKey === null) {
       return;
     }
-    signalTraceDisplayCacheRef.current.reset(traceDisplayCacheKey);
-    signalTraceRequestCoordinatorRef.current.reset();
-    traceLoadGenerationRef.current += 1;
-    lastSlicedHtfOverlaysRef.current = [];
+    resetPhase63DTraceDisplayCache(phase63DTraceOwner(), traceDisplayCacheKey);
+    resetPhase63EAuxOverlayOwner(phase63EAuxOverlayOwner());
     chartDisplayComponentEventsRef.current = [];
     setChartDisplayComponentEvents([]);
     setTraceDisplayState(EMPTY_TRACE_DISPLAY_STATE);
     setDisplayCacheVersion((version) => version + 1);
   }, [traceDisplayCacheKey, reloadToken]);
-
-  useEffect(() => {
-    registerTraceDisplayCacheInvalidatorForTests(() => {
-      if (traceDisplayCacheKey === null) {
-        return;
-      }
-      signalTraceDisplayCacheRef.current.reset(traceDisplayCacheKey);
-      signalTraceRequestCoordinatorRef.current.reset();
-      traceLoadGenerationRef.current += 1;
-      setDisplayCacheVersion((version) => version + 1);
-      setTraceSchedulingTick((tick) => tick + 1);
-    });
-    return () => {
-      registerTraceDisplayCacheInvalidatorForTests(null);
-    };
-  }, [traceDisplayCacheKey]);
 
   const sessionCacheIdentity = useMemo(() => {
     if (selectedRunId === null || selectedVariantKey === "") {
@@ -1946,15 +1452,8 @@ export function WorkbenchProvider({
     if (sessionCacheIdentity === null) {
       return;
     }
-    signalTraceBundleSessionCacheRef.current.reset(sessionCacheIdentity);
+    resetPhase63DTraceSessionCache(phase63DTraceOwner(), sessionCacheIdentity);
   }, [sessionCacheIdentity]);
-
-  useEffect(() => {
-    chartCandlesCacheRef.current = { key: "", value: [] };
-    chartEmaCacheRef.current = { key: "", value: [] };
-    chartAuxEmaCacheRef.current = { key: "", value: [] };
-    lastSlicedHtfOverlaysRef.current = [];
-  }, [selectedRunId, selectedVariantKey]);
 
   const chartWindowKey = useMemo(() => {
     if (chartView.candles.length === 0) {
@@ -1965,38 +1464,6 @@ export function WorkbenchProvider({
     const overlay = effectiveContextOverlayRef ?? "";
     return `${selectedRunId}:${selectedVariantKey}:${first}:${last}:${overlay}`;
   }, [chartView.candles, selectedRunId, selectedVariantKey, effectiveContextOverlayRef]);
-
-  const signalTraceMatchesWindow = signalTraceMatchesChartWindow(
-    chartWindowKey,
-    loadedSignalTraceWindowKey,
-  );
-
-  const lanesSignalTrace = signalTraceMatchesWindow ? signalTrace : null;
-
-  const lanesSignalTraceStatus = useMemo(
-    () =>
-      deriveLanesSignalTraceStatus(
-        chartWindowKey,
-        loadedSignalTraceWindowKey,
-        signalTraceStatus,
-      ),
-    [chartWindowKey, loadedSignalTraceWindowKey, signalTraceStatus],
-  );
-
-  const lanesSignalTraceError = useMemo(
-    () =>
-      deriveLanesSignalTraceError(
-        chartWindowKey,
-        loadedSignalTraceWindowKey,
-        signalTraceError,
-      ),
-    [chartWindowKey, loadedSignalTraceWindowKey, signalTraceError],
-  );
-
-  const renderWindowBounds = useMemo(
-    () => candleTimeBounds(chartView.candles),
-    [chartView.candles],
-  );
 
   const renderWindowBoundsKey = useMemo(() => {
     if (renderWindowBounds === null || chartView.count === 0) {
@@ -2013,7 +1480,7 @@ export function WorkbenchProvider({
     if (renderWindowBounds === null) {
       return false;
     }
-    return signalTraceDisplayCacheRef.current.coversRange(
+    return traceDisplayCache().coversRange(
       renderWindowBounds.fromSec,
       renderWindowBounds.toSec,
     );
@@ -2024,60 +1491,43 @@ export function WorkbenchProvider({
       return false;
     }
     const { fromSec, toSec } = renderWindowBounds;
-    const cache = signalTraceDisplayCacheRef.current;
-    const eventCount = dbgTimedSync(
+    dbgTimedSyncCutover(
       DBG.traceDisplay.sliceEvents,
-      () => cache.sliceEventsForWindow(fromSec, toSec).length,
+      "trace",
+      () => traceDisplayCache().sliceEventsForWindow(fromSec, toSec).length,
       () => ({ fromSec, toSec }),
     );
-    const htfTimes = dbgTimedSync(
-      DBG.traceDisplay.sliceHtf,
-      () => cache.sliceHtfContextForWindow(fromSec, toSec).times.length,
-      () => ({ fromSec, toSec }),
-    );
-    return eventCount > 0 || htfTimes > 0;
+    return resolvePhase63EDisplayCacheHasWindowData({
+      traceDisplayCache: traceDisplayCache(),
+      renderWindowBounds,
+    });
   }, [renderWindowBounds, displayCacheVersion]);
 
-  const htfAuxEmaOverlayStale = useMemo(() => {
-    const hasHtfSpecs = auxEmaSpecs.some((spec) => spec.source === "htf_trace");
-    if (!hasHtfSpecs) return false;
-    if (displayCacheCoversWindow) return false;
-    if (signalTraceStatus === "loading") {
-      return displayCacheHasWindowData || auxEmaOverlays.some((overlay) => overlay.id.startsWith("htf_"));
-    }
-    return displayCacheHasWindowData || auxEmaOverlays.some((overlay) => overlay.id.startsWith("htf_"));
-  }, [
-    auxEmaSpecs,
-    auxEmaOverlays,
-    displayCacheCoversWindow,
-    displayCacheHasWindowData,
-    signalTraceStatus,
-  ]);
-
-  const chartDisplayAuxEmaOverlays = useMemo(() => {
-    const sliced = chartView.auxEmaOverlays;
-    const frozenHtf = lastSlicedHtfOverlaysRef.current;
-    const display = displayAuxOverlaysForRenderWindow(
-      sliced,
-      frozenHtf,
-      signalTraceMatchesWindow,
+  const auxOverlaySnapshot = useMemo(
+    () =>
+      resolvePhase63EAuxOverlaySnapshot(phase63EAuxOverlayOwner(), {
+        slicedAuxOverlays: chartView.auxEmaOverlays,
+        renderWindowCandles: chartView.candles,
+        chartWindowKey,
+        loadedSignalTraceWindowKey,
+        displayCacheCoversWindow,
+        displayCacheHasWindowData,
+        signalTraceStatus,
+        htfSlice: traceDisplayState.htfSlice,
+      }),
+    [
+      chartView.auxEmaOverlays,
       chartView.candles,
-    );
-
-    if (signalTraceMatchesWindow) {
-      const htfForStorage = frozenHtfOverlaysForStorage(sliced);
-      if (htfForStorage.some((overlay) => overlay.points.length > 0)) {
-        lastSlicedHtfOverlaysRef.current = htfForStorage;
-      }
-    }
-
-    return display;
-  }, [
-    chartView.auxEmaOverlays,
-    chartView.candles,
-    signalTraceMatchesWindow,
-    displayApplyRevision,
-  ]);
+      chartWindowKey,
+      loadedSignalTraceWindowKey,
+      displayCacheCoversWindow,
+      displayCacheHasWindowData,
+      signalTraceStatus,
+      traceDisplayState.htfSlice,
+      displayApplyRevision,
+      auxOverlayRevision,
+    ],
+  );
 
   useEffect(() => {
     applyTraceDisplayForCurrentWindow();
@@ -2094,32 +1544,42 @@ export function WorkbenchProvider({
     return true;
   }, [chartDisplayComponentEvents.length, traceDisplayState.status]);
 
-  const chartViewModel = useMemo(
-    () =>
-      buildChartViewModel({
-        candles: chartView.candles,
-        emaOverlays: chartView.emaOverlays,
-        auxEmaOverlays: chartView.auxEmaOverlays,
-        displayAuxEmaOverlays: chartDisplayAuxEmaOverlays,
-        componentEvents: chartDisplayComponentEvents,
-        htfOverlayStale: htfAuxEmaOverlayStale,
+  const phase63AModelSlice = useMemo(() => {
+    const slice = resolvePhase63EModelRuntimeSlice(
+      {
+        chartView,
+        chartDisplayAuxEmaOverlays: [],
+        chartDisplayComponentEvents,
+        htfAuxEmaOverlayStale: false,
         componentEventsStale,
-        traceDisplayStatus: traceDisplayState.status,
-        traceDisplayMissingRange: traceDisplayState.missingRange,
-        viewMode: chartView.mode,
-        centerTimeSec: chartView.centerTimeSec,
-        firstTimeSec: chartView.firstTimeSec,
-        lastTimeSec: chartView.lastTimeSec,
-        count: chartView.count,
-      }),
-    [
+        traceDisplayState,
+      },
+      auxOverlaySnapshot,
+    );
+    if (slice.chartViewModel.count === 0) {
+      dbgMark(DBG.keyboard.modelApplyEmpty, {
+        seriesKey: slice.chartViewModel.seriesKey,
+        barCount: 0,
+        chartWindowKey,
+        renderWindowBounds,
+        cachedBundleCandleCount: cachedBundle?.candles.length ?? 0,
+        chartViewCount: chartView.count,
+        chartViewFirstTimeSec: chartView.firstTimeSec,
+        chartViewLastTimeSec: chartView.lastTimeSec,
+        marketLoadStatus,
+      });
+    }
+    return slice;
+  }, [
       chartView,
-      chartDisplayAuxEmaOverlays,
       chartDisplayComponentEvents,
-      htfAuxEmaOverlayStale,
       componentEventsStale,
-      traceDisplayState.status,
-      traceDisplayState.missingRange,
+      traceDisplayState,
+      auxOverlaySnapshot,
+      chartWindowKey,
+      renderWindowBounds,
+      cachedBundle,
+      marketLoadStatus,
     ],
   );
 
@@ -2142,16 +1602,6 @@ export function WorkbenchProvider({
           entryTimeSec = Math.floor(entryTimeMs / 1000);
         }
       }
-      if (entryTimeSec !== null) {
-        chartRuntimeRef.current.setViewportPlan("around-trade", entryTimeSec);
-      }
-      const command = chartRuntimeRef.current.dispatchInteraction({
-        type: "trade_selected",
-        entryTimeSec,
-      });
-      if (command !== null && command.type !== "restoreAfterWindowSwap") {
-        emitChartViewportCommand(command);
-      }
       setSelectedTradeId(tradeId);
       if (
         tradeId !== null &&
@@ -2171,7 +1621,7 @@ export function WorkbenchProvider({
         }
       }
     },
-    [selectedVariant, emitChartViewportCommand, hasChartEverActivated],
+    [selectedVariant, hasChartEverActivated, setActiveTab],
   );
 
   const selectBar = useCallback((timeSec: number | null) => {
@@ -2179,42 +1629,26 @@ export function WorkbenchProvider({
   }, []);
 
   useEffect(() => {
+    const owner = phase63DTraceOwner();
+
     if (!chartHeavyIoEnabled) {
       dbgMark(DBG.load.chartHeavyIoBlocked, {
         source: "signal_trace",
       });
+      resetTraceCoordinator(owner.traceController);
+      owner.traceController.previousWindowKey = null;
       setSignalTrace(null);
       setSignalTraceStatus("idle");
       setLoadedSignalTraceWindowKey(null);
-      setSignalTraceError(null);
-      previousChartWindowKeyRef.current = null;
+      signalTraceStatusRef.current = "idle";
       return;
     }
 
-    const displayCacheCoversWindow =
-      renderWindowBounds !== null &&
-      signalTraceDisplayCacheRef.current.coversRange(
-        renderWindowBounds.fromSec,
-        renderWindowBounds.toSec,
-      );
-    const displayCacheMissingRange =
-      renderWindowBounds !== null
-        ? signalTraceDisplayCacheRef.current.missingRange(
-            renderWindowBounds.fromSec,
-            renderWindowBounds.toSec,
-          )
-        : null;
-
     if (renderWindowBounds !== null) {
-      dbgMark(DBG.traceDisplay.coverage, {
-        fromSec: renderWindowBounds.fromSec,
-        toSec: renderWindowBounds.toSec,
-        coversWindow: displayCacheCoversWindow,
-        missingRange: displayCacheMissingRange,
-      });
+      logPhase63DTraceCoverage(owner, renderWindowBounds);
     }
 
-    const bootstrap = evaluateSignalTraceBootstrap({
+    const bootstrapPreview = evaluateSignalTraceBootstrap({
       report,
       reportLoadStatus,
       selectedRunId,
@@ -2225,603 +1659,84 @@ export function WorkbenchProvider({
       chartWindowKey,
       candles: chartView.candles,
       renderWindowBounds,
-      previousWindowKey: previousChartWindowKeyRef.current,
+      previousWindowKey: owner.traceController.previousWindowKey,
     });
+    const fetchSource = bootstrapPreview.ready ? bootstrapPreview.fetchSource : undefined;
 
-    if (!bootstrap.ready) {
-      dbgMark(DBG.signalTrace.bootstrapBlocked, { reason: bootstrap.reason });
-      setSignalTrace(null);
-      setSignalTraceStatus("idle");
-      setLoadedSignalTraceWindowKey(null);
-      setSignalTraceError(null);
-      previousChartWindowKeyRef.current = null;
-      return;
-    }
-
-    const { windowKey, request, fetchSource } = bootstrap;
-    const committedWindowKey = windowKey;
-    const windowTraceRequestKey = buildDisplayTraceRequestKey({
-      runId: request.runId,
-      variant: request.variant,
-      fromMs: request.fromMs,
-      toOpenTimeMs: request.toOpenTimeMs,
-      contextOverlayRef: effectiveContextOverlayRef,
-    });
-    const coordinator = signalTraceRequestCoordinatorRef.current;
-
-    dbgMark(DBG.signalTrace.bootstrapReady, {
-      windowKey: committedWindowKey,
-      traceRequestKey: windowTraceRequestKey,
-      renderWindowRevision,
-      boundsKey: renderWindowBoundsKey,
-    });
-
-    const coalescedFetchKey = takeCommittedTraceFetchIntent();
-    const runtime = chartRuntimeRef.current.renderWindow;
-    const sessionCacheHasWindow = signalTraceBundleSessionCacheRef.current.has(committedWindowKey);
-    const loadDecision = decideSignalTraceLoad({
-      chartWindowKey: committedWindowKey,
-      sessionCacheHasWindow,
-      loadedSignalTraceWindowKey: loadedSignalTraceWindowKeyRef.current,
-      request,
-    });
-
-    const plan = planTraceDisplayLoad({
-      bootstrap,
-      coalescedWindowKey: coalescedFetchKey,
-      committedWindowKey,
-      panScheduling: {
-        interactionState: runtime.getInteractionState(),
-        hasPendingShift: runtime.getPendingShift() !== null,
-        displayCacheCoversWindow,
-        committedWindowKey,
-        loadedWindowKey: loadedSignalTraceWindowKeyRef.current,
-        status: signalTraceStatusRef.current,
-      },
-      loadDecision,
-    });
-
-    const logCoordinatorDecision = (
-      coordDecision: ReturnType<typeof coordinator.evaluate>,
-      requestKey: string,
-      extra?: Record<string, unknown>,
-    ) => {
-      const ledger = coordinator.ledgerSnapshotForKey(requestKey);
-      dbgMark(DBG.signalTrace.decision, {
-        traceRequestKey: requestKey,
-        decisionReason: coordDecision.action === "fetch" ? "fetch" : coordDecision.reason,
-        skipReason: coordDecision.action === "skip" ? coordDecision.reason : undefined,
-        plan: plan.action,
-        policyAction: loadDecision.action,
-        cacheCoverage: displayCacheCoversWindow ? "hit" : "miss",
-        missingRange: displayCacheMissingRange,
-        requestedFrom: request.fromMs,
-        requestedTo: request.toOpenTimeMs,
-        coverageFrom: renderWindowBounds?.fromSec,
-        coverageTo: renderWindowBounds?.toSec,
-        inFlightKeysCount: ledger.inFlightKeysCount,
-        inFlightKey: ledger.inFlightKey,
-        mergedKeysHit: ledger.mergedKeysHit,
-        failedKeysHit: ledger.failedKeysHit,
-        windowKey: committedWindowKey,
-        sessionCacheHasWindow,
-        fetchSource,
-        ...extra,
-      });
-    };
-
-    if (plan.action === "bootstrap_blocked") {
-      return;
-    }
-
-    if (plan.action === "fetch_superseded") {
-      dbgMark(DBG.traceDisplay.fetchSuperseded, {
-        coalesced: coalescedFetchKey,
-        windowKey: committedWindowKey,
-        traceRequestKey: windowTraceRequestKey,
-      });
-      return;
-    }
-
-    if (plan.action === "pan_block") {
-      if (plan.applyDisplayFromCache) {
-        dbgMark(DBG.traceDisplay.cacheHit, {
-          windowKey: committedWindowKey,
-          source: "active_pan_block",
-        });
-        finalizeTraceDisplayUpdate();
-      }
-      return;
-    }
-
-    previousChartWindowKeyRef.current = committedWindowKey;
-
-    if (plan.action === "restore_session") {
-      const sessionBundle = signalTraceBundleSessionCacheRef.current.get(committedWindowKey);
-      if (sessionBundle === null) {
-        return;
-      }
-      const lanesRequestKeyForRestore = buildTraceRequestKey({
-        runId: request.runId,
-        variant: request.variant,
-        fromMs: request.fromMs,
-        toOpenTimeMs: request.toOpenTimeMs,
-        contextOverlayRef: effectiveContextOverlayRef,
-      });
-      const chartEventsEnabledForRestore = isChartEventsApiEnabled();
-      const lanesOnlySessionRestore = chartEventsEnabledForRestore && displayCacheCoversWindow;
-
-      if (lanesOnlySessionRestore) {
-        applyLanesFromSessionBundle({
-          sessionBundle,
-          windowKey: committedWindowKey,
-          lanesRequestKey: lanesRequestKeyForRestore,
-          coordinator,
-          applyLanesState: (bundle) => {
-            setSignalTrace(bundle);
-            setLoadedSignalTraceWindowKey(committedWindowKey);
-            loadedSignalTraceWindowKeyRef.current = committedWindowKey;
-            setSignalTraceStatus("ready");
-            signalTraceStatusRef.current = "ready";
-            setSignalTraceError(null);
-          },
-        });
-        logCoordinatorDecision(
-          coordinator.evaluate({
-            key: lanesRequestKeyForRestore,
-            generation: traceLoadGenerationRef.current,
-            displayCacheCoversWindow,
-          }),
-          lanesRequestKeyForRestore,
-          { afterSessionRestore: true, lanesOnly: true },
-        );
-        finalizeTraceDisplayUpdate();
-        return;
-      }
-
-      coordinator.markMerged(windowTraceRequestKey, "session_restore");
-      dbgMark(DBG.signalTrace.fetchStart, {
-        source: "session_restore",
-        windowKey: committedWindowKey,
-        traceRequestKey: windowTraceRequestKey,
-      });
-      dbgTimedSync(
-        DBG.traceDisplay.mergeChunk,
-        () => {
-          mergeDisplayChunkFromResponse(signalTraceDisplayCacheRef.current, sessionBundle);
-        },
-        () => ({
-          eventCount: sessionBundle.component_events?.length ?? 0,
-          timeCount: sessionBundle.times.length,
-        }),
-      );
-      setDisplayCacheVersion((version) => version + 1);
-      setSignalTrace(sessionBundle);
-      setLoadedSignalTraceWindowKey(committedWindowKey);
-      loadedSignalTraceWindowKeyRef.current = committedWindowKey;
-      setSignalTraceStatus("ready");
-      signalTraceStatusRef.current = "ready";
-      setSignalTraceError(null);
-      dbgMark(DBG.traceDisplay.sessionHit, {
-        windowKey: committedWindowKey,
-        traceRequestKey: windowTraceRequestKey,
-      });
-      logCoordinatorDecision(
-        coordinator.evaluate({
-          key: windowTraceRequestKey,
-          generation: traceLoadGenerationRef.current,
-          displayCacheCoversWindow,
-        }),
-        windowTraceRequestKey,
-        { afterSessionRestore: true },
-      );
-      finalizeTraceDisplayUpdate();
-      return;
-    }
-
-    if (plan.action === "defer") {
-      if (!displayCacheCoversWindow) {
-        dbgMark(DBG.traceDisplay.cacheMiss, {
-          windowKey: committedWindowKey,
-          traceRequestKey: windowTraceRequestKey,
-        });
-      }
-      return;
-    }
-
-    if (plan.action !== "evaluate_network") {
-      return;
-    }
-
-    const lanesReadyForWindow =
-      signalTraceMatchesChartWindow(committedWindowKey, loadedSignalTraceWindowKeyRef.current) &&
-      (signalTraceStatusRef.current === "ready" || signalTraceStatusRef.current === "error");
-    const chartEventsEnabled = isChartEventsApiEnabled();
-    const lanesOnlyFetch = chartEventsEnabled && displayCacheCoversWindow && !lanesReadyForWindow;
-
-    if (displayCacheCoversWindow && !lanesOnlyFetch) {
-      dbgMark(DBG.traceDisplay.cacheHit, {
-        windowKey: committedWindowKey,
-        source: "display_cache_covers_window",
-      });
-      finalizeTraceDisplayUpdate();
-      return;
-    }
-
-    if (displayCacheCoversWindow && lanesOnlyFetch) {
-      dbgMark(DBG.traceDisplay.cacheHit, {
-        windowKey: committedWindowKey,
-        source: "display_cache_covers_window_lanes_pending",
-      });
-      finalizeTraceDisplayUpdate();
-    }
-
-    let chunkPlan = planMissingTraceDisplayChunkFetch({
-      cache: signalTraceDisplayCacheRef.current,
-      candles: chartView.candles,
-      runId: request.runId,
-      variant: request.variant,
-      contextOverlayRef: effectiveContextOverlayRef,
-      chartTimeframe,
-    });
-
-    if (
-      chunkPlan === null &&
-      lanesOnlyFetch &&
-      renderWindowBounds !== null
-    ) {
-      chunkPlan = {
-        traceDisplayChunkKey: buildTraceDisplayChunkKey({
-          runId: request.runId,
-          variant: request.variant,
-          contextOverlayRef: effectiveContextOverlayRef,
-          chartTimeframe,
-          fromSec: renderWindowBounds.fromSec,
-          toSec: renderWindowBounds.toSec,
-        }),
-        fromSec: renderWindowBounds.fromSec,
-        toSec: renderWindowBounds.toSec,
-        fromMs: request.fromMs,
-        toOpenTimeMs: request.toOpenTimeMs,
-        missingRange: {
-          fromSec: renderWindowBounds.fromSec,
-          toSec: renderWindowBounds.toSec,
-        },
-      };
-    }
-
-    if (chunkPlan === null) {
-      finalizeTraceDisplayUpdate();
-      return;
-    }
-
-    const traceDisplayChunkKey = chunkPlan.traceDisplayChunkKey;
-    const fetchParams = {
-      runId: request.runId,
-      variant: request.variant,
-      fromMs: chunkPlan.fromMs,
-      toOpenTimeMs: chunkPlan.toOpenTimeMs,
-      contextOverlayRef: effectiveContextOverlayRef,
-    };
-    const displayRequestKey = buildDisplayTraceRequestKey(fetchParams);
-    const lanesRequestKey = buildTraceRequestKey(fetchParams);
-    const networkCoordinatorKey = lanesOnlyFetch ? lanesRequestKey : displayRequestKey;
-
-    const coordDecision = coordinator.evaluate({
-      key: networkCoordinatorKey,
-      generation: traceLoadGenerationRef.current,
-      displayCacheCoversWindow: lanesOnlyFetch,
-    });
-    logCoordinatorDecision(coordDecision, networkCoordinatorKey, { traceDisplayChunkKey, chunkPlan });
-
-    if (coordDecision.action !== "fetch") {
-      if (
-        coordDecision.reason === "already_merged" ||
-        coordDecision.reason === "cache_hit"
-      ) {
-        dbgMark(DBG.traceDisplay.cacheHit, {
-          windowKey: committedWindowKey,
-          traceRequestKey: displayRequestKey,
-          traceDisplayChunkKey,
-          source: "coordinator_skip",
-          reason: coordDecision.reason,
-        });
-        finalizeTraceDisplayUpdate();
-      }
-      return;
-    }
-
-    dbgMark(DBG.traceDisplay.cacheMiss, {
-      windowKey: committedWindowKey,
-      traceRequestKey: displayRequestKey,
-      traceDisplayChunkKey,
-      missingRange: chunkPlan.missingRange,
-      chunkFromSec: chunkPlan.fromSec,
-      chunkToSec: chunkPlan.toSec,
-    });
-
-    const fetchGeneration = ++traceLoadGenerationRef.current;
     const abortController = new AbortController();
-    const runId = request.runId;
-    const variantKey = request.variant;
-    const { fromMs, toOpenTimeMs } = chunkPlan;
+    let cancelled = false;
 
-    const lanesPolicySnapshot = {
-      committedWindowKey: windowKey,
-      loadedSignalTraceWindowKey: loadedSignalTraceWindowKeyRef.current,
-      signalTraceStatus: signalTraceStatusRef.current,
-      signalTraceError: signalTraceErrorRef.current,
-      loadedSignalTrace: signalTraceRef.current,
-      lanesReadyAtFetchStart: lanesReadyForWindow,
-    };
-
-    coordinator.markInFlight(networkCoordinatorKey, fetchGeneration);
-    if (chartEventsEnabled && !lanesOnlyFetch) {
-      coordinator.markInFlight(displayRequestKey, fetchGeneration);
-    }
-
-    async function loadTrace() {
-      const requestedBounds = {
-        fromSec: Math.floor(fromMs / 1000),
-        toSec: Math.floor(toOpenTimeMs / 1000),
-      };
-
-      const commitDisplayAfterMerge = () => {
-        coordinator.markMerged(displayRequestKey, "network");
-        setDisplayCacheVersion((version) => version + 1);
-        finalizeTraceDisplayUpdate();
-      };
-
-      const denseCoordinatorKey = chartEventsEnabled ? lanesRequestKey : networkCoordinatorKey;
-
-      const restoreLanesStatusFromSnapshot = () => {
-        setSignalTraceStatus(lanesPolicySnapshot.signalTraceStatus);
-        signalTraceStatusRef.current = lanesPolicySnapshot.signalTraceStatus;
-        setSignalTraceError(lanesPolicySnapshot.signalTraceError);
-      };
-
-      const beginDenseLanesFetch = () => {
-        coordinator.markInFlight(denseCoordinatorKey, fetchGeneration);
-        setSignalTraceStatus("loading");
-        signalTraceStatusRef.current = "loading";
-        setSignalTraceError(null);
-        dbgMark(DBG.signalTrace.fetchStart, {
-          source: fetchSource,
-          windowKey,
-          traceRequestKey: denseCoordinatorKey,
-          traceDisplayChunkKey,
-          chartEventsEnabled,
-          denseFetch: true,
-        });
-      };
-
-      if (!lanesOnlyFetch) {
-        dbgMark(DBG.signalTrace.fetchStart, {
-          source: fetchSource,
-          windowKey,
-          traceRequestKey: displayRequestKey,
-          traceDisplayChunkKey,
-          chartEventsEnabled,
-          displayFetch: true,
-        });
-      }
-
-      const networkCtx = {
-        params: {
-          runId,
-          variant: variantKey,
-          fromMs,
-          toOpenTimeMs,
-          contextOverlayRef: effectiveContextOverlayRef,
-          windowKey,
-          displayRequestKey,
-          networkCoordinatorKey: denseCoordinatorKey,
-          fetchGeneration,
-          signal: abortController.signal,
-          lanesOnlyFetch,
+    void (async () => {
+      const result = await runPhase63DTraceLoadCycle(owner, {
+        chartHeavyIoEnabled,
+        reportLoadStatus,
+        report,
+        selectedRunId: selectedRunId ?? "",
+        selectedVariantKey: selectedVariantKey || "",
+        marketLoadStatus,
+        runMarketViewIdentity,
+        expectedRunMarketViewIdentity,
+        effectiveContextOverlayRef,
+        chartTimeframe,
+        chartWindowKey,
+        candles: chartView.candles,
+        renderWindowBounds,
+        interactionState: rv.getInteractionState(),
+        hasPendingShift: rv.hasPendingShift(),
+        coalescedWindowKey: takeCommittedTraceFetchIntent(),
+        signal: abortController.signal,
+        telemetryMeta: {
+          renderWindowRevision: chartWindowSnapshotRevision,
+          boundsKey: renderWindowBoundsKey,
+          fetchSource,
         },
-        cache: signalTraceDisplayCacheRef.current,
-        coordinator,
-        requestedBounds,
-        onCommitDisplay: commitDisplayAfterMerge,
-      };
-
-      const displayResult = lanesOnlyFetch
-        ? null
-        : await loadDisplayTraceChunk(networkCtx);
-      if (
-        displayResult !== null &&
-        (displayResult.outcome === "aborted" || displayResult.outcome === "stale")
-      ) {
-        return;
-      }
-
-      const displayLoadOutcome = mapDisplayLoadOutcome(
-        lanesOnlyFetch,
-        chartEventsEnabled,
-        displayResult,
-      );
-      if (displayLoadOutcome === null) {
-        return;
-      }
-
-      let displayMerged =
-        displayResult !== null && displayResult.outcome === "committed"
-          ? true
-          : (displayResult?.displayMerged ?? lanesOnlyFetch);
-      let mergeSource =
-        displayResult !== null && displayResult.outcome === "committed"
-          ? displayResult.mergeSource
-          : (displayResult?.mergeSource ?? "signal-trace-fallback");
-
-      const markDensePathComplete = () => {
-        coordinator.markMerged(denseCoordinatorKey, "network");
-      };
-
-      let lanesDecision = decideDenseLanesNetworkLoad({
-        chartEventsEnabled,
-        committedWindowKey: windowKey,
-        loadedSignalTraceWindowKey: lanesPolicySnapshot.loadedSignalTraceWindowKey,
-        signalTraceStatus: lanesPolicySnapshot.signalTraceStatus,
-        loadedSignalTrace: lanesPolicySnapshot.loadedSignalTrace,
-        sessionCacheHasWindow,
-        displayCacheCoversWindow,
-        displayLoadOutcome,
-        lanesRequestKey,
-        fromMs,
-        toOpenTimeMs,
       });
 
-      try {
-        if (lanesDecision.action === "skip") {
-          dbgMark(DBG.lanesTrace.skip, {
-            windowKey,
-            reason: lanesDecision.reason,
-            displayLoadOutcome,
-          });
-          restoreLanesStatusFromSnapshot();
-          if (chartEventsEnabled) {
-            markDensePathComplete();
-          }
-          return;
-        }
+      if (cancelled) {
+        return;
+      }
 
-        if (lanesDecision.action === "use_loaded_bundle") {
-          const bundle = lanesPolicySnapshot.loadedSignalTrace;
-          if (bundle !== null) {
-            mergeDisplayFromDenseFallback({
-              ...networkCtx,
-              bundle,
-              mergeSource: "signal-trace-fallback",
-            });
-            displayMerged = true;
-          }
-          dbgMark(DBG.lanesTrace.useLoaded, {
-            windowKey,
-            reason: lanesDecision.reason,
-            displayLoadOutcome,
-          });
-          markDensePathComplete();
-          return;
-        }
+      const snapshot = resolvePhase63DLanesSnapshot(owner);
+      setSignalTrace(snapshot.signalTrace);
+      setSignalTraceStatus(snapshot.signalTraceStatus);
+      setLoadedSignalTraceWindowKey(snapshot.loadedSignalTraceWindowKey);
+      signalTraceStatusRef.current = snapshot.signalTraceStatus;
 
-        if (lanesDecision.action === "restore_session") {
-          const sessionBundle = signalTraceBundleSessionCacheRef.current.get(
-            lanesDecision.windowKey,
-          );
-          if (sessionBundle !== null) {
-            applyLanesFromSessionBundle({
-              sessionBundle,
-              windowKey: lanesDecision.windowKey,
-              lanesRequestKey,
-              coordinator,
-              applyLanesState: (bundle) => {
-                setSignalTrace(bundle);
-                setLoadedSignalTraceWindowKey(windowKey);
-                loadedSignalTraceWindowKeyRef.current = windowKey;
-                setSignalTraceStatus("ready");
-                signalTraceStatusRef.current = "ready";
-                setSignalTraceError(null);
-              },
-            });
-            flushLanesLoadDebug();
-            return;
-          }
-          lanesDecision = {
-            action: "fetch",
-            lanesRequestKey,
-            fromMs,
-            toOpenTimeMs,
-            reason: "lanes_pending",
-          };
-        }
+      if (result.outcome === "fetch_superseded") {
+        dbgMark(DBG.traceDisplay.fetchSuperseded, {
+          windowKey: chartWindowKey,
+        });
+        return;
+      }
 
-        beginDenseLanesFetch();
+      if (result.outcome === "bootstrap_blocked") {
+        return;
+      }
 
-        const lanesResult = await loadDenseLanesTrace(networkCtx);
-        if (lanesResult.outcome === "aborted" || lanesResult.outcome === "stale") {
-          restoreLanesStatusFromSnapshot();
-          return;
-        }
+      if (
+        result.displayLoadOutcome === "committed" ||
+        result.outcome === "session_restored"
+      ) {
+        setDisplayCacheVersion((version) => version + 1);
+      }
 
-        if (lanesResult.outcome === "error") {
-          const err = lanesResult.error;
-          if (displayMerged) {
-            setSignalTrace(null);
-            setLoadedSignalTraceWindowKey(windowKey);
-            loadedSignalTraceWindowKeyRef.current = windowKey;
-            setSignalTraceStatus("error");
-            signalTraceStatusRef.current = "error";
-            setSignalTraceError(
-              err instanceof ApiError
-                ? err.detail
-                : err instanceof Error
-                  ? err.message
-                  : "Failed to load signal trace.",
-            );
-            finalizeTraceDisplayUpdate();
-            return;
-          }
+      if (shouldPhase63DFinalizeTraceDisplay(result.outcome)) {
+        finalizeTraceDisplayUpdate();
+      }
 
-          coordinator.markFailed(denseCoordinatorKey);
-          setSignalTrace(null);
-          setLoadedSignalTraceWindowKey(windowKey);
-          loadedSignalTraceWindowKeyRef.current = windowKey;
-          setSignalTraceStatus("error");
-          signalTraceStatusRef.current = "error";
-          setSignalTraceError(
-            err instanceof ApiError
-              ? err.detail
-              : err instanceof Error
-                ? err.message
-                : "Failed to load signal trace.",
-          );
-          return;
-        }
-
-        const bundle = lanesResult.bundle;
-        const needsDisplayMergeFromDense =
-          lanesDecision.reason === "flag_off_combined" ||
-          lanesDecision.reason === "display_fallback_needed";
-        if (!displayMerged && needsDisplayMergeFromDense) {
-          mergeDisplayFromDenseFallback({
-            ...networkCtx,
-            bundle,
-            mergeSource,
-          });
-          displayMerged = true;
-        }
-
-        markDensePathComplete();
-        setSignalTrace(bundle);
-        setLoadedSignalTraceWindowKey(windowKey);
-        loadedSignalTraceWindowKeyRef.current = windowKey;
-        setSignalTraceStatus("ready");
-        signalTraceStatusRef.current = "ready";
-        signalTraceBundleSessionCacheRef.current.set(windowKey, bundle);
+      if (
+        result.outcome === "completed" ||
+        result.outcome === "display_committed" ||
+        result.outcome === "session_restored"
+      ) {
         flushLanesLoadDebug();
-      } finally {
-        coordinator.clearInFlight(networkCoordinatorKey, fetchGeneration);
-        if (chartEventsEnabled) {
-          coordinator.clearInFlight(lanesRequestKey, fetchGeneration);
-        }
-        if (chartEventsEnabled && !lanesOnlyFetch) {
-          coordinator.clearInFlight(displayRequestKey, fetchGeneration);
-        }
       }
-    }
+    })();
 
-    void loadTrace();
     return () => {
+      cancelled = true;
       abortController.abort();
-      coordinator.clearInFlight(networkCoordinatorKey, fetchGeneration);
-      if (chartEventsEnabled) {
-        coordinator.clearInFlight(lanesRequestKey, fetchGeneration);
-      }
-      if (chartEventsEnabled && !lanesOnlyFetch) {
-        coordinator.clearInFlight(displayRequestKey, fetchGeneration);
-      }
-      traceLoadGenerationRef.current += 1;
+      owner.traceController.loadGeneration += 1;
     };
   }, [
     reportLoadStatus,
@@ -2829,7 +1744,7 @@ export function WorkbenchProvider({
     selectedRunId,
     selectedVariantKey,
     chartWindowKey,
-    renderWindowRevision,
+    chartWindowSnapshotRevision,
     renderWindowBoundsKey,
     marketLoadStatus,
     runMarketViewIdentity,
@@ -2838,7 +1753,9 @@ export function WorkbenchProvider({
     finalizeTraceDisplayUpdate,
     chartHeavyIoEnabled,
     chartTimeframe,
-    traceSchedulingTick,
+    chartView.candles,
+    renderWindowBounds,
+    rv,
   ]);
 
   const symbol = report?.symbol ?? "—";
@@ -2868,7 +1785,6 @@ export function WorkbenchProvider({
       selectedTradeId,
       selectTrade,
       selectedVariant,
-      candlesSource,
     }),
     [
       symbol,
@@ -2880,7 +1796,6 @@ export function WorkbenchProvider({
       selectedTradeId,
       selectTrade,
       selectedVariant,
-      candlesSource,
     ],
   );
 
@@ -2915,16 +1830,9 @@ export function WorkbenchProvider({
     () => ({
       marketLoadStatus,
       marketError,
-      chartViewModel,
-      chartCandles: chartView.candles,
-      chartEmaOverlays: chartView.emaOverlays,
-      chartAuxEmaOverlays: chartView.auxEmaOverlays,
-      chartDisplayAuxEmaOverlays,
-      htfAuxEmaOverlayStale,
-      chartDisplayComponentEvents,
-      componentEventsStale,
-      displayApplyRevision,
-      renderWindowShiftSeq,
+      chartViewModel: phase63AModelSlice.chartViewModel,
+      htfAuxEmaOverlayStale: phase63AModelSlice.chartViewModel.htfOverlayStale,
+      componentEventsStale: phase63AModelSlice.chartViewModel.componentEventsStale,
       chartShowEntryBlockMarkers,
       setChartShowEntryBlockMarkers,
       chartShowExitSignalMarkers,
@@ -2938,11 +1846,6 @@ export function WorkbenchProvider({
       chartTimeframe,
       reportTimeframe,
       timeframeMismatch,
-      chartViewMode: chartView.mode,
-      chartViewCenterTimeSec: chartView.centerTimeSec,
-      chartViewFirstTimeSec: chartView.firstTimeSec,
-      chartViewLastTimeSec: chartView.lastTimeSec,
-      chartViewCount: chartView.count,
       chartTradeFocusWarning,
       marketCandlesCount,
       fullCandleRange,
@@ -2950,24 +1853,12 @@ export function WorkbenchProvider({
       selectedTradeId,
       selectTrade,
       selectedVariant,
-      signalTrace,
-      signalTraceStatus,
-      lanesSignalTrace,
-      lanesSignalTraceStatus,
-      lanesSignalTraceError,
-      signalTraceError,
       contextOverlayRef,
       setContextOverlayRef,
       effectiveContextOverlayRef,
       contextOverlayRefOptions,
       selectedBarTimeSec,
       selectBar,
-      dispatchChartInteraction,
-      chartViewportCommand,
-      chartViewportCommandSeq,
-      acknowledgeChartViewportCommand,
-      isWindowSwapTransactionCancelled,
-      settleWindowSwapCommit,
     }),
     [
       chartTimeframe,
@@ -2975,26 +1866,12 @@ export function WorkbenchProvider({
       timeframeMismatch,
       marketLoadStatus,
       marketError,
-      chartViewModel,
-      chartView.candles,
-      chartView.emaOverlays,
-      chartView.auxEmaOverlays,
-      chartDisplayAuxEmaOverlays,
-      htfAuxEmaOverlayStale,
-      chartDisplayComponentEvents,
-      componentEventsStale,
-      displayApplyRevision,
-      renderWindowShiftSeq,
+      phase63AModelSlice,
       chartShowEntryBlockMarkers,
       chartShowExitSignalMarkers,
       chartShowSetupMarkers,
       chartShowTradeManagementPhaseMarkers,
       chartShowTradeManagementExitMarkers,
-      chartView.mode,
-      chartView.centerTimeSec,
-      chartView.firstTimeSec,
-      chartView.lastTimeSec,
-      chartView.count,
       chartTradeFocusWarning,
       marketCandlesCount,
       fullCandleRange,
@@ -3002,25 +1879,11 @@ export function WorkbenchProvider({
       selectedTradeId,
       selectTrade,
       selectedVariant,
-      signalTrace,
-      signalTraceStatus,
-      lanesSignalTrace,
-      lanesSignalTraceStatus,
-      lanesSignalTraceError,
-      signalTraceError,
       contextOverlayRef,
       effectiveContextOverlayRef,
       contextOverlayRefOptions,
       selectedBarTimeSec,
       selectBar,
-      dispatchChartInteraction,
-      chartViewportCommand,
-      chartViewportCommandSeq,
-      acknowledgeChartViewportCommand,
-      isWindowSwapTransactionCancelled,
-      settleWindowSwapCommit,
-      displayApplyRevision,
-      renderWindowShiftSeq,
     ],
   );
 
@@ -3049,17 +1912,6 @@ export function useWorkbench(): WorkbenchState {
     }),
     [shell, report, composer, chart],
   );
-}
-
-let traceDisplayCacheInvalidatorForTests: (() => void) | null = null;
-
-function registerTraceDisplayCacheInvalidatorForTests(fn: (() => void) | null): void {
-  traceDisplayCacheInvalidatorForTests = fn;
-}
-
-/** Vitest-only: invalidate display cache coverage without report reload (preserves lanes state). */
-export function invalidateTraceDisplayCacheForTests(): void {
-  traceDisplayCacheInvalidatorForTests?.();
 }
 
 export function useWorkbenchShell(): WorkbenchShellState {

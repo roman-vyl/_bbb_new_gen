@@ -25,8 +25,9 @@ import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import {
   dbgMark,
   dbgTimedSync,
+  dbgTimedSyncChartModel,
   PIPELINE_DEBUG_STEPS as DBG,
-} from "@/shared/diagnostics/pipelineDebug";
+} from "@/shared/diagnostics/cutoverPipelineDebug";
 
 
 
@@ -44,7 +45,6 @@ import { buildTradePriceLineSpecs } from "@/features/chart/chartTradePriceLines"
 
 import { ChartMarkerLegend } from "@/features/chart/ChartMarkerLegend";
 
-import { SignalTimelineLanes } from "@/features/chart/SignalTimelineLanes";
 
 import { anchorStackPeriodsFromStrategySpec } from "@/features/chart/anchorStackFromSpec";
 
@@ -66,13 +66,17 @@ import {
   hasTradeManagementEvents,
 } from "@/features/chart/tradeManagementChartEvents";
 
-import { shouldSuppressPanShiftRequest } from "@/features/chart/chartViewport";
-import { createChartInteractionAdapter } from "@/features/chart/runtime/interactionAdapter";
+import { readChartViewportDebug, shouldSuppressPanShiftRequest } from "@/features/chart/chartViewport";
+import {
+  createChartInteractionAdapter,
+  registerChartDocumentKeyboardNavigation,
+} from "@/features/chart/runtime/interactionAdapter";
 import { executeViewportCommand } from "@/features/chart/runtime/executeViewportCommand";
 import { CHART_RENDER_WINDOW_SIZE } from "@/features/chart/chartDataWindowManager";
 import { findTradeById, tradeDisplayNumber } from "@/features/chart/tradeLookup";
 
-import { useWorkbenchChart } from "@/shared/context/WorkbenchContext";
+import { useWorkbenchChart, useWorkbenchShell } from "@/shared/context/WorkbenchContext";
+import { useWorkbenchRenderViewport } from "@/shared/context/WorkbenchRenderViewportContext";
 
 
 
@@ -101,6 +105,10 @@ function overlaySeriesTitle(overlay: ChartEmaOverlay): string {
 }
 
 export function ChartPanel() {
+  const { activeTab } = useWorkbenchShell();
+  const chartTabActiveRef = useRef(activeTab === "chart");
+  chartTabActiveRef.current = activeTab === "chart";
+
   const containerRef = useRef<HTMLDivElement>(null);
   const panelBodyRef = useRef<HTMLDivElement>(null);
   const asideRef = useRef<HTMLDivElement>(null);
@@ -126,8 +134,6 @@ export function ChartPanel() {
   const isApplyingViewportRef = useRef(false);
   const suppressPanShiftUntilRef = useRef(0);
   const visibleRangeHandlerRef = useRef<(() => void) | null>(null);
-  /** Atomic setData key for window-swap; cleared after layout apply. */
-  const atomicShiftSeriesKeyRef = useRef<string | null>(null);
 
   const {
 
@@ -159,6 +165,8 @@ export function ChartPanel() {
 
     candlesSource,
 
+    marketLoadStatus,
+
     marketError,
 
     marketCandlesCount,
@@ -175,23 +183,9 @@ export function ChartPanel() {
 
     selectTrade,
 
-    chartViewMode,
-
-    chartViewCenterTimeSec,
-
-    chartViewFirstTimeSec,
-
-    chartViewLastTimeSec,
-
     chartTradeFocusWarning,
 
     fullCandleRange,
-
-    lanesSignalTrace,
-
-    lanesSignalTraceStatus,
-
-    lanesSignalTraceError,
 
     setContextOverlayRef,
 
@@ -203,23 +197,17 @@ export function ChartPanel() {
 
     selectBar,
 
-    dispatchChartInteraction,
-
-    chartViewportCommand,
-
-    chartViewportCommandSeq,
-
-    acknowledgeChartViewportCommand,
-
-    isWindowSwapTransactionCancelled,
-
-    settleWindowSwapCommit,
-
-    displayApplyRevision,
-
-    renderWindowShiftSeq,
-
   } = useWorkbenchChart();
+
+  const {
+    dispatchChartInteraction,
+    chartViewportCommand,
+    chartViewportCommandSeq,
+    acknowledgeChartViewportCommand,
+    isWindowSwapTransactionCancelled,
+    settleWindowSwapCommit,
+    windowShiftSeq,
+  } = useWorkbenchRenderViewport();
 
   const dispatchChartInteractionRef = useRef(dispatchChartInteraction);
   dispatchChartInteractionRef.current = dispatchChartInteraction;
@@ -292,9 +280,10 @@ export function ChartPanel() {
   const chartHint = useMemo(() => {
 
     if (candlesSource !== "market") {
-
+      if (marketLoadStatus === "loading") {
+        return "Loading market data for trade focus…";
+      }
       return "Market data unavailable · trade markers from report";
-
     }
 
     const shown = chartCandles.length;
@@ -302,15 +291,15 @@ export function ChartPanel() {
     const total = marketCandlesCount;
 
     const modeNote =
-      chartViewMode === "around-trade" && chartViewCenterTimeSec !== null
-        ? `trade focus · center ${chartViewCenterTimeSec}`
-        : chartViewMode === "tail"
+      chartViewModel.viewMode === "around-trade" && chartViewModel.centerTimeSec !== null
+        ? `trade focus · center ${chartViewModel.centerTimeSec}`
+        : chartViewModel.viewMode === "tail"
           ? "tail view"
           : "";
 
     const rangeNote =
-      chartViewFirstTimeSec !== null && chartViewLastTimeSec !== null
-        ? `range ${chartViewFirstTimeSec}–${chartViewLastTimeSec}`
+      chartViewModel.firstTimeSec !== null && chartViewModel.lastTimeSec !== null
+        ? `range ${chartViewModel.firstTimeSec}–${chartViewModel.lastTimeSec}`
         : "";
 
     const windowNote =
@@ -364,19 +353,8 @@ export function ChartPanel() {
 
       : `OHLC · overlay EMA requires anchor_stack in strategy_spec${auxNote}${htfStaleNote}`;
 
-    const traceNote =
-      lanesSignalTraceStatus === "ready"
-        ? " · signal trace loaded"
-        : lanesSignalTraceStatus === "loading"
-          ? " · Loading events/HTF context…"
-          : "";
-
     const traceLoadingHint =
-      lanesSignalTraceStatus === "loading" &&
-      chartDisplayComponentEvents.length === 0 &&
-      !componentEventsStale
-        ? " · Loading events/HTF context…"
-        : componentEventsStale && chartDisplayComponentEvents.length === 0
+      componentEventsStale && chartDisplayComponentEvents.length === 0
           ? " · Loading events/HTF context…"
           : "";
 
@@ -386,7 +364,6 @@ export function ChartPanel() {
       rangeNote,
       emaNote,
       "trade markers from report",
-      traceNote,
       traceLoadingHint,
       componentEventNote,
       componentStaleNote,
@@ -400,17 +377,19 @@ export function ChartPanel() {
 
     candlesSource,
 
+    marketLoadStatus,
+
     chartCandles.length,
 
     marketCandlesCount,
 
-    chartViewMode,
+    chartViewModel.viewMode,
 
-    chartViewCenterTimeSec,
+    chartViewModel.centerTimeSec,
 
-    chartViewFirstTimeSec,
+    chartViewModel.firstTimeSec,
 
-    chartViewLastTimeSec,
+    chartViewModel.lastTimeSec,
 
     stackPeriodsLabel,
 
@@ -427,8 +406,6 @@ export function ChartPanel() {
     traceDisplayMissingRange,
 
     chartTimeframe,
-
-    lanesSignalTraceStatus,
 
   ]);
 
@@ -537,6 +514,11 @@ export function ChartPanel() {
     const onPointerDown = () => adapter.onPointerDown();
     const onPointerUp = () => adapter.onPointerUp();
     const onWheel = () => adapter.onWheel();
+    const keyboardNavigation = registerChartDocumentKeyboardNavigation({
+      chartTabActive: () => chartTabActiveRef.current,
+      chartCanvas: el,
+      adapter,
+    });
 
     el.addEventListener("pointerdown", onPointerDown);
     el.addEventListener("pointerup", onPointerUp);
@@ -588,6 +570,7 @@ export function ChartPanel() {
       el.removeEventListener("pointerdown", onPointerDown);
       el.removeEventListener("pointerup", onPointerUp);
       el.removeEventListener("wheel", onWheel);
+      keyboardNavigation.unregister();
 
       // chart.remove() destroys all series; do not call removeSeries afterward.
       auxEmaSeriesRef.current.clear();
@@ -613,11 +596,7 @@ export function ChartPanel() {
       return;
     }
 
-    if (atomicShiftSeriesKeyRef.current === chartSeriesDataKey) {
-      return;
-    }
-
-    dbgTimedSync(
+    dbgTimedSyncChartModel(
       DBG.chart.setDataCandles,
       () => {
         series.setData(toCandlestickSeriesData(chartCandles));
@@ -633,12 +612,7 @@ export function ChartPanel() {
       return;
     }
 
-    if (atomicShiftSeriesKeyRef.current === chartSeriesDataKey) {
-      atomicShiftSeriesKeyRef.current = null;
-      return;
-    }
-
-    dbgTimedSync(
+    dbgTimedSyncChartModel(
       DBG.chart.setDataAnchorEma,
       () => {
         for (const role of ["fast", "anchor", "slow"] as const) {
@@ -661,7 +635,7 @@ export function ChartPanel() {
       () => ({ overlayCount: chartEmaOverlays.length }),
     );
 
-    dbgTimedSync(
+    dbgTimedSyncChartModel(
       DBG.chart.setDataAuxHtf,
       () => {
         const seriesMap = auxEmaSeriesRef.current;
@@ -702,8 +676,6 @@ export function ChartPanel() {
       },
       () => ({ overlayCount: chartDisplayAuxEmaOverlays.length }),
     );
-
-    atomicShiftSeriesKeyRef.current = chartSeriesDataKey;
   }, [
     chartEmaOverlays,
     chartDisplayAuxEmaOverlays,
@@ -732,11 +704,11 @@ export function ChartPanel() {
 
     if (
       command.type === "restoreAfterWindowSwap" &&
-      command.shiftSeq !== renderWindowShiftSeq
+      command.shiftSeq !== windowShiftSeq
     ) {
       dbgMark(DBG.chart.viewportRestoreAfterShiftSkippedStale, {
         expected: command.shiftSeq,
-        current: renderWindowShiftSeq,
+        current: windowShiftSeq,
       });
       acknowledgeChartViewportCommand();
       return;
@@ -776,11 +748,26 @@ export function ChartPanel() {
     chartViewportCommand,
     chartViewportCommandSeq,
     chartCandles,
-    renderWindowShiftSeq,
+    windowShiftSeq,
     acknowledgeChartViewportCommand,
     isWindowSwapTransactionCancelled,
     settleWindowSwapCommit,
   ]);
+
+  useEffect(() => {
+    if (!import.meta.env.VITE_EMA_PIPELINE_DEBUG) {
+      return;
+    }
+    const chart = chartRef.current;
+    const w = window as Window & {
+      __chartVisibleTimeRange?: () => ReturnType<typeof readChartViewportDebug>["visibleTime"];
+    };
+    if (!chart || chartCandles.length === 0) {
+      w.__chartVisibleTimeRange = () => null;
+      return;
+    }
+    w.__chartVisibleTimeRange = () => readChartViewportDebug(chart).visibleTime;
+  }, [chartCandles, chartViewportCommandSeq, chartSeriesDataKey]);
 
   useLayoutEffect(() => {
 
@@ -834,8 +821,7 @@ export function ChartPanel() {
     selectedVariant,
     selectedTradeId,
     chartDisplayComponentEvents,
-    displayApplyRevision,
-    renderWindowShiftSeq,
+    windowShiftSeq,
     chartViewportCommandSeq,
     chartShowEntryBlockMarkers,
     chartShowExitSignalMarkers,
@@ -936,16 +922,6 @@ export function ChartPanel() {
 
       )}
 
-      {lanesSignalTraceError && (
-
-        <p className="banner banner--warn" role="status">
-
-          Signal trace: {lanesSignalTraceError}
-
-        </p>
-
-      )}
-
       {candlesSource === "market" && marketCandlesCount > CHART_RENDER_WINDOW_SIZE && (
 
         <p className="banner banner--info" role="status">
@@ -1014,17 +990,7 @@ export function ChartPanel() {
 
         <div className="chart-panel__main">
 
-          <div ref={containerRef} className="chart-canvas" />
-
-          <SignalTimelineLanes
-
-            signalTrace={lanesSignalTrace}
-
-            selectedBarTimeSec={selectedBarTimeSec}
-
-            onSelectBar={selectBar}
-
-          />
+          <div ref={containerRef} className="chart-canvas" tabIndex={0} />
 
           {selectedTradeId !== null && (
             <ChartTradeFocusNav
@@ -1068,8 +1034,6 @@ export function ChartPanel() {
                   chartEmaOverlays={chartEmaOverlays}
                   chartAuxEmaOverlays={chartDisplayAuxEmaOverlays}
                   focusWarning={chartTradeFocusWarning}
-                  signalTrace={lanesSignalTrace}
-                  signalTraceStatus={lanesSignalTraceStatus}
                 />
               </div>
               <ChartAsideStackSplitHandle
@@ -1085,9 +1049,6 @@ export function ChartPanel() {
               selectedBarTimeSec={selectedBarTimeSec}
               candles={chartCandles}
               emaOverlays={chartEmaOverlays}
-              signalTrace={lanesSignalTrace}
-              signalTraceError={lanesSignalTraceError}
-              signalTraceLoading={lanesSignalTraceStatus === "loading"}
               onClear={() => selectBar(null)}
             />
           </div>

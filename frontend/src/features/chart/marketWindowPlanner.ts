@@ -14,7 +14,8 @@ import {
   type OverlayCacheKey,
 } from "@/features/chart/marketResourceCache";
 import type { OverlayResourceRef, RunMarketView } from "@/features/chart/runMarketView";
-import { dbgMark, PIPELINE_DEBUG_STEPS as DBG } from "@/shared/diagnostics/pipelineDebug";
+import { PIPELINE_DEBUG_STEPS as DBG } from "@/shared/diagnostics/pipelineDebug";
+import { dbgMarkCutover } from "@/features/workbenchChartRuntime/chartRuntimeCutoverTelemetry";
 
 export type { MarketTimeBoundsMs };
 
@@ -123,7 +124,7 @@ export function planCandlesWindowFetch(input: {
   const cache = getMarketCandlesCache(input.view.candlesKey);
 
   if (cache.coversRange(fromMs, toMs)) {
-    dbgMark(DBG.market.candlesDecision, {
+    dbgMarkCutover(DBG.market.candlesDecision, "market", {
       decision: "cache_hit",
       candlesKey: input.view.candlesKey,
       fromMs,
@@ -134,7 +135,7 @@ export function planCandlesWindowFetch(input: {
 
   const missingRange = cache.missingRange(fromMs, toMs);
   if (missingRange === null) {
-    dbgMark(DBG.market.candlesDecision, {
+    dbgMarkCutover(DBG.market.candlesDecision, "market", {
       decision: "cache_hit",
       candlesKey: input.view.candlesKey,
       fromMs,
@@ -148,7 +149,7 @@ export function planCandlesWindowFetch(input: {
     timeframeMs,
   );
 
-  dbgMark(DBG.market.candlesDecision, {
+  dbgMarkCutover(DBG.market.candlesDecision, "market", {
     decision: "fetch",
     candlesKey: input.view.candlesKey,
     fromMs: missingRange.fromMs,
@@ -194,7 +195,7 @@ export function planEmaWindowFetches(input: {
   for (const ref of refs) {
     const cache = getMarketOverlayCache(ref.key);
     if (cache.coversRange(fromMs, toMs)) {
-      dbgMark(DBG.market.emaDecision, {
+      dbgMarkCutover(DBG.market.emaDecision, "market", {
         decision: "cache_hit",
         overlayKey: ref.key,
         role: ref.role,
@@ -207,7 +208,7 @@ export function planEmaWindowFetches(input: {
 
     const missingRange = cache.missingRange(fromMs, toMs);
     if (missingRange === null) {
-      dbgMark(DBG.market.emaDecision, {
+      dbgMarkCutover(DBG.market.emaDecision, "market", {
         decision: "cache_hit",
         overlayKey: ref.key,
         role: ref.role,
@@ -223,7 +224,7 @@ export function planEmaWindowFetches(input: {
       timeframeMs,
     );
 
-    dbgMark(DBG.market.emaDecision, {
+    dbgMarkCutover(DBG.market.emaDecision, "market", {
       decision: "fetch",
       overlayKey: ref.key,
       role: ref.role,

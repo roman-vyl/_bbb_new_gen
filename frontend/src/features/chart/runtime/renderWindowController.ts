@@ -11,6 +11,7 @@ import type {
   RenderWindowInteractionState,
   WindowCommitResult,
 } from "@/features/chart/runtime/types";
+import { dbgMark, PIPELINE_DEBUG_STEPS as DBG } from "@/shared/diagnostics/pipelineDebug";
 
 export const RENDER_WINDOW_IDLE_DEBOUNCE_MS = 400;
 
@@ -219,6 +220,23 @@ export function createRenderWindowController(
           }
         }, 50);
         break;
+      case "keyboard_pan_start": {
+        const previousInteractionState: RenderWindowInteractionState = interactionState;
+        if (interactionState === "applying_shift") {
+          abortApplyingShift();
+        }
+        const nextInteractionState: RenderWindowInteractionState = pendingShift
+          ? "pending_shift"
+          : "user_panning";
+        setInteractionState(nextInteractionState);
+        scheduleIdleCommit();
+        dbgMark(DBG.keyboard.renderWindowPanStart, {
+          previousInteractionState,
+          nextInteractionState,
+          idleDebounceScheduled: true,
+        });
+        break;
+      }
       case "programmatic_viewport_start":
         programmaticViewportActive = true;
         break;

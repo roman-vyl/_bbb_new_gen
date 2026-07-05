@@ -85,8 +85,8 @@ describe("chartDataWindowManager", () => {
   });
 
   it("uses default constants", () => {
-    expect(CHART_RENDER_WINDOW_SIZE).toBe(50_000);
-    expect(CHART_RENDER_SAFE_ZONE).toBe(10_000);
+    expect(CHART_RENDER_WINDOW_SIZE).toBe(25_000);
+    expect(CHART_RENDER_SAFE_ZONE).toBe(5_000);
   });
 
   it("does not shift when already repositioned to safe center", () => {

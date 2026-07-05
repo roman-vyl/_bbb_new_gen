@@ -76,7 +76,7 @@ describe("fetchCandlesWindow / fetchEmaWindow", () => {
 
   it("passes AbortSignal to fetchEmaWindow", async () => {
     const controller = new AbortController();
-    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => ({
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => ({
       ok: true,
       json: async () => ({
         points: [],

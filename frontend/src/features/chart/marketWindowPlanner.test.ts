@@ -1,11 +1,8 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
 import {
-  buildCandlesCacheKey,
   buildOverlayCacheKey,
   clearMarketResourceCache,
-  mergeCandlesWindowBundle,
-  mergeEmaWindowBundle,
 } from "@/features/chart/marketResourceCache";
 import {
   isMarketCandlesReadyForWindow,
@@ -17,6 +14,7 @@ import {
   seedCandlesWindow,
   seedEmaWindow,
 } from "@/features/chart/marketWindowPlanner";
+import { CHART_RENDER_WINDOW_SIZE } from "@/features/chart/chartViewWindow";
 import { resolveRunMarketView } from "@/features/chart/runMarketView";
 import type { RunReport } from "@/api/types";
 
@@ -70,7 +68,7 @@ function makeReport(dataRange: { from_open_time_ms: number; to_open_time_ms: num
 describe("resolveTargetDisplayWindow", () => {
   it("returns tail window capped at render window size", () => {
     const reportFrom = 0;
-    const reportTo = 50_000 * 300_000 + 300_000;
+    const reportTo = CHART_RENDER_WINDOW_SIZE * 300_000 + 300_000;
     const window = resolveTargetDisplayWindow({
       reportFromMs: reportFrom,
       reportToMs: reportTo,
@@ -79,12 +77,12 @@ describe("resolveTargetDisplayWindow", () => {
     });
 
     expect(window.toMs).toBe(reportTo);
-    expect(window.fromMs).toBe(reportTo - 50_000 * 300_000);
+    expect(window.fromMs).toBe(reportTo - CHART_RENDER_WINDOW_SIZE * 300_000);
   });
 
   it("uses 1h bar duration for window span (not 5m default)", () => {
     const reportFrom = 0;
-    const reportTo = 50_000 * 3_600_000 + 3_600_000;
+    const reportTo = CHART_RENDER_WINDOW_SIZE * 3_600_000 + 3_600_000;
     const window5m = resolveTargetDisplayWindow({
       reportFromMs: reportFrom,
       reportToMs: reportTo,
@@ -98,15 +96,15 @@ describe("resolveTargetDisplayWindow", () => {
       timeframeMs: 3_600_000,
     });
 
-    expect(window1h.fromMs).toBe(reportTo - 50_000 * 3_600_000);
-    expect(window5m.fromMs).toBe(reportTo - 50_000 * 300_000);
+    expect(window1h.fromMs).toBe(reportTo - CHART_RENDER_WINDOW_SIZE * 3_600_000);
+    expect(window5m.fromMs).toBe(reportTo - CHART_RENDER_WINDOW_SIZE * 300_000);
     expect(window1h.fromMs).toBeLessThan(window5m.fromMs);
   });
 
   it("resolveTargetDisplayWindowForView derives timeframe from chartTimeframe", () => {
     const report = makeReport({
       from_open_time_ms: 0,
-      to_open_time_ms: 50_000 * 3_600_000 + 3_600_000,
+      to_open_time_ms: CHART_RENDER_WINDOW_SIZE * 3_600_000 + 3_600_000,
     });
     const view5m = resolveRunMarketView({
       report,
