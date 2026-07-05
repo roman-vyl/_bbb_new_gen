@@ -231,16 +231,6 @@ export function createRenderWindowController(
         clearIdleTimer();
         break;
       case "visible_range_changed":
-        if (programmaticViewportActive) {
-          break;
-        }
-        if (interactionState === "applying_shift") {
-          abortApplyingShift();
-        }
-        if (interactionState === "idle_user_view" || interactionState === "trade_focused") {
-          setInteractionState("user_panning");
-          scheduleIdleCommit();
-        }
         break;
       case "resize":
         break;
