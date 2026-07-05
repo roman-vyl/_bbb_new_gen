@@ -97,6 +97,15 @@ export function recordViewportCommandCandidate(
   return filtered;
 }
 
+export function forceRecordViewportCommandCandidate(
+  state: ViewportRuntimeState,
+  command: ViewportCommand,
+): ViewportCommand {
+  state.commandSeq += 1;
+  state.lastCommand = command;
+  return command;
+}
+
 export function acknowledgeViewportCommandCandidate(state: ViewportRuntimeState): void {
   state.lastCommand = null;
 }

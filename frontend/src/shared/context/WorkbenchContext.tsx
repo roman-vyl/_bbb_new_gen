@@ -799,6 +799,8 @@ function WorkbenchProviderInner({
         dbgMark(DBG.load.marketFetchStaleResponse, { key: viewIdentity, phase: "network" });
         return;
       }
+      // Re-render after load settles even when no new chunks were seeded (cache-hit ready).
+      bumpMarketLoadDeliveryTick((tick) => tick + 1);
     })();
 
     return () => {

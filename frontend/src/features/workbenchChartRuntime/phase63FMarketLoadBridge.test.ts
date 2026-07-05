@@ -196,7 +196,7 @@ describe("Phase 6.3F market/load/cache cutover", () => {
     expect(next.coverageWindow).toEqual(expanded);
   });
 
-  it("resolvePhase63FMarketTargetWindows resets expanded coverage when selected trade changes", () => {
+  it("keeps expanded coverage when selected trade changes within the same focus window", () => {
     const report = makePhase6Report(
       makePhase6Variant({
         trade_records: [
@@ -263,9 +263,71 @@ describe("Phase 6.3F market/load/cache cutover", () => {
       viewIdentity: viewIdentity.viewIdentity,
       selectedTradeEntryTimeMs: 1_300_000,
     });
+    expect(owner.coverageTargetWindow).toEqual(expanded);
+    expect(next.coverageWindow).toEqual(expanded);
+    expect(next.focusWindow).toEqual(initial.focusWindow);
+  });
+
+  it("resets expanded coverage when focus window changes", () => {
+    const report = makePhase6Report(
+      makePhase6Variant({
+        trade_records: [
+          {
+            trade_id: 1,
+            direction: "long",
+            status: "closed",
+            entry_time_ms: 1_100_000,
+            exit_time_ms: 1_200_000,
+            entry_price: 100,
+            exit_price: 101,
+            exit_reason: "signal:exit",
+            size: 1,
+            pnl: 1,
+            return_pct: 0.01,
+          },
+        ],
+      }),
+    );
+    Object.assign(report, {
+      data_range: { from_open_time_ms: 1_000_000, to_open_time_ms: 50_000_000_000 },
+    });
+    const view = resolveRunMarketView({
+      report,
+      chartTimeframe: "5m",
+      variant: report.variants[0]!,
+      reloadToken: 0,
+    });
+    const viewIdentity = resolvePhase63FMarketView({
+      report,
+      chartTimeframe: "5m",
+      variant: report.variants[0]!,
+      reloadToken: 0,
+    });
+    expect(viewIdentity.outcome).toBe("ok");
+    if (viewIdentity.outcome !== "ok") {
+      return;
+    }
+    const owner = createPhase63FMarketLoadOwnerState();
+    const initial = resolvePhase63FMarketTargetWindows({
+      owner,
+      view,
+      viewIdentity: viewIdentity.viewIdentity,
+      selectedTradeEntryTimeMs: 1_100_000,
+    });
+    const expanded = {
+      ...initial.coverageWindow,
+      fromMs: Math.max(report.data_range.from_open_time_ms, initial.coverageWindow.fromMs - 1_000_000),
+    };
+    applyPhase63FPanPrefetchCoverage(owner, expanded);
+    const next = resolvePhase63FMarketTargetWindows({
+      owner,
+      view,
+      viewIdentity: viewIdentity.viewIdentity,
+      selectedTradeEntryTimeMs: 40_000_000_000,
+    });
     expect(owner.coverageTargetWindow).toBeNull();
     expect(next.coverageWindow).toEqual(next.focusWindow);
-    expect(next.focusWindow).toEqual(resolveMarketTargetWindow(view, 1_300_000));
+    expect(next.focusWindow).not.toEqual(initial.focusWindow);
   });
 
   it("wires WorkbenchContext to phase63F market bridge without dual owner", () => {

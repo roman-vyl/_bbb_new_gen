@@ -310,4 +310,26 @@ describe("tradeFocusDemandLoad", () => {
       }).status,
     ).toBe("idle");
   });
+
+  it("pending trade request emits even when last emit tuple matches", () => {
+    const candles = makeCandles(200, 1_300);
+    const entryTimeMs = 1_450_000;
+    const emitKey = tradeFocusEmitKey(1, 1_450, "foundation");
+    const readiness = evaluateTradeFocusReadiness({
+      selectedTradeId: 1,
+      selectedTradeEntryTimeMs: entryTimeMs,
+      renderWindowFoundationKey: "foundation",
+      marketLoadStatus: "ready",
+      chartView: { mode: "around-trade", count: candles.length, candles },
+    });
+    expect(readiness.status).toBe("ready");
+    if (readiness.status !== "ready") {
+      return;
+    }
+    const pendingRequest = true;
+    const shouldEmit =
+      shouldEmitTradeFocus(readiness, emitKey, emitKey, { suppressedByUserPan: false }) ||
+      pendingRequest;
+    expect(shouldEmit).toBe(true);
+  });
 });

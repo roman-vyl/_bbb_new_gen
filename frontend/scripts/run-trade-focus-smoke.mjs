@@ -5,6 +5,7 @@
 import { chromium } from "playwright";
 
 const STEPS = 22;
+const WAIT_MS = 800;
 const baseURL = "http://127.0.0.1:5173";
 
 const browser = await chromium.launch({ headless: true });
@@ -49,9 +50,16 @@ await page.evaluate(() => {
 });
 await page.waitForTimeout(500);
 
-console.log("→ Chart tab");
+console.log("→ wait for initial market load");
 await page.getByRole("button", { name: "Chart", exact: true }).click();
 await page.locator(".chart-trade-nav").waitFor({ state: "visible", timeout: 30_000 });
+await page.waitForFunction(
+  () => {
+    const hint = document.querySelector(".chart-panel .panel__hint")?.textContent ?? "";
+    return hint.includes("Showing") && !hint.includes("unavailable") && !hint.includes("Loading");
+  },
+  { timeout: 120_000 },
+);
 
 await page.evaluate(() => window.__pipelineDebugReset?.());
 
@@ -61,7 +69,7 @@ for (let i = 0; i < STEPS; i++) {
   if (await nextBtn.isDisabled()) throw new Error(`Next trade disabled at step ${i}`);
   await nextBtn.click();
   if ((i + 1) % 5 === 0) console.log(`→ step ${i + 1}/${STEPS}`);
-  await page.waitForTimeout(400);
+  await page.waitForTimeout(WAIT_MS);
 }
 
 const hint = await page.locator(".chart-panel .panel__hint").innerText();
@@ -92,9 +100,13 @@ await browser.close();
 
 const requests = counts["wb.trade_focus.request"] ?? 0;
 const applied = counts["wb.trade_focus.applied"] ?? 0;
+const delayed = counts["wb.trade_focus.delayed"] ?? 0;
 
 if (tradeFocusEvents.length === 0) throw new Error("No wb.trade_focus.* events");
 if (requests < STEPS) throw new Error(`Expected >=${STEPS} requests, got ${requests}`);
+if (applied < STEPS - 3) {
+  throw new Error(`Expected >=${STEPS - 3} applied, got ${applied} (delayed=${delayed})`);
+}
 if (applied === 0) throw new Error("No wb.trade_focus.applied events");
 
-console.log("\n✓ smoke passed");
+console.log(`\n✓ smoke passed (applied=${applied}, delayed=${delayed}, requests=${requests})`);

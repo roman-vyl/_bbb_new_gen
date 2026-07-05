@@ -98,12 +98,11 @@ export function resolvePhase63FMarketView(input: {
   }
 }
 
-function buildCoverageResetKey(
+function buildFocusWindowResetKey(
   viewIdentity: string,
-  selectedTradeEntryTimeMs: number | null,
   focusWindow: MarketDisplayWindowMs,
 ): string {
-  return `${viewIdentity}:${selectedTradeEntryTimeMs ?? "tail"}:${focusWindow.fromMs}:${focusWindow.toMs}:${focusWindow.toOpenTimeMs}`;
+  return `${viewIdentity}:${focusWindow.fromMs}:${focusWindow.toMs}:${focusWindow.toOpenTimeMs}`;
 }
 
 function marketDisplayWindowsEqual(
@@ -143,11 +142,7 @@ export function resolvePhase63FMarketTargetWindows(input: {
   coverageWindowKey: string;
 } {
   const focusWindow = resolveMarketTargetWindow(input.view, input.selectedTradeEntryTimeMs);
-  const resetKey = buildCoverageResetKey(
-    input.viewIdentity,
-    input.selectedTradeEntryTimeMs,
-    focusWindow,
-  );
+  const resetKey = buildFocusWindowResetKey(input.viewIdentity, focusWindow);
 
   if (input.owner.coverageResetKey !== resetKey) {
     input.owner.coverageResetKey = resetKey;

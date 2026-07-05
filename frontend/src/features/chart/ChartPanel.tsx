@@ -66,7 +66,7 @@ import {
   hasTradeManagementEvents,
 } from "@/features/chart/tradeManagementChartEvents";
 
-import { shouldSuppressPanShiftRequest } from "@/features/chart/chartViewport";
+import { readChartViewportDebug, shouldSuppressPanShiftRequest } from "@/features/chart/chartViewport";
 import {
   createChartInteractionAdapter,
   registerChartDocumentKeyboardNavigation,
@@ -164,6 +164,8 @@ export function ChartPanel() {
     setChartShowTradeManagementExitMarkers,
 
     candlesSource,
+
+    marketLoadStatus,
 
     marketError,
 
@@ -278,9 +280,10 @@ export function ChartPanel() {
   const chartHint = useMemo(() => {
 
     if (candlesSource !== "market") {
-
+      if (marketLoadStatus === "loading") {
+        return "Loading market data for trade focus…";
+      }
       return "Market data unavailable · trade markers from report";
-
     }
 
     const shown = chartCandles.length;
@@ -373,6 +376,8 @@ export function ChartPanel() {
   }, [
 
     candlesSource,
+
+    marketLoadStatus,
 
     chartCandles.length,
 
@@ -748,6 +753,21 @@ export function ChartPanel() {
     isWindowSwapTransactionCancelled,
     settleWindowSwapCommit,
   ]);
+
+  useEffect(() => {
+    if (!import.meta.env.VITE_EMA_PIPELINE_DEBUG) {
+      return;
+    }
+    const chart = chartRef.current;
+    const w = window as Window & {
+      __chartVisibleTimeRange?: () => ReturnType<typeof readChartViewportDebug>["visibleTime"];
+    };
+    if (!chart || chartCandles.length === 0) {
+      w.__chartVisibleTimeRange = () => null;
+      return;
+    }
+    w.__chartVisibleTimeRange = () => readChartViewportDebug(chart).visibleTime;
+  }, [chartCandles, chartViewportCommandSeq, chartSeriesDataKey]);
 
   useLayoutEffect(() => {
 

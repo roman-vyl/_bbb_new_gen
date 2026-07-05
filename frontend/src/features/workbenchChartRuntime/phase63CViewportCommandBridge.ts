@@ -14,6 +14,7 @@ import {
   acknowledgeViewportCommandCandidate,
   cancelViewportCommandsOnPointerDown,
   createViewportRuntimeState,
+  forceRecordViewportCommandCandidate,
   filterViewportCommandCandidate,
   isWindowSwapTransactionCancelledCandidate,
   recordViewportCommandCandidate,
@@ -220,6 +221,35 @@ export function runPhase63COnTraceReady(
     emitSource: "onTraceReady",
     selectedTradeId: options?.selectedTradeId ?? null,
   });
+}
+
+export function runPhase63CForceTradeFocusCommand(
+  state: Phase63CViewportOwnerState,
+  renderWindowOwner: Phase63BRenderWindowOwnerState,
+  entryTimeSec: number,
+  options?: { selectedTradeId?: string | number | null; emitSource?: string },
+): ViewportCommand {
+  runPhase63CSetViewportPlan(state, "around-trade", entryTimeSec);
+  renderWindowOwner.controller.chartRuntime.viewport.dispatch({
+    type: "trade_selected",
+    entryTimeSec,
+  });
+  const command: ViewportCommand = { type: "focusTrade", entryTimeSec };
+  forceRecordViewportCommandCandidate(state.viewportState, command);
+  const emitSource = options?.emitSource ?? "selectTrade";
+  dbgMarkCutover(PHASE_63C_VIEWPORT_EMIT_STEP, "viewport", {
+    commandType: command.type,
+    commandSeq: state.viewportState.commandSeq,
+    emitSource,
+    forced: true,
+  });
+  dbgMarkCutover(DBG.chart.viewportApplyTradeFocus, "viewport", {
+    entryTimeSec,
+    commandSeq: state.viewportState.commandSeq,
+    emitSource,
+    forced: true,
+  });
+  return command;
 }
 
 export function runPhase63CSelectTradeFocusCommand(
